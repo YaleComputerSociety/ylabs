@@ -93,8 +93,13 @@ The student-journey smoke counts first-page program searches per visit and fails
 - Sticky sidebars must never hide content below the fold on short viewports.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
-The `/research` operator controls sit at the bottom of the wide-layout sidebar for this reason.
-The student-journey smoke holds the session check until browse has painted, counts only the layout shifts after it answers with an admin grant, and fails at a CLS of 0.1; first-paint shifts are excluded because their size depends on frame timing, which once doubled the total (#4169).
+The `/research` operator controls sit at the bottom of the wide-layout sidebar, and inside the closed "Filters" panel on narrower layouts, for this reason.
+On narrower layouts the "Filters" trigger badge counts the active operator controls too, so a reordered or filtered list is never silent.
+Copy that differs by persona shares one slot: the `/research` guest notice and its signed-in counterpart are stacked in the same grid cell with the inactive one `invisible`, so the slot is as tall as the longer copy for every viewer and the session answer never resizes it (#4222).
+On the wide layout that slot is the last thing in the sticky sidebar and shows only to a known guest, because the sidebar must fit a 1280x720 viewport without its own scrollbar and nothing sits below the slot for a late answer to move.
+The student-journey smoke holds the session check until browse has painted, counts only the layout shifts after it answers for an admin and for a signed-in student at 1280, 768, and 375px, and fails at a CLS of 0.1; first-paint shifts are excluded because their size depends on frame timing, which once doubled the total (#4169).
+- `main` is at least as tall as `[data-scroll-container]` (`min-h-full`), so the footer starts below the fold on every route and a lazy route's chunk and data arriving never push it out of view.
+The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 375px; the smoke fails when a lazy route paints the footer inside the viewport while it loads.
 - A bar pinned with `sticky top-0` inside `[data-scroll-container]` must reserve its height as the scroller's `scroll-padding-top`, or a keyboard focus scrolled into view lands under it (WCAG 2.4.11).
 `ResearchStickyFilterBar` does this by writing its measured height to `--yr-sticky-filter-bar-height`, which `index.css` reads; reuse that pattern for any new sticky bar.
 

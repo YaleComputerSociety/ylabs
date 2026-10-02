@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -132,15 +132,13 @@ describe('Research page while the session check is pending', () => {
 
     await waitFor(() => expect(searchCalls()).toHaveLength(1));
     expect(await screen.findByRole('heading', { name: 'Synthetic Timing Lab' })).toBeTruthy();
-    const pendingNotice = screen.getByText(/browsing as a guest/i).closest('div');
-    expect(pendingNotice?.getAttribute('aria-hidden')).toBe('true');
-    expect(pendingNotice?.className).toContain('invisible');
+    expect(screen.queryByRole('link', { name: /log in with yale cas/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /your dashboard/i })).toBeNull();
 
     act(() => setAuth({ isLoading: false }));
 
-    const settledNotice = screen.getByText(/browsing as a guest/i).closest('div');
-    expect(settledNotice?.getAttribute('aria-hidden')).toBeNull();
-    expect(settledNotice?.className).not.toContain('invisible');
+    expect(screen.getByRole('link', { name: /log in with yale cas/i })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /your dashboard/i })).toBeNull();
     expect(searchCalls()).toHaveLength(1);
   });
 
@@ -151,15 +149,31 @@ describe('Research page while the session check is pending', () => {
     renderWithPendingAuth();
     await screen.findByRole('heading', { name: 'Synthetic Timing Lab' });
 
+    const noticeSlot = screen.getByText(/browsing as a guest/i).closest('p')?.parentElement;
+
     act(() => setAuth({ isLoading: false, user: user as Partial<User> }));
 
-    expect(screen.queryByText(/browsing as a guest/i)).toBeNull();
+    const guestNotice = screen.getByText(/browsing as a guest/i).closest('p');
+    const signedInNotice = screen.getByText(/you're signed in/i).closest('p');
+    expect(
+      guestNotice?.parentElement === noticeSlot && signedInNotice?.parentElement === noticeSlot,
+    ).toBe(true);
+    expect(screen.queryByRole('link', { name: /log in with yale cas/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /your dashboard/i }).getAttribute('href')).toBe(
+      '/dashboard',
+    );
     await act(async () => {
       await Promise.resolve();
     });
     expect(searchCalls()).toHaveLength(1);
     if (user.isAdmin) {
-      expect(screen.getByRole('checkbox', { name: /weakest profiles first/i })).toBeTruthy();
+      expect(screen.queryByRole('checkbox', { name: /weakest profiles first/i })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+      expect(
+        within(screen.getByRole('dialog', { name: 'Research filters' })).getByRole('checkbox', {
+          name: /weakest profiles first/i,
+        }),
+      ).toBeTruthy();
     }
   });
 

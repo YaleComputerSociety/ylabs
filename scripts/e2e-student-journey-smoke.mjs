@@ -620,16 +620,27 @@ const syntheticAdminSession = {
   user: { netId: 'e2eop1', userType: 'undergraduate', userConfirmed: true, isAdmin: true },
 };
 
-const assertLateAdminSessionKeepsBrowseStable = async (viewport) => {
+const SIGNED_IN_NOTICE = /You're signed in/;
+const USER_MENU_LABEL = 'Open user menu';
+const ADMIN_CONTROL_LABEL = 'Show weakest profiles first';
+
+const syntheticStudentSession = {
+  auth: true,
+  user: { netId: 'e2est1', userType: 'undergraduate', userConfirmed: true, isAdmin: false },
+};
+
+const assertLateSessionKeepsBrowseStable = async (viewport, session) => {
+  const persona = session.user.isAdmin ? 'an admin' : 'a signed-in student';
   const shiftContext = await browser.newContext({ viewport, deviceScaleFactor: 1 });
   let releaseSessionCheck;
   const sessionCheckReleased = new Promise((resolve) => {
     releaseSessionCheck = resolve;
   });
   try {
+    await shiftContext.route(/google-analytics|googletagmanager/, (route) => route.abort());
     await shiftContext.route('**/api/check', async (route) => {
       await sessionCheckReleased;
-      await route.fulfill({ json: syntheticAdminSession });
+      await route.fulfill({ json: session });
     });
     await shiftContext.route('**/api/research/search', (route) =>
       route.fulfill({
@@ -672,12 +683,18 @@ const assertLateAdminSessionKeepsBrowseStable = async (viewport) => {
         .waitFor({ timeout: 20000 });
       await shiftPage.waitForTimeout(1000);
       assert(
-        (await shiftPage.getByLabel('Show weakest profiles first').count()) === 0,
-        'The admin control rendered before the held session check was answered, so this case cannot measure a late session.',
+        !(await shiftPage.getByText(SIGNED_IN_NOTICE).isVisible()) &&
+          (await shiftPage.getByRole('button', { name: USER_MENU_LABEL }).count()) === 0 &&
+          (await shiftPage.getByLabel(ADMIN_CONTROL_LABEL).count()) === 0,
+        'Signed-in UI rendered before the held session check was answered, so this case cannot measure a late session.',
       );
       const sessionAnsweredAt = await shiftPage.evaluate(() => performance.now());
       releaseSessionCheck();
-      await shiftPage.getByLabel('Show weakest profiles first').waitFor({ timeout: 20000 });
+      await shiftPage
+        .getByText(SIGNED_IN_NOTICE)
+        .or(shiftPage.getByRole('button', { name: USER_MENU_LABEL }))
+        .first()
+        .waitFor({ state: 'visible', timeout: 20000 });
       await shiftPage.waitForTimeout(1000);
       const shifts = await shiftPage.evaluate(
         (since) => window.__layoutShifts.filter((shift) => shift.startTime >= since),
@@ -688,14 +705,25 @@ const assertLateAdminSessionKeepsBrowseStable = async (viewport) => {
         (max, shift) => (!max || shift.value > max.value ? shift : max),
         null,
       );
-      record('browse layout shift with a late admin session', {
+      record('browse layout shift with a late session', {
+        persona,
         width: viewport.width,
         cumulativeLayoutShift: Number(total.toFixed(4)),
       });
       assert(
         total < LAYOUT_SHIFT_BUDGET,
-        `Browse at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}) once a late session check reported an admin grant; largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+        `Browse at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}) once a late session check answered for ${persona}; largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
       );
+      if (session.user.isAdmin) {
+        const adminControl = shiftPage.getByLabel(ADMIN_CONTROL_LABEL);
+        if (!(await adminControl.isVisible())) {
+          await shiftPage
+            .getByRole('button', { name: /^Filters/ })
+            .first()
+            .click();
+        }
+        await adminControl.waitFor({ state: 'visible', timeout: 20000 });
+      }
     });
   } finally {
     releaseSessionCheck();
@@ -703,12 +731,14 @@ const assertLateAdminSessionKeepsBrowseStable = async (viewport) => {
   }
 };
 
-await step('an admin session answering late does not shift the browse page', async () => {
+await step('a session answering late does not shift the browse page', async () => {
   for (const viewport of [
     { width: 1280, height: 900 },
+    { width: 768, height: 1024 },
     { width: 375, height: 900 },
   ]) {
-    await assertLateAdminSessionKeepsBrowseStable(viewport);
+    await assertLateSessionKeepsBrowseStable(viewport, syntheticAdminSession);
+    await assertLateSessionKeepsBrowseStable(viewport, syntheticStudentSession);
   }
 });
 
@@ -724,10 +754,6 @@ const syntheticProgram = (index) => ({
   yearOfStudy: ['Junior'],
   purpose: ['Research'],
 });
-const syntheticStudentSession = {
-  auth: true,
-  user: { netId: 'e2est1', userType: 'undergraduate', userConfirmed: true, isAdmin: false },
-};
 
 const withSyntheticBrowsePage = async (viewport, fn, { reducedMotion = 'no-preference' } = {}) => {
   const syntheticContext = await browser.newContext({
@@ -773,6 +799,74 @@ const withSyntheticBrowsePage = async (viewport, fn, { reducedMotion = 'no-prefe
     await syntheticContext.close();
   }
 };
+
+const FOOTER_SHIFT_BUDGET = 0.001;
+
+await step('a lazy route keeps the footer below the fold while it loads', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    for (const route of ['/about', '/programs']) {
+      await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+        await syntheticPage.addInitScript(() => {
+          window.__footerShift = 0;
+          window.__pageShift = 0;
+          window.__footerTops = [];
+          const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+          new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              if (entry.hadRecentInput) continue;
+              window.__pageShift += entry.value;
+              if (entry.sources.some((source) => elementOf(source.node)?.closest?.('footer'))) {
+                window.__footerShift += entry.value;
+              }
+            }
+          }).observe({ type: 'layout-shift', buffered: true });
+          const sampleFooter = () => {
+            const footer = document.querySelector('footer');
+            if (footer) window.__footerTops.push(footer.getBoundingClientRect().top);
+            requestAnimationFrame(sampleFooter);
+          };
+          requestAnimationFrame(sampleFooter);
+        });
+        await syntheticPage.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' });
+        await syntheticPage.waitForTimeout(2500);
+        const { footerShift, pageShift, footerSamples, highestFooterTop } =
+          await syntheticPage.evaluate(() => ({
+            footerShift: window.__footerShift,
+            pageShift: window.__pageShift,
+            footerSamples: window.__footerTops.length,
+            highestFooterTop: Math.min(...window.__footerTops),
+          }));
+        assert(
+          footerSamples > 0,
+          `No footer rendered on ${route} at ${viewport.width}px, so its position could not be measured.`,
+        );
+        record('lazy route footer stability', {
+          route,
+          width: viewport.width,
+          footerShift: Number(footerShift.toFixed(4)),
+          cumulativeLayoutShift: Number(pageShift.toFixed(4)),
+          highestFooterTop: Math.round(highestFooterTop),
+        });
+        assert(
+          highestFooterTop >= viewport.height,
+          `The footer on ${route} at ${viewport.width}px painted ${Math.round(highestFooterTop)}px from the top of a ${viewport.height}px viewport while the route loaded.`,
+        );
+        assert(
+          footerShift < FOOTER_SHIFT_BUDGET,
+          `The footer on ${route} at ${viewport.width}px shifted by ${footerShift.toFixed(3)} while the route loaded.`,
+        );
+        assert(
+          route !== '/about' || pageShift < LAYOUT_SHIFT_BUDGET,
+          `${route} at ${viewport.width}px shifted by ${pageShift.toFixed(3)} on load (budget ${LAYOUT_SHIFT_BUDGET}).`,
+        );
+      });
+    }
+  }
+});
 
 const backgroundOf = async (targetPage, selector) => {
   const element = targetPage.locator(selector).first();
