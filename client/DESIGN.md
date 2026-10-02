@@ -170,7 +170,7 @@ The floor is what makes it both correct and enforceable, and `src/__tests__/disp
 - Apply the serif through `.yr-display`, never through a tag selector.
 A tag selector cannot tell a page heading from a metric-tile label; see §0.
 - `.yr-display` deliberately declares no `font-weight`.
-It sits in `@layer components`, so a `font-semibold` utility on the same element wins on source order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
+It sits in `@layer components`, so a `font-semibold` utility on the same element wins on cascade-layer order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
 Set the weight with a utility at the element, and prefer `font-semibold` over `font-bold`: Source Serif 4 at 700 is heavier than this palette wants.
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Text takes one of exactly three neutral steps, and there is no fourth.
@@ -358,7 +358,7 @@ A bare `rounded` is 0.25rem and means "no radius was chosen"; it was at 28 sites
 The identical card construct, a hairline border over the panel surface, was written with `rounded-md` 37 times and `rounded-lg` 34 times, so one component rendered at two radii essentially at random.
 Separately the operator surfaces put inputs at `rounded-lg`, the container radius, which is the inversion the ordering exists to prevent.
 - Never put a radius utility on a `.yr-pill`, including a bare `rounded`.
-`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on source order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
+`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on cascade-layer order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
 13 elements were doing this and they were two different things, which is why the count mattered more than the symptom.
 - 11 were dense chips carrying `min-h-0 rounded`, overriding both the capsule and the pill's min-height.
 That is a real variant and it meant it, so it is now `.yr-pill-compact`, which states the intent and takes its radius from the control step rather than an arbitrary 4px.
