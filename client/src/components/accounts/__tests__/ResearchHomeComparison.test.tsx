@@ -237,15 +237,23 @@ describe('ResearchHomeComparison', () => {
   });
 
   it('wraps a long unbreakable name inside its own column', async () => {
-    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
+    const unbreakableName = 'Interdisciplinarycomputationalneurosciencelaboratory';
+    mockDetailBySlug({ 'lab-a': { ...entityA, name: unbreakableName }, 'lab-b': entityB });
 
     const { container } = render(
       <MemoryRouter>
-        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+        <ResearchHomeComparison
+          entities={[{ ...selection[0], name: unbreakableName }, selection[1]]}
+          notesByEntityId={{}}
+          onClose={vi.fn()}
+        />
       </MemoryRouter>,
     );
 
-    await screen.findByRole('link', { name: 'Lab A' });
+    const nameLink = await screen.findByRole('link', { name: unbreakableName });
+    const nameHeader = nameLink.closest('th') as HTMLTableCellElement;
+    expect(nameHeader.getAttribute('scope')).toBe('col');
+    expect(nameHeader.className).toContain('[overflow-wrap:anywhere]');
     const comparedCells = Array.from(container.querySelectorAll('tbody td'));
     expect(comparedCells.length).toBeGreaterThan(0);
     for (const cell of comparedCells) {
@@ -281,6 +289,15 @@ describe('ResearchHomeComparison', () => {
         </MemoryRouter>,
       );
       await screen.findByRole('link', { name: 'Lab A' });
+      expect(screen.getByText(scrollHint)).toBeTruthy();
+
+      const scrollRegion = screen.getByRole('table').parentElement as HTMLElement;
+      Object.defineProperty(scrollRegion, 'scrollLeft', { configurable: true, value: 540 });
+      fireEvent.scroll(scrollRegion);
+      expect(screen.queryByText(scrollHint)).toBeNull();
+
+      Object.defineProperty(scrollRegion, 'scrollLeft', { configurable: true, value: 0 });
+      fireEvent.scroll(scrollRegion);
       expect(screen.getByText(scrollHint)).toBeTruthy();
 
       cleanup();

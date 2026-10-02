@@ -348,23 +348,23 @@ const ResearchHomeComparison = ({
   ];
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isHorizontallyScrollable, setIsHorizontallyScrollable] = useState(false);
+  const [hasColumnsPastEdge, setHasColumnsPastEdge] = useState(false);
   const tableMinWidth = `calc(${LABEL_COLUMN_WIDTH} + ${GUTTER_WIDTH} + ${columns.length * MIN_COMPARED_COLUMN_WIDTH}px)`;
 
-  const readScrollable = useCallback(() => {
+  const readColumnsPastEdge = useCallback(() => {
     const region = scrollRef.current;
     if (!region) return;
-    setIsHorizontallyScrollable(region.scrollWidth - region.clientWidth > 1);
+    setHasColumnsPastEdge(region.scrollWidth - region.clientWidth - region.scrollLeft > 1);
   }, []);
 
   useEffect(() => {
-    readScrollable();
+    readColumnsPastEdge();
     const region = scrollRef.current;
     if (!region || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(readScrollable);
+    const observer = new ResizeObserver(readColumnsPastEdge);
     observer.observe(region);
     return () => observer.disconnect();
-  }, [columns.length, readScrollable]);
+  }, [columns.length, readColumnsPastEdge]);
 
   const columnHeaderTitle = (column: ComparisonColumn): string => {
     if (column.status === 'ready') return researchEntityTitle(column.entity);
@@ -411,13 +411,13 @@ const ResearchHomeComparison = ({
           </button>
         </div>
 
-        {isHorizontallyScrollable && (
+        {hasColumnsPastEdge && (
           <p className="flex-shrink-0 px-6 pt-4 text-xs text-muted" aria-hidden="true">
             Scroll sideways to read every column.
           </p>
         )}
 
-        <div ref={scrollRef} className="flex-1 overflow-auto py-6">
+        <div ref={scrollRef} onScroll={readColumnsPastEdge} className="flex-1 overflow-auto py-6">
           <table
             className="w-full border-collapse text-left"
             style={{ minWidth: tableMinWidth, tableLayout: 'fixed' }}
