@@ -827,11 +827,17 @@ await step('a lazy route keeps the footer below the fold while it loads', async 
         });
         await syntheticPage.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' });
         await syntheticPage.waitForTimeout(2500);
-        const { footerShift, pageShift, highestFooterTop } = await syntheticPage.evaluate(() => ({
-          footerShift: window.__footerShift,
-          pageShift: window.__pageShift,
-          highestFooterTop: Math.min(...window.__footerTops),
-        }));
+        const { footerShift, pageShift, footerSamples, highestFooterTop } =
+          await syntheticPage.evaluate(() => ({
+            footerShift: window.__footerShift,
+            pageShift: window.__pageShift,
+            footerSamples: window.__footerTops.length,
+            highestFooterTop: Math.min(...window.__footerTops),
+          }));
+        assert(
+          footerSamples > 0,
+          `No footer rendered on ${route} at ${viewport.width}px, so its position could not be measured.`,
+        );
         record('lazy route footer stability', {
           route,
           width: viewport.width,

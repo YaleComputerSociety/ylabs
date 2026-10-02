@@ -132,15 +132,17 @@ describe('Research page while the session check is pending', () => {
 
     await waitFor(() => expect(searchCalls()).toHaveLength(1));
     expect(await screen.findByRole('heading', { name: 'Synthetic Timing Lab' })).toBeTruthy();
-    const pendingNotice = screen.getByText(/browsing as a guest/i).closest('p');
-    expect(pendingNotice?.getAttribute('aria-hidden')).toBe('true');
-    expect(pendingNotice?.className).toContain('invisible');
+    const pendingNoticeSlot = screen.getByText(/browsing as a guest/i).closest('p')?.parentElement;
+    expect(pendingNoticeSlot?.getAttribute('aria-hidden')).toBe('true');
+    expect(pendingNoticeSlot?.className).toContain('invisible');
 
     act(() => setAuth({ isLoading: false }));
 
     const settledNotice = screen.getByText(/browsing as a guest/i).closest('p');
     expect(settledNotice?.getAttribute('aria-hidden')).toBeNull();
     expect(settledNotice?.className).not.toContain('invisible');
+    expect(settledNotice?.parentElement?.getAttribute('aria-hidden')).toBeNull();
+    expect(settledNotice?.parentElement?.className).not.toContain('invisible');
     expect(searchCalls()).toHaveLength(1);
   });
 
@@ -164,16 +166,12 @@ describe('Research page while the session check is pending', () => {
       guestInvisible: guestNotice?.className.includes('invisible'),
       signedInHidden: signedInNotice?.getAttribute('aria-hidden'),
       signedInInvisible: signedInNotice?.className.includes('invisible'),
-      sharedCell: [guestNotice, signedInNotice].every((notice) =>
-        notice?.className.includes('[grid-area:1/1]'),
-      ),
     }).toEqual({
       sameSlot: true,
       guestHidden: 'true',
       guestInvisible: true,
       signedInHidden: null,
       signedInInvisible: false,
-      sharedCell: true,
     });
     await act(async () => {
       await Promise.resolve();

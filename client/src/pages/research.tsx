@@ -1715,16 +1715,19 @@ const Research = () => {
               strong enough.
             </p>
 
-            <div className="mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
+            <div
+              aria-hidden={isAuthLoading || undefined}
+              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}`}
+            >
               <p
-                aria-hidden={isAuthenticated || isAuthLoading || undefined}
-                className={`[grid-area:1/1]${isAuthenticated || isAuthLoading ? ' invisible' : ''}`}
+                aria-hidden={isAuthenticated || undefined}
+                className={`[grid-area:1/1]${isAuthenticated ? ' invisible' : ''}`}
               >
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
-                  tabIndex={isAuthenticated || isAuthLoading ? -1 : undefined}
+                  tabIndex={isAuthenticated ? -1 : undefined}
                   className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
@@ -1866,6 +1869,12 @@ const Research = () => {
                             {trustTierFilterChips}
                           </>
                         ) : undefined
+                      }
+                      operatorActiveCount={
+                        isAdmin
+                          ? (showWeakestProfilesFirst ? 1 + qualityFilters.length : 0) +
+                            trustTierFilters.length
+                          : 0
                       }
                     />
                   </ResearchStickyFilterBar>

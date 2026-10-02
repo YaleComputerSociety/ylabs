@@ -31,6 +31,7 @@ interface ResearchFilterDisclosureProps {
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   operatorControls?: ReactNode;
+  operatorActiveCount?: number;
 }
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
@@ -60,6 +61,7 @@ const ResearchFilterDisclosure = ({
   isOpen: controlledIsOpen,
   onOpenChange,
   operatorControls,
+  operatorActiveCount = 0,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -116,6 +118,7 @@ const ResearchFilterDisclosure = ({
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment));
+  const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
       showEntityType && 'entityType',
@@ -363,15 +366,15 @@ const ResearchFilterDisclosure = ({
           aria-expanded={isOpen}
           aria-haspopup="dialog"
           aria-controls={isOpen ? panelId : undefined}
-          aria-label={`Filters${activeCount > 0 ? `, ${activeCount} active` : ''}`}
+          aria-label={`Filters${triggerCount > 0 ? `, ${triggerCount} active` : ''}`}
           onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
           className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
         >
           <FiltersIcon className="h-4 w-4 shrink-0" />
           <span>Filters</span>
-          {activeCount > 0 && (
+          {triggerCount > 0 && (
             <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
-              {activeCount}
+              {triggerCount}
             </span>
           )}
           <ChevronDownIcon

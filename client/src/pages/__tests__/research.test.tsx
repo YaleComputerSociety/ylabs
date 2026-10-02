@@ -1621,6 +1621,7 @@ describe('Research page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Description issue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Missing lead' }));
+    expect(screen.getByRole('button', { name: 'Filters, 3 active' })).toBeTruthy();
 
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenLastCalledWith(
