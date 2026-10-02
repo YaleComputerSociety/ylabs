@@ -4,6 +4,23 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The remaining small majors move, and `domhandler` stays on 5 (#4434)
+
+`@testing-library/jest-dom` moves to 7, `concurrently` to 10, and `js-yaml` to 5.
+`jest-dom` 7 only makes `@testing-library/dom` a required peer, which the client already declares, and raises its Node floor to 22.
+`concurrently` 10 is ESM-only and drops `--name-separator` and `killOthers`, none of which the root `start` script uses.
+`js-yaml` 5 has no default export, so `scripts/security-preflight.test.mjs`, its only consumer, imports the namespace; its loader now defaults to the YAML 1.2 core schema and throws on empty input, and every lockfile and workflow the preflight parses loads the same.
+The root `js-yaml` override moves with the direct pin, so the override still matches the one copy installed.
+
+`domhandler` is held on 5.0.3.
+The server imports it only for the `AnyNode` and `Element` types it annotates cheerio nodes with, and `cheerio` 1.2.0, the latest release, still depends on `domhandler` ^5.0.3 and `htmlparser2` 10.
+Declaring 6 installs a second copy beside cheerio's, so those annotations would describe a different release from the nodes cheerio builds; it typechecks today only because the two shapes still match.
+Revisit when `cheerio` moves to `htmlparser2` 12 and `domhandler` 6: `npm view cheerio dependencies.domhandler`.
+
+Four others behind their latest are left where they are.
+`mongodb` stays on `~7.6` rather than 7.7, because it tracks the driver line Mongoose 9.10 pins, as recorded below.
+`eslint` 10.12, `@sentry/node` 11.3 and 11.4, and `@sentry/react` 11.3 and 11.4 were published less than a day before this change, so `npmMinimalAgeGate` refuses them; they are ordinary minor bumps for the next pass.
+
 ## 2026-10-02: The client moves to MUI 9 and drops `sweetalert` (#4383)
 
 `@mui/material` moves from 7 to 9, with `@emotion/react` and `@emotion/styled` on their current 11.x.
