@@ -32,6 +32,7 @@ module.exports = {
           warm: "var(--yr-border-warm)",
           brand: "var(--yr-blue-border)",
         },
+        scrim: "var(--yr-scrim)",
         success: {
           DEFAULT: "var(--yr-green)",
           soft: "var(--yr-green-soft)",

@@ -635,6 +635,154 @@ await step('an admin session answering late does not shift the browse page', asy
   }
 });
 
+const syntheticProgram = (index) => ({
+  _id: `e2e-program-${index}`,
+  title: `Program Fixture ${index}`,
+  summary: 'Synthetic program for the overlay smoke.',
+  description: 'Synthetic program description for the overlay smoke. '.repeat(6),
+  programCategory: 'FELLOWSHIP',
+  programKind: 'RESEARCH_FUNDING',
+  isAcceptingApplications: index % 2 === 0,
+  deadline: new Date(Date.now() + (index + 3) * 86400000).toISOString(),
+  yearOfStudy: ['Junior'],
+  purpose: ['Research'],
+});
+const syntheticStudentSession = {
+  auth: true,
+  user: { netId: 'e2est1', userType: 'undergraduate', userConfirmed: true, isAdmin: false },
+};
+
+const withSyntheticBrowsePage = async (viewport, fn, { reducedMotion = 'no-preference' } = {}) => {
+  const syntheticContext = await browser.newContext({
+    viewport,
+    deviceScaleFactor: 1,
+    reducedMotion,
+  });
+  try {
+    await syntheticContext.route(/google-analytics|googletagmanager/, (route) => route.abort());
+    await syntheticContext.route('**/api/check', (route) =>
+      route.fulfill({ json: syntheticStudentSession }),
+    );
+    await syntheticContext.route('**/api/research/search**', (route) =>
+      route.fulfill({
+        json: {
+          researchEntities: Array.from({ length: 6 }, (_, index) => syntheticLayoutEntity(index)),
+          estimatedTotalHits: 6,
+          page: 1,
+          pageSize: 24,
+          facetDistribution: {},
+        },
+      }),
+    );
+    await syntheticContext.route('**/api/programs/**', (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname.endsWith('/programs/filters')) {
+        return route.fulfill({ json: { yearOfStudy: ['Junior'], purpose: ['Research'] } });
+      }
+      if (pathname.endsWith('/programs/search')) {
+        const results = Array.from({ length: 6 }, (_, index) => syntheticProgram(index));
+        return route.fulfill({ json: { results, total: results.length } });
+      }
+      return route.fulfill({ json: { program: syntheticProgram(1) } });
+    });
+    await syntheticContext.route('**/api/fellowships/**', (route) => route.fulfill({ json: {} }));
+    await syntheticContext.route('**/api/users/**', (route) =>
+      route.fulfill({ json: { watchedPrograms: [], watchedProgramPlans: {} } }),
+    );
+    await syntheticContext.route('**/api/analytics/**', (route) => route.fulfill({ status: 204 }));
+    const syntheticPage = await syntheticContext.newPage();
+    await withFailureContextOf(syntheticPage, () => fn(syntheticPage));
+  } finally {
+    await syntheticContext.close();
+  }
+};
+
+const backgroundOf = async (targetPage, selector) => {
+  const element = targetPage.locator(selector).first();
+  await element.waitFor({ timeout: 5000 }).catch(() => undefined);
+  if ((await element.count()) === 0) return 'no backdrop';
+  return element.evaluate((node) => getComputedStyle(node).backgroundColor);
+};
+
+const overlayScrimOf = (targetPage) =>
+  targetPage
+    .getByRole('dialog')
+    .first()
+    .evaluate((dialog) => {
+      let element = dialog;
+      while (element && getComputedStyle(element).position !== 'fixed')
+        element = element.parentElement;
+      return element ? getComputedStyle(element).backgroundColor : 'no fixed overlay';
+    });
+
+const scrimAlpha = (color) => {
+  const slashAlpha = /\/\s*([\d.]+)\s*\)$/.exec(color);
+  if (slashAlpha) return Number(slashAlpha[1]);
+  const rgba = /^rgba\([^)]*,\s*([\d.]+)\)$/.exec(color);
+  if (rgba) return Number(rgba[1]);
+  return /^rgb\(/.test(color) ? 1 : 0;
+};
+
+await step('every overlay dims the page with the one navy scrim', async () => {
+  const mobile = { width: 375, height: 812 };
+  const scrims = {};
+  await withSyntheticBrowsePage(mobile, async (syntheticPage) => {
+    await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await syntheticPage
+      .getByRole('button', { name: /^Filters/ })
+      .first()
+      .click();
+    scrims['research filter sheet'] = await backgroundOf(
+      syntheticPage,
+      '[data-testid="research-filter-backdrop"]',
+    );
+  });
+  await withSyntheticBrowsePage(mobile, async (syntheticPage) => {
+    await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+    await syntheticPage
+      .getByRole('button', { name: /^Filters/ })
+      .first()
+      .click();
+    scrims['program filter sheet'] = await backgroundOf(
+      syntheticPage,
+      '[data-testid="filter-sheet-backdrop"]',
+    );
+  });
+  await withSyntheticBrowsePage(mobile, async (syntheticPage) => {
+    await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await syntheticPage.getByRole('button', { name: 'Open menu' }).first().click();
+    scrims['navigation menu'] = await backgroundOf(
+      syntheticPage,
+      '.MuiDrawer-root .MuiBackdrop-root',
+    );
+  });
+  for (const viewport of [mobile, { width: 1440, height: 900 }]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.goto(`${baseUrl}/programs?program=e2e-program-1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await syntheticPage.getByRole('dialog').first().waitFor({ timeout: 20000 });
+      scrims[`program modal at ${viewport.width}px`] = await overlayScrimOf(syntheticPage);
+    });
+  }
+  record('overlay scrims', scrims);
+  const reference = scrims['research filter sheet'];
+  assert(
+    scrimAlpha(reference) > 0,
+    `The research filter sheet backdrop is ${reference}, so the page behind the sheet is not dimmed.`,
+  );
+  for (const [overlay, color] of Object.entries(scrims)) {
+    assert(
+      color === reference,
+      `The ${overlay} scrim is ${color}, not the shared navy scrim ${reference}.`,
+    );
+    assert(
+      !/^rgba?\(0, 0, 0[,)]/.test(color),
+      `The ${overlay} scrim is untinted black (${color}).`,
+    );
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,

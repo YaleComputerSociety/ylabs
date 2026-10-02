@@ -104,4 +104,53 @@ describe('CombinedFilterDropdown', () => {
     expect(screen.queryByText('Physics')).toBeNull();
     await waitFor(() => expect(trigger).toHaveFocus());
   });
+
+  it('dims the page behind the mobile sheet with the scrim and closes when it is pressed', async () => {
+    render(
+      <CombinedFilterDropdown
+        mobileSheet
+        dialogLabel="Program filters"
+        tabs={[
+          {
+            key: 'department',
+            label: 'Department',
+            options: ['Physics'],
+            selected: [],
+            setSelected: vi.fn(),
+          },
+        ]}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Filters' });
+    await userEvent.click(trigger);
+    const backdrop = screen.getByTestId('filter-sheet-backdrop');
+
+    expect(backdrop).toHaveClass('fixed', 'inset-0', 'bg-scrim', 'sm:hidden');
+    await userEvent.click(backdrop);
+
+    expect(screen.queryByRole('dialog', { name: 'Program filters' })).toBeNull();
+    expect(screen.queryByTestId('filter-sheet-backdrop')).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('draws no backdrop for the anchored listing dropdown', async () => {
+    render(
+      <CombinedFilterDropdown
+        tabs={[
+          {
+            key: 'department',
+            label: 'Department',
+            options: ['Physics'],
+            selected: [],
+            setSelected: vi.fn(),
+          },
+        ]}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filters' }));
+
+    expect(screen.queryByTestId('filter-sheet-backdrop')).toBeNull();
+  });
 });

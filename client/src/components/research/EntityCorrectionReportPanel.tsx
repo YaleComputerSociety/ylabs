@@ -135,7 +135,7 @@ export default function EntityCorrectionReportPanel({
       {open && (
         <div
           ref={overlayRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
         >
           <div
             ref={dialogRef}
