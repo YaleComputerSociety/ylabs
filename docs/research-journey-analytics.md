@@ -176,11 +176,14 @@ The server SDK's defaults are not safe to inherit, and the audit that proved it 
 With only a DSN, environment, and release, a server error event carried the concrete request URL with its netid and query string, every request header, the session cookie, a transaction name quoting the concrete path, console lines as breadcrumbs, and local variable values in stack frames.
 A session cookie with its signature is a credential, so that default hands the provider a way to act as the signed-in user.
 `buildErrorTrackingOptions` in `server/src/utils/errorTracking.ts` therefore turns every `dataCollection` category off, including `stackFrameVariables`, and `scrubServerEvent` reduces `event.request` to its method, rebuilds the transaction from the route template, drops every breadcrumb, and removes credentials from any URL quoted in an exception message.
+Every category is set off explicitly rather than left unset, because since Sentry 11 an unset category collects by default, so a category an upgrade adds or renames would silently fall back to on.
+Each side's `errorTrackingPayload.test.ts` asserts the SDK's resolved collection options against the full list, so a new or renamed category fails the suite rather than shipping.
+The global error handler is the only server capture path: `expressIntegration({ shouldHandleError: false })` turns off Express's automatic capture, which would otherwise fire first and win the dedupe over the route-template report, and `server/src/utils/__tests__/errorTrackingExpressCapture.test.ts` fails if a route error produces any other event.
 A message the server writes itself must still not interpolate a netid, email, or slug, because no scrubber can recognise one.
 The route template keeps its mount path even from the global error handler, where Express has already cleared `req.baseUrl`, by taking the leading request segments the template does not cover.
 That is safe only while every router is mounted at a static path, so mounting one at a param path means changing that recovery first.
 
-The client reports no user and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
+The client reports no user, sets every `dataCollection` category off in `client/src/utils/errorTracking.ts` except the `User-Agent` request header, and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
 The browser SDK's defaults would otherwise attach the concrete page URL, the `Referer` header, navigation and request breadcrumbs with concrete paths and query strings, and console and click breadcrumbs with uncontrolled text.
 On `/research/person/:publicKey` and `/research/:slug` that is a person-bearing value.
 A path keeps only the segments on a fixed list of static route words and reports every other segment as `:param`, so the list fails closed: a route it does not know loses readability, never privacy.

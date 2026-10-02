@@ -14,6 +14,7 @@ vi.mock('@sentry/node', () => ({
   isInitialized: vi.fn(() => false),
   captureException: vi.fn(),
   flush: vi.fn(),
+  expressIntegration: vi.fn((options: unknown) => ({ name: 'Express', options })),
 }));
 
 const SYNTHETIC_NETID = 'zz9993';
@@ -73,11 +74,28 @@ describe('server errorTracking', () => {
         cookies: false,
         httpHeaders: { request: false, response: false },
         httpBodies: [],
-        queryParams: false,
+        urlQueryParams: false,
+        graphQL: { document: false, variables: false },
         genAI: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        queues: false,
         stackFrameVariables: false,
       },
     });
+  });
+
+  it('leaves the global error handler as the only capture path for route errors', () => {
+    const options = buildErrorTrackingOptions({
+      dsn: 'https://public@example.com/1',
+      environment: 'test',
+    });
+
+    expect(Sentry.expressIntegration).toHaveBeenCalledWith({ shouldHandleError: false });
+    expect(options.integrations).toContainEqual({
+      name: 'Express',
+      options: { shouldHandleError: false },
+    });
+    expect(options.attachStacktrace).toBe(false);
   });
 
   it('captures request context without raw query strings', () => {

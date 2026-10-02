@@ -42,6 +42,27 @@ describe('client error report payload', () => {
     expect(payload).not.toContain(SYNTHETIC_QUERY);
   });
 
+  it('resolves every data collection category the SDK knows about to off', () => {
+    const client = Sentry.init({
+      ...buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
+      transport: capturingTransport,
+    });
+
+    expect(client?.getDataCollectionOptions()).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: { request: { allow: ['User-Agent'] }, response: false },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: expect.any(Number),
+    });
+  });
+
   it('sends no person key or query value from a window error without a stack', async () => {
     Sentry.init({
       ...buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
