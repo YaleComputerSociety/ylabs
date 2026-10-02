@@ -51,6 +51,17 @@ describe('computeCatalogFreshness', () => {
     expect(report.staleSourceKeys.reduce((sum, s) => sum + s.pastDeadline, 0)).toBe(24);
   });
 
+  it('counts a deadline withheld as stale as past rather than as no deadline (#4363)', () => {
+    const report = computeCatalogFreshness(
+      [record({ isAcceptingApplications: true, deadline: new Date('2019-11-16T04:59:59.999Z') })],
+      NOW,
+    );
+
+    expect(report.totals.deadlinePast).toBe(1);
+    expect(report.totals.deadlineNone).toBe(0);
+    expect(report.totals.accepting).toBe(0);
+  });
+
   it('reports a clean state for a healthy mixed corpus', () => {
     const healthyCorpus = [
       ...repeat(10, () => record({ isAcceptingApplications: true, deadline: FUTURE_DEADLINE })),
