@@ -404,6 +404,7 @@ export async function runSourceLinkHealthBackfill(options: {
         // Projected because it carries citations the gate judges (#2666); omitting it
         // would leave the widened candidate set silently inert.
         fieldProvenance: 1,
+        fieldValueRefusals: 1,
         sourceLinkHealth: 1,
       },
     )

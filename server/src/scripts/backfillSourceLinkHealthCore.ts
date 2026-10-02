@@ -4,6 +4,7 @@ import {
   type DatedSourceLinkHealth,
   type SourceLinkHealthStatus,
 } from '../services/sourceLinkHealth';
+import { deadLinkHealthRefusalEvidenceUrls } from './clearDeadResearchWebsitesCore';
 
 export interface SourceLinkHealthCandidateEntity {
   websiteUrl?: unknown;
@@ -16,6 +17,7 @@ export interface SourceLinkHealthCandidateEntity {
    * citation as possibly-live (#2666).
    */
   fieldProvenance?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -160,6 +162,7 @@ export function collectSourceLinkHealthCandidates(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...fieldProvenanceSourceUrls(entity.fieldProvenance),
+    ...deadLinkHealthRefusalEvidenceUrls(entity),
     ...extraUrls,
   ];
 
