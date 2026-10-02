@@ -747,8 +747,9 @@ function collectPeopleCards(
     const name = link.text().replace(/\s+/g, ' ').trim();
     if (!name) return;
     const href = link.attr('href') || '';
-    const dedupeKey = href || slugify(name);
-    if (!dedupeKey || seen.has(dedupeKey)) return;
+    // Two members can link the same lab site, so the name is part of the key (#3787).
+    const dedupeKey = `${href}|${slugify(name)}`;
+    if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const subheading = selectors.subheading
@@ -828,6 +829,52 @@ const REFERENCE_CARD_SELECTORS: PeopleCardSelectors = {
  */
 export const directoryListingCardExtractor: CenterExtractor = (html, ctx) =>
   extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
+
+function extractPeopleCardsWhere(
+  html: string,
+  ctx: ExtractorCtx,
+  selectors: PeopleCardSelectors,
+  keepCard: ($: cheerio.CheerioAPI, card: cheerio.Cheerio<any>) => boolean,
+): ExtractorResult {
+  const $ = cheerio.load(html);
+  $(selectors.card)
+    .filter((_i, el) => !keepCard($, $(el)))
+    .remove();
+  const members: CenterMember[] = [];
+  collectPeopleCards($, $.root(), ctx, selectors, new Set<string>(), members);
+  return { members };
+}
+
+const YQI_MEMBER_CATEGORY = 'YQI Member';
+
+/**
+ * The YQI roster tags each card with categories, and a card without the member
+ * category is institute staff, whose "Managing Director" title would otherwise
+ * read as a lead (#3787).
+ */
+export const yqiMemberReferenceCardExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCardsWhere(html, ctx, REFERENCE_CARD_SELECTORS, ($, card) =>
+    card
+      .find('.taxonomy-list__item')
+      .toArray()
+      .some((item) => $(item).text().trim() === YQI_MEMBER_CATEGORY),
+  );
+
+const CENTER_LEAD_ROLES = new Set<MemberRole>(['director', 'co-director']);
+
+/**
+ * A leadership-and-staff page lists the center's leads beside administrative
+ * staff, and only the leads are center members a student can reach (#3787).
+ */
+export const directoryListingLeadershipExtractor: CenterExtractor = (html, ctx) => {
+  const { members, ...rest } = extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
+  return {
+    ...rest,
+    members: members.filter(
+      (member) => member.role !== undefined && CENTER_LEAD_ROLES.has(member.role),
+    ),
+  };
+};
 
 /**
  * YaleSites "reference-card" people block (Data-Intensive Social Science Center
@@ -1162,10 +1209,10 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     departments: ['Physics', 'Applied Physics', 'Computer Science', 'Electrical Engineering'],
-    url: 'https://quantuminstitute.yale.edu/people/members',
+    url: 'https://quantuminstitute.yale.edu/our-mission/our-members',
     homeUrl: 'https://quantuminstitute.yale.edu/',
     paginated: false,
-    extractor: viewsFieldNameExtractor,
+    extractor: yqiMemberReferenceCardExtractor,
   },
   {
     centerKey: 'cowles',
@@ -1375,10 +1422,10 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     centerName: 'Whitney Humanities Center',
     schoolName: 'Yale Faculty of Arts and Sciences',
     kind: 'center',
-    url: 'https://whc.yale.edu/people/our-people',
+    url: 'https://whc.yale.edu/leadership-and-staff',
     homeUrl: 'https://whc.yale.edu/',
     paginated: false,
-    extractor: viewsFieldNameExtractor,
+    extractor: directoryListingLeadershipExtractor,
   },
   {
     centerKey: 'ycga',
