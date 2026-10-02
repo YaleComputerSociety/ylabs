@@ -866,6 +866,23 @@ describe('Programs page', () => {
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
+  it('returns to the top of the board when a quick filter changes', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    renderStatefulPage([
+      baseFellowship({
+        id: 'open',
+        title: 'Open Fellowship',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+      }),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Open only/i }));
+
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    scrollTo.mockRestore();
+  });
+
   it('updates the results counter and shows next-cycle guidance when Open Only has no matches', async () => {
     renderStatefulPage([
       baseFellowship({

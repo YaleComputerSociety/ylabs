@@ -288,6 +288,30 @@ describe('FellowshipSearchContextProvider program routes', () => {
     });
   });
 
+  it('returns to the top when a filter change starts a new search, but not on first load', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining('/programs/search'));
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Structured only' }));
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    });
+    scrollTo.mockRestore();
+  });
+
   describe('when a search request fails', () => {
     const fundingRow = {
       _id: 'synthetic-funding',

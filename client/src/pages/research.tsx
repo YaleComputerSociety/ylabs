@@ -37,7 +37,7 @@ import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isRetryableUnavailableError } from '../utils/clientErrorMessage';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
-import { scrollBehavior } from '../utils/scrollBehavior';
+import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -363,16 +363,6 @@ const withDepartmentSearchTarget = (
   filters: ResearchSearchFilters,
   target: DepartmentSearchTarget,
 ): ResearchSearchFilters => ({ ...filters, departments: target.filters.departments });
-
-const scrollResearchViewportToTop = () => {
-  const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
-  if (scrollContainer) {
-    scrollContainer.scrollTo({ top: 0, behavior: scrollBehavior() });
-    return;
-  }
-
-  window.scrollTo({ top: 0, behavior: scrollBehavior() });
-};
 
 const Research = () => {
   const location = useLocation();
@@ -964,6 +954,7 @@ const Research = () => {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    scrollViewportToTop();
     const filters = studentSearchFilters();
     void runSearch(query.trim(), {
       filters,
@@ -1406,7 +1397,7 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
-    if (filterChanges.length > 0) scrollResearchViewportToTop();
+    if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
@@ -1458,6 +1449,7 @@ const Research = () => {
   const applyResearchSort = (nextSortBy: ResearchSortField, nextSortOrder?: 'asc' | 'desc') => {
     const order = nextSortOrder ?? defaultResearchSortOrder(nextSortBy);
     if (nextSortBy === sortBy && order === sortOrder) return;
+    scrollViewportToTop();
     sortByRef.current = nextSortBy;
     sortOrderRef.current = order;
     setSortBy(nextSortBy);
@@ -1491,7 +1483,7 @@ const Research = () => {
     applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
   const exploreHome = useCallback(
     (label: string) => {
-      scrollResearchViewportToTop();
+      scrollViewportToTop();
       const target = departmentSearchTargetByLabel.get(label.toLowerCase());
       if (target) {
         void runSearchRef.current(target.label, {
@@ -1510,6 +1502,7 @@ const Research = () => {
     const next = qualityFilters.includes(filter)
       ? qualityFilters.filter((value) => value !== filter)
       : [...qualityFilters, filter];
+    scrollViewportToTop();
     setQualityFilters(next);
     writeResearchSearchParams(
       {
@@ -1524,6 +1517,7 @@ const Research = () => {
     const next = trustTierFilters.includes(filter)
       ? trustTierFilters.filter((value) => value !== filter)
       : [...trustTierFilters, filter];
+    scrollViewportToTop();
     setTrustTierFilters(next);
     writeResearchSearchParams(
       {
@@ -1535,6 +1529,7 @@ const Research = () => {
     );
   };
   const setWeakestProfilesFirst = (value: boolean) => {
+    scrollViewportToTop();
     setShowWeakestProfilesFirst(value);
     writeResearchSearchParams(
       {
@@ -1600,7 +1595,7 @@ const Research = () => {
 
   const retryRelaxedQuery = () => {
     if (!relaxedQuerySuggestion) return;
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     setQuery(relaxedQuerySuggestion);
     const filters = studentSearchFilters();
     void runSearchRef.current(relaxedQuerySuggestion, {
@@ -1610,11 +1605,11 @@ const Research = () => {
   };
 
   const browseAllResearchHomes = () => {
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     resetSearch();
   };
   const returnToCleanResearchHome = () => {
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     const hasResetableSearchState =
       query.trim().length > 0 ||
       submittedQuery.length > 0 ||

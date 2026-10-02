@@ -5,6 +5,31 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ScrollToTop from '../ScrollToTop';
 
+const scrollContainerTo = (scrollContainer: HTMLElement, top: number) => {
+  act(() => {
+    scrollContainer.scrollTop = top;
+    fireEvent.scroll(scrollContainer);
+  });
+};
+
+const ForwardButton = () => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => void navigate(1)}>
+      Forward
+    </button>
+  );
+};
+
+const SchoolFilterLink = () => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => void navigate('/research?school=Law+School')}>
+      Law School
+    </button>
+  );
+};
+
 const BackButton = () => {
   const navigate = useNavigate();
   return (
@@ -42,14 +67,55 @@ describe('ScrollToTop', () => {
     const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
     expect(scrollContainer).toBeTruthy();
 
-    act(() => {
-      scrollContainer!.scrollTop = 420;
-    });
+    scrollContainerTo(scrollContainer!, 420);
     fireEvent.click(screen.getByRole('button', { name: 'Open profile' }));
     expect(scrollContainer!.scrollTop).toBe(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(scrollContainer!.scrollTop).toBe(420);
+  });
+
+  it('restores each history entry of one page to its own scroll position', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <SchoolFilterLink />
+        <BackButton />
+        <ForwardButton />
+        <div data-scroll-container />
+      </MemoryRouter>,
+    );
+
+    const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]')!;
+    scrollContainerTo(scrollContainer, 1200);
+    fireEvent.click(screen.getByRole('button', { name: 'Law School' }));
+    expect(scrollContainer.scrollTop).toBe(1200);
+
+    scrollContainerTo(scrollContainer, 800);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(scrollContainer.scrollTop).toBe(1200);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+    expect(scrollContainer.scrollTop).toBe(800);
+  });
+
+  it('leaves the scroll position to the page when only the query string changes', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <SchoolFilterLink />
+        <div data-scroll-container />
+      </MemoryRouter>,
+    );
+
+    const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]')!;
+    scrollContainerTo(scrollContainer, 640);
+    vi.mocked(window.scrollTo).mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Law School' }));
+
+    expect(scrollContainer.scrollTop).toBe(640);
+    expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
   it('leaves focus alone on first load so the first Tab reaches the skip link', () => {
