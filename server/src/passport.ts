@@ -25,6 +25,16 @@ import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/admin
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
 import { authLimiter, markCasValidationAccepted } from './middleware/rateLimiters';
+import { captureServerError } from './utils/errorTracking';
+import {
+  CAS_SIGN_IN_TROUBLE_MESSAGE,
+  CasValidationTimeoutError,
+  UnusableCasIdentityError,
+  casCallbackFailureStatus,
+  casValidationTimeoutMs,
+  classifyCasCallbackError,
+  reportableCasLoginError,
+} from './utils/casCallbackFailure';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -451,7 +461,7 @@ async function buildAuthenticatedSessionUser(
 async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
   const netid = normalizeAuthNetId(rawNetid);
   if (!netid) {
-    throw new Error('Invalid authentication principal');
+    throw new UnusableCasIdentityError();
   }
 
   let userType = 'unknown';
@@ -635,6 +645,8 @@ function acceptsCasLoginCallback(req: express.Request): boolean {
   return true;
 }
 
+const CAS_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
+
 const casLogin = function (
   req: express.Request,
   res: express.Response,
@@ -650,66 +662,81 @@ const casLogin = function (
     return res.status(401).json({ error: 'CAS callback does not match this login' });
   }
 
-  passport.authenticate(
-    'cas',
-    function (
-      err: Error | null,
-      user: AuthenticatedSessionUser | false | null | undefined,
-      _info: PassportAuthInfo = {},
-    ) {
-      if (err) {
-        console.log('Error in authenticate function');
-        console.error('Authentication error details:', sanitizeLogValue(err));
+  let settled = false;
+  let validationTimer: NodeJS.Timeout | undefined;
+  const onVerdict = function (
+    err: Error | null,
+    user: AuthenticatedSessionUser | false | null | undefined,
+    _info: PassportAuthInfo = {},
+  ) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(validationTimer);
 
+    if (err) {
+      console.log('Error in authenticate function');
+      console.error('Authentication error details:', sanitizeLogValue(err));
+
+      const failure = classifyCasCallbackError(err);
+      if (failure === 'rejected') {
         const errorRedirect = safeRedirectTarget(req.query?.error);
         if (errorRedirect) {
           return res.redirect(errorRedirect);
         }
-
-        if (isTopologyLostError(err)) {
-          void triggerReconnect();
-          return res
-            .status(503)
-            .json({ error: 'Service temporarily unavailable, please try again' });
-        }
-
         return res.status(401).json({ error: 'Error in authentication' });
       }
 
-      if (!user) {
-        console.log('CAS auth but no user');
-        return res.status(401).json({ error: 'CAS auth but no user' });
+      if (isTopologyLostError(err)) void triggerReconnect();
+      captureServerError(reportableCasLoginError(failure, err), req);
+      if (failure === 'unavailable')
+        res.set('Retry-After', String(CAS_UNAVAILABLE_RETRY_AFTER_SECONDS));
+      return res.status(casCallbackFailureStatus(failure)).json({
+        error: CAS_SIGN_IN_TROUBLE_MESSAGE,
+      });
+    }
+
+    if (!user) {
+      console.log('CAS auth but no user');
+      return res.status(401).json({ error: 'CAS auth but no user' });
+    }
+
+    markCasValidationAccepted(req);
+
+    req.logIn(user, async function (err) {
+      if (err) {
+        console.error('CAS login failed during session creation');
+        return next(err);
       }
 
-      markCasValidationAccepted(req);
-
-      req.logIn(user, async function (err) {
-        if (err) {
-          console.error('CAS login failed during session creation');
-          return next(err);
-        }
-
-        const loginOutcome = await logEvent({
-          eventType: AnalyticsEventType.LOGIN,
-          netid: user.netId,
-          userType: user.userType || 'unknown',
-          metadata: {
-            timestamp: new Date(),
-            loginMethod: 'CAS',
-          },
-        });
-        authDebug(`Login analytics event ${loginOutcome}`);
-
-        const safeTarget = safeRedirectTarget(req.query?.redirect);
-        if (safeTarget) {
-          return res.redirect(safeTarget);
-        }
-
-        const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
-        return res.redirect(defaultRedirect);
+      const loginOutcome = await logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: user.netId,
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date(),
+          loginMethod: 'CAS',
+        },
       });
-    },
-  )(req, res, next);
+      authDebug(`Login analytics event ${loginOutcome}`);
+
+      const safeTarget = safeRedirectTarget(req.query?.redirect);
+      if (safeTarget) {
+        return res.redirect(safeTarget);
+      }
+
+      const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
+      return res.redirect(defaultRedirect);
+    });
+  };
+
+  if (req.query?.ticket) {
+    validationTimer = setTimeout(
+      () => onVerdict(new CasValidationTimeoutError(), false),
+      casValidationTimeoutMs(),
+    );
+  }
+
+  passport.authenticate('cas', onVerdict)(req, res, next);
 };
 
 export const visitorDedupeKey = (visitedAt: Date): string =>
