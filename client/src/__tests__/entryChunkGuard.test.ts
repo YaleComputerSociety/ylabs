@@ -64,7 +64,8 @@ describe('entry chunk guard', () => {
       (path) =>
         /[\\/]node_modules[\\/](@sentry[\\/]|react-virtuoso[\\/]|@mui[\\/]material[\\/](esm[\\/])?Dialog[\\/])/.test(
           path,
-        ) || /[\\/]src[\\/](utils[\\/]appDialogs|components[\\/]shared[\\/]AppDialog)\.tsx$/.test(path),
+        ) ||
+        /[\\/]src[\\/](utils[\\/]appDialogs|components[\\/]shared[\\/]AppDialog)\.tsx$/.test(path),
     );
 
     expect(deferred).toEqual([]);
