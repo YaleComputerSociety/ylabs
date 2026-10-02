@@ -39,7 +39,7 @@ const SECRET_ENV_NAMES = [
   'TAVILY_API_KEY',
 ];
 const SECRET_ENV_ASSIGNMENT_RE = new RegExp(
-  `\\b(${SECRET_ENV_NAMES.join('|')})\\b\\s*[=:]\\s*["']?([A-Za-z0-9._~+/=-]{20,})`,
+  `\\b(${SECRET_ENV_NAMES.join('|')})\\b["']?\\s*[=:]\\s*["']?([A-Za-z0-9._~+/=-]{20,})`,
   'gi',
 );
 const assignmentRuleFor = (name) => `${name.toLowerCase().replaceAll('_', '-')}-assignment`;

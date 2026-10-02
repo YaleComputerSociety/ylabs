@@ -176,6 +176,8 @@ test('flags a committed value for every secret-bearing env var the app reads', (
       `${name}=${value}`,
       `${name}: "${value}"`,
       `export ${name} = '${value}'`,
+      `{"${name}": "${value}"}`,
+      `'${name}': '${value}'`,
     ]) {
       const findings = findSecretFindings([{ path: 'operator.env', content }]);
       assert.deepEqual(
