@@ -804,6 +804,22 @@ The plan must NAME the field, so the stored-value fallback in `plannedFieldValue
 And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
 The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
+#### Releasing a lock over provenance its lane never observed: `--release-never-backed` (#3788)
+
+The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
+`--release-never-backed` is that path.
+A lock whose field's provenance names a lane that never observed the field on the row (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
+It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
+Silence counts as that answer only on a field whose collection the lock does not stop.
+A lock over a cleared field stays shut on silence, for the reason the fence above gives.
+On a lock-suppressed field (`lockSuppressesFieldCollection`: the `workPlannerSourcePolicies` target fields plus `undergradAccessEvidence`) silence is `keep_engine_silent`, because the next scrape collects the field once the lock is gone and the next resolve may replace the held value; it is released only for a field the operator names with `--accept-engine-value=<slug>:<field>`, and the verdict carries `acceptsEngineValue: true`.
+When the engine derives a different value, the verdict is `keep_engine_disagrees` with the engine's value in the report, and the lock is released only for a field the operator names with `--accept-engine-value=<slug>:<field>` after reading that value.
+A sibling the release would move has to be named too, and the report prints each moved sibling's engine value, which `movedSiblingValues` carries into the `--output` JSON.
+If the engine's value is inadmissible, refuse it with `research-entity:refuse-field-value` first and read the next plan, so the correction is a refusal rather than a lock.
+An accepted value is written by the next resolve, so rematerialize the named rows and re-gate after the release.
+The flag requires `--slugs`, and every verdict it decides carries `neverBacked: true`.
+After release the entry is unlocked, so the next resolve either attributes the field to the observation that states its value or the #3769 stage retires the false attribution.
+
 ### The canonical topic vocabulary and its review gate (#3377)
 
 `researchAreas` chips are plain canonical strings, and the vocabulary that decides which strings are canonical is `TaxonomyTerm`.
@@ -924,6 +940,7 @@ The only listed authority is `description-derived-research-area`, which the mate
 `$unset` and a subpath repoint of `sourceUrl` author no attribution and are allowed.
 A raw `collection` handle skips those hooks, so `models/__tests__/rawResearchEntityWriteGuard.test.ts` keeps raw writers of `research_entities` to a reviewed list with a reason per file and refuses any raw write that authors a whole entry or its `sourceName` (#3788).
 For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field on the row at all, live or superseded.
+An entry on a locked field is left to `research-entity:release-field-locks --release-never-backed`, described with the lock release tool above.
 It clears the attribution and never the value: the value stays exactly as evidenced, which is by nothing, and a later lane observation re-attributes it through the normal projection.
 Everything else is history and is kept: an `observationId` that resolves to a superseded observation or to nothing (a pruned one), a bare `sourceId` (the #2897 residue), and an unrecorded-id entry whose lane really did observe the field.
 It needs no lock and a second pass plans nothing, so it is a derivation rather than a repair.

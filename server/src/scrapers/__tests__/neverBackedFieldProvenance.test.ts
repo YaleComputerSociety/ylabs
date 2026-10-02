@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../../models/fieldProvenanceBacking';
 import {
+  lockedNeverBackedProvenanceFields,
   planNeverBackedFieldProvenanceRetirement,
   planUnrecordedProvenanceObservationRelink,
 } from '../neverBackedFieldProvenance';
@@ -173,5 +174,27 @@ describe('planUnrecordedProvenanceObservationRelink (#3788)', () => {
     });
     expect(await result).toEqual({});
     expect(liveObservations).not.toHaveBeenCalled();
+  });
+});
+
+describe('lockedNeverBackedProvenanceFields', () => {
+  it('names only a locked field whose entry cites no evidence and whose lane never observed it', async () => {
+    const sourceObservedField = vi.fn(async ({ field }: { field: string }) => field === 'name');
+    const fields = await lockedNeverBackedProvenanceFields({
+      stored: {
+        _id: 'synthetic-id',
+        slug: 'synthetic-row',
+        manuallyLockedFields: ['shortDescription', 'name', 'researchAreas', 'displayName'],
+        fieldProvenance: {
+          shortDescription: lane,
+          name: lane,
+          researchAreas: { ...lane, observationId: 'synthetic-observation' },
+          fullDescription: lane,
+          displayName: { sourceName: DERIVED_RESEARCH_AREA_SOURCE_NAME },
+        },
+      },
+      sourceObservedField,
+    });
+    expect(fields).toEqual(['shortDescription']);
   });
 });
