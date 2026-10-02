@@ -12,8 +12,11 @@ const DATA_COLLECTION: Sentry.NodeOptions['dataCollection'] = {
   cookies: false,
   httpHeaders: { request: false, response: false },
   httpBodies: [],
-  queryParams: false,
+  urlQueryParams: false,
+  graphQL: { document: false, variables: false },
   genAI: { inputs: false, outputs: false },
+  databaseQueryData: false,
+  queues: false,
   stackFrameVariables: false,
 };
 
@@ -57,6 +60,11 @@ export const buildErrorTrackingOptions = (
   release: config.release,
   dataCollection: DATA_COLLECTION,
   includeLocalVariables: false,
+  attachStacktrace: false,
+  // The global error handler is the only capture path: it reports the matched
+  // route template and skips the errors it answers itself. Express's own capture
+  // would fire first, and the dedupe integration would then drop this report.
+  integrations: [Sentry.expressIntegration({ shouldHandleError: false })],
   beforeSend: scrubServerEvent,
   beforeBreadcrumb: dropBreadcrumb,
 });

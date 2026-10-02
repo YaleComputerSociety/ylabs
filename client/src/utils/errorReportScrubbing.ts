@@ -55,7 +55,7 @@ const BUNDLED_ASSET_PATH = /^\/assets\/[^/]+$/;
 const KEPT_BREADCRUMB_CATEGORIES = new Set(['navigation', 'fetch', 'xhr']);
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'];
 const BREADCRUMB_SCALAR_KEYS = ['method', 'status_code'];
-const KEPT_REQUEST_HEADERS = ['User-Agent'];
+export const KEPT_REQUEST_HEADERS = ['User-Agent'];
 
 export const scrubPath = (path: string): string =>
   path

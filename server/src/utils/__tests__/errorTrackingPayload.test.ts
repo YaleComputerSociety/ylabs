@@ -72,6 +72,28 @@ describe('server error report payload', () => {
     expect(payload).not.toContain(SYNTHETIC_NETID);
     expect(payload).not.toContain(SYNTHETIC_QUERY);
     expect(payload).not.toContain(SYNTHETIC_HEADER);
+    expect(sentEnvelopes.filter((envelope) => envelope.includes('"type":"event"'))).toHaveLength(1);
+  });
+
+  it('resolves every data collection category the SDK knows about to off', () => {
+    const client = Sentry.init({
+      ...buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
+      transport: capturingTransport,
+    });
+
+    expect(client?.getDataCollectionOptions()).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: { request: false, response: false },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: expect.any(Number),
+    });
   });
 
   it('removes credentials from a connection string quoted in an error message', () => {

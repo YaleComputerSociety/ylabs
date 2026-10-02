@@ -1,6 +1,6 @@
 import type * as SentryModule from '@sentry/react';
 
-import { scrubBreadcrumb, scrubErrorEvent } from './errorReportScrubbing';
+import { KEPT_REQUEST_HEADERS, scrubBreadcrumb, scrubErrorEvent } from './errorReportScrubbing';
 
 type ErrorTrackingConfig = {
   dsn?: string;
@@ -14,13 +14,27 @@ const getErrorTrackingConfig = (): ErrorTrackingConfig => ({
   release: import.meta.env.VITE_SENTRY_RELEASE,
 });
 
+const DATA_COLLECTION: SentryModule.BrowserOptions['dataCollection'] = {
+  userInfo: false,
+  cookies: false,
+  httpHeaders: { request: { allow: KEPT_REQUEST_HEADERS }, response: false },
+  httpBodies: [],
+  urlQueryParams: false,
+  graphQL: { document: false, variables: false },
+  genAI: { inputs: false, outputs: false },
+  databaseQueryData: false,
+  queues: false,
+  stackFrameVariables: false,
+};
+
 export const buildErrorTrackingOptions = (
   config: ErrorTrackingConfig & { dsn: string },
 ): SentryModule.BrowserOptions => ({
   dsn: config.dsn,
   environment: config.environment,
   release: config.release,
-  sendDefaultPii: false,
+  dataCollection: DATA_COLLECTION,
+  attachStacktrace: false,
   beforeSend: scrubErrorEvent,
   beforeBreadcrumb: scrubBreadcrumb,
 });

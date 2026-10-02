@@ -239,7 +239,7 @@
     "journey:eval": "tsx src/scripts/journeyEval/runJourneyEval.ts"
   },
   "dependencies": {
-    "@sentry/node": "^10.63.0",
+    "@sentry/node": "^11.2.0",
     "axios": "^1.20.0",
     "cheerio": "^1.2.0",
     "cookie-session": "^2.1.0",

@@ -306,6 +306,10 @@ The server test suite must never read them either, and `server/src/test/hermetic
 A log line must not interpolate a netid, email, or name, because hosted logs sit outside the database and its access controls; log the document id and let an operator join to it.
 Route any value that is not a literal through `sanitizeLogValue` in `server/src/utils/logSanitizer.ts`, which redacts credentials, emails, phone-shaped digits, and the values a MongoDB duplicate-key error quotes after `dup key:`, since a unique index keyed on `netid` or `reporter.netId` puts the identifier into the error message.
 `server/src/__tests__/correctionReportSubmissionLogs.integration.test.ts` captures every console call while a report is filed, including one that loses the duplicate race, and asserts the reporter's netid appears in none of them.
+- Error reports to Sentry carry no user identity, cookie, header beyond the client `User-Agent`, body, query value, or local variable.
+`server/src/utils/errorTracking.ts` and `client/src/utils/errorTracking.ts` set every `dataCollection` category to off explicitly, because since Sentry 11 an unset category collects by default, and a category an upgrade adds or renames silently falls back to on.
+Each side's `errorTrackingPayload.test.ts` asserts the SDK's resolved collection options against the full list, so a new or renamed category fails the suite rather than shipping.
+The server's global error handler is the only capture path: `expressIntegration({ shouldHandleError: false })` turns off Express's automatic capture, which would otherwise fire first and win the dedupe over the route-template report (`server/src/utils/__tests__/errorTrackingExpressCapture.test.ts`).
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
