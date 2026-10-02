@@ -1171,48 +1171,6 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('orders same-titled rows by the department suffix their cards carry in the Mongo fallback', async () => {
-    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
-    mocks.researchEntityFind.mockReturnValue(
-      queryResult([
-        {
-          _id: '67d8928150621bcef434a1f1',
-          slug: 'nebula-physics',
-          name: 'Nebula Imaging Center',
-          kind: 'center',
-          entityType: 'CENTER',
-          departments: ['Physics'],
-          researchAreas: [],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-        {
-          _id: '67d8928150621bcef434a1f2',
-          slug: 'nebula-astronomy',
-          name: 'Nebula Imaging Center',
-          kind: 'center',
-          entityType: 'CENTER',
-          departments: ['Astronomy'],
-          researchAreas: [],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-      ]),
-    );
-
-    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {
-      sortBy: 'name',
-      sortOrder: 'asc',
-    });
-
-    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
-      'nebula-astronomy',
-      'nebula-physics',
-    ]);
-  });
-
   it('expands AI and restricts short alias searches to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
@@ -1375,30 +1333,6 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(mocks.search.mock.calls[1][1]).toMatchObject({ facets: ['researchAreas'] });
     expect(result.facetDistribution?.researchAreas).toEqual({ Histones: 5, Medicare: 3 });
-  });
-
-  it('computes no topic facet on the Mongo fallback unless a topic filter is active (#3951)', async () => {
-    const row = {
-      _id: '67d8928150621bcef434a1f9',
-      slug: 'fallback-topic-facet',
-      name: 'Fallback Topic Facet Lab',
-      kind: 'lab',
-      entityType: 'LAB',
-      departments: ['Physics'],
-      researchAreas: ['Optics'],
-      keywords: [],
-      sourceUrls: [],
-      ...validPublicDescriptions,
-    };
-    mocks.search.mockRejectedValue(new Error('meili unavailable'));
-    mocks.researchEntityFind.mockReturnValue(queryResult([row]));
-
-    const unfiltered = await searchResearchGroupsViaMeili('', {}, 1, 24);
-    const filtered = await searchResearchGroupsViaMeili('', { researchAreas: ['Optics'] }, 1, 24);
-
-    expect(unfiltered.facetDistribution).not.toHaveProperty('researchAreas');
-    expect(unfiltered.facetDistribution?.departments).toEqual({ Physics: 1 });
-    expect(filtered.facetDistribution?.researchAreas).toEqual({ Optics: 1 });
   });
 
   it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
@@ -2984,62 +2918,6 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
-  });
-
-  it('finds an accented name typed with its accents on the Mongo fallback', async () => {
-    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
-    mocks.researchEntityFind.mockReturnValue(
-      queryResult([
-        {
-          _id: '67d8928150621bcef434a1d7',
-          slug: 'accented-fixture-lab',
-          name: 'Ölvexmoor Fixture Lab',
-          departments: [],
-          researchAreas: [],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-      ]),
-    );
-
-    const result = await searchResearchGroupsViaMeili('Ölvexmoor', {}, 1, 24);
-
-    expect(result.researchEntities).toEqual([
-      expect.objectContaining({ slug: 'accented-fixture-lab' }),
-    ]);
-  });
-
-  it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
-    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
-    mocks.researchEntityFind.mockReturnValue(
-      queryResult([
-        {
-          _id: '67d8928150621bcef434a1d5',
-          slug: 'ailong-lab',
-          name: 'Ailong Lab',
-          departments: [],
-          researchAreas: [],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-        {
-          _id: '67d8928150621bcef434a1d6',
-          slug: 'actual-ai-lab',
-          name: 'Actual AI Lab',
-          departments: [],
-          researchAreas: ['Machine Learning'],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-      ]),
-    );
-
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
-
-    expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
   });
 
   it('keeps base research results usable when optional planning context fails', async () => {
@@ -5773,23 +5651,6 @@ describe('student search serves only rows whose detail page serves (#3749)', () 
     );
 
     expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
-  });
-
-  it('drops the row on the Mongo fallback a student reaches when Meilisearch fails', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.search.mockRejectedValue(new Error('meilisearch unavailable'));
-    mocks.researchEntityFind.mockReturnValue(
-      queryResult([
-        storedRow(servableId, 'servable-row', validPublicDescriptions),
-        storedRow(unservableId, 'unservable-row', unservableDescriptions),
-      ]),
-    );
-
-    const result = await searchAsStudent();
-
-    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
-    expect(result.facetDistribution).toBeDefined();
-    consoleError.mockRestore();
   });
 
   it('keeps the unfiltered operator view for an admin who asks for a tier', async () => {

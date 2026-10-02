@@ -7,6 +7,7 @@ import {
   NotFoundError,
   ObjectIdError,
   IncorrectPermissionsError,
+  SearchUnavailableError,
 } from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
@@ -14,6 +15,7 @@ import { triggerReconnect, isMongoUnavailableError, isTopologyLostError } from '
 import { captureServerError } from '../utils/errorTracking';
 
 const MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
+const SEARCH_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -65,6 +67,12 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
       error: 'Incorrect permissions',
       incorrectPermissions: true,
     });
+  }
+
+  if (error instanceof SearchUnavailableError) {
+    captureServerError(error, req);
+    res.set('Retry-After', String(SEARCH_UNAVAILABLE_RETRY_AFTER_SECONDS));
+    return res.status(error.status).json({ error: 'Service temporarily unavailable' });
   }
 
   const status = clientErrorStatus(error);

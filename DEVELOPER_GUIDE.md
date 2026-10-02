@@ -349,7 +349,7 @@ yale-research/
 
 ## Search
 
-Search uses **Meilisearch** for Research, with Mongo fallback where rollout safety requires it.
+Search uses **Meilisearch** for Research. When Meilisearch cannot answer, research search responds `503` with a retry hint rather than scanning Mongo (#4187).
 
 1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
    Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.

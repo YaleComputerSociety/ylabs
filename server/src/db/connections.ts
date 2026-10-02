@@ -33,8 +33,8 @@ export const mongoOptions: MongoConnectOptions = {
   // hung one into a 63 s wait, both ending in a generic error (#4188). 5 s is
   // generous for selecting a reachable replica set and short enough that a
   // retrying client learns the answer quickly; the 20 s socket ceiling is well
-  // above the slowest request this server makes, a database-fallback search over
-  // the whole corpus, and well under the hosting platform's own request timeout.
+  // above the slowest request this server makes and well under the hosting
+  // platform's own request timeout.
   // Scripts need the opposite trade-off and get it from scriptMongoConnectOptions.
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 20000,

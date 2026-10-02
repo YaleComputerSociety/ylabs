@@ -56,7 +56,25 @@ Two conclusions worth keeping, because both invert the guess:
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
 Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
-Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search fast enough for the Mongo fallback to answer instead of holding the request for the runtime's default fetch timeout of several minutes.
+Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search within that bound instead of holding the request for the runtime's default fetch timeout of several minutes.
+
+### A Meilisearch outage answers 503, not a Mongo search (#4187)
+
+When the primary Meilisearch query still throws after `searchWithFallbacks` has applied its recoverable degradations, `searchResearchGroupsViaMeili` throws `SearchUnavailableError`, and the error handler answers `503` with a `Retry-After` hint.
+The client already renders a `503` from browse or search as the limited-search notice with its retry action (#4188), so no client change rides on this.
+There used to be a Mongo fallback that read every public row and ran the public-description gate over each one in process, and it was removed rather than bounded, for these measured reasons, against Development with Meilisearch unreachable:
+
+- The gate is synchronous CPU: 11.3 s for the 3,444 tier-admitted rows (about 2 ms a row), after a 2.9 s read of 37 MB of documents.
+An empty browse took 16.8 s to 17.9 s and held the event loop for up to 14.6 s, so every other request on the instance, including detail pages and login, waited behind one student's search.
+A two-filter browse took 13.2 s with a 7.4 s block, because each active facet re-read and re-gated the corpus.
+- Yielding between chunks of rows removes the block, measured at under 0.4 s, but not the cost: one browse still took 14.2 s, three concurrent ones took 33 s to 38 s each, and the cost grows with every concurrent student until requests pass the hosting proxy's timeout.
+Sharing one gated set across requests would keep those documents resident: the measuring process reached 196 MB of heap with one set loaded.
+- Its answers were worse than Meilisearch's: `neuroscience` matched 233 rows against 594, with no relevance ranking.
+- It was reached on 0 of 208 Development searches in 30 days, so it was an expensive path nothing exercised.
+
+After the change the same three requests answer `503` in 1 ms to 3 ms with no measurable event-loop block, and healthy searches are unchanged.
+The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so only a failed primary query answers `503`.
+Do not reintroduce an in-process corpus scan on the request path as a substitute for the index.
 The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForTask` polls with its own overall timeout.
 An enqueue is not an outcome: every index write that reports a result confirms its task through `assertMeiliTaskSucceeded` in `server/src/utils/meiliTask.ts`, with a bounded wait, and a failed or timed-out task counts as a failure, so `syncEntity`, `syncEntities`, `deleteFromIndex`, and the rebuild's `indexedDocumentCount` report what the index applied (#3720).
 A pass that writes thousands of rows confirms at the end rather than per row: `withDeferredIndexConfirmation` in `meiliSyncService.ts` makes `syncEntity` enqueue only for the duration of the callback and then confirms the latest write per document, returning `failedDocumentIds`, which is the outcome to read instead of the per-call boolean.
@@ -97,7 +115,7 @@ It is a field of its own rather than a `studentSearchTerms` entry because `stude
 `websiteUrl` and `sourceUrls` are not searchable and so are not on the index document at all: a URL tokenizes into host and path segments, so `profile` matched 2,413 served rows and `people` 553 through a URL segment alone (#3941).
 Search reads every hit back from Mongo by id, so no search reader needs either field from the index.
 Removing the URL fields exposed that the query tokenizer split a word at an accented letter (`pâtisserie` became `p tisserie`), which only a URL slug had been matching, so `tokenizeStudentResearchQuery` now folds Latin diacritics through `foldLatinDiacritics` before it drops non-alphanumerics.
-The document side of every in-process match folds through the same helper, `normalizeNameMatchText` for the name-match guard and `researchEntitySearchText` for the Mongo fallback, so a query and the text it is compared against never fold differently.
+The document side of the in-process name-match guard folds through the same helper, `normalizeNameMatchText`, so a query and the text it is compared against never fold differently.
 Its settings also include curated synonyms and typo guards for short aliases such as `ai`, `ml`, `nlp`, and `cv`, so rebuild or sync the index after changing alias or relevance settings.
 The index sets `pagination.maxTotalHits` (see `RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS`) well above the Meilisearch default of 1,000 so the full student-visible directory stays reachable through browse and infinite scroll; the default cap would silently truncate the reachable set and the reported total.
 Reachable pagination depth has a second, tighter ceiling: `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS` in `server/src/services/researchSearchPagination.ts` bounds how deep browse and infinite scroll can page, in records rather than page number, so the reachable page number falls out of the requested page size.
@@ -106,7 +124,7 @@ That depth-limited page runs no search, so it reports no `estimatedTotalHits` at
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
 The distribution carries `school`, `departments`, and `entityType`, the three facets the filter rail reads.
-`researchAreas` is still filterable, but its facet is computed only while a `researchAreas` filter is active, on both the Meilisearch and Mongo fallback paths: with no reader since the topic filter left the client (#1885), its roughly 6,000 values were most of every page-1 body, and measured on Development an empty-query page 1 of 24 fell from 285 KB raw (81 KB gzip) to 40 KB (8 KB gzip) once it and the two card fields below were dropped (#3951).
+`researchAreas` is still filterable, but its facet is computed only while a `researchAreas` filter is active: with no reader since the topic filter left the client (#1885), its roughly 6,000 values were most of every page-1 body, and measured on Development an empty-query page 1 of 24 fell from 285 KB raw (81 KB gzip) to 40 KB (8 KB gzip) once it and the two card fields below were dropped (#3951).
 A browse card is the `forList` DTO, which omits the detail-only `fullDescription`, `recentGrants`, and `sourceLinkHealth`; `recentGrantCount` stays on the card, the detail page reads the other two from the detail payload, and the saved-research comparison reads only `sourceLinkHealth` from it.
 `profileSynthesisDescription` and `descriptionSource` are on neither payload, because no lane writes either one (#3937); see `docs/research-model.md` under Research Detail Projection.
 It likewise sets `faceting.maxValuesPerFacet` (see `RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET`) well above the Meilisearch default of 100 so long-tail department facet values stay selectable instead of being silently dropped.
@@ -178,7 +196,6 @@ Rows sharing a title are served with a page-local "(Department)" suffix by `disa
 Each label keeps the suffix's closing parenthesis, so a department that prefixes another sorts the way the folded heading does.
 The key cannot follow the school fallback: when any row in a same-titled group has no department, or two share one, the page suffixes the school, but the stored key still leads with the department, so that group can read out of order by heading.
 Without it, Meili ordered same-titled rows arbitrarily and 4 of 3,429 served A-Z rows on Development read out of order by their suffixed heading.
-The Mongo fallback sorts by the same two keys.
 `yarn --cwd server journey:eval --case=title-sorted-browse-follows-card-title` walks the A-Z browse and fails on an inversion by heading or on a degraded page.
 
 ## `/research` client search state
