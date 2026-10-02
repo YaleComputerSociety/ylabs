@@ -4509,7 +4509,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
     /const safeFilters = sanitizeResearchGroupSearchFilters\(filters \|\| \{\}\)/,
   );
   assert.match(source, /const safeOptions = sanitizeResearchGroupSearchOptions\(options\)/);
-  assert.match(source, /const trimmedQuery = boundedResearchSearchQuery\(query\)/);
+  assert.match(source, /const raw = boundedResearchSearchQuery\(value\)/);
   assert.match(
     source,
     /const visibilityScopedFilters = applyVisibilityScopeToFilters\(\s*safeFilters,\s*safeOptions\.includeNonPublic,?\s*\)/,
