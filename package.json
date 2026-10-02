@@ -91,10 +91,10 @@
   "dependencies": {
     "concurrently": "^9.2.1",
     "dotenv": "^16.3.1",
-    "mongoose": "^8.24.0"
+    "mongoose": "^9.10.3"
   },
   "resolutions": {
-    "mongoose": "8.24.1",
+    "mongoose": "9.10.3",
     "undici": "6.28.1",
     "shell-quote": "1.10.0",
     "brace-expansion@npm:^5.0.5": "5.0.12",

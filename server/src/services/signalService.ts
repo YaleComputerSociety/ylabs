@@ -26,7 +26,7 @@ export interface UpsertSignalInput {
 }
 
 export interface SignalServiceDeps {
-  model?: mongoose.Model<any>;
+  model?: mongoose.Model<any, any, any, any>;
 }
 
 export interface SignalUpsertResult {
@@ -34,7 +34,7 @@ export interface SignalUpsertResult {
   doc?: any;
 }
 
-function getSignalModel(deps: SignalServiceDeps = {}): mongoose.Model<any> {
+function getSignalModel(deps: SignalServiceDeps = {}): mongoose.Model<any, any, any, any> {
   return deps.model || Signal;
 }
 
@@ -106,7 +106,7 @@ export async function upsertSignal(
   const write = async (session?: mongoose.ClientSession) => {
     const query = Signal.findOneAndUpdate(filter, update, {
       upsert: true,
-      new: true,
+      returnDocument: 'after',
       setDefaultsOnInsert: true,
       ...(session ? { session } : {}),
     });

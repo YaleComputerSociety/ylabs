@@ -2113,12 +2113,16 @@ async function listingsSharingProfileUrl(
 ): Promise<SharedProfileUrlListing[]> {
   if (!profileUrl || !scope.researchGroupKey || !scope.sourceName) return [];
   const readScope = materializationReadScopeFilter();
-  const listing = { entityType: 'researchGroupMember', sourceName: scope.sourceName, ...readScope };
+  const listing = {
+    entityType: 'researchGroupMember' as const,
+    sourceName: scope.sourceName,
+    ...readScope,
+  };
   const keysCarryingUrl = (await Observation.distinct('entityKey', {
     ...listing,
     field: 'profileUrl',
     value: profileUrl,
-  })) as unknown[];
+  })) as string[];
   if (keysCarryingUrl.length < 2) return [];
   const keysOnThisEntity = (
     (await Observation.distinct('entityKey', {
@@ -3712,7 +3716,7 @@ function isGeneratedResearchEntitySlug(value: unknown): boolean {
 }
 
 async function resolveUniquePiLinkedResearchEntityByPersonName(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   personName: string,
 ): Promise<any | null> {
   if (!personName) return null;
@@ -3763,7 +3767,7 @@ async function resolveUniquePiLinkedResearchEntityByPersonName(
 }
 
 export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   identity: { entityKey?: string; name?: unknown; entityType?: unknown },
 ): Promise<any | null> {
   const observedEntityType = textValue(identity.entityType);
@@ -4414,7 +4418,7 @@ export function addPostMaterializationMetrics(
   aggregate.errors += next.errors || 0;
 }
 
-function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
+function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any, any, any, any> | null {
   switch (entityType) {
     case 'researchEntity':
       return ResearchEntity;
@@ -4502,7 +4506,7 @@ function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): b
  * live record, then the most recently updated one.
  */
 async function findFellowshipByNormalizedTitle(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   obs: any[],
 ): Promise<any | null> {
   const titleObs = obs.find((o) => o.field === 'title' && typeof o.value === 'string');
@@ -4547,7 +4551,7 @@ async function findFellowshipByNormalizedTitle(
  * alone is never treated as a dedupe signal.
  */
 async function findFellowshipBySourceUrl(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   obs: any[],
 ): Promise<any | null> {
   const sourceUrlObs = obs.find((o) => o.field === 'sourceUrl' && typeof o.value === 'string');
@@ -4581,7 +4585,7 @@ async function findFellowshipBySourceUrl(
  * record matches.
  */
 async function findFellowshipByRecordSpecificApplicationLink(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   obs: any[],
 ): Promise<any | null> {
   const applicationLink = observedRecordSpecificFundPage(obs);
@@ -4641,7 +4645,7 @@ async function fundFacetObservationsCitedBy(
 }
 
 async function findEntityDocByIdentifier(
-  Model: mongoose.Model<any>,
+  Model: mongoose.Model<any, any, any, any>,
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],

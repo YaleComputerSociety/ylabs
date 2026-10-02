@@ -234,15 +234,19 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
 
   it('collapses director rows already stored with value-bearing fingerprints', async () => {
     await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
-    await Observation.updateMany({ field: { $in: DIRECTOR_FIELDS } }, [
-      {
-        $set: {
-          observationFingerprint: {
-            $concat: ['$observationFingerprint', '-legacy-value-bearing'],
+    await Observation.updateMany(
+      { field: { $in: DIRECTOR_FIELDS } },
+      [
+        {
+          $set: {
+            observationFingerprint: {
+              $concat: ['$observationFingerprint', '-legacy-value-bearing'],
+            },
           },
         },
-      },
-    ]);
+      ],
+      { updatePipeline: true },
+    );
 
     await scrapeRun(rephrasedRunValues, '2026-05-08T00:00:00.000Z');
 

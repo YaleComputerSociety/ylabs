@@ -115,12 +115,10 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: Date,
       required: false,
       validate: {
-        validator: function (
-          this: { startedAt?: Date; state?: RoleAssignmentState },
-          value?: Date,
-        ) {
-          if (this.state === 'CURRENT' && value !== undefined) return false;
-          return value === undefined || this.startedAt === undefined || value >= this.startedAt;
+        validator: function (this: unknown, value?: Date) {
+          const { startedAt, state } = this as { startedAt?: Date; state?: RoleAssignmentState };
+          if (state === 'CURRENT' && value !== undefined) return false;
+          return value === undefined || startedAt === undefined || value >= startedAt;
         },
         message: 'endedAt must follow startedAt and cannot be set on a CURRENT role assignment.',
       },

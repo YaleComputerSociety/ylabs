@@ -357,7 +357,7 @@ async function resolveOrCreateAccountId(
     const account = await Account.findOneAndUpdate(
       { netid },
       { $setOnInsert: { netid, email, status: 'UNKNOWN', archived: false } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
     )
       .select('_id')
       .lean();
@@ -440,7 +440,7 @@ async function resolveOrCreateResearcherId(
       const researcher = await Researcher.findOneAndUpdate(
         { accountId },
         { $setOnInsert: setOnInsert },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
       )
         .select('_id')
         .lean();

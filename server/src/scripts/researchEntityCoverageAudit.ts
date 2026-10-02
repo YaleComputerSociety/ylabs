@@ -47,7 +47,7 @@ export interface ResearchEntityCoverageAuditCliOptions {
 }
 
 interface AuditEntityRecord {
-  _id: unknown;
+  _id: mongoose.Types.ObjectId;
   slug: string;
   name: string;
   kind?: string;
@@ -250,7 +250,7 @@ function resolveObservationEntitySlug(
 }
 
 async function aggregateCountMap(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   match: Record<string, unknown>,
 ): Promise<Map<string, number>> {
   const rows = await model.aggregate<{ _id: unknown; count: number }>([

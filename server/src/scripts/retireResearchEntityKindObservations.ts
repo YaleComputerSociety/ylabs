@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const LIVE_FILTER = {
-  entityType: 'researchEntity',
+  entityType: 'researchEntity' as const,
   field: RETIRED_KIND_FIELD,
   superseded: { $ne: true },
 };

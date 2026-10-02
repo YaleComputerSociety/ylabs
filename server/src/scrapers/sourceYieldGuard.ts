@@ -11,6 +11,7 @@
  * deliberately NOT gated on a recorded successful fetch: none of the six dead lanes
  * records `fetchMetrics` at all, so a fetch-gated guard could never fire.
  */
+import type mongoose from 'mongoose';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isManualOnlySweepSource } from './manualOnlySweepSources';
 import type { ScraperMetrics } from './types';
@@ -181,9 +182,11 @@ export function resolveBarrenUnitStreakFailures(args: {
   return failures;
 }
 
+type StoredRunReference = mongoose.Types.ObjectId | string;
+
 export async function readPriorRunYieldFacts(args: {
-  sourceId: unknown;
-  currentRunId: unknown;
+  sourceId: StoredRunReference;
+  currentRunId: StoredRunReference | null;
 }): Promise<RunYieldFacts[]> {
   const rows = await ScrapeRun.find({
     sourceId: args.sourceId,

@@ -331,7 +331,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   await mongoose.connection.transaction(async (session) => {
     group = await ResearchEntity.findOneAndUpdate({ slug }, update, {
       upsert: true,
-      new: true,
+      returnDocument: 'after',
       setDefaultsOnInsert: true,
       session,
     }).lean();

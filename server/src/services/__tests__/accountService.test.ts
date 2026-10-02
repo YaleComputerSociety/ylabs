@@ -65,7 +65,7 @@ describe('accountService', () => {
       email: 'newuser1@yale.edu',
       status: 'ACTIVE',
     });
-    expect(options).toMatchObject({ upsert: true, new: true });
+    expect(options).toMatchObject({ upsert: true, returnDocument: 'after' });
   });
 
   it('keeps a caller-supplied valid email but falls back to a Yale placeholder otherwise', async () => {

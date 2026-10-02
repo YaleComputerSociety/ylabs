@@ -219,7 +219,7 @@ export const grantAdminAccess = async ({
           },
         },
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
+      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
     ).lean();
   } catch (error: any) {
     if (error?.code === 11000) {
@@ -261,7 +261,7 @@ export const revokeAdminAccess = async ({
         history: { action: 'revoked', actorNetid: normalizedActor, note: normalizedNote, at: now },
       },
     },
-    { new: true },
+    { returnDocument: 'after' },
   ).lean();
   if (grant) adminGrantCache.delete(normalizedNetid);
   return grant;

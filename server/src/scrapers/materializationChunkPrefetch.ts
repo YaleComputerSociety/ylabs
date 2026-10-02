@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Observation } from '../models/observation';
+import { Observation, type ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { loadResearchEntityLeadPersonIds } from '../utils/researchHomeNameIdentityRoster';
 
@@ -10,11 +10,11 @@ export interface MaterializationChunkRow {
 }
 
 export interface MaterializationChunkPrefetchInput {
-  entityType: string;
+  entityType: ObservedEntityType;
   rows: readonly MaterializationChunkRow[];
   readScopeFilter: Record<string, unknown>;
   entityDocs?: {
-    model: mongoose.Model<any>;
+    model: mongoose.Model<any, any, any, any>;
     keyField: string;
   };
 }
@@ -120,7 +120,7 @@ export class MaterializationChunkPrefetch implements MaterializationReadSource {
   private readonly touchedKeys = new Set<string>();
   private createdInChunk = false;
 
-  constructor(readonly entityType: string) {}
+  constructor(readonly entityType: ObservedEntityType) {}
 
   markTouched(...identifiers: unknown[]): void {
     for (const identifier of identifiers) {

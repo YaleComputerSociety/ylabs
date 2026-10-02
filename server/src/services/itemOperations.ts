@@ -16,12 +16,16 @@ const normalizeItemObjectId = (id: unknown): string => {
 
 type ItemMutationFilter = Record<string, unknown>;
 
-export const addView = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+export const addView = async (
+  model: Model<any, any, any, any>,
+  id: any,
+  filter: ItemMutationFilter = {},
+) => {
   const safeId = normalizeItemObjectId(id);
   const updated = await model.findOneAndUpdate(
     { _id: safeId, ...filter },
     { $inc: { views: 1 } },
-    { new: true, timestamps: false },
+    { returnDocument: 'after', timestamps: false },
   );
   if (!updated) {
     throw new NotFoundError('Item not found');
@@ -29,12 +33,16 @@ export const addView = async (model: Model<any>, id: any, filter: ItemMutationFi
   return updated.toObject();
 };
 
-export const addFavorite = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+export const addFavorite = async (
+  model: Model<any, any, any, any>,
+  id: any,
+  filter: ItemMutationFilter = {},
+) => {
   const safeId = normalizeItemObjectId(id);
   const updated = await model.findOneAndUpdate(
     { _id: safeId, ...filter },
     { $inc: { favorites: 1 } },
-    { new: true, timestamps: false },
+    { returnDocument: 'after', timestamps: false },
   );
   if (!updated) {
     throw new NotFoundError('Item not found');
@@ -43,7 +51,7 @@ export const addFavorite = async (model: Model<any>, id: any, filter: ItemMutati
 };
 
 export const removeFavorite = async (
-  model: Model<any>,
+  model: Model<any, any, any, any>,
   id: any,
   filter: ItemMutationFilter = {},
 ) => {
@@ -52,7 +60,7 @@ export const removeFavorite = async (
   const updated = await model.findOneAndUpdate(
     { _id: safeId, ...filter, favorites: { $gt: 0 } },
     { $inc: { favorites: -1 } },
-    { new: true, timestamps: false },
+    { returnDocument: 'after', timestamps: false },
   );
   if (updated) return updated.toObject();
   // Filter didn't match: either missing, or already at 0. Distinguish.

@@ -17,6 +17,11 @@ import { resolveReporterIdentityByNetid } from './accountService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const CATEGORIES = new Set<string>(EntityCorrectionReportCategory);
+
+type CorrectionReportCategory = (typeof EntityCorrectionReportCategory)[number];
+
+const isCorrectionReportCategory = (value: unknown): value is CorrectionReportCategory =>
+  typeof value === 'string' && CATEGORIES.has(value);
 const RESOLUTION_STATUSES = new Set<string>(['accepted', 'dismissed']);
 const STATUS_FILTERS = new Set<string>(EntityCorrectionReportStatus);
 
@@ -93,7 +98,7 @@ export const createEntityCorrectionReport = async (
 
   const body = normalizeRequestBody(input);
   const category = body.category;
-  if (typeof category !== 'string' || !CATEGORIES.has(category)) {
+  if (!isCorrectionReportCategory(category)) {
     throw new BadRequestError('Invalid report category');
   }
 
@@ -248,7 +253,7 @@ export const reviewEntityCorrectionReport = async (
       reviewedAt,
       $push: { reviewHistory: { status, note, reviewedBy: reviewerNetId, reviewedAt } },
     },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   ).lean();
 
   if (!report) {

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { researchEntityIdsWithGateAttachedLead } from '../services/studentVisibilityGateService';
 import { materializeInferredPiMembership, planInferredPiMembership } from './entityMaterializer';
 import {
@@ -13,7 +13,6 @@ import {
 export type InferredPiLeadReclaimScope = 'grant-shells' | 'all';
 
 const GRANT_SHELL_SLUG = '^(nsf|nih)-pi-';
-const RESEARCH_ENTITY_OBSERVATION_TYPES = ['researchEntity', 'researchGroup'];
 const INFERRED_PI_FIELDS = ['inferredPiUserId', 'inferredPiUserKey'];
 
 function toEntityObjectId(entityId: string): mongoose.Types.ObjectId | null {
@@ -41,7 +40,7 @@ export function createInferredPiLeadMaterializationDeps(
   return {
     async findEntitiesWithInferredPiObservations() {
       const slugs = await Observation.distinct('entityKey', {
-        entityType: { $in: RESEARCH_ENTITY_OBSERVATION_TYPES },
+        entityType: { $in: researchEntityObservationSubjects },
         field: { $in: INFERRED_PI_FIELDS },
         superseded: false,
         ...(scope === 'grant-shells'
@@ -68,7 +67,7 @@ export function createInferredPiLeadMaterializationDeps(
     },
     async loadCurrentObservationsForEntity(entity: InferredPiLagEntity) {
       const observations = await Observation.find({
-        entityType: { $in: RESEARCH_ENTITY_OBSERVATION_TYPES },
+        entityType: { $in: researchEntityObservationSubjects },
         entityKey: entity.entityKey,
         superseded: false,
       })

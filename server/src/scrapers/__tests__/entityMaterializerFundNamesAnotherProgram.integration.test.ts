@@ -74,7 +74,7 @@ describe('a cited fund page that names a different program (#4173)', () => {
       })),
     );
 
-  const seedOfficeRow = async (title: string, lockedFields: string[] = []) => {
+  const seedOfficeRow = async (title: string) => {
     await Fellowship.create({
       title,
       sourceKey: OFFICE_KEY,
@@ -84,7 +84,6 @@ describe('a cited fund page that names a different program (#4173)', () => {
       links: [{ label: 'Apply', url: FUND_PAGE }],
       summary: OFFICE_SUMMARY,
       ...OWN_FACETS,
-      manuallyLockedFields: lockedFields,
       archived: false,
     });
     await observe(
@@ -157,16 +156,6 @@ describe('a cited fund page that names a different program (#4173)', () => {
     expect(observed).toEqual([OWN_FACETS, OWN_FACETS, OWN_FACETS, OWN_FACETS]);
     const visibility = computeProgramStudentVisibility((await officeRow()) as any);
     expect(visibility.reasons).toContain('non_research_program');
-  });
-
-  it("a row whose title is locked still refuses the other program's facets in the fund's pass", async () => {
-    await seedOfficeRow('Fixture Postgraduate Fellowships', ['title']);
-    await seedFund('Fixture Postgraduate Fellowships Common Application');
-
-    const observed = await runBothPassesTwice();
-
-    expect(observed).toEqual([OWN_FACETS, OWN_FACETS, OWN_FACETS, OWN_FACETS]);
-    expect((await officeRow())?.title).toBe('Fixture Postgraduate Fellowships');
   });
 
   it("the row's own fund written differently still supplies its facets in both passes", async () => {

@@ -59,7 +59,9 @@ export async function acquireScrapeJobLock(
     },
   };
 
-  const existing = await ScrapeJobLock.findOneAndUpdate(filter, update, { new: true });
+  const existing = await ScrapeJobLock.findOneAndUpdate(filter, update, {
+    returnDocument: 'after',
+  });
   if (existing) {
     return {
       acquired: true,

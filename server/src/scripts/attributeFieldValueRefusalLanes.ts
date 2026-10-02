@@ -80,7 +80,7 @@ async function loadObservations(
     field: { $in: [...fields] },
     $or: [
       { entityKey: { $in: rows.map((row) => row.slug) } },
-      { entityId: { $in: rows.map((row) => row._id) } },
+      { entityId: { $in: rows.map((row) => row._id as mongoose.Types.ObjectId) } },
     ],
   })
     .select('entityKey entityId field value sourceName')

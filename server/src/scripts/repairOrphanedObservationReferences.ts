@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import {
   deriveAccessArtifactsForResearchGroup,
   materializeAccessForResearchGroup,
@@ -334,7 +334,7 @@ async function loadResearchEntityObservationContext(
   const identifiers: Record<string, unknown>[] = [{ entityId: objectId }];
   if (entityKey) identifiers.push({ entityKey });
   const observations = await Observation.find({
-    entityType: { $in: ['researchEntity', 'researchGroup'] },
+    entityType: { $in: researchEntityObservationSubjects },
     $or: identifiers,
     superseded: { $ne: true },
   }).lean();

@@ -50,7 +50,7 @@ interface GeneratedMongoJsonSchema {
 }
 
 interface CanonicalModelValidatorContract {
-  model: mongoose.Model<any>;
+  model: mongoose.Model<any, any, any, any>;
   schemaVersion: CanonicalSchemaVersionContract;
   propertyOverrides?: Readonly<Record<string, MongoJsonSchemaProperty>>;
   /**
@@ -74,7 +74,7 @@ function numericOption(value: unknown): number | undefined {
 }
 
 function topLevelMongooseConstraints(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   field: string,
 ): MongoJsonSchemaProperty {
   const schemaType = model.schema.path(field);
