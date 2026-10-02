@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { collectSourceLinkHealthCandidates } from '../backfillSourceLinkHealthCore';
 import {
+  countWebsiteUrlOwnerRows,
+  DEAD_LINK_HEALTH_REFUSAL_RULE,
   DEAD_WEBSITE_REFUSAL_KIND,
+  deadLinkHealthRefusalEvidenceUrls,
+  planDeadWebsiteClearWrite,
+  planDeadWebsiteRefusalWithdrawals,
+  planDeadWebsiteRefusalWithdrawalWrite,
   entityIdentityIsInQuestion,
   reportDeadWebsiteRefusals,
   normalizeWebsiteUrl,
@@ -35,13 +42,26 @@ describe('dead research website clears (#3309)', () => {
     const outcome = plan([row()]);
     expect(outcome.refused).toEqual([]);
     expect(outcome.plans).toEqual([
-      { slug: 'dept-physics-avery-lab', field: 'websiteUrl', liveCitationsRemaining: 2 },
+      { slug: 'dept-physics-avery-lab', field: 'websiteUrl', url: DEAD, liveCitationsRemaining: 2 },
     ]);
   });
 
   it('reads the legacy website field when websiteUrl is empty', () => {
     const outcome = plan([row({ websiteUrl: '', website: DEAD })]);
     expect(outcome.plans[0].field).toBe('website');
+  });
+
+  it('plans both fields when a row stores the dead website in each', () => {
+    const outcome = plan([row({ website: DEAD })]);
+    expect(outcome.plans.map((entry) => entry.field)).toEqual(['websiteUrl', 'website']);
+  });
+
+  it('counts a row once when both its fields hold the same website', () => {
+    const owners = countWebsiteUrlOwnerRows([
+      { websiteUrl: DEAD, website: 'https://www.gonelab.example.edu' },
+      { websiteUrl: 'https://otherlab.example.edu/' },
+    ]);
+    expect(owners.get(normalizeWebsiteUrl(DEAD))).toBe(1);
   });
 
   it('leaves a live website alone', () => {
@@ -144,5 +164,54 @@ describe('scheduled reporting of dead-website skips', () => {
     expect(Object.keys(DEAD_WEBSITE_REFUSAL_KIND).sort()).toEqual(
       Object.keys(summarizeDeadWebsiteRefusals([])).sort(),
     );
+  });
+});
+
+describe('the dead-website clear records a refusal the next resolve honours (#3722)', () => {
+  const NOW = new Date('2026-10-01T00:00:00Z');
+  const deadHealth = [
+    { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404, checkedAt: NOW },
+  ];
+  const refusedRow = (healthStatus: string, rule = DEAD_LINK_HEALTH_REFUSAL_RULE) =>
+    row({
+      websiteUrl: '',
+      sourceLinkHealth: [{ url: DEAD, healthStatus, checkedAt: NOW }],
+      fieldValueRefusals: {
+        websiteUrl: [
+          { valueKey: 'gonelab.example.edu', rule, refusedBy: 'test', evidenceUrl: DEAD },
+        ],
+      },
+    });
+
+  it('clears the field and refuses its value in the same write', () => {
+    const target = row({ website: DEAD, sourceLinkHealth: deadHealth });
+    const write = planDeadWebsiteClearWrite(target, plan([target]).plans, NOW);
+    expect(write.websiteUrl).toBe('');
+    expect(write.website).toBe('');
+    for (const field of ['websiteUrl', 'website']) {
+      const [refusal] = write[`fieldValueRefusals.${field}`] as Array<Record<string, unknown>>;
+      expect(refusal.rule).toBe(DEAD_LINK_HEALTH_REFUSAL_RULE);
+      expect(refusal.evidenceUrl).toBe(DEAD);
+      expect(String(refusal.note)).toContain('HTTP 404');
+    }
+  });
+
+  it('keeps probing a page it refused, so a withdrawal has a verdict to wait on', () => {
+    const target = refusedRow('UNAVAILABLE');
+    expect(deadLinkHealthRefusalEvidenceUrls(target)).toEqual([DEAD]);
+    expect(collectSourceLinkHealthCandidates(target)).toContain(DEAD);
+    expect(collectSourceLinkHealthCandidates(refusedRow('UNAVAILABLE', 'wrong_owner'))).toEqual([]);
+  });
+
+  it('withdraws its refusal only when the page reads healthy again', () => {
+    expect(planDeadWebsiteRefusalWithdrawals([refusedRow('UNAVAILABLE')])).toEqual([]);
+    expect(planDeadWebsiteRefusalWithdrawals([refusedRow('UNKNOWN')])).toEqual([]);
+    expect(planDeadWebsiteRefusalWithdrawals([refusedRow('HEALTHY', 'wrong_owner')])).toEqual([]);
+    const healthy = refusedRow('HEALTHY');
+    const withdrawals = planDeadWebsiteRefusalWithdrawals([healthy]);
+    expect(withdrawals).toEqual([{ slug: healthy.slug, field: 'websiteUrl', url: DEAD }]);
+    const write = planDeadWebsiteRefusalWithdrawalWrite(healthy, withdrawals, NOW);
+    const [withdrawn] = write['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    expect(withdrawn.withdrawnAt).toEqual(NOW);
   });
 });

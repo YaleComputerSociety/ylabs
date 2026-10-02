@@ -23,6 +23,15 @@
  * deliberate exclusion pointing at a closed issue is how a row stops being anybody's:
  * the count reads as "working rather than stuck" in the report while nothing owns it.
  */
+import { findSourceLinkHealth, type DatedSourceLinkHealth } from '../services/sourceLinkHealth';
+import {
+  liveFieldValueRefusals,
+  planFieldValueRefusal,
+  planFieldValueRefusalWithdrawal,
+} from '../utils/researchEntityFieldValueRefusals';
+
+export const DEAD_LINK_HEALTH_REFUSAL_RULE = 'dead_link_health_verdict';
+
 export type DeadWebsiteRefusal =
   | 'no-dead-website'
   | 'operator-locked'
@@ -37,11 +46,18 @@ export interface DeadWebsiteRow {
   websiteUrl?: unknown;
   website?: unknown;
   manuallyLockedFields?: unknown;
+  fieldValueRefusals?: unknown;
+  sourceLinkHealth?: unknown;
 }
+
+export type DeadWebsiteField = 'websiteUrl' | 'website';
+
+export const DEAD_WEBSITE_FIELDS: readonly DeadWebsiteField[] = ['websiteUrl', 'website'];
 
 export interface DeadWebsitePlan {
   slug: string;
-  field: 'websiteUrl' | 'website';
+  field: DeadWebsiteField;
+  url: string;
   liveCitationsRemaining: number;
 }
 
@@ -99,9 +115,11 @@ export function planDeadResearchWebsiteClears(
 
   for (const row of rows) {
     const slug = text(row.slug);
-    const field: 'websiteUrl' | 'website' = text(row.websiteUrl) ? 'websiteUrl' : 'website';
-    const url = text(row[field]);
-    if (!url || !isDeadUrl(row, url)) {
+    const deadFields = DEAD_WEBSITE_FIELDS.filter((field) => {
+      const url = text(row[field]);
+      return Boolean(url) && isDeadUrl(row, url);
+    });
+    if (deadFields.length === 0) {
       refused.push({ slug, reason: 'no-dead-website' });
       continue;
     }
@@ -112,7 +130,7 @@ export function planDeadResearchWebsiteClears(
       refused.push({ slug, reason: 'operator-locked' });
       continue;
     }
-    if (ownerCountFor(normalizeWebsiteUrl(url)) > 1) {
+    if (deadFields.some((field) => ownerCountFor(normalizeWebsiteUrl(row[field])) > 1)) {
       refused.push({ slug, reason: 'url-owned-by-another-row' });
       continue;
     }
@@ -120,11 +138,143 @@ export function planDeadResearchWebsiteClears(
       refused.push({ slug, reason: 'entity-identity-is-in-question' });
       continue;
     }
-    plans.push({ slug, field, liveCitationsRemaining: liveCitationsFor(row) });
+    const liveCitationsRemaining = liveCitationsFor(row);
+    for (const field of deadFields) {
+      plans.push({ slug, field, url: text(row[field]), liveCitationsRemaining });
+    }
   }
 
   return { plans, refused };
 }
+
+export function countWebsiteUrlOwnerRows(
+  rows: ReadonlyArray<{ websiteUrl?: unknown; website?: unknown }>,
+): Map<string, number> {
+  const owners = new Map<string, number>();
+  for (const row of rows) {
+    const keys = new Set(
+      DEAD_WEBSITE_FIELDS.map((field) => text(row[field]))
+        .filter(Boolean)
+        .map(normalizeWebsiteUrl),
+    );
+    for (const key of keys) owners.set(key, (owners.get(key) ?? 0) + 1);
+  }
+  return owners;
+}
+
+export const DEAD_WEBSITE_CLEAR_REFUSED_BY = 'research-entity:clear-dead-research-websites';
+
+function deadVerdictNote(storedHealth: unknown, url: string): string {
+  const health = findSourceLinkHealth(storedHealth, url) as DatedSourceLinkHealth | undefined;
+  const answer =
+    typeof health?.httpStatusCode === 'number'
+      ? `HTTP ${health.httpStatusCode}`
+      : 'no HTTP answer from the host';
+  const checkedAt = health?.checkedAt ? new Date(health.checkedAt) : null;
+  const when =
+    checkedAt && !Number.isNaN(checkedAt.getTime())
+      ? ` when last checked on ${checkedAt.toISOString().slice(0, 10)}`
+      : '';
+  return `the link-health lane read this page as unavailable (${answer})${when}, so it is not a research website this row can offer; withdrawn when the lane next reads it healthy`;
+}
+
+/**
+ * The clear and the refusal land in one write. The refusal is what keeps the next
+ * resolve from re-deriving the value from the observation that still asserts it, and
+ * no field is locked, so a different website any lane asserts can still fill the slot.
+ */
+export function planDeadWebsiteClearWrite(
+  row: DeadWebsiteRow,
+  plans: readonly DeadWebsitePlan[],
+  now: Date,
+): Record<string, unknown> {
+  const write: Record<string, unknown> = {};
+  for (const plan of plans) {
+    write[plan.field] = '';
+    Object.assign(
+      write,
+      planFieldValueRefusal(row.fieldValueRefusals, {
+        field: plan.field,
+        value: plan.url,
+        rule: DEAD_LINK_HEALTH_REFUSAL_RULE,
+        refusedBy: DEAD_WEBSITE_CLEAR_REFUSED_BY,
+        refusedAt: now,
+        note: deadVerdictNote(row.sourceLinkHealth, plan.url),
+        evidenceUrl: plan.url,
+      }),
+    );
+  }
+  return write;
+}
+
+const deadLinkHealthRefusals = (row: { fieldValueRefusals?: unknown }, field: DeadWebsiteField) =>
+  liveFieldValueRefusals(row.fieldValueRefusals, field).filter(
+    (refusal) => refusal.rule === DEAD_LINK_HEALTH_REFUSAL_RULE && text(refusal.evidenceUrl),
+  );
+
+/**
+ * The pages this stage refused, which the link-health lane must keep probing: it
+ * rewrites a row's verdicts from the urls the row carries, and a cleared website is no
+ * longer one of them, so without this the verdict a withdrawal waits on is never taken.
+ */
+export function deadLinkHealthRefusalEvidenceUrls(row: { fieldValueRefusals?: unknown }): string[] {
+  return DEAD_WEBSITE_FIELDS.flatMap((field) =>
+    deadLinkHealthRefusals(row, field).map((refusal) => text(refusal.evidenceUrl)),
+  );
+}
+
+export interface DeadWebsiteRefusalWithdrawal {
+  slug: string;
+  field: DeadWebsiteField;
+  url: string;
+}
+
+/**
+ * A refusal this stage recorded stands only while the verdict it was recorded on does.
+ * Only a HEALTHY reading withdraws it, the same bar `revivedValueWithdrawal` sets, so a
+ * throttled or inconclusive probe keeps the page refused rather than re-admitting it.
+ */
+export function planDeadWebsiteRefusalWithdrawals(
+  rows: ReadonlyArray<DeadWebsiteRow>,
+): DeadWebsiteRefusalWithdrawal[] {
+  const withdrawals: DeadWebsiteRefusalWithdrawal[] = [];
+  for (const row of rows) {
+    for (const field of DEAD_WEBSITE_FIELDS) {
+      for (const refusal of deadLinkHealthRefusals(row, field)) {
+        const url = text(refusal.evidenceUrl);
+        if (findSourceLinkHealth(row.sourceLinkHealth, url)?.healthStatus !== 'HEALTHY') continue;
+        withdrawals.push({ slug: text(row.slug), field, url });
+      }
+    }
+  }
+  return withdrawals;
+}
+
+export function planDeadWebsiteRefusalWithdrawalWrite(
+  row: DeadWebsiteRow,
+  withdrawals: readonly DeadWebsiteRefusalWithdrawal[],
+  now: Date,
+): Record<string, unknown> {
+  const write: Record<string, unknown> = {};
+  let refusals = row.fieldValueRefusals;
+  for (const withdrawal of withdrawals) {
+    const planned = planFieldValueRefusalWithdrawal(
+      refusals,
+      withdrawal.field,
+      withdrawal.url,
+      'the link-health lane read the page as healthy again, so it is admissible',
+      now,
+    );
+    Object.assign(write, planned);
+    refusals = { ...(refusals as Record<string, unknown>), ...unprefixed(planned) };
+  }
+  return write;
+}
+
+const unprefixed = (planned: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(planned).map(([path, value]) => [path.slice(path.indexOf('.') + 1), value]),
+  );
 
 /**
  * How a refusal should read in a scheduled report.

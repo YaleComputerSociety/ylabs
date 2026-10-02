@@ -47,6 +47,10 @@ export const perRowFieldValueRefusalRules = [
   // `research-entity:refuse-dead-website-values`, which requires an explicit 404 or
   // 410 and withdraws the record when a later probe answers (#3191).
   'confirmed_dead_page',
+  // The link-health lane's stored verdict reads the page as unavailable. Recorded and
+  // withdrawn by the `dead-research-website-clear` sweep stage on that verdict alone,
+  // so it is re-derived every sweep rather than standing on one probe (#3722).
+  'dead_link_health_verdict',
 ] as const;
 
 export type PerRowFieldValueRefusalRule = (typeof perRowFieldValueRefusalRules)[number];

@@ -941,6 +941,7 @@ export function parseStaleScrapeRunReapResult(artifact: unknown): PostRunStageDe
 export interface DeadResearchWebsiteStageDelta {
   plannedClears: number;
   cleared: number;
+  refusalsWithdrawn: number;
   deliberatelyExcludedTotal: number;
   demotedRepairedRows: number;
   completed: boolean;
@@ -965,6 +966,7 @@ export function parseDeadResearchWebsiteResult(artifact: unknown): PostRunStageD
     deadResearchWebsiteDelta: {
       plannedClears: Number(record.plannedClears ?? 0),
       cleared: Number(record.cleared ?? 0),
+      refusalsWithdrawn: Number(record.refusalsWithdrawn ?? 0),
       deliberatelyExcludedTotal: Number(record.deliberatelyExcludedTotal ?? 0),
       demotedRepairedRows: Number(record.demotedRepairedRows ?? 0),
       completed: record.completed,
