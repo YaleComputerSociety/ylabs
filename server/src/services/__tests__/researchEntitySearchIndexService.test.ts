@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
@@ -776,10 +776,6 @@ describe('researchEntitySearchIndexService', () => {
         calls.push({ kind: 'settings', payload: settings });
         return { taskUid: 1 };
       },
-      deleteAllDocuments: async () => {
-        calls.push({ kind: 'clear' });
-        return { taskUid: 2 };
-      },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
         return { taskUid: 3 };
@@ -797,21 +793,21 @@ describe('researchEntitySearchIndexService', () => {
     const result = await rebuildResearchEntitySearchIndex({
       warmVocabulary: async () => new Set<string>(),
       pageSize: 2,
-      clearExisting: true,
       getIndex: async () => fakeIndex,
       fetchPage,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
       pageSize: 2,
       fetchedDocumentCount: 2,
       indexedDocumentCount: 2,
       pageCount: 1,
-      clearedExisting: true,
+      clearedExisting: false,
     });
-    expect(calls.map((call) => call.kind)).toEqual(['settings', 'clear', 'documents']);
-    expect(calls[2].payload).toMatchObject({
+    expect(result.swap).toBeUndefined();
+    expect(calls.map((call) => call.kind)).toEqual(['settings', 'documents']);
+    expect(calls[1].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
   });
@@ -852,7 +848,6 @@ describe('researchEntitySearchIndexService', () => {
         embedderCalls.push(embedders);
         return { taskUid: 2 };
       },
-      deleteAllDocuments: async () => ({ taskUid: 3 }),
       addDocuments: async () => ({ taskUid: 4 }),
       tasks: succeedingTaskClient,
     };
@@ -894,7 +889,6 @@ describe('researchEntitySearchIndexService', () => {
         calls.push('resetEmbedders');
         return { taskUid: 5 };
       },
-      deleteAllDocuments: async () => ({ taskUid: 3 }),
       addDocuments: async () => ({ taskUid: 4 }),
       getEmbedders: async () => (calls.at(-1) === 'resetEmbedders' ? {} : { default: {} }),
       tasks: succeedingTaskClient,
@@ -903,7 +897,6 @@ describe('researchEntitySearchIndexService', () => {
       rebuildResearchEntitySearchIndex({
         warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
-        clearExisting: true,
         getIndex: async () => fakeIndex as any,
         fetchPage: async (page: number) =>
           page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
@@ -947,7 +940,6 @@ describe('researchEntitySearchIndexService', () => {
         calls.push('resetEmbedders');
         return { taskUid: 5 };
       },
-      deleteAllDocuments: async () => ({ taskUid: 3 }),
       addDocuments: async () => ({ taskUid: 4 }),
       getEmbedders: async () => (calls.includes('resetEmbedders') ? {} : { default: {} }),
       tasks: succeedingTaskClient,
@@ -965,7 +957,6 @@ describe('researchEntitySearchIndexService', () => {
         const result = await rebuildResearchEntitySearchIndex({
           warmVocabulary: async () => new Set<string>(),
           pageSize: 5,
-          clearExisting: true,
           getIndex: async () => fakeIndex as any,
           fetchPage: async (page: number) =>
             page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
@@ -1147,7 +1138,6 @@ describe('researchEntitySearchIndexService', () => {
   it('fails the rebuild when a document batch is accepted but its task fails (#3720)', async () => {
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
-      deleteAllDocuments: async () => ({ taskUid: 2 }),
       addDocuments: async () => ({ taskUid: 3 }),
       tasks: {
         waitForTask: async (taskUid: number) =>
@@ -1160,7 +1150,6 @@ describe('researchEntitySearchIndexService', () => {
     const outcome = await rebuildResearchEntitySearchIndex({
       warmVocabulary: async () => new Set<string>(),
       pageSize: 5,
-      clearExisting: true,
       getIndex: async () => fakeIndex as any,
       fetchPage: async (page: number) =>
         page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
@@ -1174,35 +1163,6 @@ describe('researchEntitySearchIndexService', () => {
     expect(outcome.message).toMatch(
       /addDocuments task 3 did not succeed.*invalid_document_fields/s,
     );
-  });
-
-  it('fails the rebuild when clearing the index is accepted but its task fails (#3720)', async () => {
-    let addDocumentsCalls = 0;
-    const fakeIndex = {
-      updateSettings: async () => ({ taskUid: 1 }),
-      deleteAllDocuments: async () => ({ taskUid: 2 }),
-      addDocuments: async () => {
-        addDocumentsCalls += 1;
-        return { taskUid: 3 };
-      },
-      tasks: {
-        waitForTask: async (taskUid: number) =>
-          taskUid === 2 ? { status: 'failed' } : { status: 'succeeded' },
-      },
-    };
-
-    await expect(
-      rebuildResearchEntitySearchIndex({
-        warmVocabulary: async () => new Set<string>(),
-        pageSize: 5,
-        clearExisting: true,
-        getIndex: async () => fakeIndex as any,
-        fetchPage: async (page: number) =>
-          page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
-        fetchMemberNames: async () => new Map(),
-      }),
-    ).rejects.toThrow(/deleteAllDocuments task 2 did not succeed/);
-    expect(addDocumentsCalls).toBe(0);
   });
 
   it('bounds each document task wait with a finite timeout', async () => {
@@ -1466,6 +1426,262 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
   });
 });
 
+describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', () => {
+  type Call = { uid: string; op: string; arg?: unknown };
+
+  const makeFakeMeili = (
+    args: {
+      existing?: string[];
+      liveEmbedders?: Record<string, unknown>;
+      failAddDocuments?: boolean;
+      reportedDocumentCount?: number;
+    } = {},
+  ) => {
+    const calls: Call[] = [];
+    const existing = new Set(args.existing ?? ['researchentities']);
+    const documentsByUid = new Map<string, unknown[]>();
+    let nextTaskUid = 1;
+    const failingTasks = new Set<number>();
+    const enqueue = (failed = false) => {
+      const taskUid = nextTaskUid++;
+      if (failed) failingTasks.add(taskUid);
+      return { taskUid };
+    };
+    const tasks = {
+      waitForTask: async (taskUid: number) =>
+        failingTasks.has(taskUid)
+          ? { status: 'failed', error: { code: 'internal' } }
+          : { status: 'succeeded' },
+    };
+    const index = (uid: string) => ({
+      updateSettings: async (settings: unknown) => {
+        calls.push({ uid, op: 'updateSettings', arg: settings });
+        return enqueue();
+      },
+      updateEmbedders: async (embedders: unknown) => {
+        calls.push({ uid, op: 'updateEmbedders', arg: embedders });
+        return enqueue();
+      },
+      resetEmbedders: async () => {
+        calls.push({ uid, op: 'resetEmbedders' });
+        return enqueue();
+      },
+      getEmbedders: async () =>
+        uid === 'researchentities' || uid.endsWith('_researchentities')
+          ? (args.liveEmbedders ?? {})
+          : {},
+      addDocuments: async (documents: unknown[]) => {
+        calls.push({ uid, op: 'addDocuments' });
+        documentsByUid.set(uid, [...(documentsByUid.get(uid) ?? []), ...documents]);
+        return enqueue(args.failAddDocuments);
+      },
+      deleteDocuments: async (ids: string[]) => {
+        calls.push({ uid, op: 'deleteDocuments', arg: ids });
+        return enqueue();
+      },
+      deleteAllDocuments: async () => {
+        calls.push({ uid, op: 'deleteAllDocuments' });
+        return enqueue();
+      },
+      getStats: async () => ({
+        numberOfDocuments: args.reportedDocumentCount ?? (documentsByUid.get(uid) ?? []).length,
+      }),
+      tasks,
+    });
+    const notFound = () =>
+      Object.assign(new Error('index not found'), { cause: { code: 'index_not_found' } });
+    const client = {
+      index,
+      tasks,
+      getRawIndex: async (uid: string) => {
+        if (!existing.has(uid)) throw notFound();
+        return { uid };
+      },
+      createIndex: async (uid: string, options?: unknown) => {
+        calls.push({ uid, op: 'createIndex', arg: options });
+        existing.add(uid);
+        return enqueue();
+      },
+      swapIndexes: async (swaps: unknown) => {
+        calls.push({ uid: '*', op: 'swapIndexes', arg: swaps });
+        return enqueue();
+      },
+      deleteIndex: async (uid: string) => {
+        calls.push({ uid, op: 'deleteIndex' });
+        existing.delete(uid);
+        return enqueue();
+      },
+    };
+    return { client, calls, existing };
+  };
+
+  const rows = [
+    { _id: 'e1', name: 'Sample Lab', archived: false },
+    { _id: 'e2', name: 'Other Lab', archived: false },
+  ];
+  const rebuild = (client: unknown, changedDuringBuild: unknown[] = []) =>
+    rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      clearExisting: true,
+      getClient: async () => client as any,
+      getIndex: async () => {
+        throw new Error('a replacing rebuild must not write the live index in place');
+      },
+      fetchPage: async (page: number) => (page === 1 ? rows : []),
+      fetchMemberNames: async () => new Map(),
+      fetchChangedSince: async () => changedDuringBuild,
+    });
+
+  let previousKey: string | undefined;
+  beforeEach(() => {
+    previousKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    invalidateResearchEntitySearchEmbedderCache();
+    if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('builds a fresh index, swaps it in once, and deletes the previous copy afterwards', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const { client, calls } = makeFakeMeili();
+
+    const result = await rebuild(client);
+
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
+    expect(calls.map((call) => `${call.op} ${call.uid}`)).toEqual([
+      'createIndex researchentities_next',
+      'updateSettings researchentities_next',
+      'updateEmbedders researchentities_next',
+      'addDocuments researchentities_next',
+      'swapIndexes *',
+      'deleteIndex researchentities_next',
+    ]);
+    expect(calls.find((call) => call.op === 'updateSettings')?.arg).toEqual(
+      getResearchEntitySearchIndexSettings(),
+    );
+    expect(calls.find((call) => call.op === 'swapIndexes')?.arg).toEqual([
+      { indexes: ['researchentities', 'researchentities_next'] },
+    ]);
+    expect(result).toMatchObject({
+      indexedDocumentCount: 2,
+      clearedExisting: true,
+      swap: {
+        liveIndexUid: 'researchentities',
+        stagingIndexUid: 'researchentities_next',
+        createdLiveIndex: false,
+        previousIndexDeleted: true,
+        catchUpReindexedCount: 0,
+        catchUpDeletedCount: 0,
+      },
+    });
+    expect(Date.parse(result.finishedAt)).toBeGreaterThanOrEqual(Date.parse(result.startedAt));
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('re-adds a row edited during the build to the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const editedDuringBuild = { _id: 'e1', name: 'Renamed Lab', archived: false };
+
+    const result = await rebuild(client, [editedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    expect(ops.indexOf('addDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('deleteDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 1, catchUpDeletedCount: 0 });
+  });
+
+  it('deletes a row archived during the build from the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const archivedDuringBuild = { _id: 'e2', name: 'Other Lab', archived: true };
+
+    const result = await rebuild(client, [archivedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    const liveDelete = calls.find(
+      (call) => call.op === 'deleteDocuments' && call.uid === 'researchentities',
+    );
+    expect(liveDelete?.arg).toEqual(['e2']);
+    expect(ops.indexOf('deleteDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('addDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 0, catchUpDeletedCount: 1 });
+  });
+
+  it('leaves the live index untouched and swaps nothing when a document batch fails', async () => {
+    const { client, calls, existing } = makeFakeMeili({ failAddDocuments: true });
+
+    await expect(rebuild(client)).rejects.toThrow(/addDocuments task \d+ did not succeed/);
+
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
+    expect(calls.some((call) => call.op === 'swapIndexes')).toBe(false);
+    expect(calls.at(-1)).toEqual({ uid: 'researchentities_next', op: 'deleteIndex' });
+    expect([...existing]).toEqual(['researchentities']);
+  });
+
+  it('refuses to swap when the fresh index holds fewer documents than were built', async () => {
+    const { client, calls } = makeFakeMeili({ reportedDocumentCount: 1 });
+
+    await expect(rebuild(client)).rejects.toThrow(
+      /Refusing to swap: researchentities_next holds 1 documents but the rebuild indexed 2/,
+    );
+    expect(calls.some((call) => call.op === 'swapIndexes')).toBe(false);
+  });
+
+  it('deletes a staging index an interrupted rebuild left behind before building', async () => {
+    const { client, calls } = makeFakeMeili({
+      existing: ['researchentities', 'researchentities_next'],
+    });
+
+    await rebuild(client);
+
+    expect(calls.slice(0, 2).map((call) => `${call.op} ${call.uid}`)).toEqual([
+      'deleteIndex researchentities_next',
+      'createIndex researchentities_next',
+    ]);
+  });
+
+  it('creates an empty live index first when none exists, so the swap has two sides', async () => {
+    const { client, calls } = makeFakeMeili({ existing: [] });
+
+    const result = await rebuild(client);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    expect(ops.indexOf('createIndex researchentities')).toBeLessThan(ops.indexOf('swapIndexes *'));
+    expect(result.swap?.createdLiveIndex).toBe(true);
+  });
+
+  it('refuses before building when a prefixed live index has an embedder the shell cannot recreate', async () => {
+    vi.spyOn(meiliClient, 'resolveIndexName').mockImplementation((name: string) => `beta_${name}`);
+    const { client, calls } = makeFakeMeili({
+      existing: ['beta_researchentities'],
+      liveEmbedders: { default: {} },
+    });
+
+    await expect(rebuild(client)).rejects.toThrow(/stored embedder and OPENAI_API_KEY/);
+    expect(calls).toEqual([]);
+  });
+
+  it('rebuilds a prefixed index without a key when the live index carries no embedder', async () => {
+    vi.spyOn(meiliClient, 'resolveIndexName').mockImplementation((name: string) => `beta_${name}`);
+    const { client, calls } = makeFakeMeili({ existing: ['beta_researchentities'] });
+
+    const result = await rebuild(client);
+
+    expect(
+      calls.some((call) => call.op === 'updateEmbedders' || call.op === 'resetEmbedders'),
+    ).toBe(false);
+    expect(result.swap?.stagingIndexUid).toBe('beta_researchentities_next');
+  });
+});
+
 describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -1487,7 +1703,6 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
     const indexedIds: string[] = [];
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
-      deleteAllDocuments: async () => ({ taskUid: 2 }),
       addDocuments: async (documents: Array<{ id: string }>) => {
         for (const document of documents) indexedIds.push(document.id);
         return { taskUid: 3 };
@@ -1497,7 +1712,6 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
     await rebuildResearchEntitySearchIndex({
       warmVocabulary: async () => new Set<string>(),
       pageSize: 50,
-      clearExisting: true,
       getIndex: async () => fakeIndex as any,
       fetchMemberNames: async () => new Map(),
     });

@@ -4,7 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { rebuildResearchEntitySearchIndex } from '../services/researchEntitySearchIndexService';
+import {
+  rebuildResearchEntitySearchIndex,
+  researchEntitySearchStagingIndexUid,
+} from '../services/researchEntitySearchIndexService';
 import { getMeiliClient } from '../utils/meiliClient';
 import {
   assertScraperEnvironmentMatchesMongoTarget,
@@ -43,6 +46,7 @@ export const RETIRED_INDEX_BASE_NAMES = ['listings', 'papers', 'pathways', 'rese
 export interface IndexReconcilePlan {
   prefix: string;
   keep: string[];
+  staging: string[];
   retire: string[];
   unknown: string[];
 }
@@ -54,13 +58,16 @@ export function planIndexReconcile(args: {
   const ownedPrefix = `${args.prefix}_`;
   const owned = args.allIndexUids.filter((uid) => uid.startsWith(ownedPrefix));
   const modelUids = new Set(MODEL_INDEX_BASE_NAMES.map((base) => `${ownedPrefix}${base}`));
+  const stagingUids = new Set(Array.from(modelUids, researchEntitySearchStagingIndexUid));
   const retiredUids = new Set(RETIRED_INDEX_BASE_NAMES.map((base) => `${ownedPrefix}${base}`));
+  const known = (uid: string) => modelUids.has(uid) || stagingUids.has(uid) || retiredUids.has(uid);
 
   return {
     prefix: args.prefix,
     keep: owned.filter((uid) => modelUids.has(uid)),
+    staging: owned.filter((uid) => stagingUids.has(uid)),
     retire: owned.filter((uid) => retiredUids.has(uid)),
-    unknown: owned.filter((uid) => !modelUids.has(uid) && !retiredUids.has(uid)),
+    unknown: owned.filter((uid) => !known(uid)),
   };
 }
 
@@ -172,7 +179,7 @@ async function main() {
 
   if (activeEntityCount === 0) {
     throw new Error(
-      `Refusing to reindex: ${database} has 0 non-archived ResearchEntity documents. Verify the Mongo copy landed before clearing Meilisearch.`,
+      `Refusing to reindex: ${database} has 0 non-archived ResearchEntity documents. Verify the Mongo copy landed before rebuilding Meilisearch.`,
     );
   }
 
@@ -189,7 +196,7 @@ async function main() {
 
   if (!options.confirm) {
     console.log(
-      'Dry run. Re-run with --confirm to clear and rebuild the model index and delete retired indexes.',
+      'Dry run. Re-run with --confirm to rebuild the model index into a fresh index, swap it in, and delete retired indexes.',
     );
     return;
   }

@@ -143,6 +143,22 @@ describe('planIndexReconcile', () => {
     expect(plan.keep).toEqual(['prod_researchentities']);
   });
 
+  it('recognises the staging index a swap rebuild builds into and never retires it', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: [
+        'prod_researchentities',
+        'prod_researchentities_next',
+        'beta_researchentities_next',
+      ],
+      prefix: 'prod',
+    });
+
+    expect(plan.keep).toEqual(['prod_researchentities']);
+    expect(plan.staging).toEqual(['prod_researchentities_next']);
+    expect(plan.retire).toEqual([]);
+    expect(plan.unknown).toEqual([]);
+  });
+
   it('only touches indexes carrying the exact prefix, never a nested prefix', () => {
     const plan = planIndexReconcile({
       allIndexUids: [
