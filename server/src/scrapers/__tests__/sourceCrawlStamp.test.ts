@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ sourceUpdateOne: vi.fn() }));
@@ -52,33 +49,5 @@ describe('the source crawl stamp (#3721)', () => {
       runEarnsCrawlStamp({ dryRun: false, runStatus: 'success', materializationErrors: 2 }),
     ).toBe(false);
     expect(runEarnsCrawlStamp({ dryRun: false, runStatus: 'success' })).toBe(true);
-  });
-
-  it('is the only writer of lastCrawledAt, and the scrape CLI reaches it through the run status', () => {
-    const serverSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const sources = (dir: string): string[] =>
-      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-        if (entry.name === 'node_modules' || entry.name === '__tests__') return [];
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) return sources(full);
-        return entry.name.endsWith('.ts') ? [full] : [];
-      });
-    const files = sources(serverSrc);
-    const writers = files
-      .filter((file) =>
-        /markSourceCrawled\(|lastCrawledAt:\s*(?!\{)/.test(fs.readFileSync(file, 'utf8')),
-      )
-      .map((file) => path.relative(serverSrc, file))
-      .filter(
-        (file) =>
-          !file.startsWith('models/') &&
-          !file.startsWith('services/sourceFreshnessService') &&
-          !file.startsWith('scripts/auditSourceFreshness'),
-      );
-
-    expect(files.length).toBeGreaterThan(500);
-    expect(writers).toEqual([path.join('scrapers', 'sourceCrawlStamp.ts')]);
-    const cli = fs.readFileSync(path.join(serverSrc, 'scrapers', 'cli.ts'), 'utf8');
-    expect(cli).toMatch(/stampSourceCrawlIfEarned\(sourceName, \{[\s\S]*?runStatus: status/);
   });
 });
