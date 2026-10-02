@@ -1484,3 +1484,90 @@ describe('a faculty research profile that also publishes a teaching statement', 
     expect(ranked[0].value).toBe(TEACHING_STATEMENT);
   });
 });
+
+describe('researchAreas from a graduate-track roster rank below a row-own list', () => {
+  const now = new Date('2026-09-30T00:00:00Z');
+  const trackAreas = ['Immunology', 'Microbiology'];
+  const profileAreas = ['Neoplasms', 'Lymphoma'];
+  const trackObservation = {
+    field: 'researchAreas',
+    value: trackAreas,
+    sourceName: 'bbs-research-track',
+    confidence: 0.7,
+    observedAt: new Date('2026-09-29T00:00:00Z'),
+  };
+  const profileObservation = {
+    field: 'researchAreas',
+    value: profileAreas,
+    sourceName: 'ysm-mesh-keyword',
+    confidence: 0.7,
+    observedAt: new Date('2026-09-28T00:00:00Z'),
+  };
+
+  it('serves the older profile list over a newer track list at the same confidence', () => {
+    const resolved = resolveField('researchAreas', [trackObservation, profileObservation], { now });
+    expect(resolved?.value).toEqual(profileAreas);
+    expect(resolved?.contributingSources).toEqual(['ysm-mesh-keyword']);
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('keeps serving the profile list when the track list is far newer and more confident', () => {
+    const resolved = resolveField(
+      'researchAreas',
+      [
+        { ...trackObservation, confidence: 0.95, observedAt: now },
+        { ...profileObservation, confidence: 0.4, observedAt: new Date('2025-09-30T00:00:00Z') },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(profileAreas);
+  });
+
+  it('still serves the track list when it is the only list the row has', () => {
+    const resolved = resolveField('researchAreas', [trackObservation], { now });
+    expect(resolved?.value).toEqual(trackAreas);
+    expect(resolved?.contributingSources).toEqual(['bbs-research-track']);
+  });
+
+  it('counts a track list that a profile lane also states as the profile list', () => {
+    const resolved = resolveField(
+      'researchAreas',
+      [
+        trackObservation,
+        { ...profileObservation, value: trackAreas },
+        {
+          field: 'researchAreas',
+          value: ['Genetics'],
+          sourceName: 'research-area-source-extractor',
+          confidence: 0.7,
+          observedAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(trackAreas);
+    expect(resolved?.contributingSources.sort()).toEqual([
+      'bbs-research-track',
+      'ysm-mesh-keyword',
+    ]);
+  });
+
+  it('keeps the track list as the last resort in the ranked walk', () => {
+    const ranked = resolveFieldRanked('researchAreas', [trackObservation, profileObservation], {
+      now,
+    });
+    expect(ranked.map((entry) => entry.value)).toEqual([profileAreas, trackAreas]);
+  });
+
+  it('leaves other fields from the track lane to recency', () => {
+    const resolved = resolveField(
+      'methods',
+      [
+        { ...trackObservation, field: 'methods' },
+        { ...profileObservation, field: 'methods' },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(trackAreas);
+  });
+});
