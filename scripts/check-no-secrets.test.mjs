@@ -44,8 +44,7 @@ test('allows documented placeholder credentials and env variable references', ()
   const files = [
     {
       path: 'docs/example.md',
-      content:
-        'Run with MONGODBURL=mongodb://example.invalid/Beta and OPENAI_API_KEY=<redacted>.',
+      content: 'Run with MONGODBURL=mongodb://example.invalid/Beta and OPENAI_API_KEY=<redacted>.',
     },
     {
       path: 'server/src/example.ts',
@@ -85,11 +84,7 @@ test('selects tracked and untracked non-ignored files for scanning', () => {
     '',
   ]);
 
-  assert.deepEqual(paths, [
-    'server/src/app.ts',
-    'new-admin-note.md',
-    'local-scratch.md',
-  ]);
+  assert.deepEqual(paths, ['server/src/app.ts', 'new-admin-note.md', 'local-scratch.md']);
 });
 
 test('flags synthetic Yalies credentials without returning their values', () => {
@@ -125,7 +120,7 @@ test('allows Yalies environment references and bearer examples outside Yalies co
   const files = [
     {
       path: 'server/src/service.ts',
-      content: "const key = process.env.YALIES_API_KEY;\nAuthorization: `Bearer ${key}`;",
+      content: 'const key = process.env.YALIES_API_KEY;\nAuthorization: `Bearer ${key}`;',
     },
     {
       path: 'docs/oauth.md',
