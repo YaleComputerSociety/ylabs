@@ -4,7 +4,6 @@ import {
   AdminFellowshipFormSource,
   adminFellowshipFormReducer,
   createInitialAdminFellowshipFormState,
-  toDatetimeLocal,
 } from '../adminFellowshipFormReducer';
 
 const baseSource: AdminFellowshipFormSource = {
@@ -80,30 +79,18 @@ describe('adminFellowshipFormReducer', () => {
       expect(links).toHaveLength(1);
     });
 
-    it('converts ISO deadline to local datetime-input format', () => {
+    it('reads a timed deadline as its New York date and time', () => {
       const state = createInitialAdminFellowshipFormState({
         ...baseSource,
-        deadline: '2026-04-01T12:00:00.000Z',
+        deadline: '2026-04-01T21:00:00.000Z',
       });
-      expect(state.deadline).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+      expect(state.deadline).toEqual({ date: '2026-04-01', time: '17:00' });
     });
 
     it('empty string for null dates', () => {
       const state = createInitialAdminFellowshipFormState(baseSource);
-      expect(state.deadline).toBe('');
-      expect(state.applicationOpenDate).toBe('');
-    });
-  });
-
-  describe('toDatetimeLocal', () => {
-    it('returns empty for null/invalid', () => {
-      expect(toDatetimeLocal(null)).toBe('');
-      expect(toDatetimeLocal('not a date')).toBe('');
-    });
-
-    it('formats a valid ISO string into YYYY-MM-DDTHH:mm', () => {
-      const result = toDatetimeLocal('2026-04-01T12:00:00.000Z');
-      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+      expect(state.deadline).toEqual({ date: '', time: '' });
+      expect(state.applicationOpenDate).toEqual({ date: '', time: '' });
     });
   });
 
@@ -129,13 +116,13 @@ describe('adminFellowshipFormReducer', () => {
       expect(next.isAcceptingApplications).toBe(false);
     });
 
-    it('SET_DEADLINE stores datetime-local string as-is', () => {
+    it('SET_DEADLINE stores the date and time draft as-is', () => {
       const state = createInitialAdminFellowshipFormState(baseSource);
       const next = adminFellowshipFormReducer(state, {
         type: 'SET_DEADLINE',
-        payload: '2026-05-01T10:00',
+        payload: { date: '2026-05-01', time: '10:00' },
       });
-      expect(next.deadline).toBe('2026-05-01T10:00');
+      expect(next.deadline).toEqual({ date: '2026-05-01', time: '10:00' });
     });
 
     it('each scalar setter only touches its own field', () => {

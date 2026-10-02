@@ -9,6 +9,8 @@
  * reducer would muddy the contract.
  */
 
+import { ProgramDateDraft, programDateDraft } from '../utils/programDateDraft';
+
 export interface FellowshipLink {
   label: string;
   url: string;
@@ -60,8 +62,8 @@ export interface AdminFellowshipFormState {
   contactPhone: string;
   contactOffice: string;
   isAcceptingApplications: boolean;
-  applicationOpenDate: string;
-  deadline: string;
+  applicationOpenDate: ProgramDateDraft;
+  deadline: ProgramDateDraft;
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -88,8 +90,8 @@ export type AdminFellowshipFormAction =
   | { type: 'SET_CONTACT_PHONE'; payload: string }
   | { type: 'SET_CONTACT_OFFICE'; payload: string }
   | { type: 'SET_IS_ACCEPTING_APPLICATIONS'; payload: boolean }
-  | { type: 'SET_APPLICATION_OPEN_DATE'; payload: string }
-  | { type: 'SET_DEADLINE'; payload: string }
+  | { type: 'SET_APPLICATION_OPEN_DATE'; payload: ProgramDateDraft }
+  | { type: 'SET_DEADLINE'; payload: ProgramDateDraft }
   | { type: 'SET_YEAR_OF_STUDY'; payload: string[] }
   | { type: 'SET_TERM_OF_AWARD'; payload: string[] }
   | { type: 'SET_PURPOSE'; payload: string[] }
@@ -97,22 +99,6 @@ export type AdminFellowshipFormAction =
   | { type: 'SET_CITIZENSHIP_STATUS'; payload: string[] }
   | { type: 'SET_AUDITED'; payload: boolean }
   | { type: 'SET_ARCHIVED'; payload: boolean };
-
-/**
- * `datetime-local` inputs use "YYYY-MM-DDTHH:mm"; the fellowship payload
- * stores ISO. Re-implementing the conversion here (rather than using
- * new Date().toISOString().slice(0,16), which returns UTC) preserves the
- * admin-table's original local-timezone behavior.
- */
-export const toDatetimeLocal = (dateStr: string | null): string => {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-};
 
 export const createInitialAdminFellowshipFormState = (
   f: AdminFellowshipFormSource,
@@ -133,8 +119,8 @@ export const createInitialAdminFellowshipFormState = (
   contactPhone: f.contactPhone || '',
   contactOffice: f.contactOffice || '',
   isAcceptingApplications: f.isAcceptingApplications,
-  applicationOpenDate: toDatetimeLocal(f.applicationOpenDate),
-  deadline: toDatetimeLocal(f.deadline),
+  applicationOpenDate: programDateDraft(f.applicationOpenDate, 'opens'),
+  deadline: programDateDraft(f.deadline, 'deadline'),
   yearOfStudy: [...f.yearOfStudy],
   termOfAward: [...f.termOfAward],
   purpose: [...f.purpose],

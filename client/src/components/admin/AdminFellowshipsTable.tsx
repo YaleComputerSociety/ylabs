@@ -15,6 +15,8 @@ import {
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import { CloseIcon } from '../shared/icons';
+import ProgramDateFields from './ProgramDateFields';
+import { editedProgramDateValue, programDatePatch } from '../../utils/programDateDraft';
 
 interface FellowshipLink {
   label: string;
@@ -593,8 +595,12 @@ const FellowshipEditModal = ({
   } = formState;
   const statusPreview = getFellowshipApplicationStatus({
     isAcceptingApplications,
-    applicationOpenDate: applicationOpenDate || null,
-    deadline: deadline || null,
+    applicationOpenDate: editedProgramDateValue(
+      fellowship.applicationOpenDate,
+      applicationOpenDate,
+      'opens',
+    ),
+    deadline: editedProgramDateValue(fellowship.deadline, deadline, 'deadline'),
     eligibility,
     yearOfStudy,
     termOfAward,
@@ -622,8 +628,13 @@ const FellowshipEditModal = ({
       contactPhone,
       contactOffice,
       isAcceptingApplications,
-      applicationOpenDate: applicationOpenDate || null,
-      deadline: deadline || null,
+      ...programDatePatch(
+        'applicationOpenDate',
+        fellowship.applicationOpenDate,
+        applicationOpenDate,
+        'opens',
+      ),
+      ...programDatePatch('deadline', fellowship.deadline, deadline, 'deadline'),
       yearOfStudy,
       termOfAward,
       purpose,
@@ -828,7 +839,7 @@ const FellowshipEditModal = ({
 
           <div className="border-t pt-4 mt-4">
             <h4 className="text-sm font-semibold text-ink mb-3">Status & Dates</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">
                   Accepting Applications
@@ -847,30 +858,24 @@ const FellowshipEditModal = ({
                   <option value="false">No</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-ink-soft mb-1">
-                  Application Open Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={applicationOpenDate}
-                  onChange={(e) =>
-                    formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-ink-soft mb-1">
-                  Deadline Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(e) => formDispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
-                />
-              </div>
+              <ProgramDateFields
+                label="Application Open Date & Time"
+                boundary="opens"
+                draft={applicationOpenDate}
+                onChange={(draft) =>
+                  formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: draft })
+                }
+                labelClassName="block text-sm font-medium text-ink-soft mb-1"
+                inputClassName="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg disabled:bg-[var(--yr-panel-muted)]"
+              />
+              <ProgramDateFields
+                label="Deadline Date & Time"
+                boundary="deadline"
+                draft={deadline}
+                onChange={(draft) => formDispatch({ type: 'SET_DEADLINE', payload: draft })}
+                labelClassName="block text-sm font-medium text-ink-soft mb-1"
+                inputClassName="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg disabled:bg-[var(--yr-panel-muted)]"
+              />
             </div>
             <div
               className={`mt-3 rounded-lg border p-3 text-sm ${

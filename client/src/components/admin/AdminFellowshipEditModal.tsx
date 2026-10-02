@@ -15,6 +15,8 @@ import {
 } from '../../reducers/adminFellowshipEditReducer';
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 import { CloseIcon } from '../shared/icons';
+import ProgramDateFields from './ProgramDateFields';
+import { editedProgramDateValue, programDatePatch } from '../../utils/programDateDraft';
 
 const TagInput = ({
   label,
@@ -122,8 +124,12 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
   } = state;
   const statusPreview = getFellowshipApplicationStatus({
     isAcceptingApplications,
-    applicationOpenDate: applicationOpenDate || null,
-    deadline: deadline || null,
+    applicationOpenDate: editedProgramDateValue(
+      fellowship.applicationOpenDate,
+      applicationOpenDate,
+      'opens',
+    ),
+    deadline: editedProgramDateValue(fellowship.deadline, deadline, 'deadline'),
     eligibility,
     yearOfStudy,
     termOfAward,
@@ -188,10 +194,13 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
             applicationLink,
             awardAmount,
             isAcceptingApplications,
-            deadline: deadline ? new Date(deadline).toISOString() : null,
-            applicationOpenDate: applicationOpenDate
-              ? new Date(applicationOpenDate).toISOString()
-              : null,
+            ...programDatePatch('deadline', fellowship.deadline, deadline, 'deadline'),
+            ...programDatePatch(
+              'applicationOpenDate',
+              fellowship.applicationOpenDate,
+              applicationOpenDate,
+              'opens',
+            ),
             contactName,
             contactEmail,
             archived,
@@ -324,26 +333,26 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-muted mb-1">
-                  Application Open Date
-                </label>
-                <input
-                  type="datetime-local"
-                  value={applicationOpenDate}
-                  onChange={(e) =>
-                    dispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
+                <ProgramDateFields
+                  label="Application Open Date"
+                  boundary="opens"
+                  draft={applicationOpenDate}
+                  onChange={(draft) =>
+                    dispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: draft })
                   }
-                  className="w-full border border-[var(--yr-line-control)] rounded px-2 py-1.5 text-sm yr-focus-ring"
+                  labelClassName="block text-xs font-semibold text-muted mb-1"
+                  inputClassName="w-full border border-[var(--yr-line-control)] rounded px-2 py-1.5 text-sm yr-focus-ring disabled:bg-[var(--yr-panel-muted)]"
                 />
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-muted mb-1">Deadline</label>
-                <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(e) => dispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-control)] rounded px-2 py-1.5 text-sm yr-focus-ring"
+                <ProgramDateFields
+                  label="Deadline"
+                  boundary="deadline"
+                  draft={deadline}
+                  onChange={(draft) => dispatch({ type: 'SET_DEADLINE', payload: draft })}
+                  labelClassName="block text-xs font-semibold text-muted mb-1"
+                  inputClassName="w-full border border-[var(--yr-line-control)] rounded px-2 py-1.5 text-sm yr-focus-ring disabled:bg-[var(--yr-panel-muted)]"
                 />
               </div>
 
