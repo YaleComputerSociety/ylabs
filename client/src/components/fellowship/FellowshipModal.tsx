@@ -8,6 +8,7 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import {
+  STALE_DEADLINE_MESSAGE,
   formatFellowshipDate,
   getFellowshipApplicationStatus,
   getStructuredEligibilityDetails,
@@ -156,6 +157,7 @@ const FellowshipModal = ({
       }
     : cycleStatus;
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
+  const deadlineStale = applicationStatus.kind === 'staleDeadline';
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
   const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
@@ -439,7 +441,18 @@ const FellowshipModal = ({
                         <p className="text-sm font-semibold text-brand-navy">
                           {applicationStatus.label}
                         </p>
-                        <p className="text-xs text-brand">{applicationStatus.detail}</p>
+                        {deadlineStale && sourceHref ? (
+                          <a
+                            href={sourceHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control text-xs"
+                          >
+                            {applicationStatus.detail}
+                          </a>
+                        ) : (
+                          <p className="text-xs text-brand">{applicationStatus.detail}</p>
+                        )}
                       </div>
                       {cycleStatus.category === 'nextCycle' && (
                         <div className="rounded-card bg-panel border border-sky-100 px-2.5 py-2">
@@ -448,27 +461,31 @@ const FellowshipModal = ({
                           </p>
                         </div>
                       )}
-                      <div>
-                        <span className="text-xs text-brand">Application opens</span>
-                        <p className="text-sm font-medium text-brand-navy">
-                          {formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-xs text-brand">
-                          {fellowship.deadlineProjectedNextCycle
-                            ? 'Estimated Next Deadline'
-                            : 'Deadline'}
-                        </span>
-                        <p className="text-sm font-medium text-brand-navy">
-                          {formatFellowshipDate(fellowship.deadline, 'deadline')}
-                        </p>
-                        {fellowship.deadlineProjectedNextCycle && (
-                          <p className="text-xs text-brand">
-                            Projected from the last cycle - unconfirmed, verify at source.
-                          </p>
-                        )}
-                      </div>
+                      {!deadlineStale && (
+                        <>
+                          <div>
+                            <span className="text-xs text-brand">Application opens</span>
+                            <p className="text-sm font-medium text-brand-navy">
+                              {formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-brand">
+                              {fellowship.deadlineProjectedNextCycle
+                                ? 'Estimated next deadline'
+                                : 'Deadline'}
+                            </span>
+                            <p className="text-sm font-medium text-brand-navy">
+                              {formatFellowshipDate(fellowship.deadline, 'deadline')}
+                            </p>
+                            {fellowship.deadlineProjectedNextCycle && (
+                              <p className="text-xs text-brand">
+                                Projected from the last cycle - unconfirmed, verify at source.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </section>
                 )}
@@ -798,7 +815,9 @@ const FellowshipModal = ({
                       <p className="mb-3 rounded-card border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
                           ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}.`
-                          : 'This application window is not currently open. Use the source to verify the next cycle.'}
+                          : deadlineStale
+                            ? `${STALE_DEADLINE_MESSAGE}.`
+                            : 'This application window is not currently open. Use the source to verify the next cycle.'}
                       </p>
                     )}
                     <a
@@ -816,7 +835,9 @@ const FellowshipModal = ({
                         ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
                           ? 'Track the opening date'
-                          : 'Open the fellowship source'}
+                          : deadlineStale
+                            ? 'Open the official page'
+                            : 'Open the fellowship source'}
                       <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>

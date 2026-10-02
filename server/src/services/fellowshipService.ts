@@ -327,7 +327,6 @@ export const deadlineIsPast = (value: unknown, now: Date): boolean => {
 
 const RECURRING_PROGRAM_TEXT_RE =
   /\b(fellowship|grant|award|funding|stipend|summer|annual|year|cycle|term|spring|fall|deadline|application)\b/i;
-const MAX_NEXT_CYCLE_PROJECTION_YEARS = 6;
 
 const hasFellowshipSourceUrl = (fellowship: any): boolean => {
   if (
@@ -362,27 +361,32 @@ export const isLikelyRecurringProgram = (fellowship: any): boolean =>
   hasFellowshipSourceUrl(fellowship) &&
   RECURRING_PROGRAM_TEXT_RE.test(textForRecurrenceDetection(fellowship));
 
-export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
+const sameDeadlineNextCycle = (deadline: Date): Date => {
   const stated = newYorkWallClock(deadline);
-  for (let yearsAdded = 1; yearsAdded <= MAX_NEXT_CYCLE_PROJECTION_YEARS; yearsAdded += 1) {
-    const sameDayNextCycle = new Date(
-      Date.UTC(stated.year + yearsAdded, stated.monthIndex, stated.day),
-    );
-    const projected = newYorkInstant({
-      ...stated,
-      year: sameDayNextCycle.getUTCFullYear(),
-      monthIndex: sameDayNextCycle.getUTCMonth(),
-      day: sameDayNextCycle.getUTCDate(),
-    });
-    if (projected.getTime() > now.getTime()) return projected;
-  }
-  return undefined;
+  const sameDayNextCycle = new Date(Date.UTC(stated.year + 1, stated.monthIndex, stated.day));
+  return newYorkInstant({
+    ...stated,
+    year: sameDayNextCycle.getUTCFullYear(),
+    monthIndex: sameDayNextCycle.getUTCMonth(),
+    day: sameDayNextCycle.getUTCDate(),
+  });
+};
+
+// A deadline that closed more than one cycle ago means the source page skipped at least a
+// whole cycle, so neither the stated date nor an estimate from it is served (#4363).
+export const deadlineIsStale = (closesAt: Date, now: Date): boolean =>
+  sameDeadlineNextCycle(closesAt).getTime() < now.getTime();
+
+export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
+  const projected = sameDeadlineNextCycle(deadline);
+  return projected.getTime() < now.getTime() ? undefined : projected;
 };
 
 export interface ServedProgramDeadline {
   deadline: Date | undefined;
   closed: boolean;
   projectedNextCycle: boolean;
+  stale: boolean;
   duplicateWindow?: UpcomingDuplicateWindow;
 }
 
@@ -393,20 +397,26 @@ export const servedProgramDeadline = (program: any, now: Date): ServedProgramDea
       deadline: programDeadlineClosesAt(duplicateWindow.deadline),
       closed: false,
       projectedNextCycle: false,
+      stale: false,
       duplicateWindow,
     };
   }
   const statedDeadline = toValidDate(program?.deadline);
-  if (!statedDeadline) return { deadline: undefined, closed: false, projectedNextCycle: false };
+  if (!statedDeadline) {
+    return { deadline: undefined, closed: false, projectedNextCycle: false, stale: false };
+  }
   const closesAt = programDeadlineClosesAt(statedDeadline);
   const closed = deadlineIsPast(closesAt, now);
+  if (closed && deadlineIsStale(closesAt, now)) {
+    return { deadline: undefined, closed, projectedNextCycle: false, stale: true };
+  }
   const projectedDeadline =
     closed && isLikelyRecurringProgram(program)
       ? projectNextCycleDeadline(closesAt, now)
       : undefined;
   return projectedDeadline
-    ? { deadline: projectedDeadline, closed, projectedNextCycle: true }
-    : { deadline: closesAt, closed, projectedNextCycle: false };
+    ? { deadline: projectedDeadline, closed, projectedNextCycle: true, stale: false }
+    : { deadline: closesAt, closed, projectedNextCycle: false, stale: false };
 };
 
 const MONTH_NAME_TO_INDEX: Record<string, number> = {
@@ -460,6 +470,7 @@ export const acceptingFromServedWindow = (
   served: ServedProgramDeadline,
   now: Date,
 ): boolean | undefined => {
+  if (served.stale) return false;
   if (!served.deadline) return undefined;
   if (served.closed || served.projectedNextCycle) return false;
   const opensAt = toValidDate(servedApplicationOpenDate(program, served));
@@ -482,12 +493,17 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
 
   const served = servedProgramDeadline(fellowship, now);
   if (served.deadline) publicFellowship.deadline = served.deadline;
+  if (served.stale) {
+    delete publicFellowship.deadline;
+    delete publicFellowship.applicationOpenDate;
+  }
   if (served.duplicateWindow?.applicationOpenDate) {
     publicFellowship.applicationOpenDate = served.duplicateWindow.applicationOpenDate;
   }
   const windowAcceptance = acceptingFromServedWindow(fellowship, served, now);
   if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
   publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
+  publicFellowship.deadlineStale = served.stale;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);
   if (deadlineDate) {

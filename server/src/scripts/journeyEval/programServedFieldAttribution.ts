@@ -69,6 +69,7 @@ const servedDeadlinesIn = (stored: Row, servedAt: ServedAtWindow): ServedProgram
 
 const deadlineGuard = (stored: Date | undefined, served: ServedProgramDeadline): string | null => {
   if (served.duplicateWindow) return 'servedUpcomingDuplicateWindow';
+  if (served.stale) return 'deadlineIsStale';
   if (served.projectedNextCycle) return 'projectNextCycleDeadline';
   return sameInstant(stored, served.deadline) ? null : 'programDeadlineClosesAt';
 };

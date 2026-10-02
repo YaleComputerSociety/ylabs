@@ -9,6 +9,10 @@ import {
 
 export const CLOSING_SOON_DAYS = 30;
 
+export const STALE_DEADLINE_MESSAGE = 'Check the official page for the current deadline';
+export const STALE_DEADLINE_SHORT_LABEL = 'Deadline: check official page';
+export const STALE_DEADLINE_STATUS_LABEL = 'Dates not confirmed';
+
 export type FellowshipApplicationStatusKind =
   | 'open'
   | 'closingSoon'
@@ -16,6 +20,7 @@ export type FellowshipApplicationStatusKind =
   | 'closed'
   | 'deadlinePassed'
   | 'projectedNextCycle'
+  | 'staleDeadline'
   | 'unknown';
 
 export interface FellowshipApplicationStatus {
@@ -80,6 +85,7 @@ export const getFellowshipApplicationStatus = (
     | 'applicationOpenDate'
     | 'deadline'
     | 'deadlineProjectedNextCycle'
+    | 'deadlineStale'
     | 'eligibility'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -116,6 +122,21 @@ export const getFellowshipApplicationStatus = (
     needsDateReview,
     needsEligibilityReview,
   };
+
+  if (fellowship.deadlineStale) {
+    return {
+      ...base,
+      deadlineLabel: STALE_DEADLINE_MESSAGE,
+      openDateLabel: STALE_DEADLINE_MESSAGE,
+      daysUntilDeadline: null,
+      needsDateReview: false,
+      kind: 'staleDeadline',
+      label: STALE_DEADLINE_STATUS_LABEL,
+      detail: STALE_DEADLINE_MESSAGE,
+      isCurrentlyRelevant: true,
+      isApplicationWindowOpen: false,
+    };
+  }
 
   if (fellowship.deadlineProjectedNextCycle) {
     return {

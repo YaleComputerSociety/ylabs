@@ -194,6 +194,49 @@ describe('Program card deadline urgency', () => {
   });
 });
 
+describe('Program card with a stale served deadline (#4363)', () => {
+  const staleItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => ({
+    type: 'fellowship',
+    data: {
+      ...fellowship,
+      id: 'program-stale',
+      deadlineStale: true,
+      deadline: null,
+      isAcceptingApplications: false,
+      ...overrides,
+    },
+  });
+
+  for (const [surface, Component] of [
+    ['card', BrowseCard],
+    ['list row', BrowseListItem],
+  ] as const) {
+    it(`tells the student to check the official page on a ${surface}`, () => {
+      const { container } = renderAdmin(
+        <Component item={staleItem()} isFavorite={false} onOpenModal={vi.fn()} />,
+      );
+
+      expect(screen.getByText('Deadline: check official page')).toBeTruthy();
+      expect(screen.getByText('Dates not confirmed')).toBeTruthy();
+      expect(container.textContent).not.toMatch(/passed|Closed|No dates posted|days left/i);
+    });
+
+    it(`shows no stated date on a ${surface} even when the payload carries one`, () => {
+      const { container } = renderAdmin(
+        <Component
+          item={staleItem({ deadline: '2019-11-15T23:59:59.999Z' })}
+          isFavorite={false}
+          onOpenModal={vi.fn()}
+        />,
+      );
+
+      expect(container.textContent).not.toContain('Nov 15');
+      expect(container.textContent).not.toMatch(/passed/i);
+      expect(screen.getByText('Deadline: check official page').className).not.toMatch(/red/);
+    });
+  }
+});
+
 describe('Program card visual hierarchy', () => {
   const withDeadline: BrowsableItem = {
     type: 'fellowship',

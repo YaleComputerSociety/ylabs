@@ -75,6 +75,24 @@ describe('attributeProgramServedFields', () => {
     });
   });
 
+  it('attributes a deadline withheld for skipping a whole cycle to the stale guard (#4363)', () => {
+    const stored = { ...recurringStoredRow, deadline: new Date('2019-11-16T04:59:59.999Z') };
+    const served = publicProgramForReader(publicFellowshipForStudent(stored, servedAt.from));
+    const outcomes = attributeProgramServedFields(stored, served, servedAt);
+
+    expect(served.deadlineStale).toBe(true);
+    expect(outcomeFor(outcomes, 'deadline')).toEqual({
+      field: 'deadline',
+      status: 'attributed',
+      guard: 'deadlineIsStale',
+    });
+    expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'deadlineIsPast',
+    });
+  });
+
   it("attributes a deadline served from another copy of the fund to that copy's window (#4382)", () => {
     const stored = {
       ...recurringStoredRow,

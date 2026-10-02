@@ -337,4 +337,61 @@ describe('Fellowships grouping', () => {
       }
     });
   });
+
+  describe('a program whose served deadline is stale (#4363)', () => {
+    const staleBoard = () => [
+      makeFellowship({
+        id: 'stale',
+        title: 'Stale Dated Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: null,
+        deadlineStale: true,
+        isAcceptingApplications: false,
+        applicationLink: 'https://example.org/apply',
+      }),
+      makeFellowship({
+        id: 'open',
+        title: 'Open Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: futureDate(60),
+      }),
+      makeFellowship({
+        id: 'passed',
+        title: 'Recently Passed Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: pastDate(7),
+        applicationLink: 'https://example.org/apply',
+      }),
+    ];
+
+    it('lists it under no dates posted, not under the next cycle', () => {
+      renderFellowships({ fellowships: staleBoard() });
+
+      expect(
+        within(screen.getByRole('region', { name: 'No dates posted' })).getByText(
+          'Stale Dated Fellowship',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'Plan for the next cycle' })).queryByText(
+          'Stale Dated Fellowship',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('counts it as neither open nor closing soon nor next cycle', () => {
+      for (const quickFilter of ['open', 'closingSoon', 'nextCycle'] as const) {
+        renderFellowships({ fellowships: staleBoard(), quickFilter });
+
+        expect(screen.queryByText('Stale Dated Fellowship')).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+
+    it('keeps it under the filters that do not depend on timing', () => {
+      renderFellowships({ fellowships: staleBoard(), quickFilter: 'applicationsOnly' });
+
+      expect(screen.getByText('Stale Dated Fellowship')).toBeInTheDocument();
+    });
+  });
 });

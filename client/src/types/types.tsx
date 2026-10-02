@@ -59,6 +59,7 @@ export type Fellowship = {
   applicationOpenDate: string | null;
   deadline: string | null;
   deadlineProjectedNextCycle?: boolean;
+  deadlineStale?: boolean;
   contactName: string;
   contactEmail: string;
   contactPhone: string;

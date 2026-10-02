@@ -1,8 +1,14 @@
 import { Fellowship } from '../types/types';
-import { getFellowshipApplicationStatus } from './fellowshipStatus';
+import {
+  STALE_DEADLINE_SHORT_LABEL,
+  STALE_DEADLINE_STATUS_LABEL,
+  getFellowshipApplicationStatus,
+} from './fellowshipStatus';
 import { formatShortProgramDate, programDeadlineClosingInstant } from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
+
+const NEUTRAL_CYCLE_BADGE_CLASS = 'bg-gray-100 text-gray-600 border border-gray-200';
 
 export type FellowshipCycleCategory =
   | 'closingSoon'
@@ -10,6 +16,7 @@ export type FellowshipCycleCategory =
   | 'openingSoon'
   | 'projectedNextCycle'
   | 'nextCycle'
+  | 'staleDeadline'
   | 'closed';
 
 export interface FellowshipCycleStatus {
@@ -63,6 +70,17 @@ export function getFellowshipCycleStatus(
   const isOpen = applicationStatus.isApplicationWindowOpen;
   const sourceBacked = hasSourceUrl(fellowship);
   const likelyRecurring = !isOpen && deadlinePassed && isLikelyRecurringFellowship(fellowship);
+
+  if (applicationStatus.kind === 'staleDeadline') {
+    return {
+      category: 'staleDeadline',
+      label: STALE_DEADLINE_STATUS_LABEL,
+      className: NEUTRAL_CYCLE_BADGE_CLASS,
+      deadlinePassed: false,
+      sourceBacked,
+      likelyRecurring: false,
+    };
+  }
 
   if (applicationStatus.kind === 'notOpenYet') {
     return {
@@ -125,7 +143,7 @@ export function getFellowshipCycleStatus(
   return {
     category: 'closed',
     label: deadline ? 'Closed' : 'No dates posted',
-    className: 'bg-gray-100 text-gray-600 border border-gray-200',
+    className: NEUTRAL_CYCLE_BADGE_CLASS,
     deadlinePassed,
     sourceBacked,
     likelyRecurring: false,
@@ -137,6 +155,7 @@ export function getFellowshipDeadlineSubtitle(
   now: Date = new Date(),
 ): string {
   const status = getFellowshipCycleStatus(fellowship, now);
+  if (status.category === 'staleDeadline') return STALE_DEADLINE_SHORT_LABEL;
   if (status.category === 'openingSoon') {
     return `Opens ${formatShortProgramDate(fellowship.applicationOpenDate)}`;
   }

@@ -16,7 +16,7 @@ export const fellowshipFutureDeadlineDate = (
   fellowship: Fellowship,
   now: Date = new Date(),
 ): Date | null => {
-  if (fellowship.deadlineProjectedNextCycle) return null;
+  if (fellowship.deadlineProjectedNextCycle || fellowship.deadlineStale) return null;
   const closesAt = programDeadlineClosingInstant(fellowship.deadline);
   if (!closesAt || closesAt.getTime() < now.getTime()) return null;
   return closesAt;
