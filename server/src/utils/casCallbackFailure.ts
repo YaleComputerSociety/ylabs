@@ -5,7 +5,7 @@ export type CasCallbackFailure = 'rejected' | 'unavailable' | 'server_error';
 export const CAS_SIGN_IN_TROUBLE_MESSAGE =
   'Sign-in is having trouble right now. Please try again in a moment.';
 
-const DEFAULT_CAS_VALIDATION_TIMEOUT_MS = 10_000;
+export const CAS_VALIDATION_TIMEOUT_MS = 10_000;
 const MAX_CAUSE_DEPTH = 8;
 const CAS1_REJECTION_MESSAGE = 'Authentication rejected';
 const CAS1_MALFORMED_ANSWER_MESSAGE = 'The response from the server was bad';
@@ -85,11 +85,4 @@ export const reportableCasLoginError = (
 ): CasLoginServerError => {
   const labels = causeChain(error).flatMap(reportableLabelsOf);
   return new CasLoginServerError(failure, labels.length > 0 ? labels.join(' > ') : 'unknown');
-};
-
-export const casValidationTimeoutMs = (env: NodeJS.ProcessEnv = process.env): number => {
-  const configured = Number(env.CAS_VALIDATION_TIMEOUT_MS);
-  return Number.isInteger(configured) && configured > 0
-    ? configured
-    : DEFAULT_CAS_VALIDATION_TIMEOUT_MS;
 };

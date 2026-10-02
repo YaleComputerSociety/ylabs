@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   UnusableCasIdentityError,
   casCallbackFailureStatus,
-  casValidationTimeoutMs,
   classifyCasCallbackError,
   reportableCasLoginError,
 } from '../casCallbackFailure';
@@ -87,14 +86,5 @@ describe('reportableCasLoginError', () => {
     );
 
     expect(reported.message).toBe('CAS login callback failed (server_error): Error');
-  });
-});
-
-describe('casValidationTimeoutMs', () => {
-  it('defaults to ten seconds and accepts only a positive integer override', () => {
-    expect(casValidationTimeoutMs({})).toBe(10_000);
-    expect(casValidationTimeoutMs({ CAS_VALIDATION_TIMEOUT_MS: '250' })).toBe(250);
-    expect(casValidationTimeoutMs({ CAS_VALIDATION_TIMEOUT_MS: '-1' })).toBe(10_000);
-    expect(casValidationTimeoutMs({ CAS_VALIDATION_TIMEOUT_MS: 'soon' })).toBe(10_000);
   });
 });

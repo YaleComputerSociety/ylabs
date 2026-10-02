@@ -28,10 +28,10 @@ import { authLimiter, markCasValidationAccepted } from './middleware/rateLimiter
 import { captureServerError } from './utils/errorTracking';
 import {
   CAS_SIGN_IN_TROUBLE_MESSAGE,
+  CAS_VALIDATION_TIMEOUT_MS,
   CasValidationTimeoutError,
   UnusableCasIdentityError,
   casCallbackFailureStatus,
-  casValidationTimeoutMs,
   classifyCasCallbackError,
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
@@ -645,8 +645,6 @@ function acceptsCasLoginCallback(req: express.Request): boolean {
   return true;
 }
 
-const CAS_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
-
 const casLogin = function (
   req: express.Request,
   res: express.Response,
@@ -688,8 +686,6 @@ const casLogin = function (
 
       if (isTopologyLostError(err)) void triggerReconnect();
       captureServerError(reportableCasLoginError(failure, err), req);
-      if (failure === 'unavailable')
-        res.set('Retry-After', String(CAS_UNAVAILABLE_RETRY_AFTER_SECONDS));
       return res.status(casCallbackFailureStatus(failure)).json({
         error: CAS_SIGN_IN_TROUBLE_MESSAGE,
       });
@@ -732,7 +728,7 @@ const casLogin = function (
   if (req.query?.ticket) {
     validationTimer = setTimeout(
       () => onVerdict(new CasValidationTimeoutError(), false),
-      casValidationTimeoutMs(),
+      CAS_VALIDATION_TIMEOUT_MS,
     );
   }
 

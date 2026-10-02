@@ -20,6 +20,11 @@ vi.mock('../utils/errorTracking', async (importOriginal) => ({
   captureServerError: mocks.captureServerError,
 }));
 
+vi.mock('../utils/casCallbackFailure', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/casCallbackFailure')>()),
+  CAS_VALIDATION_TIMEOUT_MS: 250,
+}));
+
 vi.mock('../services/accountService', () => ({
   recordAccountLogin: mocks.recordAccountLogin,
   lastKnownAccountUserType: vi.fn(async () => undefined),
@@ -99,7 +104,6 @@ const prepareApp = () => {
     NODE_ENV: 'test',
     SSOBASEURL: stubCas.baseUrl,
     SESSION_SECRET: STRONG_SESSION_SECRET,
-    CAS_VALIDATION_TIMEOUT_MS: '250',
   };
   delete process.env.SERVER_BASE_URL;
 };
@@ -119,14 +123,13 @@ async function withRunningApp(run: (baseUrl: string) => Promise<void>) {
   }
 }
 
-type Hop = { status: number; location: string; cookie: string; body: string; retryAfter: string };
+type Hop = { status: number; location: string; cookie: string; body: string };
 
 const get = async (url: string, cookie = ''): Promise<Hop> => {
   const response = await fetch(url, { headers: cookie ? { cookie } : {}, redirect: 'manual' });
   return {
     status: response.status,
     location: response.headers.get('location') ?? '',
-    retryAfter: response.headers.get('retry-after') ?? '',
     cookie: response.headers
       .getSetCookie()
       .map((value) => value.split(';')[0])
@@ -218,7 +221,6 @@ describe('CAS login callback failures', () => {
       const timedOut = await completeLogin(baseUrl);
 
       expect(timedOut.status).toBe(503);
-      expect(timedOut.retryAfter).toBe('5');
       expect(JSON.parse(timedOut.body)).toEqual({ error: TROUBLE_MESSAGE });
       expectReportedWithoutIdentity();
       expect(reportedText()).toContain('CasValidationTimeoutError');

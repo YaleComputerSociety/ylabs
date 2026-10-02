@@ -53,7 +53,7 @@ The return path is unchanged: `safeRedirectTarget` still decides where a complet
 The callback leg separates a CAS rejection from our own failure, because a student whose login broke on our side must not be told they are unauthorized (#3672).
 `classifyCasCallbackError` in `server/src/utils/casCallbackFailure.ts` walks the error's cause chain, since `passport-cas` wraps every failure, ours included, in a `VError`.
 Only CAS answering `no` to the ticket, or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
-A CAS that cannot be reached, answers with something malformed, or does not answer within `CAS_VALIDATION_TIMEOUT_MS`, and a database that cannot be reached, answer `503` with a `Retry-After`; any other exception answers `500`.
+A CAS that cannot be reached, answers with something malformed, or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds), and a database that cannot be reached, answer `503`; any other exception answers `500`.
 Both carry the same student-facing message asking them to try again, never redirect to the `error` page, and are reported through `captureServerError`.
 The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and an axios error carries the validation URL with the ticket in it.
 A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
@@ -320,7 +320,6 @@ Route any value that is not a literal through `sanitizeLogValue` in `server/src/
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
-| `CAS_VALIDATION_TIMEOUT_MS` | No | How long the login callback waits for CAS ticket validation, including the account write, before answering `503`; defaults to 10000. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
 | `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests, and a range wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104` refuses startup. |
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
