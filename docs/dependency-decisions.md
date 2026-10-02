@@ -4,6 +4,18 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The server moves to Mongoose 9 and MongoDB driver 7 (#4376)
+
+`mongoose` is on 9.10 in the root and `server` projects, and the server's direct `mongodb` dependency moves from `~6.20` to `~7.6`, the line Mongoose 9.10 pins, so the server and Mongoose share one shipped driver.
+`bson` moves to 7.3 with it and is deduplicated onto the copy the driver resolves, so an `ObjectId` built from the direct import and one from the driver are the same class.
+`mongodb-memory-server` moves to 11.3, whose core still pins `mongodb@~7.5.0`; that second driver copy is development-only and installed only for the in-memory test server, as the 6.x one was before.
+
+The migration kept every query's runtime behaviour.
+The `insertMany` and `bulkWrite` provenance guards were rewritten without `next()`, because under Mongoose 9 their first argument is the documents rather than a callback and the old form would have thrown on every such write.
+`new: true` became `returnDocument: 'after'`, the one Model-level update pipeline (a test) passes `updatePipeline: true`, and `FilterQuery` became `QueryFilter`.
+The stricter filter typing rejected widened literals and `unknown` ids from loosely typed lean rows, which are now typed at the call site, and reads that still match the retired `researchGroup` observation subject go through the shared `researchEntityObservationSubjects` constant in `models/observation.ts`.
+`Document.prototype.validateSync()` is deprecated for Mongoose 10 and is still used by model tests; moving them to `validate()` is left for that upgrade.
+
 ## 2026-10-02: The server moves to Express 5 and drops its `path-to-regexp` pin (#4374)
 
 The `server` `resolutions` pinned `path-to-regexp` to 0.1.13, the patched release of the route matcher Express 4's router used.

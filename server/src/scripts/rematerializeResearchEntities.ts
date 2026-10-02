@@ -209,7 +209,7 @@ async function discoverForeignContactSlugs(): Promise<string[]> {
     superseded: false,
     field: { $in: [...RESEARCH_ENTITY_CONTACT_FIELDS] },
     $or: [
-      { entityId: { $in: rows.map((row) => row._id) } },
+      { entityId: { $in: rows.map((row) => row._id as mongoose.Types.ObjectId) } },
       { entityKey: { $in: rows.map((row) => String(row.slug || '')).filter(Boolean) } },
     ],
   })

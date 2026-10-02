@@ -58,7 +58,7 @@ describe('scrape job locks', () => {
       leaseExpiresAt: new Date(NOW.getTime() + DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS),
     });
     expect((update as any).$unset).toEqual({ releasedAt: '', releaseReason: '' });
-    expect(options).toMatchObject({ new: true });
+    expect(options).toMatchObject({ returnDocument: 'after' });
   });
 
   it('returns lock-held when a concurrent create loses the unique-key race', async () => {

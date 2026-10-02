@@ -168,7 +168,7 @@ async function main(): Promise<void> {
       superseded: { $ne: true },
       'rollback.rolledBackAt': { $exists: false },
       $or: [
-        { entityId: { $in: chunk.map((e) => (e as { _id: unknown })._id) } },
+        { entityId: { $in: chunk.map((e) => (e as { _id: mongoose.Types.ObjectId })._id) } },
         { entityKey: { $in: chunk.map((e) => String((e as { slug?: unknown }).slug || '')) } },
       ],
     })

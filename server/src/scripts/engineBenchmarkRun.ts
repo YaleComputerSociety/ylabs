@@ -301,7 +301,7 @@ export async function captureEngineBenchmark(
       invalidatedScrapeRunIds: await invalidatedScrapeRunIds(),
       labels,
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
 
   return {

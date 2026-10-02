@@ -157,7 +157,7 @@ export async function materializeOrgUnitSignalsForObservations(input: {
     if (isOrgUnitCourseCreditRouteAbsence(observation.value)) {
       const liveRoute = {
         orgUnitId: (orgUnit as any)._id,
-        type: 'COURSE_CREDIT_PATHWAY',
+        type: 'COURSE_CREDIT_PATHWAY' as const,
         derivationKey: courseCreditRouteDerivationKey(input.orgUnitSlug, sourceName),
         archived: { $ne: true },
       };
@@ -193,7 +193,7 @@ export async function materializeOrgUnitSignalsForObservations(input: {
     await Signal.updateOne(
       {
         orgUnitId: (orgUnit as any)._id,
-        type: 'COURSE_CREDIT_PATHWAY',
+        type: 'COURSE_CREDIT_PATHWAY' as const,
         derivationKey: courseCreditRouteDerivationKey(input.orgUnitSlug, sourceName),
       },
       {

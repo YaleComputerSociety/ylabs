@@ -468,7 +468,7 @@ router.put(
     }
 
     const area = await ResearchArea.findByIdAndUpdate(safeId, update, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
 
@@ -582,7 +582,7 @@ router.put(
     if (isActive !== undefined) update.isActive = isActive === true;
 
     const dept = await Department.findByIdAndUpdate(safeId, update, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
 

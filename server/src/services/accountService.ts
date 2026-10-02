@@ -94,7 +94,7 @@ export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.
         status: 'ACTIVE',
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
+    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true, runValidators: true },
   ).lean();
   return new mongoose.Types.ObjectId(String((account as { _id: unknown })._id));
 };
@@ -140,7 +140,7 @@ export const recordAccountLogin = async (input: AccountLoginInput): Promise<Acco
       },
     },
     {
-      new: true,
+      returnDocument: 'after',
       upsert: true,
       setDefaultsOnInsert: true,
       runValidators: true,

@@ -169,27 +169,11 @@ export function registerFieldProvenanceBackingGuard(schema: mongoose.Schema): vo
   schema.pre('save', function guardSave(this: ProvenanceGuardedDocument) {
     assertDocumentProvenanceIsBacked(this);
   });
-  schema.pre(
-    'insertMany',
-    function guardInsertMany(next: (error?: Error) => void, documents: unknown) {
-      try {
-        const list = Array.isArray(documents) ? documents : [documents];
-        for (const document of list) assertFieldProvenanceWriteIsBacked(document);
-        next();
-      } catch (error) {
-        next(error as Error);
-      }
-    },
-  );
-  schema.pre(
-    'bulkWrite',
-    function guardBulkWrite(next: (error?: Error) => void, operations: unknown) {
-      try {
-        assertBulkWriteIsBacked(operations);
-        next();
-      } catch (error) {
-        next(error as Error);
-      }
-    },
-  );
+  schema.pre('insertMany', function guardInsertMany(documents: unknown) {
+    const list = Array.isArray(documents) ? documents : [documents];
+    for (const document of list) assertFieldProvenanceWriteIsBacked(document);
+  });
+  schema.pre('bulkWrite', function guardBulkWrite(operations: unknown) {
+    assertBulkWriteIsBacked(operations);
+  });
 }

@@ -28,7 +28,7 @@
  * runtime can be exercised in tests without ever touching the network.
  */
 import axios from 'axios';
-import mongoose, { type FilterQuery } from 'mongoose';
+import mongoose, { type QueryFilter } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
@@ -454,7 +454,7 @@ function liveEvidenceQuoteFromRow(row: LaneQuoteObservationRow | null): LiveEvid
 }
 
 function latestLaneQuoteObservation(
-  identity: FilterQuery<unknown>,
+  identity: QueryFilter<unknown>,
 ): Promise<LaneQuoteObservationRow | null> {
   return Observation.findOne({
     entityType: 'researchEntity',
@@ -486,7 +486,7 @@ export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (
       _id: mongoose.Types.ObjectId;
       fieldProvenance?: Record<string, { observationId?: unknown } | undefined>;
     }>();
-  const ownIdentity: FilterQuery<unknown> = survivor
+  const ownIdentity: QueryFilter<unknown> = survivor
     ? { $or: [{ entityKey }, { entityId: survivor._id }] }
     : { entityKey };
   const own = await latestLaneQuoteObservation(ownIdentity);
@@ -1202,7 +1202,7 @@ async function defaultWorkPlanLoader(
  * ceiling for it has to be read against. Exported so the audit reports the same
  * number the run would process instead of restating the predicate (#1362).
  */
-export const UNDERGRAD_LLM_CANDIDATE_FILTER: FilterQuery<Record<string, unknown>> = {
+export const UNDERGRAD_LLM_CANDIDATE_FILTER: QueryFilter<Record<string, unknown>> = {
   archived: { $ne: true },
   $or: [
     { websiteUrl: { $exists: true, $ne: '' } },

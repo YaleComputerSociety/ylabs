@@ -69,7 +69,7 @@ const seedRuns = async () => {
 };
 
 const observation = (runId: mongoose.Types.ObjectId, field: string, value: unknown) => ({
-  entityType: 'researchEntity',
+  entityType: 'researchEntity' as const,
   entityKey: SLUG,
   field,
   value,

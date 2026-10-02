@@ -821,7 +821,7 @@ export const updateFellowship = async (id: any, data: any) => {
     ? { $set: withoutClearedVerdict(safeData), $unset: clearedProgramStudentVisibilityVerdict() }
     : safeData;
   const fellowship = await Fellowship.findByIdAndUpdate(safeId, update, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true,
   });
   if (!fellowship) throw new NotFoundError('Fellowship not found');

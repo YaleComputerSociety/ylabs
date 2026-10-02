@@ -1,7 +1,7 @@
 import { Signal } from '../models/signal';
 import { observationStoreIsPopulated } from '../scrapers/observationStoreAvailability';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
@@ -680,7 +680,7 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     if (entity.slug) clauses.push({ entityKey: entity.slug });
     if (clauses.length === 0) return 0;
     return Observation.countDocuments({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: { $in: researchEntityObservationSubjects },
       superseded: false,
       $or: clauses,
     });
@@ -708,7 +708,7 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     if (entity.slug) clauses.push({ entityKey: entity.slug });
     if (clauses.length === 0) return 0;
     return Observation.countDocuments({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: { $in: researchEntityObservationSubjects },
       superseded: false,
       $and: [
         { $or: clauses },

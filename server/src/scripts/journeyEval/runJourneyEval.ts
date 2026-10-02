@@ -143,7 +143,7 @@ async function readOwnedSlotSurvivorWebsite(
     await Observation.find({
       entityType: 'researchEntity',
       ...materializationReadScopeFilter(),
-      $or: [{ entityKey: slug }, { entityId: survivor._id }],
+      $or: [{ entityKey: slug }, { entityId: survivor._id as mongoose.Types.ObjectId }],
     }).lean(),
     invalidatedRunIds,
   );

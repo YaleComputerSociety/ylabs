@@ -1,5 +1,5 @@
 import { Fellowship } from '../models/fellowship';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
@@ -2096,7 +2096,7 @@ const defaultRepairDeps: RepairDeps = {
           defaultWeight: 0.22,
         },
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
     if (!source) return [];
 
@@ -2143,7 +2143,7 @@ const defaultRepairDeps: RepairDeps = {
     ]).filter(isCitableEvidenceUrl);
     const sourceUrlFilter = variants.length > 0 ? { sourceUrl: { $in: variants } } : {};
     const observations = await Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: { $in: researchEntityObservationSubjects },
       entityId: entityObjectId,
       field: { $in: ['undergradEvidenceQuote', 'undergradAccessEvidence'] },
       sourceId: { $ne: null },

@@ -135,11 +135,9 @@ export const researcherProfileLinkSchema = new mongoose.Schema<ResearcherProfile
       enum: [...researcherProfileLinkPurposes],
       required: true,
       validate: {
-        validator: function (
-          this: { kind?: ResearcherProfileLinkKind },
-          value: ResearcherProfileLinkPurpose,
-        ) {
-          return this.kind !== undefined && PROFILE_LINK_PURPOSE_BY_KIND[this.kind] === value;
+        validator: function (this: unknown, value: ResearcherProfileLinkPurpose) {
+          const { kind } = this as { kind?: ResearcherProfileLinkKind };
+          return kind !== undefined && PROFILE_LINK_PURPOSE_BY_KIND[kind] === value;
         },
         message: 'Profile link purpose is incompatible with its kind.',
       },
@@ -150,8 +148,9 @@ export const researcherProfileLinkSchema = new mongoose.Schema<ResearcherProfile
       trim: true,
       maxlength: 2048,
       validate: {
-        validator: function (this: { kind?: ResearcherProfileLinkKind }, value: string) {
-          return this.kind !== undefined && isVerifiedProfileUrl(this.kind, value);
+        validator: function (this: unknown, value: string) {
+          const { kind } = this as { kind?: ResearcherProfileLinkKind };
+          return kind !== undefined && isVerifiedProfileUrl(kind, value);
         },
         message: 'Profile link URL is not valid for its verified kind.',
       },
@@ -208,9 +207,10 @@ function hasBoundedUniqueProfileKinds(values: readonly ResearcherProfileLink[]):
 }
 
 function orcidProfileMatchesIdentifier(
-  this: { identifiers?: { orcid?: string } },
+  this: unknown,
   values: readonly ResearcherProfileLink[],
 ): boolean {
+  const { identifiers } = this as { identifiers?: { orcid?: string } };
   const link = values.find(({ kind }) => kind === 'ORCID');
   if (!link) return true;
 
@@ -218,9 +218,7 @@ function orcidProfileMatchesIdentifier(
   const profileOrcid = url ? orcidFromUrl(url) : undefined;
   if (profileOrcid === undefined) return true;
 
-  return (
-    this.identifiers?.orcid !== undefined && profileOrcid === this.identifiers.orcid.toUpperCase()
-  );
+  return identifiers?.orcid !== undefined && profileOrcid === identifiers.orcid.toUpperCase();
 }
 
 export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(

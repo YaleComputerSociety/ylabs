@@ -63,7 +63,7 @@ const text = (value: unknown): string => (typeof value === 'string' ? value.trim
 
 async function loadInputs() {
   const liveLane = {
-    entityType: 'researchEntity',
+    entityType: 'researchEntity' as const,
     sourceName: SHARED_ROSTER_WEBSITE_LANE,
     superseded: { $ne: true },
   };

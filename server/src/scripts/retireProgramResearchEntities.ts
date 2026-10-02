@@ -160,7 +160,9 @@ async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEnt
     } else if (fellowshipTitles.has(normalizeFellowshipTitle(name || slug))) {
       fellowshipMatchKey = 'title';
     }
-    const signalCount = await Signal.countDocuments({ researchEntityId: entity._id });
+    const signalCount = await Signal.countDocuments({
+      researchEntityId: entity._id as mongoose.Types.ObjectId,
+    });
     candidates.push({
       id,
       ...(slug ? { slug } : {}),

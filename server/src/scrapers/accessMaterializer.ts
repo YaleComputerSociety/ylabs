@@ -5,7 +5,7 @@
  * on the research-entity index rather than a separate pathway index.
  */
 import mongoose from 'mongoose';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
 import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
@@ -651,7 +651,7 @@ export async function deriveAccessArtifactsForResearchGroup(
   const observations =
     inputObservations ||
     ((await Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: { $in: researchEntityObservationSubjects },
       superseded: false,
       $or: [
         { entityId: researchEntityObjectId },
@@ -718,7 +718,7 @@ export async function foreignContactFieldSignalIds(
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const slugs = rows.map((row) => idText(row.slug)).filter(Boolean);
   const liveContactObservations = (await Observation.find({
-    entityType: { $in: ['researchEntity', 'researchGroup'] },
+    entityType: { $in: researchEntityObservationSubjects },
     superseded: false,
     field: { $in: [...RESEARCH_ENTITY_CONTACT_FIELDS] },
     $or: [{ entityId: { $in: rowIds } }, { entityKey: { $in: slugs } }],

@@ -40,15 +40,13 @@ export function normalizeTaxonomyLabel(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
-function hasBoundedUniqueAliases(
-  this: { normalizedLabel?: string },
-  values: readonly string[],
-): boolean {
+function hasBoundedUniqueAliases(this: unknown, values: readonly string[]): boolean {
+  const { normalizedLabel } = this as { normalizedLabel?: string };
   const normalized = values.map(normalizeTaxonomyLabel);
   return (
     values.length <= MAX_TAXONOMY_ALIASES &&
     new Set(normalized).size === values.length &&
-    !normalized.includes(this.normalizedLabel ?? '')
+    !normalized.includes(normalizedLabel ?? '')
   );
 }
 
@@ -79,8 +77,9 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
       },
       set: normalizeTaxonomyLabel,
       validate: {
-        validator: function (this: { label?: string }, value: string) {
-          return this.label !== undefined && value === normalizeTaxonomyLabel(this.label);
+        validator: function (this: unknown, value: string) {
+          const { label } = this as { label?: string };
+          return label !== undefined && value === normalizeTaxonomyLabel(label);
         },
         message: 'normalizedLabel must match the canonical label.',
       },

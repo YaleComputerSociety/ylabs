@@ -18,7 +18,7 @@ import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
 import { TaxonomyTerm } from '../taxonomyTerm';
 
-const models: Array<[mongoose.Model<any>, string]> = [
+const models: Array<[mongoose.Model<any, any, any, any>, string]> = [
   [Account, 'accounts'],
   [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
@@ -38,7 +38,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [TaxonomyTerm, 'taxonomy_terms'],
 ];
 
-function schemaPathSegments(model: mongoose.Model<any>): string[] {
+function schemaPathSegments(model: mongoose.Model<any, any, any, any>): string[] {
   return Object.keys(model.schema.paths)
     .flatMap((path) => path.split('.'))
     .filter((segment) => segment !== '$*');

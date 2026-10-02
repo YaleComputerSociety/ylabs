@@ -292,7 +292,7 @@ const normalizedIdentityValue = (expression: unknown): Record<string, unknown> =
 });
 
 async function loadIdentityCollisionGroups(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   identityField: DuplicatePersonGroup['identityField'],
   valuePath: string,
 ): Promise<DuplicatePersonGroup[]> {
@@ -576,7 +576,7 @@ const currentMembersOnArchivedEntitiesPipeline = (): mongoose.PipelineStage[] =>
 ];
 
 async function countPipeline(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   pipeline: mongoose.PipelineStage[],
 ): Promise<number> {
   const [row] = await model.aggregate([...pipeline, { $count: 'total' }]);

@@ -10,7 +10,7 @@ import {
   UPCOMING_DUPLICATE_WINDOW_FIELD,
   type UpcomingDuplicateWindow,
 } from './programUpcomingDuplicateWindow';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
@@ -1971,13 +1971,13 @@ async function planResearchEntityGateUpdates(
       }),
       Observation.distinct('entityId', {
         sourceName: options.sourceName,
-        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        entityType: { $in: researchEntityObservationSubjects },
         superseded: false,
         entityId: { $exists: true, $ne: null },
       }),
       Observation.distinct('entityKey', {
         sourceName: options.sourceName,
-        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        entityType: { $in: researchEntityObservationSubjects },
         superseded: false,
         entityKey: { $exists: true, $ne: '' },
       }),

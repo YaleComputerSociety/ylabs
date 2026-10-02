@@ -440,7 +440,7 @@ export async function runSourceLinkHealthBackfill(options: {
       result.scanned += 1;
       try {
         const signalRows = await Signal.find({
-          researchEntityId: entity._id,
+          researchEntityId: entity._id as mongoose.Types.ObjectId,
           type: { $in: accessSignalTypes },
           archived: false,
         })

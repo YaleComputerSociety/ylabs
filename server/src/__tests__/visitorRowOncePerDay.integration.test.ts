@@ -38,7 +38,9 @@ describe('visitor rows over a real store', () => {
 
     await Promise.all(Array.from({ length: 6 }, () => logVisit('stud01', visitedAt)));
 
-    await expect(AnalyticsEvent.countDocuments({ eventType: 'visitor' })).resolves.toBe(1);
+    await expect(
+      AnalyticsEvent.countDocuments({ eventType: AnalyticsEventType.VISITOR }),
+    ).resolves.toBe(1);
   });
 
   it('records a later day and a different student separately', async () => {
@@ -46,6 +48,8 @@ describe('visitor rows over a real store', () => {
     await logVisit('stud01', new Date('2026-09-28T00:01:00.000Z'));
     await logVisit('stud02', new Date('2026-09-27T12:00:00.000Z'));
 
-    await expect(AnalyticsEvent.countDocuments({ eventType: 'visitor' })).resolves.toBe(3);
+    await expect(
+      AnalyticsEvent.countDocuments({ eventType: AnalyticsEventType.VISITOR }),
+    ).resolves.toBe(3);
   });
 });

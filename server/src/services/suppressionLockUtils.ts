@@ -8,7 +8,7 @@ export interface SuppressionLockedRecord {
 }
 
 export async function findSuppressionLockedRecord(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   filter: Record<string, unknown>,
 ): Promise<SuppressionLockedRecord | null> {
   if (typeof (model as any).findOne !== 'function') return null;

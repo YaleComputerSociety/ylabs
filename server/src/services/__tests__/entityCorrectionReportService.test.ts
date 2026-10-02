@@ -226,7 +226,7 @@ describe('entityCorrectionReportService', () => {
           }),
         },
       }),
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 

@@ -5,7 +5,12 @@ description: Use when working on MongoDB data behavior, Meilisearch indexing, Re
 
 # Search and Data
 
-MongoDB uses Mongoose 8.
+MongoDB uses Mongoose 9 on MongoDB Node driver 7; the server's direct `mongodb` dependency is pinned to the driver line Mongoose pins, so one driver version ships.
+Mongoose 9 conventions this code base relies on:
+- Pre middleware takes no `next()`: a hook throws to refuse and returns (or awaits) to continue, and an `insertMany` or `bulkWrite` pre hook receives the documents or operations as its first argument.
+- `findOneAndUpdate` and `findByIdAndUpdate` ask for the updated row with `returnDocument: 'after'`; `new: true` is deprecated and logs a warning.
+- A Model-level update pipeline (an array update) throws unless the call passes `updatePipeline: true`; raw `collection` handles are unaffected.
+- Filters are typed against the schema, so a widened `string` where an enum is stored, or an `unknown` id from a loosely typed lean row, fails typecheck rather than reaching the query.
 All environments use `MONGODBURL`; the connection string determines whether the app uses Development, Beta, or Production.
 There is a single application connection: the `API_MODE=productionMigration` dual-DB path was removed with the Listing analytics lane, since the retired `listings` collection was its only reader.
 

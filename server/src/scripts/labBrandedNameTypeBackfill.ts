@@ -211,7 +211,7 @@ async function retractUnevidencedBrands(
       field: { $in: [...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS] },
       value: row.brandedName,
       superseded: { $ne: true },
-      $or: [{ entityId: entity._id }, { entityKey: row.slug }],
+      $or: [{ entityId: entity._id as mongoose.Types.ObjectId }, { entityKey: row.slug }],
     })
       .select('_id sourceUrl')
       .lean<Array<{ _id: unknown; sourceUrl?: unknown }>>();

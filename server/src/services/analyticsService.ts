@@ -851,7 +851,7 @@ const supersedeSearchEpisode = async (
   const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
   const candidates = await AnalyticsEvent.find({
     eventType: AnalyticsEventType.SEARCH,
-    netid: eventPayload.netid,
+    netid: eventPayload.netid as string,
     dedupeKey: { $exists: false },
     timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS) },
     $or: [

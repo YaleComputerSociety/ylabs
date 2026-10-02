@@ -34,6 +34,13 @@ export const observedEntityTypes = [
 
 export type ObservedEntityType = (typeof observedEntityTypes)[number];
 
+// `researchGroup` is not admissible on write, so the cast is a type-level widening only:
+// readers still match it so rows stored under the retired subject name stay reachable.
+export const researchEntityObservationSubjects = [
+  'researchEntity',
+  'researchGroup',
+] as readonly string[] as readonly ObservedEntityType[];
+
 const observationSchema = new mongoose.Schema(
   {
     entityType: {
