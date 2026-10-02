@@ -13,7 +13,7 @@ vi.mock('../../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({ default: vi.fn() }));
+vi.mock('../../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;

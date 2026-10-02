@@ -16,7 +16,7 @@ import {
 import axios from '../utils/axios';
 import type { CorpusQualityResponse } from '../components/analytics/corpusQualityTypes';
 import type { LaneBenchmarkResponse } from '../components/analytics/laneBenchmarkTypes';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../utils/appDialogs';
 import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import useLatestRequest from '../hooks/useLatestRequest';
@@ -208,9 +208,9 @@ const Analytics = () => {
       });
     } catch {
       console.error('Error fetching analytics.');
-      void swal({
+      void showAlert({
         text: 'Failed to load analytics data',
-        icon: 'error',
+        tone: 'error',
       });
       dispatch({
         type: 'FETCH_FAILURE',
@@ -409,12 +409,12 @@ const Analytics = () => {
   const handleRevokeAdminAccess = useCallback(
     async (netid: string) => {
       const normalizedNetid = netid.trim().toLowerCase();
-      const confirmed = await swal({
+      const confirmed = await confirmAction({
         title: 'Revoke admin access?',
         text: `Revoke admin access for ${normalizedNetid}?`,
-        icon: 'warning',
-        buttons: ['Cancel', 'Revoke'],
-        dangerMode: true,
+        tone: 'warning',
+        confirmLabel: 'Revoke',
+        destructive: true,
       });
       if (!confirmed) return;
 

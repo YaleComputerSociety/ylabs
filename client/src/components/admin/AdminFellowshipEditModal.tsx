@@ -7,7 +7,7 @@
 import { useState, useEffect, useReducer, KeyboardEvent } from 'react';
 import { Fellowship } from '../../types/types';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   adminFellowshipEditReducer,
@@ -146,36 +146,36 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
   }, []);
 
   const handleDelete = async () => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Fellowship',
       text: `Permanently delete "${fellowship.title}"? This cannot be undone.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
     if (!confirmed) return;
     try {
       await axios.delete(`/admin/fellowships/${fellowship.id}`, {
         withCredentials: true,
       });
-      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship deleted', tone: 'success', autoCloseMs: 1500 });
       onSave();
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
+      void showAlert({ text: clientErrorMessage(error, 'Failed to delete'), tone: 'error' });
     }
   };
 
   const handleSave = async () => {
     if (!title.trim()) {
-      void swal({ text: 'Title is required', icon: 'warning' });
+      void showAlert({ text: 'Title is required', tone: 'warning' });
       return;
     }
 
-    const confirmSave = await swal({
+    const confirmSave = await confirmAction({
       title: 'Save Changes',
       text: 'Are you sure you want to update this fellowship?',
-      icon: 'info',
-      buttons: ['Cancel', 'Save'],
+      tone: 'info',
+      confirmLabel: 'Save',
     });
 
     if (!confirmSave) return;
@@ -214,11 +214,14 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
         },
         { withCredentials: true },
       );
-      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship updated', tone: 'success', autoCloseMs: 1500 });
       onSave();
     } catch (error: any) {
       console.error('Error updating fellowship.');
-      void swal({ text: clientErrorMessage(error, 'Failed to update fellowship'), icon: 'error' });
+      void showAlert({
+        text: clientErrorMessage(error, 'Failed to update fellowship'),
+        tone: 'error',
+      });
     } finally {
       dispatch({ type: 'SET_SAVING', payload: false });
     }

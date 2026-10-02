@@ -6,7 +6,10 @@ import type { Fellowship } from '../../../types/types';
 import axios from '../../../utils/axios';
 
 vi.mock('../../../utils/axios', () => ({ default: { put: vi.fn(), delete: vi.fn() } }));
-vi.mock('sweetalert', () => ({ default: vi.fn(() => Promise.resolve(true)) }));
+vi.mock('../../../utils/appDialogs', () => ({
+  showAlert: vi.fn(),
+  confirmAction: vi.fn(() => Promise.resolve(true)),
+}));
 
 const fellowship = {
   id: 'f1',

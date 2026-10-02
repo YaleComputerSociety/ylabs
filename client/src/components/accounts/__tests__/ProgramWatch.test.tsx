@@ -10,7 +10,7 @@ vi.mock('../../../utils/axios', () => ({
   default: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock('sweetalert', () => ({ default: vi.fn() }));
+vi.mock('../../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../../utils/researchAnalytics', () => ({
   trackResearchEvent: vi.fn(),

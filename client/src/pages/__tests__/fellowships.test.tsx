@@ -13,7 +13,7 @@ import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
 import axios from '../../utils/axios';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
-import swal from 'sweetalert';
+import { showAlert } from '../../utils/appDialogs';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -23,7 +23,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({ default: vi.fn() }));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../utils/researchAnalytics', async () => ({
   ...(await vi.importActual<typeof import('../../utils/researchAnalytics')>(
@@ -1071,8 +1071,8 @@ describe('Programs page', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
 
       await waitFor(() =>
-        expect(swal).toHaveBeenCalledWith(
-          expect.objectContaining({ icon: 'warning', text: expect.stringMatching(/program/i) }),
+        expect(showAlert).toHaveBeenCalledWith(
+          expect.objectContaining({ tone: 'warning', text: expect.stringMatching(/program/i) }),
         ),
       );
     });
@@ -1188,7 +1188,7 @@ describe('Programs page', () => {
 
       await userEvent.click(await screen.findByRole('button', { name: 'Saved program program-a' }));
 
-      await waitFor(() => expect(swal).toHaveBeenCalled());
+      await waitFor(() => expect(showAlert).toHaveBeenCalled());
       expect(mockedAxios.delete).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
     });
