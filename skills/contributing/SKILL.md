@@ -62,6 +62,11 @@ Omission is therefore no longer unsafe, and the convention is what keeps the tar
 Never hand the guard an `env` override while omitting `mongoUrl`: the guard would resolve its target from that stub while the script connects through the real `process.env`, which is the one remaining way past the check.
 `server/src/scripts/__tests__/scriptWriteGuards.test.ts` closes the argument-shape space rather than enumerating call sites, so a new apply path is covered by whichever shape it uses, and the shape that resolves nothing is recorded there as the one to avoid.
 
+Every entry script under `server/src/scripts` with an `--apply` path, named in its own code or through an imported function that parses the flag, must call `assertScriptApplyAllowed` itself or through an imported function that calls it, or be listed in `APPLY_GUARD_EXEMPTIONS` with the guard that stands in for it (`server/src/scripts/__tests__/everyApplyPathReachesTheApplyGuard.test.ts`, #4320).
+The test parses each module with the TypeScript compiler and follows calls of imported functions rather than imports alone, so a constant imported from a guarded script does not count as a guard and a comment that mentions the flag is not an apply path.
+The exemptions are the read-only instruments that throw on `--apply`, the Development-only scripts that check the database name themselves, the promotion and sync tooling, and the sweep runner, which forwards `--apply` to stages that each run their own guard.
+`assertScraperEnvironmentMatchesMongoTarget` resolves `mongoUrl ?? env.MONGODBURL` the same way the apply guard does, so a scraper caller that omits the URL is still checked against the database it will connect to.
+
 `humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
 Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
 

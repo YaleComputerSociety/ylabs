@@ -170,6 +170,54 @@ describe('assertScraperEnvironmentMatchesMongoTarget', () => {
   });
 });
 
+describe('assertScraperEnvironmentMatchesMongoTarget with the target omitted (#4320)', () => {
+  const productionUrl = 'mongodb+srv://user:pass@example.mongodb.net/Prod';
+
+  it.each(['development', 'beta'] as const)(
+    'refuses a %s profile whose only target is a production MONGODBURL',
+    (environment) => {
+      expect(() =>
+        assertScraperEnvironmentMatchesMongoTarget({
+          environment,
+          env: { SCRAPER_ENV: environment, MONGODBURL: productionUrl },
+        }),
+      ).toThrow('does not match Mongo database "Prod"');
+    },
+  );
+
+  it('prefers an explicit target over MONGODBURL', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'development',
+        mongoUrl: 'mongodb://localhost/Development',
+        env: { SCRAPER_ENV: 'development', MONGODBURL: productionUrl },
+      }),
+    ).not.toThrow();
+  });
+
+  it('reports the environment target in the guard label instead of calling it missing', () => {
+    expect(
+      applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { dryRun: true, useCache: true, release: false },
+        autoMaterialize: false,
+        env: { SCRAPER_ENV: 'development', MONGODBURL: 'mongodb://localhost/Development' },
+      }).dbLabel,
+    ).toBe('localhost/Development');
+  });
+
+  it('applies the same check through the scraper command guard', () => {
+    expect(() =>
+      applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { dryRun: true, useCache: true, release: false },
+        autoMaterialize: false,
+        env: { SCRAPER_ENV: 'beta', MONGODBURL: productionUrl },
+      }),
+    ).toThrow('does not match Mongo database "Prod"');
+  });
+});
+
 describe('applyScraperEnvironmentGuards', () => {
   const baseOptions = {
     dryRun: false,
