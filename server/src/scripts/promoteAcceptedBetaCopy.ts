@@ -13,6 +13,12 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { reduceAccountToMirroredFields } from './mirroredAccountFields';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertDatabaseCopyPair,
+  assertDatabaseCopyPairUrls,
+  parseMongoTarget,
+  type ResolvedDatabaseCopyPair,
+} from './databaseCopyPairs';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   ACCOUNT_ID_REFERENCE_FIELDS,
@@ -119,6 +125,8 @@ export interface PromotionSummary {
   datasetVersion: string;
   betaTarget: string;
   productionTarget: string;
+  sourceDatabase: string;
+  targetDatabase: string;
   includesObservations: boolean;
   includesScrapeRuns: boolean;
   collections: CollectionPlan[];
@@ -239,12 +247,17 @@ export function parsePromotionOptions(
   };
 }
 
-export function assertSafeOptions(options: PromotionOptions) {
+export function assertSafeOptions(options: PromotionOptions): ResolvedDatabaseCopyPair {
   if (!options.betaUrl) throw new Error('BETA_MONGODBURL is required');
   if (!options.productionUrl) throw new Error('PRODUCTION_MONGODBURL is required');
   if (options.betaUrl === options.productionUrl) {
     throw new Error('BETA_MONGODBURL and PRODUCTION_MONGODBURL must be different');
   }
+  const databases = assertDatabaseCopyPairUrls(
+    'beta-to-production',
+    options.betaUrl,
+    options.productionUrl,
+  );
   if (!DATASET_VERSION_PATTERN.test(options.datasetVersion)) {
     throw new Error(
       'A dataset version like prod-promote-YYYY-MM-DD-lane-a-beta-copy is required via --dataset-version or PROMOTION_DATASET_VERSION',
@@ -270,6 +283,7 @@ export function assertSafeOptions(options: PromotionOptions) {
       throw new Error('Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true');
     }
   }
+  return databases;
 }
 
 /**
@@ -370,6 +384,8 @@ export function buildPromotionSummary(
     datasetVersion: options.datasetVersion,
     betaTarget: summarizeMongoUrl(options.betaUrl),
     productionTarget: summarizeMongoUrl(options.productionUrl),
+    sourceDatabase: parseMongoTarget(options.betaUrl).database,
+    targetDatabase: parseMongoTarget(options.productionUrl).database,
     includesObservations: options.includeObservations,
     includesScrapeRuns: options.includeScrapeRuns,
     collections: plan,
@@ -847,6 +863,7 @@ async function main() {
     await productionClient.connect();
     const betaDb = betaClient.db();
     const productionDb = productionClient.db();
+    assertDatabaseCopyPair('beta-to-production', betaDb.databaseName, productionDb.databaseName);
     const manifest = await resolvePromotionManifest(betaDb, options);
     const plan = await buildPlan(betaDb, productionDb, manifest.collections);
     const blockedSyntheticUserReferences = await syntheticUserReferences(betaDb);

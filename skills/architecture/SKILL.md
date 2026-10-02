@@ -234,6 +234,7 @@ Beta is the staging gate.
 Scraper fetches run from the local machine and need no Yale VPN or campus wifi; only private-address hosts such as `ensemble.yale.edu` are Yale-network-only.
 Development is the only environment scrapers write to: every sweep fetches and materializes there.
 Beta receives the accepted Development dataset through `beta:refresh-from-development`, Production receives accepted Beta through `production:promote-beta-copy`, and each target then re-gates and reindexes from its Render shell.
+Those copies and the Beta-to-Development mirror are the only allowed database pairs, listed by their real database names (`Development`, `Beta`, `Prod`) in `DATABASE_COPY_PAIRS` in `server/src/scripts/databaseCopyPairs.ts`; each copy script refuses any other source or target, and `yarn --cwd server database:verify-names` runs the same check from a shell (#4150).
 The scrape CLI refuses a `run` or `materialize` write against Beta or Production.
 Use `docs/data-refresh-runbook.md` for the canonical commands.
 

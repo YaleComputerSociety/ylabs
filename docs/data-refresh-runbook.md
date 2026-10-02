@@ -120,7 +120,7 @@ Two write paths into one environment overwrite each other, and a Beta that was s
 | ----------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
 | Development | Atlas `Development` database | Local Docker                              | Every scraper sweep, materialization, data repair, and disposable experiment |
 | Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Mirrored staging candidate and human audit                                   |
-| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                      |
+| Production  | Atlas `Prod` database        | Render private service with `prod` prefix | Accepted live data only                                                      |
 
 Development data reaches Beta only through the guarded research-data mirror described below.
 The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
@@ -166,8 +166,8 @@ Copied telemetry would attribute one environment's student behavior to another, 
 | Development sweep, repair, and gates        | Local machine, any network      | Atlas `Development`                 | Local Docker `researchentities` |
 | Development-to-Beta mirror                  | Local approved operator machine | Atlas `Development` to Atlas `Beta` | None                            |
 | Beta re-gate, reindex, and audit            | Beta Render shell               | Atlas `Beta`                        | `beta_researchentities`         |
-| Beta-to-Production promotion                | Local approved operator machine | Atlas `Beta` to Atlas `Production`  | None                            |
-| Production re-gate, reindex, and smoke test | Production Render shell         | Atlas `Production`                  | `prod_researchentities`         |
+| Beta-to-Production promotion                | Local approved operator machine | Atlas `Beta` to Atlas `Prod`        | None                            |
+| Production re-gate, reindex, and smoke test | Production Render shell         | Atlas `Prod`                        | `prod_researchentities`         |
 
 Finish the Development sweep and its gates before touching Beta.
 Mirror to Beta once, after the whole Development candidate is accepted, and promote to Production once, after Beta is audited.
@@ -186,8 +186,8 @@ test -d server
 
 ## Never Do These Things
 
-- Never point ordinary local development at the `Beta` or `Production` database.
-- Never give the Development or Beta database user access to `Production`.
+- Never point ordinary local development at the `Beta` or `Prod` database.
+- Never give the Development or Beta database user access to `Prod`.
 - Never run a scrape, sweep, or `scrape materialize` write against Beta or Production; the CLI refuses it, and the fix belongs in Development followed by promotion.
 - Never copy Development into Beta outside the guarded research-data mirror.
 - Never copy Development sessions, analytics, caches, locks, or experimental operational data into Beta.
@@ -474,11 +474,7 @@ Verify the Beta Render environment without printing credentials:
 ```bash
 test "$SCRAPER_ENV" = 'beta'
 test "$MEILISEARCH_INDEX_PREFIX" = 'beta'
-node --input-type=module --eval '
-  const database = decodeURIComponent(new URL(process.env.MONGODBURL).pathname.slice(1));
-  if (database !== "Beta") throw new Error(`Expected Beta MongoDB, received ${database}`);
-  console.log("MongoDB target verified: Beta");
-'
+yarn --cwd server database:verify-names --serving beta
 ```
 
 Do not run `scrape materialize` here.
@@ -544,18 +540,12 @@ export PRODUCTION_MONGODBURL
 Verify both database names without printing either credential:
 
 ```bash
-node --input-type=module --eval '
-  const beta = decodeURIComponent(new URL(process.env.BETA_MONGODBURL).pathname.slice(1));
-  const production = decodeURIComponent(
-    new URL(process.env.PRODUCTION_MONGODBURL).pathname.slice(1),
-  );
-  if (beta !== "Beta") throw new Error(`Expected Beta source, received ${beta}`);
-  if (production !== "Production") {
-    throw new Error(`Expected Production target, received ${production}`);
-  }
-  console.log("Promotion targets verified: Beta -> Production");
-'
+yarn --cwd server database:verify-names --pair beta-to-production
 ```
+
+It prints `{"pair":"beta-to-production","sourceDatabase":"Beta","targetDatabase":"Prod"}` and exits non-zero on anything else.
+It runs the same check `production:promote-beta-copy` runs before it connects, from `server/src/scripts/databaseCopyPairs.ts`, so this step and the promotion cannot disagree about the names (#4150).
+The promotion copies only `Beta` to `Prod`: a source or target naming any other database, a local host on either side, or the same URL on both sides is refused, and the dry-run report prints `sourceDatabase` and `targetDatabase`.
 
 Create the required dataset version from the current date:
 
@@ -652,13 +642,7 @@ First verify the Production environment without printing credentials:
 ```bash
 test "$SCRAPER_ENV" = 'production'
 test "$MEILISEARCH_INDEX_PREFIX" = 'prod'
-node --input-type=module --eval '
-  const database = decodeURIComponent(new URL(process.env.MONGODBURL).pathname.slice(1));
-  if (database !== "Production") {
-    throw new Error(`Expected Production MongoDB, received ${database}`);
-  }
-  console.log("MongoDB target verified: Production");
-'
+yarn --cwd server database:verify-names --serving production
 ```
 
 Create and verify the Production Meilisearch restore point or export.

@@ -206,7 +206,7 @@ Do not proceed until the second dry run reports `summary.writesPlanned` as `0` a
 
 Read the copy section above first: `production:promote-beta-copy` carries Beta's validators onto the five canonical collections on its manifest, so a Production apply is needed only for a collection the promotion does not copy.
 
-Point `server/.env` at the `Production` database.
+Point `server/.env` at the `Prod` database.
 Create and record a fresh Production export, Atlas backup, or point-in-time restore point before generating the final plan.
 Generate and review a new Production-specific artifact:
 

@@ -27,6 +27,9 @@ import {
   type AccountCarrySummary,
 } from './accountSwapCarry';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
+import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
+
+export { parseMongoTarget };
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const betaOperatorProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
@@ -53,7 +56,6 @@ export interface SyncCollection {
 }
 
 const BATCH_SIZE = 1000;
-const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 // The reviewable corpus plus the identity spine that resolves its leads. A
 // mirrored environment that carries research_entities without researchers,
@@ -111,12 +113,6 @@ export interface BetaToDevelopmentSummary {
   userCopyPolicy: string;
 }
 
-interface ParsedMongoTarget {
-  database: string;
-  host: string;
-  local: boolean;
-}
-
 const EXCLUDED_BETA_COLLECTIONS = [
   'admin_access_review_projection_state',
   'admin_access_review_projections',
@@ -163,26 +159,6 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_trackings',
   'visibility_release_queue_items',
 ];
-
-export function parseMongoTarget(value: string): ParsedMongoTarget {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error('MongoDB URLs must be valid connection URLs');
-  }
-
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-  if (!database) {
-    throw new Error('MongoDB URLs must include an explicit database name');
-  }
-
-  return {
-    database,
-    host: parsed.hostname,
-    local: LOCAL_MONGO_HOSTS.has(parsed.hostname),
-  };
-}
 
 export function replaceMongoDatabaseName(value: string, databaseName: string): string {
   let parsed: URL;
@@ -277,12 +253,13 @@ export function assertSafeBetaToDevelopmentOptions(options: BetaToDevelopmentOpt
 
   const beta = parseMongoTarget(options.betaUrl);
   const development = parseMongoTarget(options.developmentUrl);
-  if (beta.database !== 'Beta' || beta.local) {
+  const allowedPair = DATABASE_COPY_PAIRS['beta-to-development'];
+  if (beta.database !== allowedPair.source || beta.local) {
     throw new Error(
       `Beta source must be a remote MongoDB database named Beta; resolved ${beta.host}/${beta.database}`,
     );
   }
-  if (development.database !== 'Development' || development.local) {
+  if (development.database !== allowedPair.target || development.local) {
     throw new Error(
       `Development destination must be remote MongoDB database Development; resolved ${development.host}/${development.database}`,
     );

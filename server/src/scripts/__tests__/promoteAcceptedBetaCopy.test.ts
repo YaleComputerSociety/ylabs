@@ -16,7 +16,7 @@ import {
 
 const baseEnv = {
   BETA_MONGODBURL: 'mongodb+srv://user:pass@beta.example.test/Beta',
-  PRODUCTION_MONGODBURL: 'mongodb+srv://user:pass@prod.example.test/Production',
+  PRODUCTION_MONGODBURL: 'mongodb+srv://user:pass@prod.example.test/Prod',
   PROMOTION_DATASET_VERSION: 'prod-promote-2026-05-29-lane-a-beta-copy',
 };
 
@@ -32,6 +32,51 @@ describe('promote accepted Beta copy guards', () => {
       confirmProd: false,
     });
     expect(() => assertSafeOptions(options)).not.toThrow();
+  });
+
+  it('accepts only Beta as the source and Prod as the target, by their real database names', () => {
+    const withUrls = (beta: string, production: string) =>
+      parsePromotionOptions([], {
+        ...baseEnv,
+        BETA_MONGODBURL: beta,
+        PRODUCTION_MONGODBURL: production,
+      });
+    const remote = (database: string, host = 'cluster.example.test') =>
+      `mongodb+srv://user:pass@${host}/${database}`;
+
+    expect(
+      assertSafeOptions(withUrls(remote('Beta'), remote('Prod', 'other.example.test'))),
+    ).toEqual({ pair: 'beta-to-production', sourceDatabase: 'Beta', targetDatabase: 'Prod' });
+
+    for (const source of ['Development', 'Prod', 'Production', 'beta', 'ProductionCopy']) {
+      expect(() =>
+        assertSafeOptions(withUrls(remote(source), remote('Prod', 'other.example.test'))),
+      ).toThrow(`Refusing to copy ${source} -> Prod`);
+    }
+    for (const target of ['Beta', 'Development', 'Production', 'prod', 'ProdRestore']) {
+      expect(() =>
+        assertSafeOptions(withUrls(remote('Beta'), remote(target, 'other.example.test'))),
+      ).toThrow(`Refusing to copy Beta -> ${target}`);
+    }
+  });
+
+  it('refuses a local host on either side and the same URL on both sides', () => {
+    const options = (beta: string, production: string) =>
+      parsePromotionOptions([], {
+        ...baseEnv,
+        BETA_MONGODBURL: beta,
+        PRODUCTION_MONGODBURL: production,
+      });
+
+    expect(() =>
+      assertSafeOptions(options('mongodb://localhost:27017/Beta', baseEnv.PRODUCTION_MONGODBURL)),
+    ).toThrow('both MongoDB targets must be remote');
+    expect(() =>
+      assertSafeOptions(options(baseEnv.BETA_MONGODBURL, 'mongodb://127.0.0.1:27017/Prod')),
+    ).toThrow('both MongoDB targets must be remote');
+    expect(() =>
+      assertSafeOptions(options(baseEnv.BETA_MONGODBURL, baseEnv.BETA_MONGODBURL)),
+    ).toThrow('BETA_MONGODBURL and PRODUCTION_MONGODBURL must be different');
   });
 
   it('blocks apply mode until both production confirmations are present', () => {
@@ -194,7 +239,9 @@ describe('promote accepted Beta copy guards', () => {
       targetEnvironment: 'production',
       datasetVersion: 'prod-promote-2026-05-29-lane-a-beta-copy',
       betaTarget: 'beta.example.test/Beta',
-      productionTarget: 'prod.example.test/Production',
+      productionTarget: 'prod.example.test/Prod',
+      sourceDatabase: 'Beta',
+      targetDatabase: 'Prod',
       includesObservations: false,
       excludedSyntheticUsers: 2,
       applyBlockers: [

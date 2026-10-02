@@ -7,6 +7,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { summarizeAccountCarry } from './accountSwapCarry';
+import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
 import {
   applySync,
   buildPlan,
@@ -70,10 +71,11 @@ export function parseDevelopmentToBetaOptions(
 export function assertSafeDevelopmentToBetaOptions(options: DevelopmentToBetaOptions): void {
   const source = parseMongoTarget(options.developmentUrl);
   const target = parseMongoTarget(options.betaUrl);
-  if (source.database !== 'Development' || source.local) {
+  const allowedPair = DATABASE_COPY_PAIRS['development-to-beta'];
+  if (source.database !== allowedPair.source || source.local) {
     throw new Error('Source must be a remote MongoDB database named Development');
   }
-  if (target.database !== 'Beta' || target.local) {
+  if (target.database !== allowedPair.target || target.local) {
     throw new Error('Target must be a remote MongoDB database named Beta');
   }
   if (options.developmentUrl === options.betaUrl) throw new Error('Source and target must differ');
