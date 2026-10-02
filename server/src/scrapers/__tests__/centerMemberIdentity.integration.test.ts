@@ -636,5 +636,117 @@ describe(
         expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
       });
     });
+
+    describe.each([
+      ['a path', 'https://fixture-site.example.edu/synthetic-lab/'],
+      ['a host root', 'https://synthetic-lab.example.edu/'],
+    ])(
+      'a sole listing url that is another lead lab site at %s names that lead, not the member who borrowed it (#4350)',
+      (_shape, SITE_URL) => {
+        const siteListing = (name: string): CenterMember => ({
+          name,
+          role: 'core-faculty',
+          profileUrl: SITE_URL,
+        });
+        const siteKey = `official-profile:${SITE_URL}|core-faculty`;
+        const borrowsSite = async (personId: mongoose.Types.ObjectId) =>
+          Researcher.updateOne({ _id: personId }, { $set: { 'profile.websiteUrl': SITE_URL } });
+        const siteLedBy = async (leadId: mongoose.Types.ObjectId) => {
+          const { _id: _centerObjectId, ...centerFields } = (await ResearchEntity.findById(
+            await centerId(),
+          ).lean()) as any;
+          const site = await ResearchEntity.create({
+            ...centerFields,
+            name: 'Synthetic Site Lab',
+            slug: 'synthetic-site-lab',
+            entityType: 'LAB',
+            websiteUrl: SITE_URL,
+          });
+          await RoleAssignment.create({
+            personId: leadId,
+            target: { kind: 'RESEARCH_ENTITY', id: site._id },
+            role: 'PI',
+            state: 'CURRENT',
+            confidence: 0.9,
+            reviewStatus: 'UNREVIEWED',
+            archived: false,
+            startedAt: LONG_AGO,
+          });
+        };
+        const misattachedEdgeOn = (personId: mongoose.Types.ObjectId) =>
+          edgeOn(personId, 'CORE_FACULTY', {
+            rosterProvenance: {
+              sourceName: SOURCE_NAME,
+              profileUrl: SITE_URL,
+              membershipKey: siteKey,
+              identityBasis: 'profile-url',
+              observedAt: LONG_AGO,
+            },
+          });
+
+        it('moves the listing from the member holding the site to the lead it names', async () => {
+          const member = await accountHolder('Blair');
+          await borrowsSite(member);
+          const lead = await accountHolder('Avery');
+          await siteLedBy(lead);
+          const misattached = await misattachedEdgeOn(member);
+
+          await runLane({}, [siteListing('Avery Synthetic')]);
+
+          expect((await edgeById(misattached))?.state).toBe('HISTORICAL');
+          expect(await liveEdgesOf(member)).toHaveLength(0);
+          const leadEdges = await liveEdgesOf(lead);
+          expect(leadEdges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+          expect(leadEdges[0].rosterProvenance).toMatchObject({
+            identityBasis: 'profile-url',
+            membershipKey: siteKey,
+          });
+          expect(await servedNames()).toEqual(['Avery Synthetic']);
+
+          await runLane({}, [siteListing('Avery Synthetic')]);
+          expect(await liveEdgesOf(member)).toHaveLength(0);
+          expect((await liveEdgesOf(lead)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
+        });
+
+        it('attaches nobody and mints nobody when the listing names the lab rather than a person', async () => {
+          const member = await accountHolder('Blair');
+          await borrowsSite(member);
+          const lead = await accountHolder('Avery');
+          await siteLedBy(lead);
+          const misattached = await misattachedEdgeOn(member);
+
+          await runLane({}, [siteListing('Synthetic Lab')]);
+
+          expect((await edgeById(misattached))?.state).toBe('HISTORICAL');
+          expect(await liveEdgesOf(member)).toHaveLength(0);
+          expect(await liveEdgesOf(lead)).toHaveLength(0);
+          expect(await Researcher.countDocuments({ displayName: 'Synthetic Lab' })).toBe(0);
+          expect(await servedNames()).toEqual([]);
+        });
+
+        it('keeps the join when the site lead holds the url and the listing spells the name another way', async () => {
+          const lead = await accountHolder('Avery', { displayName: 'Avery Synthetic' });
+          await borrowsSite(lead);
+          await siteLedBy(lead);
+
+          await runLane({}, [siteListing('Averyanna Synthetic')]);
+
+          const edges = await liveEdgesOf(lead);
+          expect(edges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+          expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
+        });
+
+        it('keeps the join when no research entity has the url as its website', async () => {
+          const holder = await accountHolder('Avery');
+          await borrowsSite(holder);
+
+          await runLane({}, [siteListing('Avrey Synthetic')]);
+
+          const edges = await liveEdgesOf(holder);
+          expect(edges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+          expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
+        });
+      },
+    );
   },
 );
