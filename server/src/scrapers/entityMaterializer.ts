@@ -2073,54 +2073,87 @@ async function findUniqueResearcherForRosterMember(
 
 const SHARED_PROFILE_URL_LISTING_LIMIT = 20;
 
+export interface RosterListingScope {
+  researchGroupKey: string;
+  sourceName: string;
+}
+
+interface SharedProfileUrlListing {
+  names: string[];
+  roles: string[];
+}
+
 const listedNamesAgree = (left: string, right: string): boolean =>
   observedPersonNameAgreesWith(left, right) || observedPersonNameAgreesWith(right, left);
 
-async function profileUrlListsAnotherPerson(
+async function listingsSharingProfileUrl(
   profileUrl: string,
-  listedName: string,
-): Promise<boolean> {
-  if (!profileUrl || !listedName) return false;
-  const scope = materializationReadScopeFilter();
-  const listings = (await Observation.find({
-    entityType: 'researchGroupMember',
+  scope: RosterListingScope,
+): Promise<SharedProfileUrlListing[]> {
+  if (!profileUrl || !scope.researchGroupKey || !scope.sourceName) return [];
+  const readScope = materializationReadScopeFilter();
+  const listing = { entityType: 'researchGroupMember', sourceName: scope.sourceName, ...readScope };
+  const keysCarryingUrl = (await Observation.distinct('entityKey', {
+    ...listing,
     field: 'profileUrl',
     value: profileUrl,
-    ...scope,
+  })) as unknown[];
+  if (keysCarryingUrl.length < 2) return [];
+  const keysOnThisEntity = (
+    (await Observation.distinct('entityKey', {
+      ...listing,
+      entityKey: { $in: keysCarryingUrl },
+      field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD,
+      value: scope.researchGroupKey,
+    })) as unknown[]
+  )
+    .map(textValue)
+    .filter(Boolean)
+    .slice(0, SHARED_PROFILE_URL_LISTING_LIMIT);
+  if (keysOnThisEntity.length < 2) return [];
+  const rows = (await Observation.find({
+    ...listing,
+    entityKey: { $in: keysOnThisEntity },
+    field: { $in: ['name', 'inferredUserName', 'role'] },
   })
-    .select('entityKey')
-    .limit(SHARED_PROFILE_URL_LISTING_LIMIT)
-    .lean()) as Array<{ entityKey?: unknown }>;
-  const listingKeys = uniqueStrings(listings.map((listing) => textValue(listing.entityKey)));
-  if (listingKeys.length < 2) return false;
-  const nameRows = (await Observation.find({
-    entityType: 'researchGroupMember',
-    entityKey: { $in: listingKeys },
-    field: { $in: ['name', 'inferredUserName'] },
-    ...scope,
-  })
-    .select('field value')
-    .lean()) as Array<{ field?: unknown; value?: unknown }>;
-  return nameRows.some((row) => {
-    const name =
-      row.field === 'name' ? textValue(row.value) : memberNameFromInferredUserName(row.value);
-    return Boolean(name) && !listedNamesAgree(name, listedName);
-  });
+    .select('entityKey field value')
+    .lean()) as Array<{ entityKey?: unknown; field?: unknown; value?: unknown }>;
+  const byKey = new Map<string, SharedProfileUrlListing>();
+  for (const row of rows) {
+    const key = textValue(row.entityKey);
+    const entry = byKey.get(key) ?? { names: [], roles: [] };
+    if (row.field === 'role') entry.roles.push(normalizeMemberRole(row.value));
+    else if (row.field === 'name') entry.names.push(textValue(row.value));
+    else entry.names.push(memberNameFromInferredUserName(row.value));
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()].map((entry) => ({
+    names: uniqueStrings(entry.names),
+    roles: uniqueStrings(entry.roles),
+  }));
 }
 
 async function profileUrlHolderForListing(
   resolved: Record<string, ResolvedField>,
   listedName: string,
-): Promise<{ holder: any | null; vetoedHolder: any | null }> {
+  scope: RosterListingScope,
+): Promise<{ holder: any | null; holderEdgeToEnd: any | null }> {
   const holder = await findUniqueResearcherForRosterMember(resolved);
   if (!holder || observedPersonNameAgreesWith(holder.displayName, listedName)) {
-    return { holder, vetoedHolder: null };
+    return { holder, holderEdgeToEnd: null };
   }
-  const shared = await profileUrlListsAnotherPerson(
-    textValue(resolved.profileUrl?.value),
-    listedName,
+  const listings = await listingsSharingProfileUrl(textValue(resolved.profileUrl?.value), scope);
+  const listsAnotherPerson = listings.some((entry) =>
+    entry.names.some((name) => !listedNamesAgree(name, listedName)),
   );
-  return shared ? { holder: null, vetoedHolder: holder } : { holder, vetoedHolder: null };
+  if (!listsAnotherPerson) return { holder, holderEdgeToEnd: null };
+  const role = normalizeMemberRole(resolved.role?.value);
+  const holderOwnListingStatesRole = listings.some(
+    (entry) =>
+      entry.roles.includes(role) &&
+      entry.names.some((name) => observedPersonNameAgreesWith(holder.displayName, name)),
+  );
+  return { holder: null, holderEdgeToEnd: holderOwnListingStatesRole ? null : holder };
 }
 
 export type RosterMemberUnresolvedReason =
@@ -2132,7 +2165,7 @@ export type RosterMemberUnresolvedReason =
 export type RosterMemberIdentity = (
   | { researcher: any; basis: RosterIdentityBasis }
   | { researcher: null; unresolved: RosterMemberUnresolvedReason }
-) & { vetoedProfileUrlHolderId?: mongoose.Types.ObjectId };
+) & { misattributedProfileUrlHolderId?: mongoose.Types.ObjectId };
 
 async function liveResearcherForAccount(accountId: unknown): Promise<any | null> {
   if (!accountId) return null;
@@ -2190,12 +2223,15 @@ async function researchersNamedByIdentityEvidence(
 export async function resolveRosterMemberIdentity(
   resolved: Record<string, ResolvedField>,
   listedName: string,
+  scope: RosterListingScope = { researchGroupKey: '', sourceName: '' },
 ): Promise<RosterMemberIdentity> {
-  const byProfileUrl = await profileUrlHolderForListing(resolved, listedName);
+  const byProfileUrl = await profileUrlHolderForListing(resolved, listedName, scope);
   if (byProfileUrl.holder) return { researcher: byProfileUrl.holder, basis: 'profile-url' };
   const identity = await resolveRosterMemberIdentityFromEvidence(resolved, listedName);
-  const vetoedProfileUrlHolderId = toMaterializerObjectId(byProfileUrl.vetoedHolder?._id);
-  return vetoedProfileUrlHolderId ? { ...identity, vetoedProfileUrlHolderId } : identity;
+  const misattributedProfileUrlHolderId = toMaterializerObjectId(byProfileUrl.holderEdgeToEnd?._id);
+  return misattributedProfileUrlHolderId
+    ? { ...identity, misattributedProfileUrlHolderId }
+    : identity;
 }
 
 async function resolveRosterMemberIdentityFromEvidence(
@@ -2230,7 +2266,7 @@ const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
   CENTERS_INSTITUTES_SOURCE_NAME,
 ]);
 
-async function endVetoedProfileUrlHolderEdges(
+async function endMisattributedProfileUrlHolderEdges(
   researchEntityId: string,
   plan: RosterMemberCanonicalPlan,
   personId: mongoose.Types.ObjectId,
@@ -2531,7 +2567,10 @@ async function materializeRosterMember(
   const listedName =
     textValue(resolved.name?.value) ||
     memberNameFromInferredUserName(resolved.inferredUserName?.value);
-  const identity = await resolveRosterMemberIdentity(resolved, listedName);
+  const identity = await resolveRosterMemberIdentity(resolved, listedName, {
+    researchGroupKey,
+    sourceName: textValue(resolved.role?.sourceName),
+  });
   const researcher = identity.researcher;
   const memberIdentity = researcher?._id
     ? await canonicalResearcherIdentity(idValue(researcher._id))
@@ -2549,8 +2588,12 @@ async function materializeRosterMember(
       skipped: 'missing-required-fields',
     };
   }
-  if (identity.vetoedProfileUrlHolderId && !options.dryRun) {
-    await endVetoedProfileUrlHolderEdges(researchEntityId, plan, identity.vetoedProfileUrlHolderId);
+  if (identity.misattributedProfileUrlHolderId && !options.dryRun) {
+    await endMisattributedProfileUrlHolderEdges(
+      researchEntityId,
+      plan,
+      identity.misattributedProfileUrlHolderId,
+    );
   }
   if (await listingWouldMintANamesake(plan, identity)) {
     return {

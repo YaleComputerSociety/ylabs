@@ -548,6 +548,51 @@ describe(
         expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
       });
 
+      it('keeps the site owner edge when the owner and the other listing state the same role', async () => {
+        const avery = await labSiteOwner('Avery');
+        await accountHolder('Blair');
+        const roster = [
+          labSiteListing('Avery', 'core-faculty'),
+          labSiteListing('Blair', 'core-faculty'),
+        ];
+
+        await runLane({}, roster);
+        await runLane({}, roster);
+
+        const edges = await liveEdgesOf(avery);
+        expect(edges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+        expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
+      });
+
+      it('does not treat a listing on another entity as sharing the url', async () => {
+        const avery = await labSiteOwner('Avery');
+        const otherListingKey = 'center-fixture-elsewhere:blair-synthetic';
+        await Observation.insertMany(
+          [
+            ['profileUrl', LAB_SITE_URL],
+            ['researchGroupKey', 'center-fixture-elsewhere'],
+            ['name', 'Blair Synthetic'],
+            ['role', 'core-faculty'],
+          ].map(([field, value]) => ({
+            entityType: 'researchGroupMember',
+            entityKey: otherListingKey,
+            field,
+            value,
+            sourceId: SOURCE_ID,
+            sourceName: SOURCE_NAME,
+            confidence: 0.8,
+            observedAt: LONG_AGO,
+            superseded: false,
+          })),
+        );
+
+        await runLane({}, [labSiteListing('Avery', 'core-faculty', 'Avrey Synthetic')]);
+
+        const edges = await liveEdgesOf(avery);
+        expect(edges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+        expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
+      });
+
       it('still joins a sole listing through its profile url when the listed name is misspelled', async () => {
         const avery = await labSiteOwner('Avery');
 
