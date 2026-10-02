@@ -70,6 +70,9 @@ The exemptions are the read-only instruments that throw on `--apply`, the Develo
 `humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
 Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
 
+A scratch one-off does not get committed: no `tmp`-prefixed file in `server/src/scripts`, and no server source that reads its input from a hard-coded `/tmp` path, which nothing in the repository writes (`server/src/scripts/__tests__/noCommittedScratchScripts.test.ts`, #3728).
+Take an input path as a flag instead.
+
 ## General implementation rules
 
 - The evidence-first design contract is stated once in `AGENTS.md` under Implementation Rules, with the reasoning and the measurements in `docs/decisions.md`. Read it before adding a repair script, a direct field write on `ResearchEntity`, or a bulk-apply path to a review surface, and do not restate it here.
