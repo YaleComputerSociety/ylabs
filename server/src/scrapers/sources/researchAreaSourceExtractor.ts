@@ -218,6 +218,12 @@ export function isSharedAreaFilteredDirectoryUrl(
   return !leafTokens.every((token) => ownTokens.has(token));
 }
 
+export function refusesSharedAreaFilteredDirectorySource(
+  citerCounts: ReadonlyMap<string, number>,
+): (doc: Pick<CandidateAreaEntityDoc, 'slug' | 'name' | 'displayName'>, url: string) => boolean {
+  return (doc, url) => isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts);
+}
+
 function partitionAreaUrlsForDoc(
   doc: CandidateAreaEntityDoc,
   citerCounts: ReadonlyMap<string, number> | undefined,
@@ -534,12 +540,13 @@ export async function findResearchAreaCandidateEntities(
     query.limit(MAX_CANDIDATE_SCAN);
   }
   const docs = (await query.lean()) as CandidateAreaEntityDoc[];
+  const citerCounts = await loadEvidenceUrlCiterCounts();
   const evidenceBackedRowIds = only.length
     ? await loadResearchAreaEvidenceBackedRowIds(
         docs.filter((doc) => !hasEmptyResearchAreas(doc.researchAreas)),
+        refusesSharedAreaFilteredDirectorySource(citerCounts),
       )
     : undefined;
-  const citerCounts = await loadEvidenceUrlCiterCounts();
   return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds, citerCounts });
 }
 

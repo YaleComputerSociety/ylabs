@@ -9,6 +9,7 @@ import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEv
 import {
   candidateAreaEntitiesFromDocs,
   loadEvidenceUrlCiterCounts,
+  refusesSharedAreaFilteredDirectorySource,
   type CandidateAreaEntityDoc,
 } from '../scrapers/sources/researchAreaSourceExtractor';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -68,7 +69,8 @@ export function unbackedResearchAreaCandidateReport(
       'unarchived student_ready rows',
       'whose researchAreas is non-empty and not manually locked,',
       'backed by no live researchAreas observation on the row or any merged-in key',
-      'that states an area the row admits (not only its own department or a division label),',
+      'that states an area the row admits (not only its own department or a division label)',
+      'and does not cite a shared area-filtered directory page,',
       'with at least one usable source url',
     ].join(' '),
     storedNonEmptyRows: docs.length,
@@ -103,12 +105,16 @@ async function main(): Promise<void> {
   )
     .sort({ _id: 1 })
     .lean()) as CandidateAreaEntityDoc[];
-  const evidenceBackedRowIds = await loadResearchAreaEvidenceBackedRowIds(docs);
+  const citerCounts = await loadEvidenceUrlCiterCounts();
+  const evidenceBackedRowIds = await loadResearchAreaEvidenceBackedRowIds(
+    docs,
+    refusesSharedAreaFilteredDirectorySource(citerCounts),
+  );
   const report = unbackedResearchAreaCandidateReport(
     docs,
     evidenceBackedRowIds,
     new Date(),
-    await loadEvidenceUrlCiterCounts(),
+    citerCounts,
   );
 
   fs.mkdirSync(path.dirname(options.output), { recursive: true });

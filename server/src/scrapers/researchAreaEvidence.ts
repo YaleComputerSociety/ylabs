@@ -30,6 +30,7 @@ export interface ResearchAreaEvidenceIdentity {
 }
 
 export interface ResearchAreaEvidenceObservation {
+  sourceUrl?: unknown;
   entityId?: unknown;
   entityKey?: unknown;
   field?: unknown;
@@ -99,11 +100,13 @@ export function hasLiveResearchAreaEvidence(
   identity: ResearchAreaEvidenceIdentity,
   observations: ReadonlyArray<ResearchAreaEvidenceObservation>,
   admits: ResearchAreaAdmission,
+  refusesSource: (sourceUrl: string) => boolean = () => false,
 ): boolean {
   return observations.some(
     (observation) =>
       isLiveResearchAreaStatement(observation, admits) &&
-      observationBelongsToIdentity(observation, identity),
+      observationBelongsToIdentity(observation, identity) &&
+      !refusesSource(typeof observation.sourceUrl === 'string' ? observation.sourceUrl : ''),
   );
 }
 
@@ -122,12 +125,13 @@ async function loadLiveResearchAreaObservations(
     'rollback.rolledBackAt': { $exists: false },
     $or: [{ entityId: { $in: entityIds } }, { entityId: null, entityKey: { $in: entityKeys } }],
   })
-    .select('entityId entityKey field value superseded rollback')
+    .select('entityId entityKey field value superseded rollback sourceUrl')
     .lean()) as ResearchAreaEvidenceObservation[];
 }
 
-export async function loadResearchAreaEvidenceBackedRowIds(
-  rows: ReadonlyArray<ResearchAreaEvidenceRow>,
+export async function loadResearchAreaEvidenceBackedRowIds<Row extends ResearchAreaEvidenceRow>(
+  rows: ReadonlyArray<Row>,
+  refusesSource: (row: Row, sourceUrl: string) => boolean = () => false,
 ): Promise<Set<string>> {
   const backed = new Set<string>();
   const canonicalizer = await getResearchAreaCanonicalizer();
@@ -140,6 +144,7 @@ export async function loadResearchAreaEvidenceBackedRowIds(
     const identities = chunk.map((row) => {
       const rowId = serializedDocumentId(row._id) as string;
       return {
+        row,
         rowId,
         identity: researchAreaEvidenceIdentity(row, mergedInBySurvivor.get(rowId) ?? []),
         admits: researchAreaAdmissionForRow(canonicalizer, row),
@@ -148,8 +153,11 @@ export async function loadResearchAreaEvidenceBackedRowIds(
     const observations = await loadLiveResearchAreaObservations(
       identities.map(({ identity }) => identity),
     );
-    for (const { rowId, identity, admits } of identities) {
-      if (hasLiveResearchAreaEvidence(identity, observations, admits)) backed.add(rowId);
+    for (const { row, rowId, identity, admits } of identities) {
+      const refusesRowSource = (sourceUrl: string) => refusesSource(row, sourceUrl);
+      if (hasLiveResearchAreaEvidence(identity, observations, admits, refusesRowSource)) {
+        backed.add(rowId);
+      }
     }
   }
   return backed;
