@@ -59,7 +59,7 @@ import {
 import { UNDERGRAD_EXTRACTION_PROMPT, UNDERGRAD_EXTRACTION_PROMPT_HASH } from '../prompts';
 import {
   createScraplingRenderedFetcher,
-  fetchUsableRenderedPage,
+  measureRenderedFallback,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
@@ -1347,20 +1347,18 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         fetchAttempts.push(measuredHomePage.metric);
         let homePage: FetchedPage | null = measuredHomePage.result;
         if (!homePage || htmlToPromptText(homePage.html).length < 200) {
-          const rendered = await measureRenderedFetch(
+          const rendered = await measureRenderedFallback(
             lab.websiteUrl,
-            'scrapling',
-            () =>
-              fetchUsableRenderedPage({
-                sourceName: SOURCE_KEY,
-                useCache: ctx.options.useCache,
-                request: { url: lab.websiteUrl, waitSelector: 'body', timeoutMs: FETCH_TIMEOUT_MS },
-                renderedFetcher: this.renderedFetcher,
-              }),
+            {
+              sourceName: SOURCE_KEY,
+              useCache: ctx.options.useCache,
+              request: { url: lab.websiteUrl, waitSelector: 'body', timeoutMs: FETCH_TIMEOUT_MS },
+              renderedFetcher: this.renderedFetcher,
+            },
             { selectorName: 'body' },
           );
-          fetchAttempts.push(rendered.metric);
-          if (rendered.result?.html) {
+          if (rendered) fetchAttempts.push(rendered.metric);
+          if (rendered?.result?.html) {
             homePage = {
               url: rendered.result.url || lab.websiteUrl,
               html: rendered.result.html,

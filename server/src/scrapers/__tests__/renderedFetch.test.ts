@@ -18,6 +18,7 @@ vi.mock('../snapshotCache', () => ({
 import {
   createScraplingRenderedFetcher,
   fetchUsableRenderedPage,
+  measureRenderedFallback,
   measureRenderedFetch,
   renderedPageFailureReason,
 } from '../renderedFetch';
@@ -430,6 +431,45 @@ describe('fetchUsableRenderedPage', () => {
       success: false,
       blocked: false,
       blockedReason: 'http-404',
+      selectorBreakage: false,
+    });
+  });
+});
+
+describe('measureRenderedFallback (#3742)', () => {
+  const request = { url: 'https://lab.example.edu/', waitSelector: 'body', timeoutMs: 10_000 };
+
+  it('measures nothing when no renderer is configured, so a disabled renderer is no breakage', () => {
+    expect(
+      measureRenderedFallback(request.url, {
+        sourceName: 'lane',
+        useCache: false,
+        request,
+        renderedFetcher: null,
+      }),
+    ).toBeNull();
+  });
+
+  it('records a scrapling attempt for a renderer that actually rendered', async () => {
+    mocks.getCached.mockReset().mockResolvedValue(null);
+    mocks.setCached.mockReset();
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: request.url,
+      html: '<html><body>Lab research</body></html>',
+      statusCode: 200,
+      fetchMode: 'scrapling' as const,
+    });
+
+    const measured = await measureRenderedFallback(
+      request.url,
+      { sourceName: 'lane', useCache: false, request, renderedFetcher },
+      { selectorName: 'body' },
+    );
+
+    expect(renderedFetcher).toHaveBeenCalledWith(request);
+    expect(measured?.metric).toMatchObject({
+      fetchMode: 'scrapling',
+      success: true,
       selectorBreakage: false,
     });
   });

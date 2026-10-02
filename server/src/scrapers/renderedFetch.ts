@@ -155,6 +155,15 @@ export async function fetchUsableRenderedPage({
   return result;
 }
 
+export function measureRenderedFallback(
+  target: string,
+  page: UsableRenderedPageRequest,
+  options?: { selectorName?: string },
+): Promise<MeasuredRenderedFetch<RenderedFetchResult | null>> | null {
+  if (!page.renderedFetcher) return null;
+  return measureRenderedFetch(target, 'scrapling', () => fetchUsableRenderedPage(page), options);
+}
+
 export interface ScraplingRenderedFetcherOptions {
   enabled?: boolean;
   pythonCommand?: string;
