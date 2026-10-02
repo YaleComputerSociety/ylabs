@@ -31,7 +31,7 @@ function withheld(
     stored,
     staged,
     resolved,
-    fundTitle: undefined,
+    fundSpeaksForRow: true,
   }).sort();
 }
 
@@ -115,6 +115,70 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
   });
 });
 
+describe('the fund window on another lane row (#4412)', () => {
+  const fundPass = (
+    staged: Record<string, unknown>,
+    fundSpeaksForRow: boolean,
+    stored: Record<string, unknown> = {
+      ...ownedRow,
+      isAcceptingApplications: true,
+      reviewRequired: false,
+    },
+  ) =>
+    fellowshipFieldsWithheldBySourcePrecedence({
+      stored,
+      staged,
+      resolved: Object.fromEntries(
+        Object.keys(staged).map((field) => [
+          field,
+          { contributingSources: ['student-grants-database'] },
+        ]),
+      ),
+      fundSpeaksForRow,
+    }).sort();
+
+  it('lets a dated fund window replace the stored one', () => {
+    expect(
+      fundPass(
+        {
+          deadline: new Date('2027-02-01T00:00:00Z'),
+          isAcceptingApplications: false,
+          reviewRequired: false,
+        },
+        true,
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps the stored window flags when the fund states no date', () => {
+    expect(fundPass({ isAcceptingApplications: false, reviewRequired: true }, true)).toEqual([
+      'isAcceptingApplications',
+      'reviewRequired',
+    ]);
+  });
+
+  it('still fills window flags the row lacks when the fund states no date', () => {
+    expect(
+      fundPass({ isAcceptingApplications: false, reviewRequired: true }, true, {
+        sourceName: 'yale-college-fellowships-office',
+      }),
+    ).toEqual([]);
+  });
+
+  it('keeps the stored window when the fund does not speak for the row', () => {
+    expect(
+      fundPass(
+        {
+          deadline: new Date('2027-02-01T00:00:00Z'),
+          isAcceptingApplications: true,
+          reviewRequired: false,
+        },
+        false,
+      ),
+    ).toEqual(['deadline', 'isAcceptingApplications', 'reviewRequired']);
+  });
+});
+
 describe('the fellowship database as an official source (#4284)', () => {
   const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123';
 
@@ -124,7 +188,7 @@ describe('the fellowship database as an official source (#4284)', () => {
         stored: { sourceName: 'student-grants-database', sourceUrl: '' },
         staged: { sourceUrl: fundPage },
         resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
-        fundTitle: undefined,
+        fundSpeaksForRow: true,
       }),
     ).not.toContain('sourceUrl');
   });
@@ -138,7 +202,7 @@ describe('the fellowship database as an official source (#4284)', () => {
         },
         staged: { sourceUrl: fundPage },
         resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
-        fundTitle: undefined,
+        fundSpeaksForRow: true,
       }),
     ).toContain('sourceUrl');
   });

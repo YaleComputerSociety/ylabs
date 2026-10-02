@@ -137,15 +137,17 @@ import {
 import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
-  FUND_FACET_FIELDS,
+  FUND_AUTHORITY_FIELDS,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
   newestFundTitle,
 } from './fellowshipSourcePrecedence';
 import {
+  fellowshipCitationsObservedIn,
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
+  fundSpeaksForFellowship,
   preferFundFacetObservations,
 } from './fellowshipFundFacets';
 import {
@@ -4634,14 +4636,14 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_FACET_FIELDS, 'title'] },
+      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title'] },
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
   if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
   return kept.filter(
     (observation: any) =>
       observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
-      FUND_FACET_FIELDS.has(String(observation.field)),
+      FUND_AUTHORITY_FIELDS.has(String(observation.field)),
   );
 }
 
@@ -7379,7 +7381,7 @@ export async function projectFromLog(
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
       resolved,
-      fundTitle: newestFundTitle(materializationObs),
+      fundSpeaksForRow: fundSpeaksForFellowship(entityDoc, newestFundTitle(materializationObs)),
     })) {
       delete set[field];
       delete set[`fieldProvenance.${field}`];
@@ -8019,7 +8021,10 @@ export async function materializeEntity(
     entityType === 'fellowship'
       ? preferFundFacetObservations(
           obs,
-          await fundFacetObservationsCitedBy(entityDoc, options.chunkPrefetch),
+          await fundFacetObservationsCitedBy(
+            entityDoc ?? fellowshipCitationsObservedIn(obs),
+            options.chunkPrefetch,
+          ),
         )
       : obs;
   const materializationObs = collapseLatestWins(

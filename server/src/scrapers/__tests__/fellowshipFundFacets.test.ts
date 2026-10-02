@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
+  fundSpeaksForFellowship,
   preferFundFacetObservations,
   sourceKeyForFund,
 } from '../fellowshipFundFacets';
@@ -11,6 +12,27 @@ import {
 } from '../fellowshipSourcePrecedence';
 
 const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FIXTUREFUND';
+
+describe('fundSpeaksForFellowship', () => {
+  it('speaks for a row citing it alone and naming the same program', () => {
+    const row = { title: 'Fixture Undergraduate Travel Fellowship', applicationLink: FUND_PAGE };
+    expect(fundSpeaksForFellowship(row, 'Fixture Undergraduate Travel Fellowship')).toBe(true);
+    expect(fundSpeaksForFellowship(row, 'Fixture Postgraduate Fellowship')).toBe(false);
+  });
+
+  it('speaks for no row citing no fund page or two', () => {
+    expect(fundSpeaksForFellowship({ title: 'Fixture Fellowship' }, undefined)).toBe(false);
+    expect(
+      fundSpeaksForFellowship(
+        {
+          applicationLink: FUND_PAGE,
+          links: [{ url: 'https://yale.communityforce.com/Funds/FundDetails.aspx?OTHERFUND' }],
+        },
+        undefined,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe('fundKeyCitedByFellowship', () => {
   it('reads the one fund a row cites, however many links name it', () => {
@@ -80,6 +102,37 @@ describe('preferFundFacetObservations', () => {
     ).toEqual(['a']);
   });
 
+  it("replaces another lane's application window where the fund states one (#4412)", () => {
+    expect(
+      preferFundFacetObservations(
+        [lane('a', 'deadline'), lane('b', 'applicationOpenDate'), lane('c', 'title')],
+        [fund('f1', 'deadline'), fund('f2', 'applicationOpenDate')],
+      ).map((observation) => observation._id),
+    ).toEqual(['c', 'f1', 'f2']);
+  });
+
+  it("leaves the lane's window flags when the fund states no window date (#4412)", () => {
+    expect(
+      preferFundFacetObservations(
+        [lane('a', 'deadline'), lane('b', 'isAcceptingApplications'), lane('c', 'reviewRequired')],
+        [fund('f1', 'isAcceptingApplications'), fund('f2', 'reviewRequired')],
+      ).map((observation) => observation._id),
+    ).toEqual(['a', 'b', 'c']);
+  });
+
+  it('takes the window flags with a window date the fund states (#4412)', () => {
+    expect(
+      preferFundFacetObservations(
+        [lane('a', 'deadline'), lane('b', 'isAcceptingApplications'), lane('c', 'reviewRequired')],
+        [
+          fund('f1', 'deadline'),
+          fund('f2', 'isAcceptingApplications'),
+          fund('f3', 'reviewRequired'),
+        ],
+      ).map((observation) => observation._id),
+    ).toEqual(['f1', 'f2', 'f3']);
+  });
+
   it('does not read a fund observation the pass already holds twice', () => {
     const own = fund('f1', 'purpose');
     expect(preferFundFacetObservations([own], [own])).toEqual([own]);
@@ -100,7 +153,7 @@ describe('fund facets on another lane row (#4173)', () => {
           purpose: { contributingSources: ['student-grants-database'] },
           summary: { contributingSources: ['student-grants-database'] },
         },
-        fundTitle: undefined,
+        fundSpeaksForRow: true,
       }),
     ).toEqual(['summary']);
   });
@@ -149,14 +202,17 @@ describe('fundFacetsDescribeProgram (#4173)', () => {
 });
 
 describe('the fund pass on another lane row whose fund names a different program (#4173)', () => {
+  const rowCitingFund = {
+    sourceName: 'yale-college-fellowships-office',
+    title: 'Fixture Postgraduate Fellowships',
+    applicationLink: FUND_PAGE,
+    purpose: ['Service'],
+  };
+
   it("withholds a common application's facets from the program row it reaches", () => {
     expect(
       fellowshipFieldsWithheldBySourcePrecedence({
-        stored: {
-          sourceName: 'yale-college-fellowships-office',
-          title: 'Fixture Postgraduate Fellowships',
-          purpose: ['Service'],
-        },
+        stored: rowCitingFund,
         staged: {
           title: 'Fixture Postgraduate Fellowships Common Application',
           purpose: ['Research'],
@@ -165,7 +221,10 @@ describe('the fund pass on another lane row whose fund names a different program
           title: { contributingSources: ['student-grants-database'] },
           purpose: { contributingSources: ['student-grants-database'] },
         },
-        fundTitle: 'Fixture Postgraduate Fellowships Common Application',
+        fundSpeaksForRow: fundSpeaksForFellowship(
+          rowCitingFund,
+          'Fixture Postgraduate Fellowships Common Application',
+        ),
       }),
     ).toEqual(['title', 'purpose']);
   });
@@ -193,14 +252,10 @@ describe('the fund pass on another lane row whose fund names a different program
     ];
     expect(
       fellowshipFieldsWithheldBySourcePrecedence({
-        stored: {
-          sourceName: 'yale-college-fellowships-office',
-          title: 'Fixture Postgraduate Fellowships',
-          purpose: ['Service'],
-        },
+        stored: rowCitingFund,
         staged: { purpose: ['Research'] },
         resolved: { purpose: { contributingSources: ['student-grants-database'] } },
-        fundTitle: newestFundTitle(fundObservations),
+        fundSpeaksForRow: fundSpeaksForFellowship(rowCitingFund, newestFundTitle(fundObservations)),
       }),
     ).toEqual(['purpose']);
   });

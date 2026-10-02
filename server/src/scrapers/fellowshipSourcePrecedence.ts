@@ -12,7 +12,8 @@
  * So an enrich-only source owns only a row no other lane owns. On another lane's row it
  * writes no identity field and fills only fields the row lacks, except the application
  * window and the fund's structured facets, where the fund page is Yale's own application
- * system and so the authority.
+ * system and so the authority, provided it is the row's one fund page and describes the
+ * row's program (#4173, #4412).
  * The database is an official Yale source (owner decision, #4284), so on a row it owns
  * the fund page is the row's `sourceUrl`. Independently of ownership, a fund page never
  * replaces a program's own web page as `sourceUrl`: the page that describes the program
@@ -33,7 +34,7 @@ const FELLOWSHIP_IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   'sourceFingerprint',
 ]);
 
-const APPLICATION_WINDOW_FIELDS: ReadonlySet<string> = new Set([
+export const APPLICATION_WINDOW_FIELDS: ReadonlySet<string> = new Set([
   'deadline',
   'applicationOpenDate',
   'isAcceptingApplications',
@@ -49,6 +50,27 @@ export const FUND_FACET_FIELDS: ReadonlySet<string> = new Set([
   'citizenshipStatus',
   'globalRegions',
 ]);
+
+// Where the fund states one of these, every pass over a row citing that fund resolves the
+// fund's value, so the owning lane's pass and the fund's pass cannot write different
+// windows in turn (#4412).
+export const FUND_AUTHORITY_FIELDS: ReadonlySet<string> = new Set([
+  ...FUND_FACET_FIELDS,
+  ...APPLICATION_WINDOW_FIELDS,
+]);
+
+// The fund lane derives `isAcceptingApplications` and `reviewRequired` on every page, dated
+// or not, so they are its statement only alongside a date it states; otherwise a dated
+// window from the owning lane would be served as closed.
+const APPLICATION_WINDOW_DATE_FIELDS = ['deadline', 'applicationOpenDate'];
+
+export function fundAuthorityFieldsStated(statedFields: Iterable<string>): Set<string> {
+  const stated = new Set([...statedFields].filter((field) => FUND_AUTHORITY_FIELDS.has(field)));
+  if (!APPLICATION_WINDOW_DATE_FIELDS.some((field) => stated.has(field))) {
+    for (const field of APPLICATION_WINDOW_FIELDS) stated.delete(field);
+  }
+  return stated;
+}
 
 // A row can cite a fund page that is not its own program's: a common application that
 // admits to many funds, or a sibling award at another level ("Undergraduate Travel" linking
@@ -129,9 +151,20 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
   resolved: Readonly<Record<string, { contributingSources?: readonly string[] } | undefined>>;
-  fundTitle: unknown;
+  fundSpeaksForRow: boolean;
 }): string[] {
   const withheld = new Set<string>();
+  const fundAuthority = input.fundSpeaksForRow
+    ? fundAuthorityFieldsStated(
+        Object.entries(input.resolved)
+          .filter(([, resolvedField]) =>
+            (resolvedField?.contributingSources ?? []).some((source) =>
+              ENRICH_ONLY_FELLOWSHIP_SOURCES.has(source),
+            ),
+          )
+          .map(([field]) => field),
+      )
+    : new Set<string>();
   const stagedSourceUrl = text(input.staged.sourceUrl);
   const storedSourceUrl = text(input.stored?.sourceUrl);
   if (
@@ -148,14 +181,7 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
       continue;
     }
     if (FELLOWSHIP_IDENTITY_FIELDS.has(field)) withheld.add(field);
-    else if (
-      !APPLICATION_WINDOW_FIELDS.has(field) &&
-      !(
-        FUND_FACET_FIELDS.has(field) &&
-        fundFacetsDescribeProgram(input.stored?.title, input.fundTitle)
-      ) &&
-      hasValue(input.stored?.[field])
-    ) {
+    else if (!fundAuthority.has(field) && hasValue(input.stored?.[field])) {
       withheld.add(field);
     }
   }
