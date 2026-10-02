@@ -422,3 +422,66 @@ describe('ProgramWatch', () => {
     });
   });
 });
+
+describe('ProgramWatch control containment', () => {
+  const cardOf = (title: string) =>
+    screen
+      .getByRole('button', { name: `View details for ${title}` })
+      .closest('.rounded-card') as HTMLElement | null;
+
+  it("keeps each watched program's note and stage controls inside its own card", async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    for (const title of ['Summer Research Grant', 'Travel Fellowship']) {
+      const card = cardOf(title);
+      expect(card).toBeTruthy();
+      const noteButton = screen.getByRole('button', { name: `Add note for ${title}` });
+      const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
+      expect(card?.contains(noteButton)).toBe(true);
+      expect(card?.contains(stageControl)).toBe(true);
+    }
+  });
+
+  it('keeps an opened note editor inside the card it belongs to', async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note for Travel Fellowship' }));
+
+    const editor = screen.getByLabelText('Note for Travel Fellowship');
+    expect(cardOf('Travel Fellowship')?.contains(editor)).toBe(true);
+    expect(cardOf('Summer Research Grant')?.contains(editor)).toBe(false);
+  });
+
+  it('marks a program that has a note with the gold tokens rather than a raw hue', async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    const withNote = screen.getByRole('button', { name: 'Add note for Summer Research Grant' });
+    const withoutNote = screen.getByRole('button', { name: 'Add note for Travel Fellowship' });
+
+    expect(withNote.className).not.toMatch(/\byellow-/);
+    expect(withNote.className).toContain('border-gold');
+    expect(withNote.className).toContain('bg-gold-soft');
+    expect(withoutNote.className).not.toContain('bg-gold-soft');
+  });
+});
