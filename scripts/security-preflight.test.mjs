@@ -929,17 +929,22 @@ const workflowJobs = (workflow) => Object.entries(workflow?.jobs ?? {});
 // one already missed statuses, issues, packages and write-all (ylabs#3912).
 const WRITE_FREE_SCOPE_LEVELS = new Set(['read', 'none']);
 
-const permissionViolations = (where, permissions) => {
+const REVIEWED_JOB_WRITE_GRANTS = {
+  'keep-alive.yml': { alert: ['issues'] },
+};
+
+const permissionViolations = (where, permissions, reviewedWriteScopes = []) => {
   if (permissions === undefined || permissions === 'read-all') return [];
   if (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions)) {
     return [`${where} grants \`permissions: ${JSON.stringify(permissions)}\``];
   }
   return Object.entries(permissions)
     .filter(([, level]) => !WRITE_FREE_SCOPE_LEVELS.has(level))
+    .filter(([scope, level]) => !(level === 'write' && reviewedWriteScopes.includes(scope)))
     .map(([scope, level]) => `${where} requests \`${scope}: ${JSON.stringify(level)}\``);
 };
 
-const tokenPermissionViolations = (workflow) => [
+const tokenPermissionViolations = (workflow, reviewedJobWrites = {}) => [
   ...(workflow?.permissions?.contents === 'read'
     ? []
     : [
@@ -947,7 +952,7 @@ const tokenPermissionViolations = (workflow) => [
       ]),
   ...permissionViolations('the top level', workflow?.permissions),
   ...workflowJobs(workflow).flatMap(([job, definition]) =>
-    permissionViolations(`job ${job}`, definition?.permissions),
+    permissionViolations(`job ${job}`, definition?.permissions, reviewedJobWrites[job]),
   ),
 ];
 
@@ -961,7 +966,7 @@ const checkoutSteps = (workflow) =>
 test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [file, workflow] of everyWorkflowFile()) {
     assert.deepEqual(
-      tokenPermissionViolations(workflow),
+      tokenPermissionViolations(workflow, REVIEWED_JOB_WRITE_GRANTS[file]),
       [],
       `${file} must run with read-only token scopes, and a read scope beyond contents is admitted explicitly rather than by widening a pattern`,
     );
@@ -1009,6 +1014,42 @@ test('the token-permission guard rejects a write-capable scope anywhere in a wor
     tokenPermissionViolations(yaml.load('on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n')),
     [],
     'a workflow without a top-level permissions block must be rejected',
+  );
+});
+
+test('every reviewed job write grant is still requested, and only by its own job', () => {
+  const workflows = new Map(everyWorkflowFile());
+  for (const [file, jobs] of Object.entries(REVIEWED_JOB_WRITE_GRANTS)) {
+    const workflow = workflows.get(file);
+    assert.ok(workflow, `${file} carries a reviewed write grant and must still exist`);
+    for (const [job, scopes] of Object.entries(jobs)) {
+      for (const scope of scopes) {
+        assert.equal(
+          workflow.jobs?.[job]?.permissions?.[scope],
+          'write',
+          `${file} job ${job} no longer requests ${scope}: write, so its reviewed grant is stale and must be removed`,
+        );
+      }
+    }
+  }
+  const sameScopeOnAnotherJob = yaml.load(
+    [
+      'on: push',
+      'permissions:',
+      '  contents: read',
+      'jobs:',
+      '  ping:',
+      '    runs-on: ubuntu-latest',
+      '    permissions:',
+      '      issues: write',
+      '    steps: []',
+    ].join('\n'),
+  );
+  assert.equal(
+    tokenPermissionViolations(sameScopeOnAnotherJob, REVIEWED_JOB_WRITE_GRANTS['keep-alive.yml'])
+      .length,
+    1,
+    'a reviewed grant admits one scope on one job, never the same scope on a sibling job',
   );
 });
 
@@ -1181,6 +1222,147 @@ test('the keep-alive job probes the served API and keeps its exit status', () =>
       `${name} must not discard the probe exit status: \`|| echo\` turned three days of HTTP 500 on beta into an unbroken green history (ylabs#3910)`,
     );
   }
+});
+
+const ghRecorderStub = (openIssue) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keep-alive-alert-gh-'));
+  const log = path.join(stubDir, 'calls.jsonl');
+  fs.writeFileSync(
+    path.join(stubDir, 'gh'),
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');`,
+      `if (args[0] === 'issue' && args[1] === 'list') process.stdout.write(${JSON.stringify(openIssue)});`,
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  const calls = () =>
+    fs.existsSync(log)
+      ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
+      : [];
+  return { stubDir, calls };
+};
+
+const runKeepAliveAlert = async ({ result, lastStatus = '500', attempts = '3', openIssue = '' }) => {
+  const { stubDir, calls } = ghRecorderStub(openIssue);
+  try {
+    const run = await runScript('./keep-alive-alert.sh', {
+      PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+      PROBE_RESULT: result,
+      PROBE_LAST_STATUS: lastStatus,
+      PROBE_ATTEMPTS: attempts,
+      PROBED_ROUTE: '/api/config',
+      TARGET_REPO: 'example/example',
+      RUN_URL: 'https://github.com/example/example/actions/runs/1',
+    });
+    return { ...run, calls: calls() };
+  } finally {
+    fs.rmSync(stubDir, { recursive: true, force: true });
+  }
+};
+
+const ghVerbs = (calls) => calls.map((args) => args.slice(0, 2).join(' '));
+const flagValue = (args, flag) => args[args.indexOf(flag) + 1];
+
+test('a failing beta probe opens one labelled outage issue when none is open', async () => {
+  const run = await runKeepAliveAlert({ result: 'failure' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'label create', 'issue create']);
+  const [list, , create] = run.calls;
+  assert.equal(flagValue(list, '--label'), 'beta-probe-failing');
+  assert.equal(flagValue(list, '--state'), 'open');
+  assert.equal(flagValue(create, '--label'), 'beta-probe-failing');
+  assert.equal(flagValue(create, '--title'), 'ops: beta probe failing');
+  const body = flagValue(create, '--body');
+  assert.match(body, /\/api\/config/);
+  assert.match(body, /HTTP 500/);
+  assert.match(body, /3 attempts/);
+  assert.match(body, /actions\/runs\/1/);
+});
+
+test('a failing beta probe comments on the open outage issue instead of opening another', async () => {
+  const run = await runKeepAliveAlert({ result: 'failure', lastStatus: '000', openIssue: '42' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'issue comment']);
+  const comment = run.calls[1];
+  assert.equal(comment[2], '42');
+  assert.match(flagValue(comment, '--body'), /HTTP 000/);
+});
+
+test('a recovered beta probe closes the open outage issue with a comment', async () => {
+  const run = await runKeepAliveAlert({ result: 'success', lastStatus: '200', openIssue: '42' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'issue close']);
+  const close = run.calls[1];
+  assert.equal(close[2], '42');
+  assert.match(flagValue(close, '--comment'), /actions\/runs\/1/);
+});
+
+test('a healthy beta probe with no open outage writes nothing', async () => {
+  const run = await runKeepAliveAlert({ result: 'success', lastStatus: '200' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list']);
+});
+
+test('a cancelled or skipped beta probe neither opens nor closes the outage issue', async () => {
+  for (const result of ['cancelled', 'skipped']) {
+    const run = await runKeepAliveAlert({ result, openIssue: '42' });
+    assert.equal(run.code, 0, run.output);
+    assert.deepEqual(run.calls, [], `${result} must not touch the outage issue`);
+  }
+});
+
+test('the outage alert posts only a validated status and attempt count', async () => {
+  const run = await runKeepAliveAlert({
+    result: 'failure',
+    lastStatus: '<html>upstream said something</html>',
+    attempts: '3; rm -rf /',
+  });
+  assert.equal(run.code, 0, run.output);
+  const body = flagValue(run.calls.at(-1), '--body');
+  assert.doesNotMatch(body, /html|upstream|rm -rf/);
+  assert.match(body, /HTTP unknown/);
+});
+
+test('the keep-alive probe publishes its last status and attempt count as step outputs', async () => {
+  const outputFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'keep-alive-out-')), 'out');
+  try {
+    await withStubEndpoint(500, (url) =>
+      runScript('./keep-alive-probe.sh', {
+        BETA_HEALTH_URL: url,
+        KEEP_ALIVE_RETRY_DELAY_SECONDS: '0',
+        GITHUB_OUTPUT: outputFile,
+      }),
+    );
+    const outputs = fs.readFileSync(outputFile, 'utf8');
+    assert.match(outputs, /^last-status=500$/m);
+    assert.match(outputs, /^attempts=3$/m);
+  } finally {
+    fs.rmSync(path.dirname(outputFile), { recursive: true, force: true });
+  }
+});
+
+test('the keep-alive alert job is the only job that may write issues', () => {
+  const workflow = yaml.load(keepAliveWorkflow);
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  assert.equal(workflow.jobs.ping.permissions, undefined, 'the probe job keeps the read-only default');
+  const alert = workflow.jobs.alert;
+  assert.ok(alert, 'keep-alive must have an alert job (ylabs#4143)');
+  assert.deepEqual(alert.permissions, { contents: 'read', issues: 'write' });
+  assert.equal(alert.needs, 'ping');
+  assert.match(alert.if, /always\(\)/, 'the alert must run after a failed probe');
+  assert.match(alert.if, /needs\.ping\.result == 'failure'/);
+  assert.match(alert.if, /needs\.ping\.result == 'success'/);
+  const alertStep = alert.steps.find((step) => step.run === 'scripts/keep-alive-alert.sh');
+  assert.ok(alertStep, 'the alert job must run the tested alert script');
+  assert.equal(alertStep.env.PROBE_RESULT, '${{ needs.ping.result }}');
+  assert.equal(alertStep.env.GH_TOKEN, '${{ github.token }}');
+  const probeStep = workflow.jobs.ping.steps.find((step) => step.id === 'probe');
+  assert.equal(probeStep?.run, 'scripts/keep-alive-probe.sh');
+  assert.equal(workflow.jobs.ping.outputs['last-status'], '${{ steps.probe.outputs.last-status }}');
+  assert.equal(workflow.jobs.ping.outputs.attempts, '${{ steps.probe.outputs.attempts }}');
 });
 
 test('the release-hold job reads live state rather than the replayed event payload', () => {
