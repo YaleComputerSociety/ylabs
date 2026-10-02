@@ -3,6 +3,11 @@ import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  evidenceUrlCiterCounts,
+  normalizeEvidenceUrl,
+  type EvidenceCitingRow,
+} from '../utils/sharedEvidenceUrls';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -47,6 +52,7 @@ export interface CandidateAreaEntity {
   sourceUrls: string[];
   departments?: string[];
   manuallyLockedFields?: string[];
+  refusedSharedDirectoryUrls?: string[];
 }
 
 export interface CandidateAreaEntityDoc {
@@ -171,15 +177,73 @@ function hasEmptyResearchAreas(value: unknown): boolean {
   return false;
 }
 
-export function candidateAreaUrlsForDoc(doc: CandidateAreaEntityDoc): string[] {
-  return uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])
-    .filter((url) => !isRejectedAreaSourceUrl(url))
-    .sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
+const PEOPLE_DIRECTORY_SEGMENT = /^(?:faculty-directory|directory|people|faculty)$/i;
+
+export const MIN_SHARED_AREA_DIRECTORY_CITERS = 3;
+
+const slugTokens = (value: unknown): string[] =>
+  textValue(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A people directory filtered to one area, such as `/faculty-directory/finance`, lists many
+ * people, so its page-level topics would be grafted onto every row that cites it (#4030, the
+ * #1663 shape). It has the same path shape as a person's own `/faculty-directory/<name>`
+ * profile, so the shape alone cannot refuse it: it is refused only when three or more rows
+ * cite it and its leaf does not name the row being read.
+ */
+export function isSharedAreaFilteredDirectoryUrl(
+  url: string,
+  doc: Pick<CandidateAreaEntityDoc, 'slug' | 'name' | 'displayName'>,
+  citerCounts: ReadonlyMap<string, number>,
+): boolean {
+  if ((citerCounts.get(normalizeEvidenceUrl(url)) || 0) < MIN_SHARED_AREA_DIRECTORY_CITERS) {
+    return false;
+  }
+  let segments: string[];
+  try {
+    segments = new URL(url).pathname.split('/').filter(Boolean);
+  } catch {
+    return false;
+  }
+  const leaf = segments[segments.length - 1] || '';
+  if (segments.length < 2 || /\.[a-z0-9]{2,5}$/i.test(leaf)) return false;
+  if (!PEOPLE_DIRECTORY_SEGMENT.test(segments[segments.length - 2])) return false;
+  const ownTokens = new Set([doc.slug, doc.name, doc.displayName].flatMap(slugTokens));
+  const leafTokens = slugTokens(leaf);
+  return !leafTokens.every((token) => ownTokens.has(token));
+}
+
+function partitionAreaUrlsForDoc(
+  doc: CandidateAreaEntityDoc,
+  citerCounts: ReadonlyMap<string, number> | undefined,
+): { urls: string[]; refused: string[] } {
+  const urls: string[] = [];
+  const refused: string[] = [];
+  for (const url of uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])) {
+    if (isRejectedAreaSourceUrl(url)) continue;
+    if (citerCounts && isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts)) refused.push(url);
+    else urls.push(url);
+  }
+  urls.sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
+  return { urls, refused };
+}
+
+export function candidateAreaUrlsForDoc(
+  doc: CandidateAreaEntityDoc,
+  citerCounts?: ReadonlyMap<string, number>,
+): string[] {
+  return partitionAreaUrlsForDoc(doc, citerCounts).urls;
 }
 
 export interface CandidateAreaSelectionOptions {
   only?: string[];
   evidenceBackedRowIds?: ReadonlySet<string>;
+  citerCounts?: ReadonlyMap<string, number>;
 }
 
 function hasResearchAreasToRead(
@@ -199,16 +263,20 @@ export function candidateAreaEntitiesFromDocs(
   const keys = uniqueStrings(options.only || []);
   return docs.flatMap((doc) => {
     if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
-    const urls = candidateAreaUrlsForDoc(doc);
-    if (urls.length === 0) return [];
+    const { urls, refused: refusedSharedDirectoryUrls } = partitionAreaUrlsForDoc(
+      doc,
+      options.citerCounts,
+    );
+    if (urls.length === 0 && refusedSharedDirectoryUrls.length === 0) return [];
     const candidate: CandidateAreaEntity = {
       _id: doc._id,
       slug: doc.slug,
       name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
-      websiteUrl: urls[0],
+      websiteUrl: urls[0] || '',
       sourceUrls: urls,
       departments: doc.departments || [],
       manuallyLockedFields: doc.manuallyLockedFields || [],
+      refusedSharedDirectoryUrls,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -471,7 +539,16 @@ export async function findResearchAreaCandidateEntities(
         docs.filter((doc) => !hasEmptyResearchAreas(doc.researchAreas)),
       )
     : undefined;
-  return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds });
+  const citerCounts = await loadEvidenceUrlCiterCounts();
+  return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds, citerCounts });
+}
+
+export async function loadEvidenceUrlCiterCounts(): Promise<Map<string, number>> {
+  const rows = (await ResearchEntity.find(
+    { archived: { $ne: true } },
+    { _id: 0, websiteUrl: 1, website: 1, sourceUrls: 1 },
+  ).lean()) as EvidenceCitingRow[];
+  return evidenceUrlCiterCounts(rows);
 }
 
 async function defaultWorkPlanLoader(
@@ -527,13 +604,16 @@ export class ResearchAreaSourceExtractor implements IScraper {
           });
 
     const canonicalizer = await this.canonicalizerLoader();
-    const candidates = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive }))
-      .filter(
-        (candidate) =>
-          candidateKeyMatches(candidate, only) &&
-          candidate.websiteUrl &&
-          !isRejectedAreaSourceUrl(candidate.websiteUrl),
-      )
+    const found = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive })).filter(
+      (candidate) => candidateKeyMatches(candidate, only),
+    );
+    const refusedSharedDirectoryUrls = new Set(
+      found.flatMap((candidate) =>
+        (candidate.refusedSharedDirectoryUrls || []).map(normalizeEvidenceUrl),
+      ),
+    );
+    const candidates = found
+      .filter((candidate) => candidate.websiteUrl && !isRejectedAreaSourceUrl(candidate.websiteUrl))
       .slice(offset, offset + limit);
 
     let observationCount = 0;
@@ -608,7 +688,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
     return {
       observationCount,
       entitiesObserved,
-      notes: `Recovered approved research areas for ${entitiesObserved} empty-area research entities.`,
+      notes: `Recovered approved research areas for ${entitiesObserved} empty-area research entities. Refused ${refusedSharedDirectoryUrls.size} shared area-filtered directory page(s) as a topic source.`,
       metrics: { workPlanner: workPlannerMetrics },
     };
   }

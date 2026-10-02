@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
 import {
   candidateAreaEntitiesFromDocs,
+  loadEvidenceUrlCiterCounts,
   type CandidateAreaEntityDoc,
 } from '../scrapers/sources/researchAreaSourceExtractor';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -52,11 +53,13 @@ export function unbackedResearchAreaCandidateReport(
   docs: CandidateAreaEntityDoc[],
   evidenceBackedRowIds: ReadonlySet<string>,
   generatedAt: Date,
+  citerCounts?: ReadonlyMap<string, number>,
 ): UnbackedResearchAreaCandidateReport {
   const unbackedRows = docs.filter(
     (doc) => !evidenceBackedRowIds.has(serializedDocumentId(doc._id) || ''),
   ).length;
-  const keys = candidateAreaEntitiesFromDocs(docs, { evidenceBackedRowIds })
+  const keys = candidateAreaEntitiesFromDocs(docs, { evidenceBackedRowIds, citerCounts })
+    .filter((candidate) => candidate.sourceUrls.length > 0)
     .map((candidate) => candidate.slug || serializedDocumentId(candidate._id) || '')
     .filter(Boolean);
   return {
@@ -101,7 +104,12 @@ async function main(): Promise<void> {
     .sort({ _id: 1 })
     .lean()) as CandidateAreaEntityDoc[];
   const evidenceBackedRowIds = await loadResearchAreaEvidenceBackedRowIds(docs);
-  const report = unbackedResearchAreaCandidateReport(docs, evidenceBackedRowIds, new Date());
+  const report = unbackedResearchAreaCandidateReport(
+    docs,
+    evidenceBackedRowIds,
+    new Date(),
+    await loadEvidenceUrlCiterCounts(),
+  );
 
   fs.mkdirSync(path.dirname(options.output), { recursive: true });
   fs.writeFileSync(options.output, JSON.stringify(report, null, 2));

@@ -75,13 +75,18 @@ export function evidenceUrlsOf(row: EvidenceCitingRow): string[] {
  * page twice never makes it look shared.
  */
 export function sharedEvidenceUrls(rows: readonly EvidenceCitingRow[]): Set<string> {
+  const holders = evidenceUrlCiterCounts(rows);
+  return new Set([...holders.entries()].filter(([, count]) => count > 1).map(([url]) => url));
+}
+
+export function evidenceUrlCiterCounts(rows: readonly EvidenceCitingRow[]): Map<string, number> {
   const holders = new Map<string, number>();
   for (const row of rows) {
     for (const url of evidenceUrlsOf(row)) {
       holders.set(url, (holders.get(url) || 0) + 1);
     }
   }
-  return new Set([...holders.entries()].filter(([, count]) => count > 1).map(([url]) => url));
+  return holders;
 }
 
 export function isSharedEvidenceUrl(value: unknown, shared: ReadonlySet<string>): boolean {

@@ -6,6 +6,7 @@ import {
   deriveCanonicalResearchAreasFromPage,
   extractLabeledResearchAreaItems,
   isRejectedAreaSourceUrl,
+  isSharedAreaFilteredDirectoryUrl,
   researchAreaObservationsFromExtraction,
   type CandidateAreaEntity,
   type FetchedAreaPage,
@@ -168,6 +169,83 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
       },
     ]);
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['blank-area']);
+  });
+});
+
+describe('shared area-filtered directory pages (#4030)', () => {
+  const areaPage = 'https://school.example.edu/faculty-research/faculty-directory/finance';
+  const ownProfile = 'https://school.example.edu/faculty-research/faculty-directory/ada-fixture';
+  const citers = new Map([
+    ['https://school.example.edu/faculty-research/faculty-directory/finance', 9],
+    ['https://school.example.edu/faculty-research/faculty-directory/ada-fixture', 3],
+    ['https://school.example.edu/faculty-research/faculty-directory/marketing', 2],
+  ]);
+  const row = { slug: 'faculty-ada-fixture', name: 'Ada Fixture' };
+
+  it('refuses a directory leaf that three or more rows cite and that does not name the row', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(areaPage, row, citers)).toBe(true);
+  });
+
+  it('keeps the row its own directory profile even when several rows cite it', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(ownProfile, row, citers)).toBe(false);
+  });
+
+  it('keeps a directory leaf fewer than three rows cite', () => {
+    expect(
+      isSharedAreaFilteredDirectoryUrl(
+        'https://school.example.edu/faculty-research/faculty-directory/marketing',
+        row,
+        citers,
+      ),
+    ).toBe(false);
+  });
+
+  it('drops the shared directory page from the candidate urls and records the refusal', () => {
+    const doc = {
+      _id: 'j',
+      slug: 'faculty-ada-fixture',
+      name: 'Ada Fixture',
+      websiteUrl: areaPage,
+      sourceUrls: [ownProfile],
+      researchAreas: [],
+    };
+    expect(candidateAreaUrlsForDoc(doc, citers)).toEqual([ownProfile]);
+    const [candidate] = candidateAreaEntitiesFromDocs([doc], { citerCounts: citers });
+    expect(candidate.sourceUrls).toEqual([ownProfile]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
+  it('records the refusal for a row whose only url is the shared directory page', () => {
+    const [candidate] = candidateAreaEntitiesFromDocs(
+      [{ _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] }],
+      { citerCounts: citers },
+    );
+    expect(candidate.sourceUrls).toEqual([]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
+  it('counts each refused page once in the run notes, including rows it leaves with no url', async () => {
+    const docs = [
+      { _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] },
+      { _id: 'l', slug: 'faculty-bo-fixture', websiteUrl: `${areaPage}/`, researchAreas: [] },
+    ];
+    let fetched = 0;
+    const extractor = new ResearchAreaSourceExtractor({
+      fetchPage: async (url) => {
+        fetched += 1;
+        return { url, html: '' };
+      },
+      canonicalizerLoader: async () => canonicalizer,
+      entityFinder: async () => candidateAreaEntitiesFromDocs(docs, { citerCounts: citers }),
+    });
+    const { ctx } = makeContext();
+    const result = await extractor.run(ctx);
+    expect(fetched).toBe(0);
+    expect(result.notes).toContain('Refused 1 shared area-filtered directory page(s)');
+  });
+
+  it('refuses nothing when no citer counts are supplied', () => {
+    expect(candidateAreaUrlsForDoc({ websiteUrl: areaPage })).toEqual([areaPage]);
   });
 });
 
