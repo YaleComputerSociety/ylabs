@@ -1,4 +1,4 @@
-import { withoutMeshSourcedGeographicResearchAreas } from '../scrapers/utils/meshGeographicDescriptors';
+import { withoutMeshSourcedNonSubjectResearchAreas } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import {
   dropDomainIncoherentUnsourcedResearchAreas,
@@ -11,7 +11,7 @@ export type ServedResearchAreaGuard =
   | 'servedCopyArrayBound'
   | 'servedResearchAreaChipHygiene'
   | 'filterProseResearchAreaChips'
-  | 'withoutMeshSourcedGeographicResearchAreas'
+  | 'withoutMeshSourcedNonSubjectResearchAreas'
   | 'dropDomainIncoherentUnsourcedResearchAreas'
   | 'normalizeResearchAreaList'
   | 'publicResearchAreaArray';
@@ -105,8 +105,8 @@ function surfaceStages({
 }: ServedResearchAreaDecisionInput): Array<[ServedResearchAreaGuard, ResearchAreaStage]> {
   const withholds: Array<[ServedResearchAreaGuard, ResearchAreaStage]> = [
     [
-      'withoutMeshSourcedGeographicResearchAreas',
-      (areas) => withoutMeshSourcedGeographicResearchAreas(areas, fieldProvenance),
+      'withoutMeshSourcedNonSubjectResearchAreas',
+      (areas) => withoutMeshSourcedNonSubjectResearchAreas(areas, fieldProvenance),
     ],
     [
       'dropDomainIncoherentUnsourcedResearchAreas',

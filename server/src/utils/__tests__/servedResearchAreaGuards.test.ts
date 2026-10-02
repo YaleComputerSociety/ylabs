@@ -51,8 +51,8 @@ describe('decideServedResearchAreas', () => {
     );
     expect(decision.served).toEqual(['Ion Channels', 'Membrane Transport Proteins']);
     expect(decision.withheld).toEqual([
-      { area: 'China', guard: 'withoutMeshSourcedGeographicResearchAreas' },
-      { area: 'Connecticut', guard: 'withoutMeshSourcedGeographicResearchAreas' },
+      { area: 'China', guard: 'withoutMeshSourcedNonSubjectResearchAreas' },
+      { area: 'Connecticut', guard: 'withoutMeshSourcedNonSubjectResearchAreas' },
     ]);
   });
 
@@ -78,7 +78,7 @@ describe('decideServedResearchAreas', () => {
   it('runs the MeSH withhold before the coherence guard, so both apply to one row', () => {
     const decision = decide(['Membrane Transport', 'China'], meshProfileProvenance, 'servedCopy');
     expect(decision.served).toEqual(['Membrane Transport']);
-    expect(guardsOf(decision)).toEqual(['withoutMeshSourcedGeographicResearchAreas']);
+    expect(guardsOf(decision)).toEqual(['withoutMeshSourcedNonSubjectResearchAreas']);
   });
 
   it('withholds a prose-length chip from the served copy and names the prose filter', () => {
@@ -136,7 +136,7 @@ const parityRows: Array<{
       ['Ion Channels', 'China', 'Membrane Transport Proteins'],
       meshProfileProvenance,
     ),
-    servedGuards: ['withoutMeshSourcedGeographicResearchAreas'],
+    servedGuards: ['withoutMeshSourcedNonSubjectResearchAreas'],
   },
   {
     row: syntheticRow(

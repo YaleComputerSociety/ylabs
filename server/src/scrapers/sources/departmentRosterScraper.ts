@@ -64,8 +64,8 @@ import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   isMeshIndexedProfileUrl,
-  withoutMeshGeographicDescriptors,
-} from '../utils/meshGeographicDescriptors';
+  withoutMeshNonSubjectDescriptors,
+} from '../utils/meshNonSubjectDescriptors';
 import {
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
@@ -3365,7 +3365,7 @@ export function profileEnrichmentFromHtml(
 
   const extractedInterests = extractResearchInterestsFromHtml($);
   const researchInterests = isMeshIndexedProfileUrl(canonicalUrl)
-    ? withoutMeshGeographicDescriptors(extractedInterests)
+    ? withoutMeshNonSubjectDescriptors(extractedInterests)
     : extractedInterests;
   const bio = extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);

@@ -4,10 +4,12 @@ import { parseYsmProfileResearch } from '../sources/ysmMeshKeywordScraper';
 import { buildResearchEntitySearchIndexDocument } from '../../services/researchEntitySearchIndexService';
 import { sanitizeServedResearchEntityCopyFields } from '../../utils/researchEntityDescriptionText';
 import {
+  MESH_AGE_GROUP_CHECK_TAGS,
   isMeshGeographicDescriptor,
   isMeshIndexedProfileUrl,
-  withoutMeshGeographicDescriptors,
-} from '../utils/meshGeographicDescriptors';
+  isMeshNonSubjectDescriptor,
+  withoutMeshNonSubjectDescriptors,
+} from '../utils/meshNonSubjectDescriptors';
 
 const MESH_PROFILE_URL = 'https://ysph.yale.edu/profile/ada-fixture/';
 const HUMANITIES_PROFILE_URL = 'https://history.yale.edu/people/ada-fixture';
@@ -54,8 +56,55 @@ describe('MeSH geographic descriptors', () => {
 
   it('drops only the place names from a keyword list', () => {
     expect(
-      withoutMeshGeographicDescriptors(['Autistic Disorder', 'China', 'Epidemiology', 'Korea']),
+      withoutMeshNonSubjectDescriptors(['Autistic Disorder', 'China', 'Epidemiology', 'Korea']),
     ).toEqual(['Autistic Disorder', 'Epidemiology']);
+  });
+
+  it('recognises age-group and subject check tags and study-context headings', () => {
+    for (const term of [
+      'Adolescent',
+      'infant, newborn',
+      'Aged, 80 and over',
+      'Humans',
+      'Mice',
+      'Diagnosis',
+      'Treatment Outcome',
+      'Risk Factors',
+    ]) {
+      expect(isMeshNonSubjectDescriptor(term)).toBe(true);
+    }
+    expect(isMeshNonSubjectDescriptor('China')).toBe(true);
+  });
+
+  it('keeps subject headings that only contain an age, check-tag or study word', () => {
+    for (const term of [
+      'Breast Neoplasms',
+      'Adolescent Development',
+      'Infant, Premature',
+      'Pregnancy',
+      'Pregnancy Complications',
+      'Diagnostic Imaging',
+      'Child Psychiatry',
+    ]) {
+      expect(isMeshNonSubjectDescriptor(term)).toBe(false);
+    }
+  });
+
+  it('takes every age-group check tag from MeSH tree M01.060', () => {
+    for (const descriptor of MESH_AGE_GROUP_CHECK_TAGS) {
+      expect(descriptor.treeNumbers.every((tree) => tree.startsWith('M01.060'))).toBe(true);
+    }
+  });
+
+  it('drops age groups, check tags and study-context headings from a keyword list', () => {
+    expect(
+      withoutMeshNonSubjectDescriptors([
+        'Breast Neoplasms',
+        'Adolescent',
+        'Treatment Outcome',
+        'Humans',
+      ]),
+    ).toEqual(['Breast Neoplasms']);
   });
 
   it('scopes the MeSH-indexed hosts to the YSM profile platform', () => {
@@ -73,6 +122,14 @@ describe('lanes that read a MeSH keyword list', () => {
       'https://medicine.yale.edu/profile/ada-fixture/',
     );
     expect(research?.meshTerms).toEqual(['Genetics', 'Global Health']);
+  });
+
+  it('ysm-mesh-keyword emits no age group, check tag or study-context heading as a research area', () => {
+    const research = parseYsmProfileResearch(
+      ysmProfilePage(['Breast Neoplasms', 'Adolescent', 'Treatment Outcome', 'Mice']),
+      'https://medicine.yale.edu/profile/ada-fixture/',
+    );
+    expect(research?.meshTerms).toEqual(['Breast Neoplasms']);
   });
 
   it('ysm-mesh-keyword stays fail-closed when every keyword is a place', () => {
@@ -127,6 +184,19 @@ describe('lanes that read a MeSH keyword list', () => {
     const stored = storedEntity(['Genetics', 'China'], MESH_PROFILE_URL);
     expect(buildResearchEntitySearchIndexDocument(stored)?.researchAreas).toEqual(['Genetics']);
     expect(sanitizeServedResearchEntityCopyFields(stored).researchAreas).toEqual(['Genetics']);
+  });
+
+  it('withholds a stored age group, check tag and study-context heading at serve time', () => {
+    const stored = storedEntity(
+      ['Breast Neoplasms', 'Adolescent', 'Treatment Outcome', 'Humans'],
+      MESH_PROFILE_URL,
+    );
+    expect(buildResearchEntitySearchIndexDocument(stored)?.researchAreas).toEqual([
+      'Breast Neoplasms',
+    ]);
+    expect(sanitizeServedResearchEntityCopyFields(stored).researchAreas).toEqual([
+      'Breast Neoplasms',
+    ]);
   });
 
   it('serves a place a non-MeSH source recorded as the topic', () => {

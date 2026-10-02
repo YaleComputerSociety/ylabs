@@ -70,7 +70,7 @@ The guards, in serve order, are the stages of `decideServedResearchAreas` in `se
 - `servedCopyArrayBound`: the served copy bounds the stored list to its array cap before sanitizing.
 - `servedResearchAreaChipHygiene`: comma-blob splitting, role-label and corrupt-label hygiene, and case-folded dedupe.
 - `filterProseResearchAreaChips`: a chip that reads as prose, such as a long named program title, is withheld (#1428).
-- `withoutMeshSourcedGeographicResearchAreas`: a MeSH geographic descriptor read from a MeSH-indexed profile is withheld (#3693).
+- `withoutMeshSourcedNonSubjectResearchAreas`: a MeSH geographic, age-group, check-tag or study-context descriptor read from a MeSH-indexed profile is withheld (#3693, #4051).
 - `dropDomainIncoherentUnsourcedResearchAreas`: an unsourced chip sharing no vocabulary with the row's own text is withheld.
 - `publicResearchAreaArray`: the DTO's final projection, label hygiene, contact redaction, and array cap.
 
