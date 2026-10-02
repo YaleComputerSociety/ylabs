@@ -106,6 +106,10 @@ The student-journey smoke holds the session check until browse has painted, coun
 - Take a scripted scroll's `behavior` from `scrollBehavior()` in `client/src/utils/scrollBehavior.ts`, never a literal `'smooth'`, because a scripted value overrides the stylesheet's reduced-motion rule; `client/src/__tests__/scrollBehaviorGuard.test.ts` enforces it.
 - Animate compositor-friendly properties (`transform`, `opacity`); avoid animating layout.
 - Keep motion short and interruptible; it should clarify, not delay.
+- A wrapper that holds other content, a route or a list, animates `opacity` only, never `transform`, `filter`, or `perspective`.
+Any of those makes the wrapper the containing block for every `position: fixed` descendant, so a modal opened during the animation is centred in the whole page and then jumps to the viewport when the animation ends.
+The route fade's `translateY(6px)` did exactly that to a deep-linked program modal, which scored a dialog layout shift near 1.0 at every width until the fade became opacity-only (#4264).
+`client/src/__tests__/routeFadeGuard.test.ts` holds the route fade to it, and the student-journey smoke fails when a deep-linked program dialog shifts by 0.01 or more at 375, 768, or 1440px.
 
 ## Performance
 
