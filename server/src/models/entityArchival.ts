@@ -54,6 +54,25 @@ export const archivedStudentVisibilityVerdictFilter = (): Record<string, unknown
 });
 
 /**
+ * A program also carries a window the gate derives from the fund's other copies (#4382). It
+ * belongs to the verdict, so whatever withdraws the verdict withdraws it too.
+ */
+export const PROGRAM_GATE_DERIVED_FIELDS: readonly string[] = ['upcomingDuplicateWindow'];
+
+const ARCHIVED_CLEARED_PROGRAM_FIELDS: readonly string[] = [
+  ...ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS,
+  ...PROGRAM_GATE_DERIVED_FIELDS,
+];
+
+export const clearedProgramStudentVisibilityVerdict = (): Record<string, ''> =>
+  Object.fromEntries(ARCHIVED_CLEARED_PROGRAM_FIELDS.map((field) => [field, '']));
+
+export const archivedProgramStudentVisibilityVerdictFilter = (): Record<string, unknown> => ({
+  archived: true,
+  $or: ARCHIVED_CLEARED_PROGRAM_FIELDS.map((field) => ({ [field]: { $exists: true } })),
+});
+
+/**
  * The fields that record who archived a row and when. Modelled rather than written
  * ad hoc, because an unmodelled path is silently stripped from a write through the
  * model: that is how 374 archived `LAB` rows came to carry no trace of any archiver

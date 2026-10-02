@@ -3,6 +3,13 @@ import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
 import { selectDuplicateProgramCopies } from './programDuplicateIdentity';
+import {
+  deriveUpcomingDuplicateWindows,
+  sameUpcomingDuplicateWindow,
+  storedUpcomingDuplicateWindow,
+  UPCOMING_DUPLICATE_WINDOW_FIELD,
+  type UpcomingDuplicateWindow,
+} from './programUpcomingDuplicateWindow';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
@@ -14,7 +21,9 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import {
+  archivedProgramStudentVisibilityVerdictFilter,
   archivedStudentVisibilityVerdictFilter,
+  clearedProgramStudentVisibilityVerdict,
   clearedStudentVisibilityVerdict,
 } from '../models/entityArchival';
 import {
@@ -118,6 +127,12 @@ export interface StudentVisibilityGatePlan {
    * rather than the gate. Read here, never rebuilt.
    */
   gateInput?: ResearchEntityGateRowInput;
+  /**
+   * Programs only: the window the row stores and the one this run derives from the fund's
+   * other copies (#4382). `null` is a decided absence, so an apply clears a stale window.
+   */
+  currentUpcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
+  upcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
 }
 
 /** The serializable half of `ResearchEntityStudentVisibilityInput`, minus the record itself. */
@@ -154,7 +169,7 @@ export interface StudentVisibilityGateDeps {
     collection: VisibilityReleaseQueueCollection,
     recordId: string,
     patch: Record<string, any>,
-    options: { timestamps: boolean },
+    options: { timestamps: boolean; unset?: string[] },
   ) => Promise<void>;
   upsertOpenQueueItem: (item: VisibilityQueueUpsert) => Promise<void>;
   resolveQueueItem: (
@@ -178,6 +193,7 @@ export interface StudentVisibilityGateReport {
     resolved: number;
     changed: number;
     unexplainedHeld: number;
+    upcomingDuplicateWindowsChanged: number;
   };
   reasonCounts: Record<string, number>;
   blockerCounts: Record<string, number>;
@@ -445,6 +461,49 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
     return true;
   }
   return false;
+}
+
+export function isUpcomingDuplicateWindowChanged(plan: StudentVisibilityGatePlan): boolean {
+  if (plan.upcomingDuplicateWindow === undefined) return false;
+  return !sameUpcomingDuplicateWindow(
+    plan.currentUpcomingDuplicateWindow,
+    plan.upcomingDuplicateWindow,
+  );
+}
+
+function upcomingDuplicateWindowUnset(plan: StudentVisibilityGatePlan): string[] {
+  return isUpcomingDuplicateWindowChanged(plan) && !plan.upcomingDuplicateWindow
+    ? [UPCOMING_DUPLICATE_WINDOW_FIELD]
+    : [];
+}
+
+function upcomingDuplicateWindowSet(plan: StudentVisibilityGatePlan): Record<string, unknown> {
+  return isUpcomingDuplicateWindowChanged(plan) && plan.upcomingDuplicateWindow
+    ? { [UPCOMING_DUPLICATE_WINDOW_FIELD]: plan.upcomingDuplicateWindow }
+    : {};
+}
+
+/**
+ * A changed window changes what a student is served, so it is written like a changed
+ * verdict, with `updatedAt`, even when the verdict itself is unchanged.
+ */
+function studentVisibilityGateRecordWritesServedChange(plan: StudentVisibilityGatePlan): boolean {
+  return (
+    isStudentVisibilityGatePlanMateriallyChanged(plan) || isUpcomingDuplicateWindowChanged(plan)
+  );
+}
+
+function studentVisibilityGateRecordUpdate(
+  plan: StudentVisibilityGatePlan,
+  now: Date,
+): { $set: Record<string, unknown>; $unset?: Record<string, ''> } {
+  const unset = upcomingDuplicateWindowUnset(plan);
+  return {
+    $set: { ...studentVisibilityGateRecordPatch(plan, now), ...upcomingDuplicateWindowSet(plan) },
+    ...(unset.length > 0
+      ? { $unset: Object.fromEntries(unset.map((field) => [field, ''] as const)) }
+      : {}),
+  };
 }
 
 /**
@@ -1250,7 +1309,14 @@ function buildNameOnlyVisibilityDedupeRows(args: {
 const defaultGateDeps: StudentVisibilityGateDeps = {
   async updateRecordVisibility(collection, recordId, patch, options) {
     const model: any = collection === 'research' ? ResearchEntity : Fellowship;
-    await model.updateOne({ _id: recordId }, { $set: patch }, { timestamps: options.timestamps });
+    const unset = options.unset?.length
+      ? { $unset: Object.fromEntries(options.unset.map((field) => [field, ''])) }
+      : {};
+    await model.updateOne(
+      { _id: recordId },
+      { $set: patch, ...unset },
+      { timestamps: options.timestamps },
+    );
   },
   async upsertOpenQueueItem(item) {
     const now = new Date();
@@ -1457,8 +1523,8 @@ export async function clearArchivedResearchStudentVisibility(): Promise<number> 
  * stored `student_ready` (#3753).
  */
 export async function clearArchivedProgramStudentVisibility(): Promise<number> {
-  const result = await Fellowship.updateMany(archivedStudentVisibilityVerdictFilter(), {
-    $unset: clearedStudentVisibilityVerdict(),
+  const result = await Fellowship.updateMany(archivedProgramStudentVisibilityVerdictFilter(), {
+    $unset: clearedProgramStudentVisibilityVerdict(),
   });
   return result.modifiedCount || 0;
 }
@@ -1482,6 +1548,7 @@ export async function runStudentVisibilityGateForPlans(
     resolved: 0,
     changed: 0,
     unexplainedHeld: 0,
+    upcomingDuplicateWindowsChanged: 0,
   };
 
   for (const plan of plans) {
@@ -1495,6 +1562,7 @@ export async function runStudentVisibilityGateForPlans(
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
     if (materiallyChanged) counts.changed += 1;
+    if (isUpcomingDuplicateWindowChanged(plan)) counts.upcomingDuplicateWindowsChanged += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
       if (isBlockingVisibilityReason(reason)) increment(blockerCounts, reason);
@@ -1503,12 +1571,11 @@ export async function runStudentVisibilityGateForPlans(
 
     if (options.mode !== 'apply') continue;
 
-    await deps.updateRecordVisibility(
-      plan.collection,
-      plan.recordId,
-      studentVisibilityGateRecordPatch(plan, new Date()),
-      { timestamps: materiallyChanged },
-    );
+    const { $set, $unset } = studentVisibilityGateRecordUpdate(plan, new Date());
+    await deps.updateRecordVisibility(plan.collection, plan.recordId, $set, {
+      timestamps: studentVisibilityGateRecordWritesServedChange(plan),
+      ...($unset ? { unset: Object.keys($unset) } : {}),
+    });
 
     if (publicSafe) {
       await deps.resolveQueueItem(plan.collection, plan.recordId, { resolvedByTier: plan.tier });
@@ -1596,8 +1663,8 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
-    const update = { $set: studentVisibilityGateRecordPatch(plan, now) };
-    if (materiallyChanged) {
+    const update = studentVisibilityGateRecordUpdate(plan, now);
+    if (studentVisibilityGateRecordWritesServedChange(plan)) {
       const recordOp = { updateOne: { filter: { _id: plan.recordId }, update } };
       if (plan.collection === 'research') researchOps.push(recordOp);
       else programOps.push(recordOp);
@@ -2245,22 +2312,44 @@ async function planResearchEntityGateUpdates(
   });
 }
 
+export interface DuplicateProgramCopies {
+  keptCopyById: Map<string, string>;
+  upcomingWindowByKeptId: Map<string, UpcomingDuplicateWindow>;
+}
+
 // Which copy of a fund serves is a corpus-wide question, so it is answered over every live
 // program even when the plan is scoped to some of them.
-async function loadDuplicateProgramCopies(): Promise<Map<string, string>> {
+export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicateProgramCopies> {
   const livePrograms = await Fellowship.find({ archived: false }).lean();
-  return selectDuplicateProgramCopies(
-    livePrograms.map((program: any) => ({
-      id: studentVisibilityGateDocumentId(program._id),
+  const copies = livePrograms.map((program: any) => ({
+    program,
+    id: studentVisibilityGateDocumentId(program._id),
+    tier: computeProgramStudentVisibility(program).tier,
+  }));
+  const keptCopyById = selectDuplicateProgramCopies(
+    copies.map(({ program, id, tier }) => ({
+      id,
       title: program.title,
       description: program.description,
       sourceName: program.sourceName,
       sourceUrl: program.sourceUrl,
       applicationLink: program.applicationLink,
       links: program.links,
-      tier: computeProgramStudentVisibility(program).tier,
+      tier,
     })),
   );
+  const upcomingWindowByKeptId = deriveUpcomingDuplicateWindows(
+    copies.map(({ program, id, tier }) => ({
+      id,
+      deadline: program.deadline,
+      applicationOpenDate: program.applicationOpenDate,
+      isAcceptingApplications: program.isAcceptingApplications,
+      servableOnItsOwn: PUBLIC_TIERS.has(tier),
+    })),
+    keptCopyById,
+    now,
+  );
+  return { keptCopyById, upcomingWindowByKeptId };
 }
 
 async function planProgramGateUpdates(
@@ -2273,14 +2362,14 @@ async function planProgramGateUpdates(
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
   const [scopedPrograms, duplicateProgramCopies] = await Promise.all([
     query.lean(),
-    loadDuplicateProgramCopies(),
+    loadDuplicateProgramCopies(new Date()),
   ]);
   const programs = orderedByGateLabel(scopedPrograms, 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
     const result = computeProgramStudentVisibility(program, {
-      duplicateOfServedCopy: duplicateProgramCopies.has(recordId),
+      duplicateOfServedCopy: duplicateProgramCopies.keptCopyById.has(recordId),
     });
     return {
       collection: 'programs' as const,
@@ -2296,6 +2385,10 @@ async function planProgramGateUpdates(
       reasons: result.reasons,
       sourceNames: uniqueStrings([program.sourceName]),
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      currentUpcomingDuplicateWindow: storedUpcomingDuplicateWindow(
+        program.upcomingDuplicateWindow,
+      ),
+      upcomingDuplicateWindow: duplicateProgramCopies.upcomingWindowByKeptId.get(recordId) ?? null,
     };
   });
 }

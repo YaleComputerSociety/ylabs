@@ -5,6 +5,20 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-02: A Fund's Upcoming Deadline Is Served Even When Its Database Record Lists A Passed One (#4382)
+
+When a program is served from its Yale fellowship database record (#4289) and another lane's hidden copy of the same fund states a still-upcoming deadline while the record's own deadline has passed or is absent, students see the upcoming deadline (owner decision).
+The database record stays the served copy and the source for everything else.
+
+Decided: the visibility gate, which already groups the copies of one fund, derives the earliest still-upcoming window among the kept copy's hidden copies on every run and stores it as `upcomingDuplicateWindow`, clearing it when it no longer applies.
+It is not written over `deadline`, because the materializer rewrites `deadline` from the fund page on every run and the two would flip between stages.
+Only a copy the gate would serve on its own can supply the window, and the window carries that copy's opening date only when that copy states one, because the opening date and the deadline are one statement of one cycle.
+Serve time re-checks the window against the current time, so a window that passes before the next gate run falls back to the row's own deadline.
+
+Measured on Development on 2026-10-02 before the change: one served program changes, STARS II, from a projected July 30, 2027 deadline reading closed to the January 4, 2027 spring deadline the fellowships-office page states, reading accepting; no tier changes.
+
+This is a stored-data change: a served deadline moves only after the gate applies on Development.
+
 ## 2026-10-01: The Yale Fellowship Database Copy Of A Program Is The One Served (#4289)
 
 When a program has a copy in the Yale fellowship database and another lane's copy, the database record is the one served (#4289, owner decision).

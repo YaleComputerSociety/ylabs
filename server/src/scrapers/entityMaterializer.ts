@@ -11,6 +11,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
 import {
   archivedEntityUpdate,
+  PROGRAM_GATE_DERIVED_FIELDS,
   attributedArchiveSet,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
   PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON,
@@ -7345,6 +7346,13 @@ export async function projectFromLog(
     for (const field of classification.unset) {
       unset[field] = '';
       fieldsWritten++;
+    }
+    for (const field of PROGRAM_GATE_DERIVED_FIELDS) {
+      if (field in set || field in unset) fieldsWritten = Math.max(0, fieldsWritten - 1);
+      delete set[field];
+      delete set[`fieldProvenance.${field}`];
+      delete unset[field];
+      delete confidenceByField[field];
     }
   }
 

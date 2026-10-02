@@ -574,6 +574,7 @@ describe('fellowship public serializer', () => {
     expect(update.applicationOpenDate).toBeInstanceOf(Date);
     expect(update).not.toHaveProperty('studentVisibilityTier');
     expect(withdrawn).toHaveProperty('studentVisibilityTier');
+    expect(withdrawn).toHaveProperty('upcomingDuplicateWindow');
     expect(update).not.toHaveProperty('studentVisibilityOverrideTier');
     expect(update.studentVisibilityReviewedByAccountId).toBe('67d8928150621bcef434a1d6');
     expect(update.archived).toBe(true);
@@ -605,5 +606,76 @@ describe('readFellowships id-limit handling', () => {
     await readFellowships(makeIds(150), { skipIdLimit: true });
 
     expect(lastQueryIds()).toHaveLength(150);
+  });
+});
+
+describe('a deadline served from another copy of the fund (#4382)', () => {
+  const now = new Date('2026-10-02T12:00:00.000Z');
+  const springDateOnly = new Date('2027-01-05T04:59:59.999Z');
+  const keptCopy = {
+    _id: '67d8928150621bcef434a1f0',
+    title: 'Fixture Annual Research Fund',
+    applicationLink: 'https://apply.example.edu/fixture',
+    sourceUrl: 'https://apply.example.edu/fixture',
+    isAcceptingApplications: false,
+    applicationOpenDate: new Date('2026-06-05T04:00:00.000Z'),
+    deadline: new Date('2026-07-30T21:00:00.000Z'),
+    upcomingDuplicateWindow: {
+      deadline: springDateOnly,
+      isAcceptingApplications: true,
+      sourceProgramId: '67d8928150621bcef434a1f1',
+    },
+  };
+
+  it('serves the upcoming deadline and accepting status in place of the passed one', () => {
+    const payload = publicFellowshipForStudent(keptCopy, now);
+    expect(payload.deadline).toEqual(springDateOnly);
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.isAcceptingApplications).toBe(true);
+    expect(payload.applicationOpenDate).toEqual(keptCopy.applicationOpenDate);
+    expect(payload).not.toHaveProperty('upcomingDuplicateWindow');
+  });
+
+  it("serves the other copy's opening date and decides acceptance on it when it states one", () => {
+    const opensLater = new Date('2026-11-01T04:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        ...keptCopy,
+        upcomingDuplicateWindow: {
+          ...keptCopy.upcomingDuplicateWindow,
+          applicationOpenDate: opensLater,
+        },
+      },
+      now,
+    );
+    expect(payload.applicationOpenDate).toEqual(opensLater);
+    expect(payload.isAcceptingApplications).toBe(false);
+  });
+
+  it('takes the flag the other copy read when neither copy states an opening date', () => {
+    const { applicationOpenDate: _unused, ...withoutOpenDate } = keptCopy;
+    const closedWindow = {
+      ...withoutOpenDate,
+      upcomingDuplicateWindow: {
+        ...keptCopy.upcomingDuplicateWindow,
+        isAcceptingApplications: false,
+      },
+    };
+    expect(publicFellowshipForStudent(withoutOpenDate, now).isAcceptingApplications).toBe(true);
+    expect(publicFellowshipForStudent(closedWindow, now).isAcceptingApplications).toBe(false);
+  });
+
+  it("falls back to the row's own deadline once the served one has passed", () => {
+    const afterTheSpringDeadline = new Date('2027-01-06T12:00:00.000Z');
+    const withWindow = servedProgramDeadline(keptCopy, afterTheSpringDeadline);
+    const withoutWindow = servedProgramDeadline(
+      { ...keptCopy, upcomingDuplicateWindow: undefined },
+      afterTheSpringDeadline,
+    );
+    expect(withWindow).toEqual(withoutWindow);
+    expect(withWindow.duplicateWindow).toBeUndefined();
+    const payload = publicFellowshipForStudent(keptCopy, afterTheSpringDeadline);
+    expect(payload.deadline).not.toEqual(springDateOnly);
+    expect(payload.isAcceptingApplications).toBe(false);
   });
 });
