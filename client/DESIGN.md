@@ -219,6 +219,11 @@ Every `<table>` gets this from a base rule; a standalone metric value outside a 
 Do not re-declare either per component.
 - The `y/labs` wordmark is the one exception to the heading rule: it is set in the `Inter` sans stack at weight 700 with `-0.03em` tracking, matching the `y/cs` mark it derives from.
 Always render it through `src/components/Wordmark.tsx` rather than as literal text, so the slash keeps its taller scale.
+- The shared link preview image is the one place the wordmark is a raster, and it is generated rather than drawn.
+`scripts/shareImage/template.html` mirrors the `.yr-wordmark` rules on `brand`, and `yarn --cwd client share-image:generate` renders it to a 1200x630 PNG in `public/assets/`, names the file by its content hash, and rewrites the `og:image` and `twitter:image` URLs in `index.html`.
+The hashed name is what lets the server cache it immutable, so never rename or edit the PNG by hand; change the template and regenerate.
+Changing the wordmark rules in `src/index.css` also requires updating the template and regenerating.
+`src/__tests__/shareImageMeta.test.ts` fails when the tags, the declared size, or the hash drift from the file.
 
 ## 4. Component Stylings
 

@@ -25,7 +25,8 @@
     "preview": "vite preview",
     "smoke:production-promotion": "node scripts/productionPromotionSmoke.mjs",
     "test": "vitest",
-    "test:ci": "vitest --run"
+    "test:ci": "vitest --run",
+    "share-image:generate": "node scripts/generateShareImage.mjs"
   },
   "browserslist": {
     "production": [
