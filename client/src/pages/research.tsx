@@ -34,7 +34,6 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { isRetryableUnavailableError } from '../utils/clientErrorMessage';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
@@ -165,9 +164,7 @@ interface ResearchPageSnapshot {
   defaultSearchPage: number;
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
-  searchError: string;
   hasFacetError: boolean;
-  defaultSearchError: string;
   searchDegraded: boolean;
   defaultSearchDegraded: boolean;
 }
@@ -485,14 +482,8 @@ const Research = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState(
-    () => restoredSnapshotRef.current?.searchError ?? '',
-  );
   const [hasFacetError, setHasFacetError] = useState(
     () => restoredSnapshotRef.current?.hasFacetError ?? false,
-  );
-  const [defaultSearchError, setDefaultSearchError] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchError ?? '',
   );
   const [searchDegraded, setSearchDegraded] = useState(
     () => restoredSnapshotRef.current?.searchDegraded ?? false,
@@ -623,7 +614,6 @@ const Research = () => {
     defaultSearchAbortRef.current = controller;
 
     setDefaultSearchLoading(true);
-    setDefaultSearchError('');
     if (page === 1) {
       setDefaultSearchExhausted(false);
     }
@@ -665,7 +655,6 @@ const Research = () => {
         setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       }
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
-      setDefaultSearchError('');
       void trackResearchResultsView(browseLoadAnalyticsKey, researchEntities, 'browse', page);
     } catch (error) {
       if (
@@ -673,11 +662,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        if (isRetryableUnavailableError(error)) {
-          setDefaultSearchDegraded(true);
-        } else {
-          setDefaultSearchError('Research results are temporarily unavailable.');
-        }
+        setDefaultSearchDegraded(true);
       }
     } finally {
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
@@ -759,7 +744,6 @@ const Research = () => {
     setSearchLoading(true);
     setIsLoadingMore(false);
     setIsApplyingFilters(Boolean(options.preserveResults));
-    setSearchError('');
     setHasFacetError(false);
     setSearchDegraded(false);
     if (!options.preserveResults) {
@@ -798,7 +782,6 @@ const Research = () => {
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const researchEntities = researchEntitiesPage.researchEntities;
-      setSearchError('');
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setSearchResultResearchEntities(researchEntities);
@@ -840,14 +823,8 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        if (isRetryableUnavailableError(error)) {
-          setSearchDegraded(true);
-        } else {
-          setSearchError(
-            'Live search metadata is unavailable right now. Try another topic or check back soon.',
-          );
-          setHasFacetError(true);
-        }
+        setSearchDegraded(true);
+        setHasFacetError(true);
         setSearchExhausted(true);
         void trackResearchEvent({
           eventType: 'research_search',
@@ -923,7 +900,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError('More research results are temporarily unavailable.');
+        setSearchDegraded(true);
         setSearchExhausted(true);
       }
     } finally {
@@ -980,7 +957,6 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     activeSearchAnalyticsKeyRef.current = null;
-    setSearchError('');
     setHasFacetError(false);
     setSearchDegraded(false);
     setSearchLoading(false);
@@ -1156,7 +1132,6 @@ const Research = () => {
     setSearchTotal(0);
     setSearchExhausted(true);
     setActiveSearchRequest(null);
-    setSearchError('');
     setHasFacetError(false);
     setSearchDegraded(false);
     setSearchLoading(false);
@@ -1219,9 +1194,7 @@ const Research = () => {
       defaultSearchPage: lastLoadedPage(defaultSearchPage, defaultSearchLoading),
       defaultSearchTotal,
       defaultSearchExhausted,
-      searchError,
       hasFacetError,
-      defaultSearchError,
       searchDegraded,
       defaultSearchDegraded,
     };
@@ -1255,9 +1228,7 @@ const Research = () => {
     defaultSearchPage,
     defaultSearchTotal,
     defaultSearchExhausted,
-    searchError,
     hasFacetError,
-    defaultSearchError,
     searchDegraded,
     defaultSearchDegraded,
   ]);
@@ -1279,7 +1250,6 @@ const Research = () => {
   const isZeroResultSearch =
     hasSubmittedSearch &&
     !searchLoading &&
-    !searchError &&
     !searchDegraded &&
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
@@ -1873,15 +1843,7 @@ const Research = () => {
                     />
                   </ResearchStickyFilterBar>
                 )}
-                {defaultSearchError && (
-                  <div
-                    role="alert"
-                    className="mb-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-                  >
-                    {defaultSearchError}
-                  </div>
-                )}
-                {defaultSearchDegraded && !defaultSearchError && !defaultSearchLoading && (
+                {defaultSearchDegraded && !defaultSearchLoading && (
                   <div className="mb-4">
                     <ResearchSearchDegradedNotice
                       hasResults={defaultClusters.length > 0}
@@ -1965,16 +1927,7 @@ const Research = () => {
                   </ResearchStickyFilterBar>
                 )}
 
-                {searchError && (
-                  <div
-                    role="alert"
-                    className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-                  >
-                    {searchError}
-                  </div>
-                )}
-
-                {searchDegraded && !searchError && !searchLoading && activeClusters.length > 0 && (
+                {searchDegraded && !searchLoading && activeClusters.length > 0 && (
                   <div className="mt-4">
                     <ResearchSearchDegradedNotice hasResults onRetry={rerunActiveSearch} />
                   </div>
