@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -203,6 +203,26 @@ describe('client static asset serving', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toContain('no-store');
+    });
+  });
+
+  it('serves the shared link preview image as a png cached immutable for a year', async () => {
+    const indexHtml = readFileSync(path.join(clientPublicPath, '..', 'index.html'), 'utf8');
+    const shareImageUrl = indexHtml.match(/property="og:image" content="([^"]+)"/)?.[1] ?? '';
+    const shareImagePath = new URL(shareImageUrl).pathname;
+    prepareDeployedApp(clientPublicPath);
+
+    await withRunningApp(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}${shareImagePath}`, {
+        headers: { 'x-forwarded-proto': 'https' },
+      });
+      await response.arrayBuffer();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('image/png');
+      expect(response.headers.get('cache-control')).toContain('max-age=31536000');
+      expect(response.headers.get('cache-control')).toContain('immutable');
+      expect(sessionCookiesOf(response)).toEqual([]);
     });
   });
 
