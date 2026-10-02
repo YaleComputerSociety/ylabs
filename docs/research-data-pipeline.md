@@ -1732,7 +1732,10 @@ The shared canonical-home resolver distinguishes a safe absence of memberships f
 The NIH, NSF, NEH, USAspending and DOE lanes treat the safe-absence case as a counted refusal and mint nothing (#3561, #3565).
 No grant scraper emits research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
 Canonical-home enrichment emits grant evidence without replacing official identity or source URL fields.
-Ambiguous Yale user matches and archived or non-current lead memberships are ineligible, not safe absences.
+Ambiguous Yale user matches and an archived or non-current lead membership on a live row are ineligible, not safe absences.
+A lead membership on an archived row is merge or retirement residue rather than a verdict on the person, so it neither refuses the person nor competes as a home, and the resolver decides over the memberships on live rows alone (#3929).
+A person whose every lead membership sits on an archived row stays ineligible, and two live official homes still resolve as ambiguous.
+Measured on Development on 2026-10-01 over the 782 leads of served rows holding a live NIH or NSF grant list, the narrowed rule moved 544 of 590 refused leads to one canonical row; 43 stay refused as ambiguous between two live homes and 3 as ineligible on a live row.
 At materialization, only each source's latest grant snapshot participates.
 The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
 The stored list is what the lanes read and may hold awards that have since ended, because the NIH and NSF windows admit ended awards and a stored list ages between reads.
