@@ -67,7 +67,7 @@ const dedupeByEntityId = (entities: ComparableResearchHome[]): ComparableResearc
 };
 
 const boundedDescription = (entity: ResearchEntity): string => {
-  const raw = (entity.shortDescription || entity.fullDescription || '').trim();
+  const raw = (entity.shortDescription || '').trim();
   const cleaned = sanitizeResearchEntityCopy(raw, entity).trim();
   if (cleaned.length <= MAX_COMPARE_DESCRIPTION_LENGTH) return cleaned;
   const bounded = cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH);

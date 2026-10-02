@@ -6,6 +6,7 @@ import {
   researchPlanViewFromDoc,
   savedResearchEntitySummary,
 } from '../researchPlanService';
+import { detailServedSource, toPublicResearchEntityDto } from '../researchEntityDto';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
   MAX_RESEARCH_PLAN_NOTES_LENGTH,
@@ -56,6 +57,69 @@ describe('savedResearchEntitySummary', () => {
     expect(savedResearchEntitySummary(ownLead, ['Hollis Quintrell']).shortDescription).toBe(
       ownLead.shortDescription,
     );
+  });
+});
+
+describe('savedResearchEntitySummary card parity with the detail card (#4248)', () => {
+  const bodyOnlyRows = [
+    {
+      _id: '67d8928150621bcef434a1e1',
+      slug: 'synthetic-channel-lab',
+      name: 'Synthetic Channel Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: '',
+      fullDescription:
+        'Bio: The lab studies ion channels in neurons and how their gating shapes synaptic signalling across development. The group combines electrophysiology with imaging to track channel kinetics in living tissue.',
+      researchAreas: ['Ion Channels'],
+    },
+    {
+      _id: '67d8928150621bcef434a1e2',
+      slug: 'synthetic-sediment-research',
+      name: 'Synthetic Sediment Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      shortDescription: '',
+      fullDescription:
+        'Overview The research examines coastal sediment transport and how storms reshape tidal marsh channels over decades. Last Updated on March 15, 2023.',
+      researchAreas: ['Sediment Transport'],
+    },
+    {
+      _id: '67d8928150621bcef434a1e3',
+      slug: 'synthetic-theory-lab',
+      name: 'Synthetic Theory Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: '',
+      fullDescription:
+        'Biography My research focuses on theoretical questions in condensed matter physics, especially emergent order in frustrated magnets and the dynamics of topological defects.',
+      researchAreas: ['Condensed Matter'],
+    },
+  ];
+
+  const detailCard = (row: Record<string, any>): string =>
+    String(
+      toPublicResearchEntityDto(detailServedSource(row, []), { leadMemberNames: [] })
+        .shortDescription || '',
+    );
+
+  it.each(bodyOnlyRows)('serves the detail card for a row with no stored card', (row) => {
+    const card = detailCard(row);
+    expect(card).not.toBe('');
+    expect(savedResearchEntitySummary(row, []).shortDescription).toBe(
+      card.slice(0, MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH),
+    );
+  });
+
+  it('serves no card where the detail page withholds one', () => {
+    const withheld = {
+      ...bodyOnlyRows[0],
+      fullDescription: '',
+      researchAreas: [],
+      shortDescription: '',
+    };
+    expect(detailCard(withheld)).toBe('');
+    expect(savedResearchEntitySummary(withheld, []).shortDescription).toBeUndefined();
   });
 });
 
