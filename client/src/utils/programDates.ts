@@ -73,11 +73,37 @@ const offsetMsAt = (instantMs: number): number =>
   wallClockAsUtcMs(newYorkWallClock(new Date(instantMs)), ((instantMs % 1000) + 1000) % 1000) -
   instantMs;
 
-const endOfNewYorkDay = (instant: Date): Date => {
-  const { year, month, day } = newYorkWallClock(instant);
-  const wallClockMs = Date.UTC(year, month - 1, day, 23, 59, 59, 999);
+export interface NewYorkWallClockReading {
+  year: number;
+  month: number;
+  day: number;
+  hour?: number;
+  minute?: number;
+  second?: number;
+  millisecond?: number;
+}
+
+/**
+ * Mirrors `newYorkInstant` in `server/src/utils/newYorkTime.ts`. The offset is read twice
+ * because the first guess can sit on the other side of a daylight-saving change.
+ */
+export const newYorkInstant = ({
+  year,
+  month,
+  day,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+}: NewYorkWallClockReading): Date => {
+  const wallClockMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
   const firstGuess = wallClockMs - offsetMsAt(wallClockMs);
   return new Date(wallClockMs - offsetMsAt(firstGuess));
+};
+
+const endOfNewYorkDay = (instant: Date): Date => {
+  const { year, month, day } = newYorkWallClock(instant);
+  return newYorkInstant({ year, month, day, hour: 23, minute: 59, second: 59, millisecond: 999 });
 };
 
 export const parseProgramDate = (value: string | null | undefined): Date | null => {
@@ -97,7 +123,7 @@ export const programDeadlineClosingInstant = (value: string | null | undefined):
   return deadline ? programDeadlineClosesAt(deadline) : null;
 };
 
-const statesTime = (date: Date, boundary: ProgramDateBoundary): boolean => {
+export const programDateStatesTime = (date: Date, boundary: ProgramDateBoundary): boolean => {
   if (boundary === 'deadline') return !isDateOnlyProgramDeadline(date);
   const { hour, minute, second } = newYorkWallClock(date);
   return hour !== 0 || minute !== 0 || second !== 0;
@@ -111,7 +137,7 @@ export const formatProgramDate = (
   const date = parseProgramDate(value);
   if (!date) return fallback;
   const calendarDate = calendarDateFormatter.format(date);
-  if (!statesTime(date, boundary)) return calendarDate;
+  if (!programDateStatesTime(date, boundary)) return calendarDate;
   return `${calendarDate}, ${clockFormatter.format(date)} ${PROGRAM_TIME_ZONE_LABEL}`;
 };
 
@@ -135,4 +161,9 @@ export const newYorkCalendarDateParts = (
 ): { year: number; month: number; day: number } => {
   const { year, month, day } = newYorkWallClock(date);
   return { year, month, day };
+};
+
+export const newYorkClockParts = (date: Date): { hour: number; minute: number } => {
+  const { hour, minute } = newYorkWallClock(date);
+  return { hour, minute };
 };
