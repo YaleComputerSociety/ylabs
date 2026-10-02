@@ -1861,6 +1861,46 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
+  it('records no rendered attempt when the renderer is disabled, so it adds no scrapling selector breakage (#3742)', async () => {
+    const fetchPage = makeFetchPage({
+      'https://hydrated.example.com/':
+        '<html><body><div id="root"></div><script>app()</script></body></html>',
+    });
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'unknown',
+          currentUndergradCount: 0,
+          evidenceQuote: null,
+          evidenceSource: 'none',
+          joinPageUrl: null,
+        }) as unknown as LLMExtraction,
+    );
+    const labFinder = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'hydrated-lab',
+        name: 'Hydrated Lab',
+        websiteUrl: 'https://hydrated.example.com/',
+      },
+    ];
+
+    const scraper = newTestScraper({
+      fetchPage,
+      renderedFetcher: null,
+      callLLM,
+      labFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.fetchMetrics?.summary.byMode.scrapling).toBeUndefined();
+    expect(
+      result.fetchMetrics?.attempts.filter((attempt) => attempt.fetchMode === 'scrapling'),
+    ).toEqual([]);
+  });
+
   it.each([
     {
       label: 'a 404 page the bridge does not flag',
