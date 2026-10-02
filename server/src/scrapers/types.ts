@@ -149,6 +149,13 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   };
 }
 
+export interface RecordWebsiteLinkMetrics {
+  probed: number;
+  dead: number;
+  failed: number;
+  capped: number;
+}
+
 export interface FundShortLinkMetrics {
   lookedUp: number;
   citedAsFundPage: number;
@@ -189,6 +196,7 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     nonProgramPagesRefused?: Record<string, number>;
     nonProgramRowsRetired?: number;
     shortLinks?: FundShortLinkMetrics;
+    recordWebsiteLinks?: RecordWebsiteLinkMetrics;
   };
   reuPrograms?: {
     seeded: number;

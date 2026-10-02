@@ -21,6 +21,7 @@ import type {
   FundShortLinkMetrics,
   IScraper,
   ObservationInput,
+  RecordWebsiteLinkMetrics,
   ScraperContext,
   ScraperResult,
 } from '../types';
@@ -34,6 +35,7 @@ import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
+import { externalAwardRecord } from '../utils/externalAwardRecord';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -185,6 +187,8 @@ interface YaleCollegeFellowshipsOfficeScraperDeps {
   loadOwnedRows?: () => Promise<OwnedFellowshipRow[]>;
   shortLinkHop?: ShortLinkHop;
   shortLinkDelayMs?: number;
+  routeStatusProbe?: RouteStatusProbe;
+  routeProbeDelayMs?: number;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -531,6 +535,8 @@ export function extractIndexSeedChildDetailUrls(html: string, pageUrl: string): 
 
 const MAX_DETAIL_PROGRAM_LINKS = 12;
 
+const EXTERNAL_AWARD_WEBSITE_LABEL = 'Application or program website';
+
 const APPLY_LABEL_RE = /\b(?:apply|application|submit)\b/i;
 
 const STUDENT_GRANTS_LABEL_RE = /\bstudent grants\b/i;
@@ -773,15 +779,23 @@ function textBlocks(root: cheerio.Cheerio<any>): string[] {
  * fund, where the page's eligibility sentences play the fund's eligibility section. These
  * pages carry no year filter, so prose that names no year emits nothing.
  */
-function statedYearOfStudy(blocks: readonly string[], eligibility: readonly string[]): string[] {
+/**
+ * A page's own structured year list plays the part the grants database's year filter
+ * does: the prose decides when it names years, and the list answers when it is silent.
+ */
+function statedYearOfStudy(
+  blocks: readonly string[],
+  eligibility: readonly string[],
+  listedYears: readonly string[],
+): string[] {
   const resolution = resolveFundYearOfStudy(
     [
       { text: eligibility.join(' ¶ '), isEligibilitySection: true },
       { text: blocks.join(' ¶ '), isEligibilitySection: false },
     ],
-    [],
+    [...listedYears],
   );
-  return resolution.kind === 'prose' ? resolution.values : [];
+  return resolution.kind === 'unreconcilable' ? [] : resolution.values;
 }
 
 function extractEmail(text: string): string | undefined {
@@ -1342,7 +1356,7 @@ function candidateFromMacmillanOpportunityRow(
     contactOffice: contactOffice || administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(summaryText),
     eligibility: eligibilityStatement(eligibility),
-    yearOfStudy: statedYearOfStudy(summaryBlocks, eligibility),
+    yearOfStudy: statedYearOfStudy(summaryBlocks, eligibility, []),
     termOfAward: inferTerm(rowContext),
     purpose: inferPurpose(rowContext),
     globalRegions: [],
@@ -1631,6 +1645,19 @@ export function nonProgramPageShape(
   return undefined;
 }
 
+function chooseApplicationLink(
+  links: ReadonlyArray<{ label: string; url: string }>,
+  pageUrl: string,
+): string | undefined {
+  const routeLinks = links.filter((link) => !isUnhelpfulProgramUrl(link.url, pageUrl));
+  return (
+    routeLinks.find((link) => isCommunityForceUrl(link.url))?.url ||
+    routeLinks.find((link) => isStudentGrantsUrl(link.url))?.url ||
+    routeLinks.find((link) => applicationPortalKind(link.url))?.url ||
+    routeLinks.find((link) => /apply|application|student grants/i.test(link.label))?.url
+  );
+}
+
 function candidateFromDetailPage(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -1655,16 +1682,27 @@ function candidateFromDetailPage(
     2000,
   );
   const applicationInformation = applicationSectionText($);
-  const deadlineStatement = programDeadlineStatement(bodyText);
-  const deadline =
-    deadlineStatement === 'none' ? undefined : statedDeadline(bodyText, referenceDate);
-  const applicationOpenDate = parseProgramDate(
-    bestApplicationOpenText(bodyText),
-    'opens',
-    referenceDate,
-  );
-  const links = dedupeProgramLinks(
-    contentRoot
+  const record = externalAwardRecord($, contentRoot, pageUrl, referenceDate);
+  const deadlineStatement = record.statesWindow
+    ? record.deadline
+      ? 'stated'
+      : 'none'
+    : programDeadlineStatement(bodyText);
+  const deadline = record.statesWindow
+    ? record.deadline
+    : deadlineStatement === 'none'
+      ? undefined
+      : statedDeadline(bodyText, referenceDate);
+  const applicationOpenDate = record.statesWindow
+    ? record.applicationOpenDate
+    : parseProgramDate(bestApplicationOpenText(bodyText), 'opens', referenceDate);
+  const recordLinks = record.websiteUrls.map((url) => ({
+    label: EXTERNAL_AWARD_WEBSITE_LABEL,
+    url: normalizeLinkUrl(url),
+  }));
+  const links = dedupeProgramLinks([
+    ...recordLinks,
+    ...contentRoot
       .find('a')
       .toArray()
       .filter((link) => !isInExcludedPageRegion($(link)))
@@ -1677,15 +1715,10 @@ function candidateFromDetailPage(
       })
       .filter((item): item is { label: string; url: string } => !!item)
       .filter((item) => isProgramRelevantLink(item.url, item.label)),
-  ).slice(0, MAX_DETAIL_PROGRAM_LINKS);
+  ]).slice(0, MAX_DETAIL_PROGRAM_LINKS);
   // Chosen among the links the candidate keeps, so a chrome link that only labels itself
   // "Application" cannot take the slot and then be dropped, leaving no route (#4233).
-  const routeLinks = links.filter((link) => !isUnhelpfulProgramUrl(link.url, pageUrl));
-  const applicationLink =
-    routeLinks.find((link) => isCommunityForceUrl(link.url))?.url ||
-    routeLinks.find((link) => isStudentGrantsUrl(link.url))?.url ||
-    routeLinks.find((link) => applicationPortalKind(link.url))?.url ||
-    routeLinks.find((link) => /apply|application|student grants/i.test(link.label))?.url;
+  const applicationLink = chooseApplicationLink(links, pageUrl);
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
     hasExplicitActiveApplicationLanguage(bodyText);
@@ -1711,7 +1744,7 @@ function candidateFromDetailPage(
     contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(bodyText),
     eligibility: eligibilityStatement(eligibility),
-    yearOfStudy: statedYearOfStudy(bodyBlocks, eligibility),
+    yearOfStudy: statedYearOfStudy(bodyBlocks, eligibility, record.yearsOfStudy),
     termOfAward: inferTerm(bodyText),
     purpose: inferPurpose(titledBodyText),
     globalRegions: [],
@@ -2132,6 +2165,101 @@ export async function citeFundPagesInPlaceOfShortLinks(
   return finalizeCandidate({ ...candidate, applicationLink, links: dedupeProgramLinks(links) });
 }
 
+export type RouteStatusProbe = (url: string) => Promise<number>;
+
+const MAX_ROUTE_PROBES = 200;
+const ROUTE_PROBE_DELAY_MS = 500;
+const ROUTE_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * Only a status that says the page is gone retires a link. A bot challenge, a timeout or
+ * a server error says nothing about whether a student could reach the page, so each of
+ * those keeps the link (#4363).
+ */
+const GONE_STATUSES: ReadonlySet<number> = new Set([404, 410]);
+
+async function probeRouteStatus(url: string): Promise<number> {
+  const response = await fetchPublicHttpUrl(url, {
+    maxRedirects: 5,
+    timeoutMs: ROUTE_PROBE_TIMEOUT_MS,
+  });
+  return response.status;
+}
+
+export interface RecordWebsiteLinkChecker {
+  isGone(url: string): Promise<boolean>;
+  metrics: RecordWebsiteLinkMetrics;
+}
+
+/**
+ * The external-award records are an archive the office no longer keeps current, so the
+ * outside program page a record links has often moved. One request per link, sequential
+ * and spaced, tells a moved page from a live one before the link is cited as the route.
+ */
+export function createRecordWebsiteLinkChecker(
+  options: {
+    probe?: RouteStatusProbe;
+    delayMs?: number;
+    maxProbes?: number;
+    sleep?: (ms: number) => Promise<void>;
+    log?: ScraperContext['log'];
+  } = {},
+): RecordWebsiteLinkChecker {
+  const probe = options.probe ?? probeRouteStatus;
+  const delayMs = options.delayMs ?? ROUTE_PROBE_DELAY_MS;
+  const maxProbes = options.maxProbes ?? MAX_ROUTE_PROBES;
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))));
+  const goneByUrl = new Map<string, boolean>();
+  const metrics: RecordWebsiteLinkMetrics = { probed: 0, dead: 0, failed: 0, capped: 0 };
+
+  return {
+    metrics,
+    async isGone(url: string): Promise<boolean> {
+      const known = goneByUrl.get(url);
+      if (known !== undefined) return known;
+      if (metrics.probed >= maxProbes) {
+        metrics.capped += 1;
+        return false;
+      }
+      if (metrics.probed > 0) await sleep(delayMs);
+      metrics.probed += 1;
+      let gone = false;
+      try {
+        gone = GONE_STATUSES.has(await probe(url));
+      } catch (error) {
+        metrics.failed += 1;
+        options.log?.('Keeping an external-award website link whose page could not be read', {
+          url,
+          error: sanitizeLogValue(error),
+        });
+      }
+      if (gone) metrics.dead += 1;
+      goneByUrl.set(url, gone);
+      return gone;
+    },
+  };
+}
+
+export async function withoutGoneRecordWebsiteLinks(
+  candidate: FellowshipCatalogCandidate,
+  checker: RecordWebsiteLinkChecker,
+): Promise<FellowshipCatalogCandidate> {
+  const links: FellowshipCatalogCandidate['links'] = [];
+  for (const link of candidate.links) {
+    const isRecordLink = link.label === EXTERNAL_AWARD_WEBSITE_LABEL;
+    if (isRecordLink && (await checker.isGone(link.url))) continue;
+    links.push(link);
+  }
+  if (links.length === candidate.links.length) return candidate;
+  const applicationLinkKept = links.some((link) => link.url === candidate.applicationLink);
+  const applicationLink = applicationLinkKept
+    ? candidate.applicationLink
+    : chooseApplicationLink(links, candidate.sourceUrl);
+  return finalizeCandidate({ ...candidate, applicationLink, links });
+}
+
 export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   readonly name = YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE;
   readonly displayName = 'Yale College Fellowships Office';
@@ -2143,6 +2271,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   private readonly loadOwnedRows: () => Promise<OwnedFellowshipRow[]>;
   private readonly shortLinkHop?: ShortLinkHop;
   private readonly shortLinkDelayMs?: number;
+  private readonly routeStatusProbe?: RouteStatusProbe;
+  private readonly routeProbeDelayMs?: number;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
@@ -2154,6 +2284,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     this.loadOwnedRows = deps.loadOwnedRows || loadRowsOwnedByLane;
     this.shortLinkHop = deps.shortLinkHop;
     this.shortLinkDelayMs = deps.shortLinkDelayMs;
+    this.routeStatusProbe = deps.routeStatusProbe;
+    this.routeProbeDelayMs = deps.routeProbeDelayMs;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -2275,12 +2407,20 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           delayMs: this.shortLinkDelayMs,
           log: ctx.log,
         });
+    const websiteLinkChecker = isBenchmarkModeActive()
+      ? null
+      : createRecordWebsiteLinkChecker({
+          probe: this.routeStatusProbe,
+          delayMs: this.routeProbeDelayMs,
+          log: ctx.log,
+        });
     const selected: FellowshipCatalogCandidate[] = [];
     for (const candidate of limited) {
+      const cited = shortLinkResolver
+        ? await citeFundPagesInPlaceOfShortLinks(candidate, shortLinkResolver)
+        : candidate;
       selected.push(
-        shortLinkResolver
-          ? await citeFundPagesInPlaceOfShortLinks(candidate, shortLinkResolver)
-          : candidate,
+        websiteLinkChecker ? await withoutGoneRecordWebsiteLinks(cited, websiteLinkChecker) : cited,
       );
     }
     // There is no clear-on-empty for a fellowship, so going silent on a refused page would leave
@@ -2349,6 +2489,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           nonProgramPagesRefused: refusedByShape,
           nonProgramRowsRetired: retractions.length,
           ...(shortLinkResolver ? { shortLinks: shortLinkResolver.metrics } : {}),
+          ...(websiteLinkChecker ? { recordWebsiteLinks: websiteLinkChecker.metrics } : {}),
         },
       },
     };
