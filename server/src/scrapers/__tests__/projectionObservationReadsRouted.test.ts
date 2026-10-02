@@ -34,6 +34,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read either: zero hits over the same 147 rows. Value-keyed as well, but the reachability is what decides it.',
   },
   {
+    fn: 'listingsSharingProfileUrl',
+    reason:
+      'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by value across every listing that carries one profile URL, whose purpose is to find listings other than the one being projected, so an entity-keyed source cannot answer it.',
+  },
+  {
     fn: 'leadPiInheritanceEvidence',
     reason:
       'A read-after-write check: it reads back the observations `assertLeadPiInheritanceObservations` just wrote in this same pass, to tell an accepted assertion from a refused one. Frozen input would answer about the state BEFORE the write, so routing it would make the check lie.',

@@ -2076,6 +2076,7 @@ const SHARED_PROFILE_URL_LISTING_LIMIT = 20;
 export interface RosterListingScope {
   researchGroupKey: string;
   sourceName: string;
+  now: Date;
 }
 
 interface SharedProfileUrlListing {
@@ -2133,7 +2134,7 @@ async function listingsSharingProfileUrl(
     ]);
   }
   return [...observationsByKey.values()].map((observations) => {
-    const listed = resolveAllFields(observations);
+    const listed = resolveAllFields(observations, { now: scope.now });
     return {
       names: uniqueStrings([
         listed.name?.value,
@@ -2234,7 +2235,7 @@ async function researchersNamedByIdentityEvidence(
 export async function resolveRosterMemberIdentity(
   resolved: Record<string, ResolvedField>,
   listedName: string,
-  scope: RosterListingScope = { researchGroupKey: '', sourceName: '' },
+  scope: RosterListingScope = { researchGroupKey: '', sourceName: '', now: new Date() },
 ): Promise<RosterMemberIdentity> {
   const byProfileUrl = await profileUrlHolderForListing(resolved, listedName, scope);
   if (byProfileUrl.holder) return { researcher: byProfileUrl.holder, basis: 'profile-url' };
@@ -2581,6 +2582,7 @@ async function materializeRosterMember(
   const identity = await resolveRosterMemberIdentity(resolved, listedName, {
     researchGroupKey,
     sourceName: textValue(resolved.role?.sourceName),
+    now: options.now ?? new Date(),
   });
   const researcher = identity.researcher;
   const memberIdentity = researcher?._id
