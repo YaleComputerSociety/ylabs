@@ -3,6 +3,7 @@ import {
   DESCRIPTION_SLOT_ATTESTATION_VOCABULARY,
   descriptionSlotAttestation,
   describeDescriptionExtraction,
+  groundDescriptionExtraction,
   emptyDescriptionSlotAttestationMetrics,
   recordDescriptionSlotAttestation,
   withDescriptionSlotAttestation,
@@ -134,6 +135,33 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     expect(descriptionSlotAttestation({ ...wholeRead, guardRefusal: outcome.refusal })).toBe(
       'empty',
     );
+  });
+
+  it('keeps empty for a grounded read that returned no prose, whatever subject it names', () => {
+    const outcome = describeDescriptionExtraction(
+      groundDescriptionExtraction(
+        extraction('', { subject: 'parent_organization' }),
+        RESEARCH_PROSE,
+      ),
+      context,
+    );
+
+    expect(outcome).toEqual({ observations: [] });
+    expect(descriptionSlotAttestation({ ...wholeRead, guardRefusal: outcome.refusal })).toBe(
+      'empty',
+    );
+  });
+
+  it('refuses a grounded read whose prose names a subject other than the entity', () => {
+    const outcome = describeDescriptionExtraction(
+      groundDescriptionExtraction(
+        extraction(RESEARCH_PROSE, { subject: 'parent_organization' }),
+        RESEARCH_PROSE,
+      ),
+      context,
+    );
+
+    expect(outcome).toEqual({ observations: [], refusal: 'subject_not_named_entity' });
   });
 
   it('writes no absence claim for a refused read, so the refusal pass cannot read it as empty', () => {

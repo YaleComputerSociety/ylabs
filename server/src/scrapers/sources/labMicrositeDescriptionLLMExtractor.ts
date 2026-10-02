@@ -1191,6 +1191,10 @@ export function groundDescriptionExtraction(
   // overview on a person's row is not that row's research however verbatim it is, and a
   // classification field is followed where an instruction to return nothing was not
   // (the refused-row benchmark kept 9 of 9 known-wrong under the instruction alone).
+  const returnedProse = Boolean(
+    textValue(extraction.fullDescription) || textValue(extraction.shortDescription),
+  );
+  if (!returnedProse) return { ...extraction, subject: undefined };
   if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') {
     return { ...extraction, fullDescription: '', shortDescription: '' };
   }
