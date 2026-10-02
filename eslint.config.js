@@ -1,7 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
-import react from 'eslint-plugin-react';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
@@ -84,16 +83,15 @@ export default [
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    plugins: {
-      react,
-      'react-hooks': reactHooks,
-    },
-    settings: { react: { version: 'detect' } },
+    plugins: reactHooks.configs.flat.recommended.plugins,
     rules: {
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
-      'react/jsx-uses-react': 'off',
-      'react/react-in-jsx-scope': 'off',
+      ...reactHooks.configs.flat.recommended.rules,
+      // Deliberately advisory: these two React Compiler rules flag the loader effects that
+      // set a loading flag before fetching and the latest-value refs on the browse page.
+      // Both are correct without the compiler, which the client does not use, and
+      // rewriting them changes browse behaviour, so they are worked down separately (#4379).
+      'react-hooks/refs': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': [
         'error',

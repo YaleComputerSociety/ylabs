@@ -71,7 +71,7 @@ async function readServed(slugs: readonly string[]): Promise<Served[]> {
 
   const out: Served[] = [];
   for (const slug of slugs) {
-    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null = null;
+    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
     try {
       detail = await getResearchGroupDetail(slug);
     } catch {

@@ -385,7 +385,7 @@ async function defaultDirectoryLoader(
       : Math.min(keywords.length, ctx.options.limit);
   let cappedFacultyCount = 0;
   for (const keyword of keywords.slice(0, cappedTermCount)) {
-    let page: FetchedYsmPage | null = null;
+    let page: FetchedYsmPage | null;
     try {
       page = await fetchCachedPage(fetchPage, resultsPageUrl(keyword.meshId), ctx.options.useCache);
     } catch (error) {

@@ -326,7 +326,9 @@ export function sourceCommit(
     ) {
       throw error;
     }
-    throw new Error('Unable to verify a clean source commit for the search baseline.');
+    throw new Error('Unable to verify a clean source commit for the search baseline.', {
+      cause: error,
+    });
   }
 }
 

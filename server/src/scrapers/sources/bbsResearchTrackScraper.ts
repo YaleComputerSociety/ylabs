@@ -769,7 +769,7 @@ export class BbsResearchTrackScraper implements IScraper {
     const unitYields: Record<string, number> = {};
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
-      let html: string | null = null;
+      let html: string | null;
       try {
         html = await this.fetchPage(track.url, ctx.options.useCache);
       } catch (error) {

@@ -60,7 +60,11 @@ const Harness = ({
 }) => {
   const [auth, updateAuth] = useState(initialAuth);
   const [config, updateConfig] = useState(initialConfig);
+  // The harness hands its state setters to the test body, which drives auth and config
+  // transitions from outside the tree.
+  // eslint-disable-next-line react-hooks/globals
   setAuth = updateAuth;
+  // eslint-disable-next-line react-hooks/globals
   setConfig = updateConfig;
   return (
     <UserContext.Provider

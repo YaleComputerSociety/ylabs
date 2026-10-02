@@ -192,7 +192,7 @@ export async function probeYaleProfileDepartureEvidence(
   const presentUrls: string[] = [];
   const indeterminateUrls: string[] = [];
   for (const url of urls) {
-    let verdict: YaleProfilePersonPresence = 'indeterminate';
+    let verdict: YaleProfilePersonPresence;
     try {
       verdict = classifyYaleProfilePersonPresence(await fetchPage(url));
     } catch {

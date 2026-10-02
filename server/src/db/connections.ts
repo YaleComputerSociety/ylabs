@@ -352,7 +352,7 @@ export async function reportMissingMongoIndexes(
 export async function logMissingMongoIndexes(
   connection: mongoose.Connection = mongoose.connection,
 ): Promise<MongoIndexDrift[]> {
-  let drift: MongoIndexDrift[] = [];
+  let drift: MongoIndexDrift[];
   try {
     drift = await reportMissingMongoIndexes(connection);
   } catch (error) {

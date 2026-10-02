@@ -1107,7 +1107,7 @@ export async function candidateWebsiteOwnedByLead(
   useCache: boolean,
 ): Promise<boolean> {
   if (leadNames.length === 0) return false;
-  let html = '';
+  let html: string;
   try {
     html = await htmlFetcher(url, useCache, SOURCE_NAME);
   } catch {
@@ -3390,7 +3390,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       for (const entity of entities) {
         const websiteUrl = textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl);
         if (!websiteUrl) continue;
-        let candidateHost: URL | null = null;
+        let candidateHost: URL | null;
         try {
           candidateHost = new URL(websiteUrl);
         } catch {

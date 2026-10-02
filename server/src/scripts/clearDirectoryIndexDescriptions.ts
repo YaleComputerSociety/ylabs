@@ -139,7 +139,7 @@ async function reDeriveDescriptionFromOfficialSource(
     : 'organization';
 
   for (const sourceUrl of candidate.sourceUrls) {
-    let page: FetchedPage | null = null;
+    let page: FetchedPage | null;
     try {
       page = await fetchPage(sourceUrl);
     } catch (error) {

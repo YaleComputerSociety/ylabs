@@ -552,6 +552,7 @@ async function closeValidatorMongoClient(
     throw new AggregateError(
       [primaryError, closeError],
       `Canonical MongoDB validator operation and client cleanup both failed: ${closeFailureReason}`,
+      { cause: closeError },
     );
   }
 }
