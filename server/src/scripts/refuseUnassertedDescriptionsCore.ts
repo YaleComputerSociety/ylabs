@@ -283,3 +283,17 @@ export function planUnassertedDescriptionRefusals({
     frozen: false,
   };
 }
+
+/**
+ * Only attestations from runs that recorded the refusal vocabulary count. Before #3739
+ * the lane wrote `empty` for a guard refusal too, so a pre-vocabulary attestation cannot
+ * be told apart from a guard declining prose the page still carries, and two of them are
+ * indistinguishable from two genuine reads of an empty page.
+ */
+export function partitionAttestedEmptyReadsByVocabulary(
+  reads: readonly AttestedEmptyRead[],
+  vocabularyRunIds: ReadonlySet<string>,
+): { counted: AttestedEmptyRead[]; excludedPreVocabulary: number } {
+  const counted = reads.filter((read) => vocabularyRunIds.has(read.runId));
+  return { counted, excludedPreVocabulary: reads.length - counted.length };
+}
