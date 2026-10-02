@@ -55,6 +55,7 @@ The callback leg separates a CAS rejection from our own failure, because a stude
 Only CAS answering `no` to the ticket, or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
 A CAS that cannot be reached, answers with something malformed, or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds), and a database that cannot be reached, answer `503`; any other exception answers `500`.
 Both carry the same student-facing message asking them to try again, never redirect to the `error` page, and are reported through `captureServerError`.
+Unlike the error handler's database `503`, neither sets `Retry-After`, because the callback is a top-level browser navigation that ignores it.
 The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and an axios error carries the validation URL with the ticket in it.
 A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
 `server/src/__tests__/casLoginCallbackFailures.test.ts` drives all four outcomes through the mounted app against a stub CAS.
