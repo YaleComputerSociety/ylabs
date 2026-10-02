@@ -44,7 +44,7 @@ import {
   findHeldScrapeJobLock,
   withScrapeJobLock,
 } from './scrapeJobLock';
-import { markSourceCrawled } from './sourceCrawlStamp';
+import { stampSourceCrawlIfEarned } from './sourceCrawlStamp';
 import {
   observationReferenceCoverageWarning,
   pruneSupersededObservations,
@@ -288,17 +288,10 @@ Concurrency:
         JSON.stringify(guard.options, null, 2),
       );
       const performRun = async (lockOwnerId?: string): Promise<ScrapeCliLockedOutcome> => {
-        const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
-          sourceName,
-          guard.options,
-          { lockOwnerId },
-        );
+        const { runId, status, result, explainedObservations, explainTruncated } =
+          await orchestrator.run(sourceName, guard.options, { lockOwnerId });
         console.log(`\nScrapeRun ${runId} finished:`);
         console.log(JSON.stringify(result, null, 2));
-
-        if (!guard.options.dryRun) {
-          await markSourceCrawled(sourceName, new Date());
-        }
 
         let materializationErrors: number | undefined;
         if (guard.autoMaterialize && !guard.options.dryRun) {
@@ -320,6 +313,18 @@ Concurrency:
               ),
             );
           }
+        }
+        const crawlStamped = await stampSourceCrawlIfEarned(sourceName, {
+          dryRun: Boolean(guard.options.dryRun),
+          runStatus: status,
+          materializationErrors,
+        });
+        if (!guard.options.dryRun && !crawlStamped) {
+          console.warn(
+            `\nWARNING: ${sourceName} lastCrawledAt left unchanged because run ${runId} ended ${status}${
+              materializationErrors ? ` with ${materializationErrors} materialization errors` : ''
+            }.`,
+          );
         }
         const report = await getScrapeRunReport(runId);
         const deferredMaterialization = unmaterializedWriteRunWarning({
