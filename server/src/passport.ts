@@ -35,6 +35,7 @@ import {
   classifyCasCallbackError,
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
+import { boundCasServerRequests, casStrategyHttpClient } from './utils/casValidationRequestBound';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -503,6 +504,8 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
 }
 
 const authConfig = resolveAuthConfig();
+
+boundCasServerRequests(casStrategyHttpClient(), authConfig.ssoBaseURL, CAS_VALIDATION_TIMEOUT_MS);
 
 passport.use(
   new Strategy(

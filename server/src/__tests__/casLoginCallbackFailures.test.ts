@@ -49,13 +49,21 @@ type ValidationBehaviour = 'accept' | 'reject' | 'hang';
 type StubCas = {
   baseUrl: string;
   behaviour: ValidationBehaviour;
+  lastHeldTicket: string;
+  releasedTickets: Set<string>;
   close: () => Promise<void>;
 };
 
 const startStubCas = async (): Promise<StubCas> => {
   const hanging = new Set<http.ServerResponse>();
   let issued = 0;
-  const stub: StubCas = { baseUrl: '', behaviour: 'accept', close: async () => undefined };
+  const stub: StubCas = {
+    baseUrl: '',
+    behaviour: 'accept',
+    lastHeldTicket: '',
+    releasedTickets: new Set<string>(),
+    close: async () => undefined,
+  };
   const server = http.createServer((req, res) => {
     const requested = new URL(req.url ?? '/', 'http://cas.invalid');
     const service = requested.searchParams.get('service') ?? '';
@@ -72,7 +80,12 @@ const startStubCas = async (): Promise<StubCas> => {
 
     if (requested.pathname === '/cas/validate') {
       if (stub.behaviour === 'hang') {
+        const ticket = requested.searchParams.get('ticket') ?? '';
         hanging.add(res);
+        stub.lastHeldTicket = ticket;
+        req.socket.once('close', () => {
+          if (hanging.delete(res)) stub.releasedTickets.add(ticket);
+        });
         return;
       }
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -224,6 +237,26 @@ describe('CAS login callback failures', () => {
       expect(JSON.parse(timedOut.body)).toEqual({ error: TROUBLE_MESSAGE });
       expectReportedWithoutIdentity();
       expect(reportedText()).toContain('CasValidationTimeoutError');
+    });
+  });
+
+  it('releases the validation request to a CAS that never answers instead of holding it open', async () => {
+    prepareApp();
+    stubCas.behaviour = 'hang';
+
+    await withRunningApp(async (baseUrl) => {
+      const timedOut = await completeLogin(baseUrl);
+      expect(timedOut.status).toBe(503);
+      const heldTicket = stubCas.lastHeldTicket;
+
+      const deadline = Date.now() + 2_000;
+      while (!stubCas.releasedTickets.has(heldTicket) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      expect(heldTicket).not.toBe('');
+      expect(stubCas.releasedTickets.has(heldTicket)).toBe(true);
+      expect(mocks.recordAccountLogin).not.toHaveBeenCalled();
     });
   });
 
