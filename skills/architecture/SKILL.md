@@ -163,7 +163,8 @@ A request that could not reach the database answers `503` with a `Retry-After`, 
 Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
 Selection timeouts, socket timeouts, a closed client, and a Mongoose buffering timeout are all the same condition under different names, so adding a newly observed name means adding it there rather than at a call site.
 `triggerReconnect` stays scoped to a lost topology, because the driver recovers from the others on its own and reconnecting under them would close the pool the next request is about to use.
-On the client, `isRetryableUnavailableError` in `client/src/utils/clientErrorMessage.ts` turns that `503` into the existing limited-search notice with its retry action, so an outage never renders as "no research matches".
+On the client, `/research` renders every failed search as the limited-search notice with its retry action, whatever the status was, so an outage never renders as "no research matches" (#4266).
+A 503 needs no special case there, because a 500, a 429 and a dropped connection with no response at all are the same thing to a student: a search that did not answer.
 
 ## TypeScript
 
