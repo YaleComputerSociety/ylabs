@@ -197,4 +197,108 @@ describe('ResearchHomeComparison', () => {
     expect(container.textContent).toContain('sensor calibration and dataset…');
     expect(container.textContent).not.toContain('dataset anno…');
   });
+  it('gives every compared column the same declared width and a fixed layout', async () => {
+    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
+
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: 'Lab A' });
+    const table = container.querySelector('table') as HTMLTableElement;
+    expect(table.style.tableLayout).toBe('fixed');
+    const columnWidths = Array.from(container.querySelectorAll('col')).map(
+      (col) => col.style.width,
+    );
+    expect(columnWidths).toHaveLength(3);
+    const [labelWidth, ...comparedWidths] = columnWidths;
+    expect(labelWidth).toBe('10rem');
+    expect(new Set(comparedWidths).size).toBe(1);
+    expect(comparedWidths[0]).toContain('100%');
+    expect(comparedWidths[0]).not.toBe(labelWidth);
+  });
+
+  it('keeps the row labels in place while the compared columns scroll', async () => {
+    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: 'Lab A' });
+    const labelCell = screen.getByRole('rowheader', { name: 'Type' });
+    expect(labelCell.className).toContain('sticky');
+    expect(labelCell.className).toContain('left-0');
+    expect(labelCell.className).toContain('bg-[var(--yr-panel)]');
+  });
+
+  it('wraps a long unbreakable name inside its own column', async () => {
+    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
+
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: 'Lab A' });
+    const comparedCells = Array.from(container.querySelectorAll('tbody td'));
+    expect(comparedCells.length).toBeGreaterThan(0);
+    for (const cell of comparedCells) {
+      expect(cell.className).toContain('[overflow-wrap:anywhere]');
+    }
+  });
+
+  it('tells a student the columns continue past the edge when they do', async () => {
+    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
+    const scrollHint = 'Scroll sideways to read every column.';
+    const widths = { scrollWidth: 900, clientWidth: 360 };
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollWidth',
+    );
+    const originalClientWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientWidth',
+    );
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => widths.scrollWidth,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => widths.clientWidth,
+    });
+
+    try {
+      render(
+        <MemoryRouter>
+          <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+        </MemoryRouter>,
+      );
+      await screen.findByRole('link', { name: 'Lab A' });
+      expect(screen.getByText(scrollHint)).toBeTruthy();
+
+      cleanup();
+      widths.scrollWidth = 360;
+      render(
+        <MemoryRouter>
+          <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+        </MemoryRouter>,
+      );
+      await screen.findByRole('link', { name: 'Lab A' });
+      expect(screen.queryByText(scrollHint)).toBeNull();
+    } finally {
+      if (originalScrollWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      }
+      if (originalClientWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      }
+    }
+  });
 });
