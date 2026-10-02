@@ -29,12 +29,26 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'promoteAcceptedBetaCopy.ts': PROMOTION_DATABASE_CHECK,
   'syncBetaToDevelopment.ts': PROMOTION_DATABASE_CHECK,
   'syncDevelopmentToBeta.ts': PROMOTION_DATABASE_CHECK,
+  'runScraperSweep.ts':
+    'forwards --apply to the stage commands it spawns, each behind its own guard, after validateScraperSweepEnvironment refuses any database but Development',
 };
 
-interface ScriptModule {
+const PACKAGE_JSON = path.resolve(SCRIPTS_DIR, '..', '..', 'package.json');
+
+interface ImportedBinding {
+  module: string;
+  exportedName: string;
+}
+
+interface CodeFacts {
   namesApplyFlag: boolean;
   callsGuard: boolean;
+  calledImports: ImportedBinding[];
+}
+
+interface ScriptModule extends CodeFacts {
   imports: string[];
+  exportedFunctions: Map<string, CodeFacts>;
 }
 
 function scriptFiles(): string[] {
@@ -50,6 +64,17 @@ function scriptFiles(): string[] {
     );
 }
 
+function registeredEntryScripts(): Set<string> {
+  const scripts =
+    (JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8')) as { scripts?: Record<string, string> })
+      .scripts ?? {};
+  return new Set(
+    Object.values(scripts).flatMap((line) =>
+      [...line.matchAll(/src\/scripts\/([\w./-]+\.ts)/g)].map((match) => match[1]),
+    ),
+  );
+}
+
 function localImport(fromFile: string, specifier: string): string | null {
   if (!specifier.startsWith('.')) return null;
   const base = path.posix.join(path.posix.dirname(fromFile), specifier);
@@ -61,6 +86,91 @@ function localImport(fromFile: string, specifier: string): string | null {
   return null;
 }
 
+function importedBindings(file: string, source: ts.SourceFile): Map<string, ImportedBinding> {
+  const bindings = new Map<string, ImportedBinding>();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const module = localImport(file, statement.moduleSpecifier.text);
+    const clause = statement.importClause;
+    if (!module || !clause?.namedBindings) continue;
+    if (ts.isNamespaceImport(clause.namedBindings)) {
+      bindings.set(clause.namedBindings.name.text, { module, exportedName: '*' });
+      continue;
+    }
+    for (const element of clause.namedBindings.elements) {
+      bindings.set(element.name.text, {
+        module,
+        exportedName: (element.propertyName ?? element.name).text,
+      });
+    }
+  }
+  return bindings;
+}
+
+function calledBinding(
+  call: ts.CallExpression,
+  bindings: Map<string, ImportedBinding>,
+): ImportedBinding | null {
+  const callee = call.expression;
+  if (ts.isIdentifier(callee)) return bindings.get(callee.text) ?? null;
+  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
+    const namespace = bindings.get(callee.expression.text);
+    return namespace?.exportedName === '*'
+      ? { module: namespace.module, exportedName: callee.name.text }
+      : null;
+  }
+  return null;
+}
+
+function codeFacts(node: ts.Node, bindings: Map<string, ImportedBinding>): CodeFacts {
+  const facts: CodeFacts = { namesApplyFlag: false, callsGuard: false, calledImports: [] };
+  const visit = (child: ts.Node): void => {
+    if (
+      (ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child)) &&
+      child.text === APPLY_FLAG
+    ) {
+      facts.namesApplyFlag = true;
+    }
+    if (ts.isCallExpression(child)) {
+      if (ts.isIdentifier(child.expression) && child.expression.text === GUARD_NAME) {
+        facts.callsGuard = true;
+      }
+      const binding = calledBinding(child, bindings);
+      if (binding) facts.calledImports.push(binding);
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return facts;
+}
+
+const isExported = (node: ts.Node): boolean =>
+  ts.canHaveModifiers(node) &&
+  (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+
+function exportedFunctions(
+  source: ts.SourceFile,
+  bindings: Map<string, ImportedBinding>,
+): Map<string, CodeFacts> {
+  const functions = new Map<string, CodeFacts>();
+  for (const statement of source.statements) {
+    if (!isExported(statement)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      functions.set(statement.name.text, codeFacts(statement, bindings));
+    }
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.initializer) {
+          functions.set(declaration.name.text, codeFacts(declaration.initializer, bindings));
+        }
+      }
+    }
+  }
+  return functions;
+}
+
 function parseScriptModule(file: string): ScriptModule {
   const source = ts.createSourceFile(
     file,
@@ -68,57 +178,44 @@ function parseScriptModule(file: string): ScriptModule {
     ts.ScriptTarget.Latest,
     true,
   );
-  const parsed: ScriptModule = { namesApplyFlag: false, callsGuard: false, imports: [] };
-  const visit = (node: ts.Node): void => {
-    if (
-      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-      node.text === APPLY_FLAG
-    ) {
-      parsed.namesApplyFlag = true;
-    }
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === GUARD_NAME
-    ) {
-      parsed.callsGuard = true;
-    }
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      const imported = localImport(file, node.moduleSpecifier.text);
-      if (imported) parsed.imports.push(imported);
-    }
-    ts.forEachChild(node, visit);
+  const bindings = importedBindings(file, source);
+  return {
+    ...codeFacts(source, bindings),
+    imports: [...new Set([...bindings.values()].map((binding) => binding.module))],
+    exportedFunctions: exportedFunctions(source, bindings),
   };
-  visit(source);
-  return parsed;
+}
+
+function reachesThroughCalls(
+  modules: Map<string, ScriptModule>,
+  holds: (facts: CodeFacts) => boolean,
+): (binding: ImportedBinding) => boolean {
+  const verdicts = new Map<string, boolean>();
+  const reaches = (binding: ImportedBinding): boolean => {
+    const key = `${binding.module}#${binding.exportedName}`;
+    const known = verdicts.get(key);
+    if (known !== undefined) return known;
+    verdicts.set(key, false);
+    const facts = modules.get(binding.module)?.exportedFunctions.get(binding.exportedName);
+    const verdict = Boolean(facts && (holds(facts) || facts.calledImports.some(reaches)));
+    verdicts.set(key, verdict);
+    return verdict;
+  };
+  return reaches;
 }
 
 function applyPathsWithoutTheGuard(): string[] {
   const modules = new Map(scriptFiles().map((file) => [file, parseScriptModule(file)]));
-  const reachable = new Map<string, Set<string>>();
-  const reachableFrom = (file: string): Set<string> => {
-    const cached = reachable.get(file);
-    if (cached) return cached;
-    const seen = new Set<string>([file]);
-    reachable.set(file, seen);
-    for (const imported of modules.get(file)?.imports ?? []) {
-      for (const reached of reachableFrom(imported)) seen.add(reached);
-    }
-    return seen;
-  };
-  const callsGuard = (file: string) => modules.get(file)?.callsGuard === true;
+  const imported = new Set([...modules.values()].flatMap((parsed) => parsed.imports));
+  const registered = registeredEntryScripts();
+  const parsesApply = reachesThroughCalls(modules, (facts) => facts.namesApplyFlag);
+  const wrapsGuard = reachesThroughCalls(modules, (facts) => facts.callsGuard);
 
   return [...modules.entries()]
-    .filter(([, parsed]) => parsed.namesApplyFlag)
+    .filter(([file]) => registered.has(file) || !imported.has(file))
+    .filter(([, parsed]) => parsed.namesApplyFlag || parsed.calledImports.some(parsesApply))
+    .filter(([, parsed]) => !parsed.callsGuard && !parsed.calledImports.some(wrapsGuard))
     .map(([file]) => file)
-    .filter((file) => {
-      const importers = [...modules.keys()].filter((other) => reachableFrom(other).has(file));
-      return ![...reachableFrom(file), ...importers].some(callsGuard);
-    })
     .sort();
 }
 
