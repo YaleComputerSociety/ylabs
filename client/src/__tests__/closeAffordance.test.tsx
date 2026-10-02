@@ -8,7 +8,10 @@ import CombinedFilterDropdown from '../components/shared/CombinedFilterDropdown'
 import type { Fellowship } from '../types/types';
 
 vi.mock('../utils/axios', () => ({ default: { put: vi.fn(), delete: vi.fn() } }));
-vi.mock('sweetalert', () => ({ default: vi.fn(() => Promise.resolve(true)) }));
+vi.mock('../utils/appDialogs', () => ({
+  showAlert: vi.fn(),
+  confirmAction: vi.fn(() => Promise.resolve(true)),
+}));
 
 const TYPED_CLOSE_GLYPH = /[×✕✖✗╳⨯]|^\s*[xX]\s*$/;
 

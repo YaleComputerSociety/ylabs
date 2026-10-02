@@ -14,9 +14,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../components/admin/AdminPanel', () => ({
   default: () => <div data-testid="admin-panel" />,

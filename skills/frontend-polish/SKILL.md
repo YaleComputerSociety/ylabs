@@ -132,7 +132,7 @@ The route fade's `translateY(6px)` did exactly that to a deep-linked program mod
 - Keep interaction latency low; defer non-critical work.
 - Size and lazy-load images; avoid layout shift from late-loading media.
 - Keep the entry chunk to code the default first load runs.
-`/research` is the only eager content page (the tiny root redirect and not-found page stay eager too); every other page in `client/src/App.tsx` is a `React.lazy` behind the shared `Suspense` fallback, and a library that only runs on a failure path or behind a lazy route is fetched at its call site (`utils/warningDialog.ts`, the deferred SDK load in `utils/errorTracking.ts`).
+`/research` is the only eager content page (the tiny root redirect and not-found page stay eager too); every other page in `client/src/App.tsx` is a `React.lazy` behind the shared `Suspense` fallback, and a library that only runs on a failure path or behind a lazy route is fetched at its call site (`utils/warningDialog.ts`, which loads the shared `utils/appDialogs.tsx` dialog on first use, and the deferred SDK load in `utils/errorTracking.ts`).
 `client/src/__tests__/entryChunkGuard.test.ts` runs a real Vite build and fails when one of those returns to the emitted entry chunk, because a reviewer cannot see a chunk boundary in a diff.
 Take a number from the build (`yarn --cwd client build` prints per-chunk raw and gzip sizes) rather than from the module count.
 

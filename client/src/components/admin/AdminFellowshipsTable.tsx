@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useCallback, useReducer } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import {
   adminFellowshipsTableReducer,
   createInitialAdminFellowshipsTableState,
@@ -119,7 +119,7 @@ const AdminFellowshipsTable = () => {
     } catch {
       if (!request.isCurrent()) return;
       console.error('Error fetching admin fellowships.');
-      void swal({ text: 'Failed to fetch fellowships', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch fellowships', tone: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [
@@ -144,23 +144,23 @@ const AdminFellowshipsTable = () => {
   }, [fetchFellowships, search]);
 
   const handleDelete = async (fellowship: AdminFellowship) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Fellowship',
       text: `Are you sure you want to permanently delete "${fellowship.title}"? This cannot be undone.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
 
     try {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
-      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship deleted', tone: 'success', autoCloseMs: 1500 });
       void fetchFellowships();
     } catch {
       console.error('Error deleting fellowship.');
-      void swal({ text: 'Failed to delete fellowship', icon: 'error' });
+      void showAlert({ text: 'Failed to delete fellowship', tone: 'error' });
     }
   };
 
@@ -172,11 +172,11 @@ const AdminFellowshipsTable = () => {
         {},
         { withCredentials: true },
       );
-      void swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
+      void showAlert({ text: `Fellowship ${action}d`, tone: 'success', autoCloseMs: 1500 });
       void fetchFellowships();
     } catch {
       console.error(`Error ${action}ing fellowship.`);
-      void swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
+      void showAlert({ text: `Failed to ${action} fellowship`, tone: 'error' });
     }
   };
 
@@ -189,12 +189,12 @@ const AdminFellowshipsTable = () => {
         { data: updatedData },
         { withCredentials: true },
       );
-      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship updated', tone: 'success', autoCloseMs: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
       void fetchFellowships();
     } catch {
       console.error('Error updating fellowship.');
-      void swal({ text: 'Failed to update fellowship', icon: 'error' });
+      void showAlert({ text: 'Failed to update fellowship', tone: 'error' });
     }
   };
 

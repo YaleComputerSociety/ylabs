@@ -8,7 +8,7 @@ import {
   resetResearchAnalyticsDedupeForTests,
   setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
-import swal from 'sweetalert';
+import { showAlert } from '../../utils/appDialogs';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -19,9 +19,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
@@ -30,7 +28,7 @@ const mockedAxios = axios as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
-const mockedSwal = swal as unknown as ReturnType<typeof vi.fn>;
+const mockedShowAlert = vi.mocked(showAlert);
 
 beforeEach(() => {
   setResearchAnalyticsEnabled(true);
@@ -56,7 +54,7 @@ describe('useFavorites', () => {
     });
 
     expect(result.current.favIds).toEqual([]);
-    expect(mockedSwal).not.toHaveBeenCalled();
+    expect(mockedShowAlert).not.toHaveBeenCalled();
   });
 
   it('uses watched program endpoints for canonical program watching', async () => {
@@ -156,7 +154,7 @@ describe('useFavorites', () => {
     expect(result.current.favIds).toEqual([]);
     expect(mockedAxios.get).toHaveBeenCalledTimes(2);
     await waitFor(() =>
-      expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' })),
+      expect(mockedShowAlert).toHaveBeenCalledWith(expect.objectContaining({ tone: 'warning' })),
     );
 
     await flushResearchAnalytics();

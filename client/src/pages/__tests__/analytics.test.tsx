@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import Analytics from '../analytics';
 import axios from '../../utils/axios';
 import { AnalyticsData } from '../../reducers/analyticsReducer';
-import swal from 'sweetalert';
+import { confirmAction } from '../../utils/appDialogs';
 import UserContext from '../../contexts/UserContext';
 
 vi.mock('../../utils/axios', () => ({
@@ -15,9 +15,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../components/admin/AdminPanel', () => ({
   default: () => <div data-testid="admin-panel" />,
@@ -27,7 +25,7 @@ const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
 };
-const mockedSwal = vi.mocked(swal);
+const mockedConfirmAction = vi.mocked(confirmAction);
 
 const analyticsData: AnalyticsData = {
   visitors: {
@@ -665,7 +663,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
     mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-admin' } } });
-    mockedSwal.mockResolvedValue(true);
+    mockedConfirmAction.mockResolvedValue(true);
 
     render(
       <UserContext.Provider

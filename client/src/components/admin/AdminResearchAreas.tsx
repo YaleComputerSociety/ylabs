@@ -3,7 +3,7 @@
  */
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
@@ -76,7 +76,7 @@ const AdminResearchAreas = () => {
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
     } catch {
       console.error('Error fetching topics.');
-      void swal({ text: 'Failed to fetch topics', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch topics', tone: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   };
@@ -87,7 +87,7 @@ const AdminResearchAreas = () => {
 
   const handleAdd = async () => {
     if (!newDraft.name.trim()) {
-      void swal({ text: 'Name is required', icon: 'warning' });
+      void showAlert({ text: 'Name is required', tone: 'warning' });
       return;
     }
 
@@ -99,15 +99,15 @@ const AdminResearchAreas = () => {
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       void fetchAreas();
-      void swal({ text: 'Topic added', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic added', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
+      void showAlert({ text: clientErrorMessage(error, 'Failed to add'), tone: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.name.trim()) {
-      void swal({ text: 'Name is required', icon: 'warning' });
+      void showAlert({ text: 'Name is required', tone: 'warning' });
       return;
     }
 
@@ -119,19 +119,19 @@ const AdminResearchAreas = () => {
       );
       dispatch({ type: 'CANCEL_EDIT' });
       void fetchAreas();
-      void swal({ text: 'Topic updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic updated', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
+      void showAlert({ text: clientErrorMessage(error, 'Failed to update'), tone: 'error' });
     }
   };
 
   const handleDelete = async (area: ResearchArea) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Topic',
       text: `Delete "${area.name}"? This cannot be undone.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
@@ -139,9 +139,9 @@ const AdminResearchAreas = () => {
     try {
       await axios.delete(`/admin/research-areas/${area._id}`, { withCredentials: true });
       void fetchAreas();
-      void swal({ text: 'Topic deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic deleted', tone: 'success', autoCloseMs: 1500 });
     } catch {
-      void swal({ text: 'Failed to delete', icon: 'error' });
+      void showAlert({ text: 'Failed to delete', tone: 'error' });
     }
   };
 

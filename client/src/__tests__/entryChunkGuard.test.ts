@@ -60,8 +60,12 @@ afterAll(() => {
 
 describe('entry chunk guard', () => {
   it('keeps libraries that the default first load never executes out of the entry chunk', () => {
-    const deferred = entryModules.filter((path) =>
-      /[\\/]node_modules[\\/](@sentry[\\/]|react-virtuoso[\\/]|sweetalert[\\/])/.test(path),
+    const deferred = entryModules.filter(
+      (path) =>
+        /[\\/]node_modules[\\/](@sentry[\\/]|react-virtuoso[\\/]|@mui[\\/]material[\\/](esm[\\/])?Dialog[\\/])/.test(
+          path,
+        ) ||
+        /[\\/]src[\\/](utils[\\/]appDialogs|components[\\/]shared[\\/]AppDialog)\.tsx$/.test(path),
     );
 
     expect(deferred).toEqual([]);

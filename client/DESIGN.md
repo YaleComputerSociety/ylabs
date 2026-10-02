@@ -198,7 +198,7 @@ A selected filter chip was `bg-slate-900`, a near-black that is not in this pale
 And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300` in one and `bg-slate-300` in the other, which no amount of care at a call site prevents and only a token does.
 - A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950` or `black`.
 Every full-screen overlay, the program and comparison modals, the operator modals, and both mobile filter sheets, takes `bg-scrim`, which is `--yr-scrim`: navy at 50%.
-The MUI navigation drawer cannot take a class on its backdrop, so it sets `backgroundColor: 'var(--yr-scrim)'` on the backdrop slot instead.
+The MUI navigation drawer and the shared alert dialog cannot take a class on their backdrops, so each sets `backgroundColor: 'var(--yr-scrim)'` on the backdrop slot instead.
 There is one step, because a sheet and a modal both mean "the page behind this is inert", and two opacities would only be told apart side by side.
 Never write the scrim as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
 Every colour alias here is a `var()` with no alpha channel, so Tailwind 3 cannot apply the modifier and emits no rule at all; the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
@@ -246,6 +246,10 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
 - A sort control is `SortMenu` from `src/components/shared/SortMenu.tsx`, a select-only combobox: Enter, Space, and the arrow keys open it on the current option, `aria-activedescendant` names the highlighted option, and Escape closes it with focus kept on the trigger.
 The research and program sort menus were two hand-rolled copies of one listbox, and both drifted off the keyboard contract, so do not write a third.
+- A transient alert or confirmation is `showAlert` or `confirmAction` from `src/utils/appDialogs.tsx`, which renders `src/components/shared/AppDialog.tsx` on an MUI `Dialog` with `role="alertdialog"`.
+The MUI dialog supplies the focus trap, Escape, the backdrop dismissal, and focus return to the trigger; a destructive confirmation opens on Cancel and any other opens on its confirm button.
+Its backdrop takes the scrim and its paper takes the overlay radius and modal shadow, so it reads as one of the operator modals rather than as a library default.
+A surface that a student reaches on first load calls `showWarningDialog` from `src/utils/warningDialog.ts` instead, which fetches the dialog module only when it is needed, and `src/__tests__/entryChunkGuard.test.ts` fails if the dialog reaches the entry chunk.
 - Never call `blur()` to dismiss a control, because it sends keyboard focus to the document body; the Programs page test that presses Enter and Escape in the search input holds this for the one control that did.
 - A card whose whole surface is clickable does not also get a filled primary button.
 The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.

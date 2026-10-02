@@ -3,7 +3,7 @@
  * application-cycle empty states, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
-import swal from 'sweetalert';
+import { showWarningDialog } from '../utils/warningDialog';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
@@ -667,10 +667,9 @@ const Fellowships = () => {
       void unwatchProgram(program, watchedProgramPlanSnapshot(plan));
     } catch {
       console.error('Error reading watched program plan before unwatching.');
-      void swal({
-        text: 'Could not stop watching this program. Check your connection and try again.',
-        icon: 'warning',
-      });
+      void showWarningDialog(
+        'Could not stop watching this program. Check your connection and try again.',
+      );
     } finally {
       capturing.delete(program.id);
     }

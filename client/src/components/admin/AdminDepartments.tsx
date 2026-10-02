@@ -3,7 +3,7 @@
  */
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
@@ -85,7 +85,7 @@ const AdminDepartments = () => {
     } catch {
       console.error('Error fetching departments.');
       dispatch({ type: 'FETCH_FAILURE' });
-      void swal({ text: 'Failed to fetch departments', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch departments', tone: 'error' });
     }
   };
 
@@ -95,7 +95,7 @@ const AdminDepartments = () => {
 
   const handleAdd = async () => {
     if (!newDraft.abbr.trim() || !newDraft.name.trim()) {
-      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void showAlert({ text: 'Abbreviation and name are required', tone: 'warning' });
       return;
     }
 
@@ -112,15 +112,18 @@ const AdminDepartments = () => {
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       void fetchDepartments();
-      void swal({ text: 'Department added', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department added', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
+      void showAlert({
+        text: clientErrorMessage(error, 'Failed to add department'),
+        tone: 'error',
+      });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.abbr.trim() || !editDraft.name.trim()) {
-      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void showAlert({ text: 'Abbreviation and name are required', tone: 'warning' });
       return;
     }
 
@@ -139,19 +142,22 @@ const AdminDepartments = () => {
       );
       dispatch({ type: 'CANCEL_EDIT' });
       void fetchDepartments();
-      void swal({ text: 'Department updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department updated', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
+      void showAlert({
+        text: clientErrorMessage(error, 'Failed to update department'),
+        tone: 'error',
+      });
     }
   };
 
   const handleDelete = async (dept: DepartmentDoc) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Department',
       text: `Delete "${dept.displayName}"? This cannot be undone. Listings referencing this department will NOT be automatically updated.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
@@ -159,9 +165,9 @@ const AdminDepartments = () => {
     try {
       await axios.delete(`/admin/departments/${dept._id}`, { withCredentials: true });
       void fetchDepartments();
-      void swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department deleted', tone: 'success', autoCloseMs: 1500 });
     } catch {
-      void swal({ text: 'Failed to delete department', icon: 'error' });
+      void showAlert({ text: 'Failed to delete department', tone: 'error' });
     }
   };
 
