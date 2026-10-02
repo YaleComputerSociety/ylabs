@@ -34,6 +34,8 @@ const leadSentence = (value: unknown): string => {
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
 
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 const nonEmptyStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry) => textValue(entry).length > 0) : [];
 
@@ -117,6 +119,7 @@ export async function readCorpusQualityReport(
     const batch = servedRows.slice(offset, offset + ROSTER_BATCH_SIZE);
     const rosters = await getResearchEntityRosterByEntityId(batch.map((row: any) => row._id));
     for (const row of batch as any[]) {
+      await yieldToEventLoop();
       facts.push(servedRowFacts(row, publicLeadMemberNames(rosters.get(String(row._id)) || [])));
     }
   }
