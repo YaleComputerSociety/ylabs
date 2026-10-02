@@ -300,12 +300,16 @@ describe('research-entity:release-field-locks (#2612)', () => {
       expect(await storedTopics()).toEqual(LANE_TOPICS);
     }, 60000);
 
-    it('releases a lock no lane competes with and keeps the stored value', async () => {
+    it('keeps a lock no lane competes with until the operator accepts the release', async () => {
       await seedNeverBacked();
       await seedObservation('name', 'Release Fixture Lab');
 
-      const result = await run();
-      expect(result.appliedReleases).toBe(1);
+      const kept = await run();
+      expect(kept.decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_silent']);
+      expect((await storedRow())?.manuallyLockedFields).toEqual(['researchAreas']);
+
+      const released = await run([`${SLUG}:researchAreas`]);
+      expect(released.appliedReleases).toBe(1);
 
       await materializeEntity('researchEntity', { entityKey: SLUG }, {});
       expect(await storedTopics()).toEqual(REPAIR_TOPICS);

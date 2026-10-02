@@ -809,8 +809,11 @@ The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone w
 `--release-never-backed` is that path.
 A lock whose field's provenance names a lane that never observed the field on the row (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
 It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
+Silence counts as that answer only on a field whose collection the lock does not stop.
 A lock over a cleared field stays shut on silence, for the reason the fence above gives.
-When the engine derives a different value, the verdict is `keep_engine_disagrees` with the engine's value in the report, and the lock is released only for a field the operator names with `--accept-engine-value=<slug>:<field>` after reading that value; a sibling the release would move has to be named too.
+On a lock-suppressed field (`lockSuppressesFieldCollection`: the `workPlannerSourcePolicies` target fields plus `undergradAccessEvidence`) silence is `keep_engine_silent`, because the next scrape collects the field once the lock is gone and the next resolve may replace the held value; it is released only for a field the operator names with `--accept-engine-value=<slug>:<field>`, and the verdict carries `acceptsEngineValue: true`.
+When the engine derives a different value, the verdict is `keep_engine_disagrees` with the engine's value in the report, and the lock is released only for a field the operator names with `--accept-engine-value=<slug>:<field>` after reading that value.
+A sibling the release would move has to be named too, and the report prints each moved sibling's engine value, which `movedSiblingValues` carries into the `--output` JSON.
 If the engine's value is inadmissible, refuse it with `research-entity:refuse-field-value` first and read the next plan, so the correction is a refusal rather than a lock.
 An accepted value is written by the next resolve, so rematerialize the named rows and re-gate after the release.
 The flag requires `--slugs`, and every verdict it decides carries `neverBacked: true`.

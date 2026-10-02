@@ -91,6 +91,7 @@ export interface FieldLockReleaseDecision {
   storedValue: unknown;
   engineValue: unknown;
   movedSiblingFields?: string[];
+  movedSiblingValues?: Record<string, unknown>;
   /** Released on the engine's own plan rather than on a recorded reason. */
   provenInert?: boolean;
   neverBacked?: boolean;
@@ -167,6 +168,24 @@ export function lockSuppressesFieldCollection(field: string): boolean {
   return LOCK_SUPPRESSED_COLLECTION_FIELDS.has(field);
 }
 
+function movedSiblingValuesFor(
+  entity: LockedFieldEntity,
+  answer: MaterializerProjectionAnswer,
+  field: string,
+): Record<string, unknown> {
+  const moved: Record<string, unknown> = {};
+  for (const sibling of siblingFieldsGatedByFieldLock(field)) {
+    const plannedValue = plannedFieldValue(answer, sibling, entity[sibling]);
+    if (!fieldLockReleaseAgrees(plannedValue, entity[sibling])) moved[sibling] = plannedValue;
+  }
+  return moved;
+}
+
+const siblingMoves = (movedSiblingValues: Record<string, unknown>) => ({
+  movedSiblingFields: Object.keys(movedSiblingValues),
+  movedSiblingValues,
+});
+
 export function decideFieldLockReleases(
   entity: LockedFieldEntity,
   answer: MaterializerProjectionAnswer | undefined,
@@ -204,19 +223,13 @@ export function decideFieldLockReleases(
       if (!fieldLockReleaseAgrees(plannedValue, storedValue)) {
         return { ...base, engineValue: plannedValue, verdict: 'keep_engine_disagrees' as const };
       }
-      const movedSiblings = siblingFieldsGatedByFieldLock(field).filter(
-        (sibling) =>
-          !fieldLockReleaseAgrees(
-            plannedFieldValue(answer, sibling, entity[sibling]),
-            entity[sibling],
-          ),
-      );
-      if (movedSiblings.length > 0) {
+      const movedSiblings = movedSiblingValuesFor(entity, answer, field);
+      if (Object.keys(movedSiblings).length > 0) {
         return {
           ...base,
           engineValue: plannedValue,
           verdict: 'keep_sibling_field_moves' as const,
-          movedSiblingFields: movedSiblings,
+          ...siblingMoves(movedSiblings),
         };
       }
       return {
@@ -233,19 +246,13 @@ export function decideFieldLockReleases(
     if (!fieldLockReleaseAgrees(engineValue, storedValue)) {
       return { ...base, engineValue, verdict: 'keep_engine_disagrees' as const };
     }
-    const movedSiblingFields = siblingFieldsGatedByFieldLock(field).filter(
-      (sibling) =>
-        !fieldLockReleaseAgrees(
-          plannedFieldValue(answer, sibling, entity[sibling]),
-          entity[sibling],
-        ),
-    );
-    if (movedSiblingFields.length > 0) {
+    const movedSiblings = movedSiblingValuesFor(entity, answer, field);
+    if (Object.keys(movedSiblings).length > 0) {
       return {
         ...base,
         engineValue,
         verdict: 'keep_sibling_field_moves' as const,
-        movedSiblingFields,
+        ...siblingMoves(movedSiblings),
       };
     }
     return { ...base, engineValue, verdict: 'release' as const };
@@ -257,9 +264,12 @@ export function decideFieldLockReleases(
  * repair's own write dressed as evidence (#3788), so it is a workaround by construction,
  * the way a lock that holds no value is. It is released wherever doing so moves nothing a
  * student reads: the engine derives the held value, or no projection writes the field at
- * all. A lock over a cleared field stays shut on silence, because there the silence can
- * be the lock's own effect and a release hands the field back to the lane it was cleared
- * against. When the engine derives a different value, the lock is released only for a
+ * all. Silence is that answer only where the lock does not stop the field's collection.
+ * A lock over a cleared field stays shut on silence, because there the silence can be the
+ * lock's own effect and a release hands the field back to the lane it was cleared against.
+ * On a field whose collection the lock suppresses, silence is released only for a field the
+ * operator named, because the next scrape collects it and the next resolve may replace the
+ * held value. When the engine derives a different value, the lock is released only for a
  * field the operator named after reading that value.
  */
 function decideNeverBackedFieldLockRelease(
@@ -271,30 +281,30 @@ function decideNeverBackedFieldLockRelease(
   const neverBacked = { ...base, neverBacked: true };
   if (!answer) return { ...neverBacked, verdict: 'keep_engine_silent', engineValue: undefined };
   const named = projectionNamesField(answer, base.field);
-  if (!named && base.assertsNoValue) {
+  const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(base.field));
+  const silentOnSuppressedField = !named && lockSuppressesFieldCollection(base.field);
+  if (!named && (base.assertsNoValue || (silentOnSuppressedField && !acceptedByOperator))) {
     return { ...neverBacked, verdict: 'keep_engine_silent', engineValue: undefined };
   }
   const engineValue = plannedFieldValue(answer, base.field, base.storedValue);
   const agrees = fieldLockReleaseAgrees(engineValue, base.storedValue);
-  const accepted = !agrees && Boolean(rules.acceptEngineValueFields?.includes(base.field));
-  if (!agrees && !accepted) {
+  if (!agrees && !acceptedByOperator) {
     return { ...neverBacked, engineValue, verdict: 'keep_engine_disagrees' };
   }
-  const movedSiblingFields = siblingFieldsGatedByFieldLock(base.field).filter(
-    (sibling) =>
-      !fieldLockReleaseAgrees(plannedFieldValue(answer, sibling, entity[sibling]), entity[sibling]),
-  );
-  const unacceptedSiblings = movedSiblingFields.filter(
+  const movedSiblings = movedSiblingValuesFor(entity, answer, base.field);
+  const siblingReport = Object.keys(movedSiblings).length > 0 ? siblingMoves(movedSiblings) : {};
+  const unacceptedSiblings = Object.keys(movedSiblings).filter(
     (sibling) => !rules.acceptEngineValueFields?.includes(sibling),
   );
   if (unacceptedSiblings.length > 0) {
-    return { ...neverBacked, engineValue, verdict: 'keep_sibling_field_moves', movedSiblingFields };
+    return { ...neverBacked, engineValue, verdict: 'keep_sibling_field_moves', ...siblingReport };
   }
   return {
     ...neverBacked,
     engineValue,
     verdict: 'release',
-    ...(accepted ? { acceptsEngineValue: true } : {}),
+    ...siblingReport,
+    ...(!agrees || silentOnSuppressedField ? { acceptsEngineValue: true } : {}),
   };
 }
 
@@ -417,4 +427,31 @@ export function summarizeFieldLockReleaseDecisions(
     else summary.keptEngineSilent += 1;
   }
   return summary;
+}
+
+const describeValue = (value: unknown): string => {
+  if (value === undefined) return '(absent)';
+  if (typeof value === 'string') return value.trim() === '' ? '(empty)' : value;
+  if (Array.isArray(value))
+    return value.length === 0 ? '(empty list)' : `[${value.length} entries]`;
+  return JSON.stringify(value) ?? String(value);
+};
+
+export function describeFieldLockReleaseDecision(decision: FieldLockReleaseDecision): string {
+  const flags = `${decision.assertsNoValue ? ', asserts no value' : ''}${
+    decision.neverBacked ? ', never backed' : ''
+  }`;
+  const qualifiers = `${decision.provenInert ? ' (proven inert)' : ''}${
+    decision.acceptsEngineValue ? ' (accepts the engine value)' : ''
+  }${
+    decision.movedSiblingFields?.length
+      ? ` (would move ${decision.movedSiblingFields.join(', ')})`
+      : ''
+  }`;
+  const siblingLines = Object.entries(decision.movedSiblingValues ?? {}).map(
+    ([sibling, value]) => `\n     engine ${sibling} ${describeValue(value)}`,
+  );
+  return `  ${decision.slug} ${decision.field} [${decision.reason}${flags}]\n     stored ${describeValue(
+    decision.storedValue,
+  )}\n     engine ${describeValue(decision.engineValue)}${siblingLines.join('')}\n     ${decision.verdict.toUpperCase()}${qualifiers}`;
 }

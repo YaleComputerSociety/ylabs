@@ -40,6 +40,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldLockRelease } from '../utils/researchEntityFieldLocks';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  describeFieldLockReleaseDecision,
   releasedFieldsFromDecisions,
   resolveFieldLockReleases,
   summarizeFieldLockReleaseDecisions,
@@ -241,14 +242,6 @@ export async function runReleaseRevisitableFieldLocks(
   };
 }
 
-const describeValue = (value: unknown): string => {
-  if (value === undefined) return '(absent)';
-  if (typeof value === 'string') return value.trim() === '' ? '(empty)' : value;
-  if (Array.isArray(value))
-    return value.length === 0 ? '(empty list)' : `[${value.length} entries]`;
-  return JSON.stringify(value) ?? String(value);
-};
-
 async function main(): Promise<void> {
   const options = parseReleaseRevisitableFieldLocksArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
@@ -267,19 +260,7 @@ async function main(): Promise<void> {
     console.log(`${SCRIPT_NAME}: ${result.applied ? 'APPLIED' : 'DRY RUN'}`);
     for (const decision of result.decisions) {
       if (decision.verdict === 'keep_not_revisitable') continue;
-      console.log(
-        `  ${decision.slug} ${decision.field} [${decision.reason}${
-          decision.assertsNoValue ? ', asserts no value' : ''
-        }${decision.neverBacked ? ', never backed' : ''}]\n     stored ${describeValue(decision.storedValue)}\n     engine ${describeValue(
-          decision.engineValue,
-        )}\n     ${decision.verdict.toUpperCase()}${decision.provenInert ? ' (proven inert)' : ''}${
-          decision.acceptsEngineValue ? ' (accepts the engine value)' : ''
-        }${
-          decision.movedSiblingFields?.length
-            ? ` (would move ${decision.movedSiblingFields.join(', ')})`
-            : ''
-        }`,
-      );
+      console.log(describeFieldLockReleaseDecision(decision));
     }
     console.log(`\nplan:\n${JSON.stringify(result.summary, null, 2)}`);
     console.log(

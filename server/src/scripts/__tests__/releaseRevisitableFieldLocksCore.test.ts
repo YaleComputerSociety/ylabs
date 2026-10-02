@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   decideFieldLockReleases,
+  describeFieldLockReleaseDecision,
   resolveFieldLockReleases,
   summarizeFieldLockReleaseDecisions,
   type MaterializerProjectionAnswer,
@@ -413,13 +414,33 @@ describe('a lock over provenance its lane never observed (#3788)', () => {
     ]);
   });
 
-  it('releases where no projection writes the field, which keeps the stored value', () => {
+  it('keeps a lock-suppressed field shut when the engine is silent about it', () => {
     const decisions = decideFieldLockReleases(row(), { plannedSet: {} }, rules);
     expect(decisions.map((decision) => [decision.verdict, decision.neverBacked])).toEqual([
-      ['release', true],
-      ['release', true],
+      ['keep_engine_silent', true],
+      ['keep_engine_silent', true],
     ]);
-    expect(decisions[0].engineValue).toBe('A repair wrote this card.');
+  });
+
+  it('releases a silent lock-suppressed field only for a field the operator accepted', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: {} },
+      { ...rules, acceptEngineValueFields: ['shortDescription'] },
+    );
+    expect(decision.verdict).toBe('release');
+    expect(decision.acceptsEngineValue).toBe(true);
+  });
+
+  it('releases where no projection writes a field the lock does not stop collecting', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ websiteUrl: 'https://example.edu/lab/', manuallyLockedFields: ['websiteUrl'] }),
+      { plannedSet: {} },
+      { neverBackedFields: ['websiteUrl'] },
+    );
+    expect(decision.verdict).toBe('release');
+    expect(decision.acceptsEngineValue).toBeUndefined();
+    expect(decision.engineValue).toBe('https://example.edu/lab/');
   });
 
   it('releases where the engine derives the held value', () => {
@@ -460,17 +481,54 @@ describe('a lock over provenance its lane never observed (#3788)', () => {
     expect(decision.verdict).toBe('keep_engine_silent');
   });
 
-  it('asks the engine with every never-backed lock ignored and settles in one pass', async () => {
+  it('reports the engine value of a sibling the release would move', () => {
+    const answer = {
+      plannedSet: {
+        fullDescription: 'A repair wrote this description.',
+        shortDescription: 'The engine derives this card.',
+      },
+    };
+    const [kept] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['fullDescription'] }),
+      answer,
+      rules,
+    );
+    expect(kept.verdict).toBe('keep_sibling_field_moves');
+    expect(kept.movedSiblingValues).toEqual({
+      shortDescription: 'The engine derives this card.',
+    });
+    expect(describeFieldLockReleaseDecision(kept)).toContain(
+      'engine shortDescription The engine derives this card.',
+    );
+
+    const [released] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['fullDescription'] }),
+      answer,
+      { ...rules, acceptEngineValueFields: ['shortDescription'] },
+    );
+    expect(released.verdict).toBe('release');
+    expect(released.movedSiblingValues).toEqual({
+      shortDescription: 'The engine derives this card.',
+    });
+  });
+
+  it('asks the engine with every never-backed lock ignored, then about the agreeing subset', async () => {
     const asked: string[][] = [];
     const decisions = await resolveFieldLockReleases(
-      row(),
+      row({
+        websiteUrl: 'https://example.edu/lab/',
+        manuallyLockedFields: ['websiteUrl', 'shortDescription'],
+      }),
       async (revised) => {
         asked.push([...revised]);
         return { plannedSet: {} };
       },
-      rules,
+      { neverBackedFields: ['websiteUrl', 'shortDescription'] },
     );
-    expect(asked).toEqual([['shortDescription', 'fullDescription']]);
-    expect(decisions.every((decision) => decision.verdict === 'release')).toBe(true);
+    expect(asked).toEqual([['websiteUrl', 'shortDescription'], ['websiteUrl']]);
+    expect(decisions.map((decision) => decision.verdict)).toEqual([
+      'release',
+      'keep_engine_silent',
+    ]);
   });
 });
