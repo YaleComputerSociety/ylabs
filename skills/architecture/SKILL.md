@@ -47,7 +47,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | Layer           | Technology                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v7, TailwindCSS v3                                 |
-| Server          | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8                                                      |
+| Server          | Express 5, TypeScript 5.3, Passport.js 0.7, Mongoose 8                                                      |
 | Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |

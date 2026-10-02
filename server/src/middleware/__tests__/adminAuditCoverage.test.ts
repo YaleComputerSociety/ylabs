@@ -6,7 +6,6 @@ import { ADMIN_AUDIT_ROUTES } from '../adminAuditLogger';
 
 interface ExpressLayer {
   name?: string;
-  regexp?: RegExp;
   handle?: { name?: string; stack?: ExpressLayer[] };
   route?: {
     path: string;
@@ -19,22 +18,14 @@ interface MountedRoute {
   router: unknown;
   method: string;
   path: string;
-  mountedAt: string;
   middlewareNames: string[];
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE', '_ALL']);
 
-const mountPrefix = (layer: ExpressLayer): string =>
-  (layer.regexp?.source ?? '')
-    .replace(/^\^/, '')
-    .replace(/\\\/\?\(\?=\\\/\|\$\)$/, '')
-    .replace(/\\\//g, '/');
-
 const collectRoutes = (
   router: { stack: ExpressLayer[] },
   inheritedMiddleware: string[],
-  mountedAt: string,
 ): MountedRoute[] => {
   const precedingMiddleware = [...inheritedMiddleware];
   const routes: MountedRoute[] = [];
@@ -49,18 +40,11 @@ const collectRoutes = (
           router,
           method: method.toUpperCase(),
           path: layer.route.path,
-          mountedAt,
           middlewareNames: [...precedingMiddleware, ...routeMiddleware],
         });
       }
     } else if (Array.isArray(layer.handle?.stack)) {
-      routes.push(
-        ...collectRoutes(
-          layer.handle as { stack: ExpressLayer[] },
-          precedingMiddleware,
-          `${mountedAt}${mountPrefix(layer)}`,
-        ),
-      );
+      routes.push(...collectRoutes(layer.handle as { stack: ExpressLayer[] }, precedingMiddleware));
     } else if (layer.handle?.name) {
       precedingMiddleware.push(layer.handle.name);
     }
@@ -69,15 +53,15 @@ const collectRoutes = (
   return routes;
 };
 
-const applicationRouter = (app as unknown as { _router: { stack: ExpressLayer[] } })._router;
-const allRoutes = collectRoutes(applicationRouter, [], '');
+const applicationRouter = (app as unknown as { router: { stack: ExpressLayer[] } }).router;
+const allRoutes = collectRoutes(applicationRouter, []);
 
 const adminMutations = allRoutes.filter(
   (route) => MUTATING_METHODS.has(route.method) && route.middlewareNames.includes('isAdmin'),
 );
 
 const describeRoute = (route: MountedRoute) =>
-  `${route.method} ${route.mountedAt}${route.path === '/' ? '' : route.path}`;
+  `${route.method} ${route.path} after ${route.middlewareNames.join(' > ')}`;
 
 const auditKey = (route: MountedRoute) => `${route.method} ${route.path}`;
 

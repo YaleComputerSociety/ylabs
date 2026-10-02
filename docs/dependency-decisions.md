@@ -4,6 +4,14 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The server moves to Express 5 and drops its `path-to-regexp` pin (#4374)
+
+The `server` `resolutions` pinned `path-to-regexp` to 0.1.13, the patched release of the route matcher Express 4's router used.
+Express 5 routes through `router` 2, which depends on `path-to-regexp` 8, so the pin would have forced a matcher the router was never written for, and it is removed rather than moved.
+`@types/express` moves to 5 with it, and the copies that `@types/passport`, `@types/passport-strategy`, and `@types/cookie-session` pull through their `*` ranges are deduplicated onto the same release, so one Express type surface is installed.
+The `qs` pin stays, because Express 5 and `body-parser` 2 both still resolve it.
+The behaviour this upgrade had to keep, and where each rule now lives, is recorded in `skills/auth-security/SKILL.md` under the Express 5 request contract.
+
 ## 2026-10-02: The lint toolchain moves to ESLint 10 (#4375)
 
 `eslint` and `@eslint/js` are on 10, with `typescript-eslint` 8.71, `eslint-plugin-react-hooks` 7, `eslint-config-prettier` 10 and `globals` 17.

@@ -257,6 +257,55 @@ describe('app security runtime classification', () => {
     expect(app.get('query parser')).toBe('simple');
   });
 
+  it('refuses a Mongo-shaped query string through the mounted app', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      const requestPath = async (path: string) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          headers: { 'x-forwarded-proto': 'https' },
+        });
+        return { status: response.status, body: await response.json() };
+      };
+
+      for (const path of [
+        '/api/missing?$where=1',
+        '/api/missing?filters[$ne]=x',
+        '/api/missing?sort.field=createdAt',
+        '/api/missing?__proto__=x',
+      ]) {
+        expect(await requestPath(path)).toEqual({
+          status: 400,
+          body: { error: 'Invalid request payload' },
+        });
+      }
+      expect(await requestPath('/api/missing?page=1&tags=a&tags=b')).toEqual({
+        status: 404,
+        body: { error: 'Not found' },
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   it('initializes anonymous rate-limit sessions only for API requests', async () => {
     vi.doUnmock('cookie-session');
     process.env = {

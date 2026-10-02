@@ -2,6 +2,7 @@
  * Request validation middleware using express-validator.
  */
 import { Request, Response, NextFunction } from 'express';
+import { routeParam } from '../utils/routeParams';
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const COMPACT_POSITIVE_INTEGER_RE = /^[1-9]\d{0,5}$/;
@@ -21,7 +22,7 @@ const compactPositiveInteger = (value: unknown): number | undefined => {
  */
 export const validateObjectId = (paramName: string = 'id') => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const id = req.params[paramName];
+    const id = routeParam(req, paramName);
 
     if (!id) {
       return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
@@ -44,7 +45,7 @@ const RESEARCH_ENTITY_REF_RE = /^(?:[a-fA-F0-9]{24}|[a-z0-9][a-z0-9_-]{0,159})$/
  */
 export const validateResearchEntityId = (paramName: string = 'entityId') => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const id = req.params[paramName];
+    const id = routeParam(req, paramName);
 
     if (!id) {
       return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
@@ -65,7 +66,7 @@ const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
  */
 export const validateNetid = (paramName: string = 'netid') => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const value = req.params[paramName];
+    const value = routeParam(req, paramName);
     if (!value || !NETID_RE.test(value)) {
       return res.status(400).json({ error: `Invalid ${paramName}` });
     }
