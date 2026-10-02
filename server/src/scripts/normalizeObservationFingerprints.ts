@@ -11,6 +11,7 @@ import {
 } from '../scrapers/observationFingerprintNormalization';
 import {
   LATEST_WINS_FINGERPRINT_FIELDS,
+  LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE,
   QUALITY_GUARDED_PROSE_FIELDS,
 } from '../scrapers/observationStore';
 import { resolveMongoDatabaseName, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
@@ -179,6 +180,9 @@ async function collapseActiveDuplicates(
         $or: [
           { field: { $in: [...LATEST_WINS_FINGERPRINT_FIELDS] } },
           { entityType: 'fellowship' },
+          ...Object.entries(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE).map(
+            ([entityType, fields]) => ({ entityType, field: { $in: [...fields] } }),
+          ),
         ],
       },
     },
