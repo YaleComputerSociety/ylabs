@@ -157,6 +157,27 @@ describe('ResearchHomeComparison', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the served card and never substitutes the body when the card is withheld', async () => {
+    mockDetailBySlug({
+      'lab-a': entityA,
+      'lab-b': {
+        ...entityB,
+        shortDescription: '',
+        fullDescription: 'Bio: The group studies synthetic coastal sediment transport in detail.',
+      },
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: 'Lab B' });
+    await waitFor(() => expect(screen.getByText('Studies autonomous robots.')).toBeTruthy());
+    expect(container.textContent).not.toContain('coastal sediment');
+  });
+
   it('truncates an over-long description on a word boundary', async () => {
     const longDescription =
       'The laboratory investigates autonomous robotic perception, developing vision algorithms and probabilistic mapping methods for mobile platforms operating in unstructured outdoor environments, and it evaluates those methods on field trials with undergraduate researchers contributing to sensor calibration and dataset annotation workflows.';

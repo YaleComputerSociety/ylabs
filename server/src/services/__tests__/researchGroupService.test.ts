@@ -130,6 +130,7 @@ import {
   PUBLIC_RELATED_ENTITY_PROJECTION,
 } from '../researchGroupService';
 import { missingPublicDescriptionGateFields } from '../researchEntityPublicDescription';
+import { detailServedSource, toPublicResearchEntityDto } from '../researchEntityDto';
 import {
   invalidateResearchEntitySearchEmbedderCache,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
@@ -4924,6 +4925,50 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     const relatedSlugs = result.relatedResearchEntities.map((entity) => entity.slug);
     expect(new Set(relatedSlugs).size).toBe(relatedSlugs.length);
+  });
+
+  it('serves the related rail blurb from the card the target detail page serves (#4248)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const targetId = '67d8928150621bcef434a1e1';
+    const target = {
+      _id: targetId,
+      slug: 'synthetic-channel-lab',
+      name: 'Synthetic Channel Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      shortDescription: '',
+      fullDescription:
+        'Bio: The lab studies ion channels in neurons and how their gating shapes synaptic signalling across development. The group combines electrophysiology with imaging to track channel kinetics in living tissue.',
+      researchAreas: ['Ion Channels'],
+    };
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult([
+          {
+            _id: 'rel-member',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: targetId,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            label: 'Member lab',
+          },
+        ]),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(queryResult([target]));
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    const detailCard = String(
+      toPublicResearchEntityDto(detailServedSource(target, []), { leadMemberNames: [] })
+        .shortDescription || '',
+    );
+    expect(detailCard).not.toBe('');
+    expect(result.relatedResearchEntities.map((entity) => entity.blurb)).toEqual([
+      detailCard.slice(0, 280),
+    ]);
   });
 });
 

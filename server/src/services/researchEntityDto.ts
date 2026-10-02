@@ -676,11 +676,22 @@ export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDt
  * resolved from the raw hit skips the description sanitizers that run first and reads
  * differently from the detail card of the same row.
  */
-function detailServedSource(
+export function detailServedSource(
   entity: Record<string, any>,
   leadMemberNames: readonly string[] | undefined,
 ): Record<string, any> {
   return buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }).entity;
+}
+
+export function servedResearchEntityCardForRow(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[],
+): string {
+  const source = detailServedSource(entity, leadMemberNames);
+  return servedResearchEntityCardDescription(
+    servedResearchEntityCopy(source, leadMemberNames),
+    source.entityType || mapResearchGroupKindToEntityType(source.kind),
+  );
 }
 
 export function researchEntityListServedSource(

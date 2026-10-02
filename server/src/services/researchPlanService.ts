@@ -19,6 +19,7 @@ import {
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
+import { servedResearchEntityCardForRow } from './researchEntityDto';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -380,7 +381,7 @@ export const savedResearchEntitySummary = (
 ): SavedResearchEntitySummary => {
   const served = sanitizeServedResearchEntityCopyFields(entity, leadMemberNames);
   const shortDescription = boundSavedResearchEntitySummaryText(
-    served.shortDescription,
+    servedResearchEntityCardForRow(entity, leadMemberNames),
     MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   );
   return {

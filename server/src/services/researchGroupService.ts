@@ -59,6 +59,7 @@ import { accessSignalTypes, mapResearchGroupKindToEntityType } from '../models/r
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
+  detailServedSource,
   publicResearchEntityId,
   publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
@@ -69,7 +70,6 @@ import {
   isLikelyPublicProfileImageUrl,
   isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
-import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   researchEntityServesPublicDetail,
@@ -2852,7 +2852,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       return [
         researchGroupDocumentId(relatedEntity._id),
         toPublicResearchEntitySummaryDto(
-          sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+          detailServedSource(entity, leadMemberNames),
           leadMemberNames,
         ),
       ];
@@ -3014,7 +3014,7 @@ export async function listSimilarResearchEntities(
   return railEntities.map((candidate) => {
     const { entity, leadMemberNames } = leadGuardedServingInput(candidate, railLeadNameRead);
     return toPublicResearchEntitySummaryDto(
-      sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+      detailServedSource(entity, leadMemberNames),
       leadMemberNames,
     );
   });
