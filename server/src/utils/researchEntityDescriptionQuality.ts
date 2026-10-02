@@ -12,6 +12,7 @@ import {
   isNonSelfContainedShortDescription,
   isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
+  isResearchInterestsSentence,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
@@ -1350,6 +1351,7 @@ const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown
     ? researchAreas.filter((area): area is string => typeof area === 'string')
     : [];
   if (areas.length === 0) return false;
+  if (isResearchInterestsSentence(value)) return false;
   const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
   const textTokens = areaEchoFallbackContentTokens(stripAreaEchoSubjectClause(value));
   if (textTokens.size === 0) return false;
@@ -1453,6 +1455,7 @@ function computeFullDescriptionQuality(
   if (
     text &&
     isTopicLabelListEligibleEntityType(entityType) &&
+    !isResearchInterestsSentence(text) &&
     isBareLabelOrTopicEnumerationText(text)
   ) {
     flags.push('topic-label-list');
@@ -2733,6 +2736,7 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
+  if (isResearchInterestsSentence(first)) return '';
   if (
     hasResearchDescriptionVerb(first) ||
     /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)

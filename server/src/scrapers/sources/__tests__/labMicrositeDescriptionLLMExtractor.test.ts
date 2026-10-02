@@ -414,8 +414,18 @@ describe('a personal homepage bio is narrowed to the research it states', () => 
       ).map((observation) => [observation.field, observation.value]),
     );
 
-  it('keeps the bio as the body when its only research sentence is a topic list', () => {
-    expect(observe(BIO_HOMEPAGE, '').fullDescription).toBe(BIO_HOMEPAGE);
+  it('keeps only the research-interests sentence of a first-person CV bio', () => {
+    expect(observe(BIO_HOMEPAGE, '').fullDescription).toBe(
+      'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
+  });
+
+  it('keeps the bio as the body when its research sentence is too thin to serve alone', () => {
+    const thinBio = BIO_HOMEPAGE.replace(
+      /My research interests include:.*$/,
+      'I study learning theory and game theory.',
+    );
+    expect(observe(thinBio, '').fullDescription).toBe(thinBio);
   });
 
   it('keeps only the research sentences when they serve as a body on their own', () => {

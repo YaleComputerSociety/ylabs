@@ -923,3 +923,19 @@ describe('researchAreasGroundedInFullDescription', () => {
     expect(researchAreasGroundedInFullDescription(['Hormones'], '')).toEqual(['Hormones']);
   });
 });
+
+describe('resolveServedShortDescription over a research-interests sentence body (#4361)', () => {
+  it('serves the topics as the card rather than prefixing the whole named sentence', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: 'Studies learning theory, optimization, game theory, and mechanism design.',
+      fullDescription:
+        "Sample Person's research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.",
+      researchAreas: ['Learning Theory', 'Optimization', 'Game Theory', 'Mechanism Design'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    });
+    expect(resolved).toBe(
+      'Studies Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
+  });
+});

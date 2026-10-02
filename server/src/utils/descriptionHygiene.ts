@@ -2336,6 +2336,23 @@ const LABEL_ENUMERATION_LEAD_PATTERN =
 
 const titleCaseLedField = (field: string): boolean => /^[A-Z]/.test(field.trim());
 
+const INTERESTS_SENTENCE_FRAME_PATTERN =
+  /^[^:]{0,80}\bresearch\s+interests?\s+(?:include|includes|are|span|spans|cover|covers)\s*:?\s/i;
+
+/**
+ * A sentence that states someone's research interests and then lists them: "Her research
+ * interests include: Learning Theory, Optimization, ...". It has a subject and a verb, so
+ * its list is the sentence's object rather than a label. The owner chose to serve it as a
+ * body rather than the biography around it, even when it restates the row's topics (#4299).
+ */
+export function isResearchInterestsSentence(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  return (
+    partitionSentencesLossless(normalized).length === 1 &&
+    INTERESTS_SENTENCE_FRAME_PATTERN.test(normalized)
+  );
+}
+
 /**
  * The provenance-independent sibling of `isStudiesResearchAreaEchoDescription`
  * / `isConnectedToKeywordListStub`: those both require the enumerated items to

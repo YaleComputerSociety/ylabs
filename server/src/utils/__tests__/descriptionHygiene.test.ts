@@ -11,6 +11,7 @@ import {
   evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
+  isResearchInterestsSentence,
   isCitationAuthorListDumpText,
   stripHtmlTagMarkupForDetection,
   isCtaNewsTickerDumpText,
@@ -3512,5 +3513,44 @@ describe('stripLeadingAppointmentTitleBlock', () => {
     const once = stripLeadingAppointmentTitleBlock(glued);
     expect(stripLeadingAppointmentTitleBlock(once)).toBe(once);
     expect(stripLeadingAppointmentTitleBlock('')).toBe('');
+  });
+});
+
+describe('isResearchInterestsSentence', () => {
+  it('accepts a single sentence that states research interests and lists them', () => {
+    expect(
+      isResearchInterestsSentence(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(true);
+    expect(
+      isResearchInterestsSentence(
+        'Her research interests are Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a labelled topic list', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Research interests: Learning Theory, Optimization, Game Theory, Mechanism Design.',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a body of more than one sentence that opens with research interests', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Her research interests include Learning Theory, Optimization, and Game Theory. The lab also studies learning theory and optimization.',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects interests that are not stated as research', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Outside the lab, my interests include Hiking, Cooking, Chess, and Travel.',
+      ),
+    ).toBe(false);
   });
 });
