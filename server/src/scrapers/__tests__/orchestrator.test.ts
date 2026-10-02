@@ -166,7 +166,7 @@ describe('ScraperOrchestrator', () => {
       },
     });
 
-    await orchestrator.run('fixture-source', {
+    const returned = await orchestrator.run('fixture-source', {
       dryRun: false,
       dbReview: false,
       useCache: false,
@@ -177,6 +177,7 @@ describe('ScraperOrchestrator', () => {
       $set?: { status?: string; errors?: Array<{ message?: string }> };
     };
     expect(persisted.$set?.status).toBe('failure');
+    expect(returned.status).toBe('failure');
     expect(persisted.$set?.errors?.at(-1)?.message).toContain('3 consecutive runs');
     expect(consoleError.mock.calls.flat().join(' ')).toContain('fixture-source');
     consoleError.mockRestore();

@@ -12,6 +12,7 @@ import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
+import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import {
   SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
@@ -75,6 +76,7 @@ export class ScraperOrchestrator {
     ownership: ScraperRunOwnership = {},
   ): Promise<{
     runId: string;
+    status: ReturnedScrapeRunStatus;
     result: unknown;
     explainedObservations?: Array<Record<string, unknown>>;
     explainTruncated?: boolean;
@@ -248,13 +250,14 @@ export class ScraperOrchestrator {
         console.error(`[${name}] ${failure.message}`);
         errors.push({ message: failure.message, at: new Date() });
       }
+      const status: ReturnedScrapeRunStatus = interrupted
+        ? 'interrupted'
+        : barrenStreakFailure || barrenUnitFailures.length > 0
+          ? 'failure'
+          : errors.length === 0
+            ? 'success'
+            : 'partial';
       if (!interrupted) {
-        const status =
-          barrenStreakFailure || barrenUnitFailures.length > 0
-            ? 'failure'
-            : errors.length === 0
-              ? 'success'
-              : 'partial';
         const finishedAt = new Date();
         await writeScrapeRunTerminalStatus(
           () =>
@@ -279,6 +282,7 @@ export class ScraperOrchestrator {
       }
       return {
         runId: scrapeRunId,
+        status,
         result: {
           ...result,
           metrics: runMetrics(reportedMetrics, result.metrics, evidenceCoverageImpact),
