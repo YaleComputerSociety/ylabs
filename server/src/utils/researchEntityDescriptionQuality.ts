@@ -1455,6 +1455,7 @@ function computeFullDescriptionQuality(
   if (
     text &&
     isTopicLabelListEligibleEntityType(entityType) &&
+    !isResearchInterestsSentence(text) &&
     isBareLabelOrTopicEnumerationText(text)
   ) {
     flags.push('topic-label-list');

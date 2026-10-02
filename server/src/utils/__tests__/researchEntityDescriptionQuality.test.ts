@@ -2467,6 +2467,36 @@ describe('a research-interests sentence is a body even when it lists the row top
     ).not.toContain('area-echo-fallback');
   });
 
+  it('does not flag the sentence as a topic label list on a lab body', () => {
+    expect(
+      fullDescriptionQuality(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+        areas,
+        'LAB',
+      ).flags,
+    ).not.toContain('topic-label-list');
+  });
+
+  it('still flags the sentence as a topic label list on a lab card', () => {
+    expect(
+      shortDescriptionQuality(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+        'The lab develops algorithms for learning, optimization, and the design of markets.',
+        areas,
+        { entityType: 'LAB' },
+      ).flags,
+    ).toContain('topic-label-list');
+  });
+
+  it('still flags an area echo that follows a research-interests sentence', () => {
+    expect(
+      fullDescriptionQuality(
+        'Her research interests include Learning Theory, Optimization, Game Theory, and Mechanism Design. The lab also studies learning theory and optimization.',
+        areas,
+      ).flags,
+    ).toContain('area-echo-fallback');
+  });
+
   it('still flags a bare restatement of the topics', () => {
     expect(
       fullDescriptionQuality(

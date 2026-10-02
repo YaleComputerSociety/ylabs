@@ -11,6 +11,7 @@ import {
   evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
+  isResearchInterestsSentence,
   isCitationAuthorListDumpText,
   stripHtmlTagMarkupForDetection,
   isCtaNewsTickerDumpText,
@@ -3515,25 +3516,41 @@ describe('stripLeadingAppointmentTitleBlock', () => {
   });
 });
 
-describe('isBareLabelOrTopicEnumerationText reads an interests sentence as a sentence', () => {
-  it('does not flag a list that a research-interests sentence introduces', () => {
+describe('isResearchInterestsSentence', () => {
+  it('accepts a single sentence that states research interests and lists them', () => {
     expect(
-      isBareLabelOrTopicEnumerationText(
+      isResearchInterestsSentence(
         'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
-      isBareLabelOrTopicEnumerationText(
+      isResearchInterestsSentence(
         'Her research interests are Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a labelled topic list', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Research interests: Learning Theory, Optimization, Game Theory, Mechanism Design.',
       ),
     ).toBe(false);
   });
 
-  it('still flags a labelled topic list', () => {
+  it('rejects a body of more than one sentence that opens with research interests', () => {
     expect(
-      isBareLabelOrTopicEnumerationText(
-        'Research interests: Learning Theory, Optimization, Game Theory, Mechanism Design.',
+      isResearchInterestsSentence(
+        'Her research interests include Learning Theory, Optimization, and Game Theory. The lab also studies learning theory and optimization.',
       ),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('rejects interests that are not stated as research', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Outside the lab, my interests include Hiking, Cooking, Chess, and Travel.',
+      ),
+    ).toBe(false);
   });
 });
