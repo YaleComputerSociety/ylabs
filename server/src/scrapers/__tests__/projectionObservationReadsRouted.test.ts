@@ -103,6 +103,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
       'Its slug read is routed through `liveEntityDocForKey`. The read still listed here searches by `websiteUrl` across the corpus, whose PURPOSE is to find rows the benchmark does not contain, so its answer set is not derivable from the frozen input. Permanent exemption.',
   },
   {
+    fn: 'liveLeadsOfEntitiesAtWebsite',
+    reason:
+      'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by `websiteUrl` for the entity whose site a roster listing points at, which is a different row from any being projected, so an entity-keyed source cannot answer it (#4350).',
+  },
+  {
     fn: 'reconcileOfficialRosterSnapshotsFromRun',
     reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
   },
