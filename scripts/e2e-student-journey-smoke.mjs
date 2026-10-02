@@ -873,7 +873,8 @@ const assertDeepLinkedProgramDialogRendersInPlace = async (viewport, reducedMoti
         new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
             if (entry.hadRecentInput) continue;
-            if (!entry.sources.some((source) => source.node?.closest?.('[role="dialog"]'))) continue;
+            if (!entry.sources.some((source) => source.node?.closest?.('[role="dialog"]')))
+              continue;
             window.__dialogShifts.push(entry.value);
           }
         }).observe({ type: 'layout-shift', buffered: true });
@@ -938,6 +939,11 @@ await step('the program quick filters fit their rail panel with the count in vie
       await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
       const group = syntheticPage.getByRole('group', { name: 'Quick filters' });
       await group.waitFor({ timeout: 20000 });
+      await syntheticPage
+        .getByRole('status')
+        .filter({ hasText: /^\d+ results?$/ })
+        .first()
+        .waitFor({ timeout: 20000 });
       const bar = await group.evaluate((element) => {
         const panel = element.parentElement;
         const search = document.getElementById('program-search')?.closest('.yr-panel');
@@ -978,6 +984,97 @@ await step('the program quick filters fit their rail panel with the count in vie
       assert(
         bar.countTop !== null && bar.countTop <= bar.firstRowTop + QUICK_FILTER_COUNT_TOLERANCE,
         `The result count at ${viewport.width}px sits ${bar.countTop === null ? 'nowhere' : `${bar.countTop - bar.firstRowTop}px below the first quick filter row`}, so it floats away from the filters it counts.`,
+      );
+    });
+  }
+});
+
+const PROGRAMS_LOAD_ERROR_COPY = 'Could not load programs and fellowships';
+const PROGRAMS_SETTLE_MS = 2500;
+const PROGRAMS_ERROR_LATENCY_MS = 300;
+
+const isFirstPageProgramSearch = (request) => {
+  const url = new URL(request.url());
+  return url.pathname.endsWith('/programs/search') && url.searchParams.get('page') === '1';
+};
+
+await step('a programs visit sends one search and keeps a failed load an error', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      let searches = 0;
+      syntheticPage.on('request', (request) => {
+        if (isFirstPageProgramSearch(request)) searches += 1;
+      });
+      await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage.waitForTimeout(PROGRAMS_SETTLE_MS);
+      record('program first-page searches per visit', { width: viewport.width, searches });
+      assert(
+        searches === 1,
+        `One /programs visit at ${viewport.width}px sent ${searches} identical first-page searches, not 1.`,
+      );
+    });
+
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      let searches = 0;
+      await syntheticPage.route('**/api/programs/search**', async (route) => {
+        searches += 1;
+        await new Promise((resolve) => setTimeout(resolve, PROGRAMS_ERROR_LATENCY_MS));
+        await route.fulfill({ status: 500, json: { error: 'synthetic failure' } });
+      });
+      await syntheticPage.addInitScript((errorCopy) => {
+        window.__programErrorFrames = [];
+        window.__programContentShift = 0;
+        const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            const movesOnlyFooter = entry.sources.every((source) =>
+              elementOf(source.node)?.closest?.('footer'),
+            );
+            if (!movesOnlyFooter) window.__programContentShift += entry.value;
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+        const sample = () => {
+          window.__programErrorFrames.push((document.body?.innerText || '').includes(errorCopy));
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }, PROGRAMS_LOAD_ERROR_COPY);
+      await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage.waitForTimeout(PROGRAMS_SETTLE_MS);
+      const { frames, contentShift } = await syntheticPage.evaluate(() => ({
+        frames: window.__programErrorFrames,
+        contentShift: window.__programContentShift,
+      }));
+      const firstErrorFrame = frames.indexOf(true);
+      const framesWithoutErrorAfterIt =
+        firstErrorFrame < 0 ? 0 : frames.slice(firstErrorFrame).filter((shown) => !shown).length;
+      record('program load error stability', {
+        width: viewport.width,
+        searches,
+        firstErrorFrame,
+        framesWithoutErrorAfterIt,
+        contentLayoutShift: Number(contentShift.toFixed(4)),
+      });
+      assert(
+        firstErrorFrame >= 0,
+        `A failing programs search at ${viewport.width}px never showed "${PROGRAMS_LOAD_ERROR_COPY}".`,
+      );
+      assert(
+        framesWithoutErrorAfterIt === 0,
+        `The programs load error at ${viewport.width}px disappeared for ${framesWithoutErrorAfterIt} frames with no input from the student.`,
+      );
+      assert(
+        searches === 1,
+        `A failing programs search at ${viewport.width}px was sent ${searches} times without a retry.`,
+      );
+      assert(
+        contentShift < LAYOUT_SHIFT_BUDGET,
+        `A failing programs load at ${viewport.width}px shifted the page by ${contentShift.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}).`,
       );
     });
   }

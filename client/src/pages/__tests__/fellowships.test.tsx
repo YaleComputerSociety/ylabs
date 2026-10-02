@@ -426,6 +426,32 @@ describe('Programs page', () => {
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
+  it('does not claim zero results while the first load is still in flight', async () => {
+    renderPage([], { isLoading: true, searchExhausted: false, total: 0 });
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
+    });
+
+    expect(screen.queryByText(/^0 results$/)).toBeNull();
+  });
+
+  it('keeps the status tiles in place without zero counts when the load fails', async () => {
+    renderPage([], { loadError: true, total: 0 });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Could not load programs and fellowships' }),
+      ).toBeTruthy();
+    });
+
+    expect(screen.getAllByText('Not available')).toHaveLength(4);
+    expect(screen.getByText('Due soon')).toBeTruthy();
+    expect(screen.queryByText(/^0$/)).toBeNull();
+  });
+
   it('keeps each stat tile equal to its matching section header', async () => {
     const fellowships = [
       baseFellowship({

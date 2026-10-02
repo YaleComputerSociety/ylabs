@@ -58,9 +58,6 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   page: number;
   filterOptions: FellowshipFilterOptions;
   filterBarHeight: number;
-  queryStringLoaded: boolean;
-  filtersLoaded: boolean;
-  initialSearchDone: boolean;
   filterOptionsLoaded: boolean;
 }
 
@@ -105,9 +102,6 @@ export type FellowshipSearchAction =
     }
   | { type: 'SEARCH_FAILURE' }
   | { type: 'LOAD_MORE_FAILURE' }
-  | { type: 'MARK_QUERY_STRING_LOADED' }
-  | { type: 'MARK_FILTERS_LOADED' }
-  | { type: 'MARK_INITIAL_SEARCH_DONE' }
   | { type: 'MARK_FILTER_OPTIONS_LOADED' }
   | { type: 'RESET_LIFECYCLE_FLAGS' };
 
@@ -139,9 +133,6 @@ export const createInitialFellowshipSearchState = (
     subjects: [],
   },
   filterBarHeight: 0,
-  queryStringLoaded: false,
-  filtersLoaded: false,
-  initialSearchDone: false,
   filterOptionsLoaded: false,
   ...overrides,
 });
@@ -265,25 +256,13 @@ export function fellowshipSearchReducer(
     case 'LOAD_MORE_FAILURE':
       return { ...state, isLoading: false };
 
-    case 'MARK_QUERY_STRING_LOADED':
-      return { ...state, queryStringLoaded: true };
-
-    case 'MARK_FILTERS_LOADED':
-      return { ...state, filtersLoaded: true };
-
-    case 'MARK_INITIAL_SEARCH_DONE':
-      return { ...state, initialSearchDone: true };
-
     case 'MARK_FILTER_OPTIONS_LOADED':
       return { ...state, filterOptionsLoaded: true };
 
     case 'RESET_LIFECYCLE_FLAGS':
       return {
         ...state,
-        initialSearchDone: false,
         filterOptionsLoaded: false,
-        queryStringLoaded: false,
-        filtersLoaded: false,
       };
 
     default:

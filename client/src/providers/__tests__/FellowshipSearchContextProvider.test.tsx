@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -326,6 +326,122 @@ describe('FellowshipSearchContextProvider program routes', () => {
 
       await waitFor(() => expect(screen.getByTestId('fellowship-count').textContent).toBe('2'));
       expect(screen.getByTestId('load-error').textContent).toBe('false');
+    });
+  });
+
+  describe('on a single visit to /programs', () => {
+    const firstPageSearchCount = () =>
+      mockedAxios.get.mock.calls.filter(([url]) =>
+        String(url).startsWith('/programs/search?query=&page=1&'),
+      ).length;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends one first-page search once filter options load, with no follow-up from lifecycle flags', async () => {
+      vi.useFakeTimers();
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/filters') return Promise.resolve({ data: {} });
+        return Promise.resolve({ data: { results: [], total: 0 } });
+      });
+
+      renderProvider();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(firstPageSearchCount()).toBe(1);
+    });
+
+    it('keeps a failed first load an error without refetching the same parameters', async () => {
+      vi.useFakeTimers();
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/filters') return Promise.resolve({ data: {} });
+        return Promise.reject(new Error('network'));
+      });
+
+      renderProvider();
+      const loadErrorSamples: string[] = [];
+      for (let elapsed = 0; elapsed < 1500; elapsed += 50) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        loadErrorSamples.push(screen.getByTestId('load-error').textContent || '');
+      }
+
+      const firstError = loadErrorSamples.indexOf('true');
+      expect(firstError).toBeGreaterThanOrEqual(0);
+      expect(loadErrorSamples.slice(firstError).every((sample) => sample === 'true')).toBe(true);
+      expect(firstPageSearchCount()).toBe(1);
+    });
+
+    it('searches again only when the query text changes, after the debounce', async () => {
+      vi.useFakeTimers();
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/filters') return Promise.resolve({ data: {} });
+        return Promise.resolve({ data: { results: [], total: 0 } });
+      });
+
+      render(
+        <MemoryRouter initialEntries={['/programs']}>
+          <UserContext.Provider
+            value={{
+              isLoading: false,
+              isAuthenticated: true,
+              user: { userType: 'student', isAdmin: false } as any,
+              checkContext: vi.fn(),
+            }}
+          >
+            <FellowshipSearchContextProvider>
+              <FellowshipSearchContext.Consumer>
+                {(context) => (
+                  <>
+                    <button type="button" onClick={() => context.setQueryString('marine')}>
+                      Type query
+                    </button>
+                    <button type="button" onClick={() => context.setQueryString('')}>
+                      Clear query
+                    </button>
+                  </>
+                )}
+              </FellowshipSearchContext.Consumer>
+            </FellowshipSearchContextProvider>
+          </UserContext.Provider>
+        </MemoryRouter>,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      const searchUrls = () =>
+        mockedAxios.get.mock.calls
+          .map(([url]) => String(url))
+          .filter((url) => url.startsWith('/programs/search'));
+      expect(searchUrls()).toHaveLength(1);
+
+      act(() => {
+        screen.getByRole('button', { name: 'Type query' }).click();
+      });
+      act(() => {
+        screen.getByRole('button', { name: 'Clear query' }).click();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(searchUrls()).toHaveLength(1);
+
+      act(() => {
+        screen.getByRole('button', { name: 'Type query' }).click();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(searchUrls()).toHaveLength(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      expect(searchUrls()).toHaveLength(2);
+      expect(searchUrls()[1]).toContain('query=marine');
     });
   });
 });
