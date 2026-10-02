@@ -356,6 +356,7 @@ describe('NehGrantScraper.run', () => {
       expect(fields).not.toContain(identity);
     }
     expect(emitted.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    expect(emitted.find((o) => o.field === 'recentGrantPeriods')?.value).toHaveLength(2);
     expect(emitted.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NEH']);
     expect(emitted.find((o) => o.field === 'inferredPiUserId')?.value).toBe(PI_ID);
     const grants = emitted.find((o) => o.field === 'recentGrants')?.value as Array<{

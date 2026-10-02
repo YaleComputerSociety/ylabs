@@ -891,6 +891,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'researchAreas',
   'methods',
   'recentGrants',
+  'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
   'rosterEnrichment',
@@ -972,7 +973,7 @@ function latestWinsObservedTime(value: unknown): number {
  * source ever guessed. An accumulating field is one whose items are dated events, not
  * a description of the present.
  */
-const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants']);
+const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants', 'recentGrantPeriods']);
 
 /**
  * Identity for unioning an accumulating list. A grant carries its own award id, which

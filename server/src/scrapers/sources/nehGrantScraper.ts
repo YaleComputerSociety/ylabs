@@ -39,6 +39,7 @@ import {
   grantAttachSummary,
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
@@ -400,9 +401,11 @@ export function buildResearchEntityObservations(
     entityKey: canonicalResearchHomeSlug,
     sourceUrl: `${NEH_AWARD_SEARCH_BASE}/`,
   };
+  const periods = recentGrantPeriodsOf(records);
   const out: ObservationInput[] = [
     { ...base, field: 'recentGrants', value: top },
-    { ...base, field: 'recentGrantCount', value: records.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: ['NEH'] },
   ];
 

@@ -40,6 +40,7 @@ import {
   grantAttachSummary,
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
@@ -91,10 +92,20 @@ export interface NihOrganization {
   org_state?: string;
 }
 
+export interface NihProjectNumSplit {
+  appl_type_code?: string;
+  activity_code?: string;
+  ic_code?: string;
+  serial_num?: string;
+  support_year?: string;
+  suffix_code?: string;
+}
+
 export interface NihGrant {
   project_num?: string;
   appl_id?: number;
   core_project_num?: string;
+  project_num_split?: NihProjectNumSplit;
   project_title?: string;
   abstract_text?: string;
   contact_pi_name?: string;
@@ -213,6 +224,75 @@ export function pickContactPiName(grant: NihGrant): string {
   }
   if (grant.contact_pi_name) return canonicalPiName(grant.contact_pi_name);
   return '';
+}
+
+// RePORTER returns one record per project per fiscal year, and only the core project
+// number is stable across them, so it is the award identity (#3930).
+export function nihCoreProjectNumber(grant: NihGrant): string | undefined {
+  const core = (grant.core_project_num || '').trim().toUpperCase();
+  if (core) return core;
+  const split = grant.project_num_split;
+  const parts = [split?.activity_code, split?.ic_code, split?.serial_num].map((part) =>
+    (part || '').trim().toUpperCase(),
+  );
+  return parts.every(Boolean) ? parts.join('') : undefined;
+}
+
+function nihAwardKey(grant: NihGrant): string {
+  return (
+    nihCoreProjectNumber(grant) ||
+    (grant.project_num || '').trim().toUpperCase() ||
+    (grant.appl_id ? `appl-${grant.appl_id}` : 'unknown')
+  );
+}
+
+function fiscalYearRecency(grant: NihGrant): number {
+  return typeof grant.fiscal_year === 'number' ? grant.fiscal_year : -Infinity;
+}
+
+function newestFiscalYearRecord(records: readonly NihGrant[]): NihGrant {
+  return records.reduce((newest, record) => {
+    const yearOrder = fiscalYearRecency(record) - fiscalYearRecency(newest);
+    if (yearOrder !== 0) return yearOrder > 0 ? record : newest;
+    return (record.appl_id ?? 0) > (newest.appl_id ?? 0) ? record : newest;
+  });
+}
+
+function earliestDate(dates: readonly (Date | undefined)[]): Date | undefined {
+  return dates.reduce<Date | undefined>(
+    (earliest, date) => (date && (!earliest || date < earliest) ? date : earliest),
+    undefined,
+  );
+}
+
+function projectEndDate(records: readonly NihGrant[]): Date | undefined {
+  const endDates = records.map((record) => parseDate(record.project_end_date));
+  if (endDates.some((date) => !date)) return undefined;
+  return endDates.reduce<Date | undefined>(
+    (latest, date) => (date && (!latest || date > latest) ? date : latest),
+    undefined,
+  );
+}
+
+export function groupGrantsByProject(grants: readonly NihGrant[]): NihGrant[][] {
+  const projects = new Map<string, NihGrant[]>();
+  for (const grant of grants) {
+    const key = nihAwardKey(grant);
+    const records = projects.get(key);
+    if (records) records.push(grant);
+    else projects.set(key, [grant]);
+  }
+  return [...projects.values()];
+}
+
+export function projectToRecord(records: readonly NihGrant[]): RecentGrantRecord {
+  const newest = newestFiscalYearRecord(records);
+  return {
+    ...grantToRecord(newest),
+    id: nihAwardKey(newest),
+    startDate: earliestDate(records.map((record) => parseDate(record.project_start_date))),
+    endDate: projectEndDate(records),
+  };
 }
 
 /** Map a single API record into the schema-shaped record stored in `recentGrants`. */
@@ -469,12 +549,10 @@ export function piGrantsToObservations(
 ): ObservationInput[] {
   if (grants.length === 0 || !existingRowSlug) return [];
 
-  const sorted = [...grants].sort((a, b) => {
-    const ad = parseDate(a.project_start_date)?.getTime() ?? 0;
-    const bd = parseDate(b.project_start_date)?.getTime() ?? 0;
-    return bd - ad;
-  });
-  const recentRecords = sorted.slice(0, RECENT_GRANTS_PER_PI).map(grantToRecord);
+  const awards = groupGrantsByProject(grants)
+    .map(projectToRecord)
+    .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0));
+  const recentRecords = awards.slice(0, RECENT_GRANTS_PER_PI);
   const lastObservedAt = recentRecords
     .map((g) => g.startDate?.getTime())
     .filter((t): t is number => typeof t === 'number')
@@ -483,11 +561,13 @@ export function piGrantsToObservations(
   const base = {
     entityType: 'researchEntity' as const,
     entityKey: existingRowSlug,
-    sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
+    sourceUrl: recentRecords[0]?.url || REPORTER_ENDPOINT,
   };
+  const periods = recentGrantPeriodsOf(awards);
   const out: ObservationInput[] = [
     { ...base, field: 'recentGrants', value: recentRecords },
-    { ...base, field: 'recentGrantCount', value: sorted.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: ['NIH'] },
   ];
   if (lastObservedAt > 0) {

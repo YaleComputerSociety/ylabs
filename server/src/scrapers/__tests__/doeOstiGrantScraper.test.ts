@@ -212,6 +212,7 @@ describe('buildResearchEntityObservations', () => {
     expect(byField.fundingAgencies.value).toEqual(['DOE']);
     expect(byField.inferredPiUserId.value).toBe('u1');
     expect(byField.recentGrantCount.value).toBe(1);
+    expect(byField.recentGrantPeriods.value).toHaveLength(1);
   });
 
   it('never emits a description field so abstract prose cannot leak', () => {

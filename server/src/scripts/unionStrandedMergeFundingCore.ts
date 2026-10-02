@@ -14,6 +14,7 @@
  */
 export const COMPLETE_RESTATEMENT_FIELDS = [
   'recentGrants',
+  'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
 ] as const;

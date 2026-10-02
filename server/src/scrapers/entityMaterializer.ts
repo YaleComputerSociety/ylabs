@@ -1501,12 +1501,16 @@ const grantIdentity = (value: unknown): string => {
 
 const RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS = new Set([
   'recentGrants',
+  'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
 ]);
 
+const GRANT_COUNTING_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
+
 export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
   recentGrants?: unknown[];
+  recentGrantPeriods?: unknown[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
 } {
@@ -1523,15 +1527,27 @@ export function aggregateResearchEntityGrantEvidence(observations: MaterializerO
     }
   }
   const grants = new Map<string, unknown>();
+  const periods = new Map<string, unknown>();
   const agencies = new Map<string, string>();
+  const countingSources = new Set<string>();
+  const periodSources = new Set<string>();
   let hasGrantSnapshot = false;
   let hasGrantCountSnapshot = false;
   let hasAgencySnapshot = false;
   let recentGrantCount = 0;
   for (const observation of latest.values()) {
+    const sourceName = String(observation.sourceName || '');
+    if (GRANT_COUNTING_FIELDS.has(String(observation.field))) countingSources.add(sourceName);
     if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
       hasGrantSnapshot = true;
       for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
+    }
+    if (observation.field === 'recentGrantPeriods' && Array.isArray(observation.value)) {
+      periodSources.add(sourceName);
+      for (const period of observation.value) {
+        const identity = grantIdentity(period);
+        if (!periods.has(identity)) periods.set(identity, period);
+      }
     }
     if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
       hasAgencySnapshot = true;
@@ -1561,9 +1577,18 @@ export function aggregateResearchEntityGrantEvidence(observations: MaterializerO
       );
     })
     .slice(0, 10);
+  const everyCountingSourceDatesItsAwards =
+    countingSources.size > 0 &&
+    [...countingSources].every((sourceName) => periodSources.has(sourceName));
+  const recentGrantPeriods = everyCountingSourceDatesItsAwards ? [...periods.values()] : [];
   return {
     ...(hasGrantSnapshot ? { recentGrants } : {}),
-    ...(hasGrantCountSnapshot ? { recentGrantCount } : {}),
+    ...(periodSources.size > 0 ? { recentGrantPeriods } : {}),
+    ...(everyCountingSourceDatesItsAwards
+      ? { recentGrantCount: recentGrantPeriods.length }
+      : hasGrantCountSnapshot
+        ? { recentGrantCount }
+        : {}),
     ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
   };
 }
@@ -8126,6 +8151,9 @@ export async function materializeEntity(
     const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
     if (grantEvidence.recentGrants && resolved.recentGrants) {
       resolved.recentGrants.value = grantEvidence.recentGrants;
+    }
+    if (grantEvidence.recentGrantPeriods && resolved.recentGrantPeriods) {
+      resolved.recentGrantPeriods.value = grantEvidence.recentGrantPeriods;
     }
     if (grantEvidence.recentGrantCount !== undefined && resolved.recentGrantCount) {
       resolved.recentGrantCount.value = grantEvidence.recentGrantCount;

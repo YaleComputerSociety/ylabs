@@ -73,9 +73,10 @@ describe('the stranded-observation relink arm', () => {
 });
 
 describe('a complete-restatement field may not be unioned (#3242)', () => {
-  it('names the three funding fields and refuses each by name', () => {
+  it('names the four funding fields and refuses each by name', () => {
     expect([...COMPLETE_RESTATEMENT_FIELDS]).toEqual([
       'recentGrants',
+      'recentGrantPeriods',
       'recentGrantCount',
       'fundingAgencies',
     ]);

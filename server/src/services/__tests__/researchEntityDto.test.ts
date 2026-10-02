@@ -1223,6 +1223,69 @@ describe('researchEntityDto', () => {
     expect(dto.fundingAgencies).toEqual(['NIH']);
   });
 
+  const datedAwards = (count: number, endedIndexes: readonly number[]) =>
+    Array.from({ length: count }, (_value, index) => ({
+      id: `award-${index}`,
+      agency: 'NIGMS',
+      startDate: new Date(Date.UTC(2024, 0, count - index)),
+      endDate: endedIndexes.includes(index)
+        ? new Date('2020-01-31T00:00:00Z')
+        : new Date('2999-01-31T00:00:00Z'),
+    }));
+
+  it('counts running awards from the dated award periods beyond the ten listed (#4245)', () => {
+    const periods = datedAwards(25, [0]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-many-awards',
+      slug: 'many-awards-lab',
+      name: 'Many Awards Lab',
+      kind: 'lab',
+      recentGrants: periods.slice(0, 10),
+      recentGrantPeriods: periods,
+      recentGrantCount: 25,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(9);
+    expect(dto.recentGrantCount).toBe(24);
+    expect(dto.fundingAgencies).toEqual(['NIH']);
+    expect(dto).not.toHaveProperty('recentGrantPeriods');
+  });
+
+  it('counts unlisted running awards when every listed award has ended (#4245)', () => {
+    const periods = datedAwards(14, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-listed-awards-ended',
+      slug: 'listed-awards-ended-lab',
+      name: 'Listed Awards Ended Lab',
+      kind: 'lab',
+      recentGrants: periods.slice(0, 10),
+      recentGrantPeriods: periods,
+      recentGrantCount: 14,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect(dto.recentGrants).toEqual([]);
+    expect(dto.recentGrantCount).toBe(4);
+  });
+
+  it('omits a count it cannot restate from a capped award list (#4245)', () => {
+    const awards = datedAwards(25, [0]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-undated-sample',
+      slug: 'undated-sample-lab',
+      name: 'Undated Sample Lab',
+      kind: 'lab',
+      recentGrants: awards.slice(0, 10),
+      recentGrantPeriods: awards.slice(0, 12),
+      recentGrantCount: 25,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(9);
+    expect(dto).not.toHaveProperty('recentGrantCount');
+  });
+
   it('strips internal review, ownership, and provenance fields from public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-private-fields',

@@ -325,6 +325,18 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ],
       default: [],
     },
+    recentGrantPeriods: {
+      type: [
+        {
+          _id: false,
+          id: { type: String },
+          agency: { type: String },
+          startDate: { type: Date },
+          endDate: { type: Date },
+        },
+      ],
+      default: undefined,
+    },
     recentGrantCount: {
       type: Number,
       default: 0,

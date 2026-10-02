@@ -563,8 +563,8 @@ describe('piGrantsToObservations', () => {
 
     const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
     expect(recentGrants).toHaveLength(2);
-    expect(recentGrants[0].id).toBe('5R01MH123456-03');
-    expect(recentGrants[1].id).toBe('5R21AG999999-01');
+    expect(recentGrants[0].id).toBe('R01MH123456');
+    expect(recentGrants[1].id).toBe('R21AG999999');
 
     expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
     const lastObserved = obs.find((o) => o.field === 'lastObservedAt')?.value as Date;
@@ -578,7 +578,8 @@ describe('piGrantsToObservations', () => {
   it('truncates recentGrants to the configured cap', () => {
     const many: NihGrant[] = Array.from({ length: 20 }, (_v, i) => ({
       ...grantArnsten,
-      project_num: `R01-${i}`,
+      project_num: `5R01MH${String(100000 + i)}-02`,
+      core_project_num: `R01MH${String(100000 + i)}`,
       appl_id: 20000000 + i,
       project_start_date: `2024-${String((i % 12) + 1).padStart(2, '0')}-01T00:00:00`,
     }));
@@ -586,6 +587,114 @@ describe('piGrantsToObservations', () => {
     const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
     expect(recentGrants).toHaveLength(10);
     expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
+  });
+
+  const syntheticFiscalYear = (
+    fiscalYear: number,
+    overrides: Partial<NihGrant> = {},
+  ): NihGrant => ({
+    project_num: `5R01GM000001-0${fiscalYear - 2022}`,
+    appl_id: 30000000 + fiscalYear,
+    core_project_num: 'R01GM000001',
+    project_title: `Synthetic project title ${fiscalYear}`,
+    abstract_text: '',
+    contact_pi_name: 'SYNTHETIC, PAT',
+    fiscal_year: fiscalYear,
+    award_amount: fiscalYear,
+    project_start_date: '2023-04-01T00:00:00',
+    project_end_date: '2027-03-31T00:00:00',
+    agency_ic_admin: { code: 'GM', abbreviation: 'NIGMS', name: 'NIGMS' },
+    activity_code: 'R01',
+    project_detail_url: `https://reporter.nih.gov/project-details/${30000000 + fiscalYear}`,
+    ...overrides,
+  });
+  const otherSyntheticProject: NihGrant = {
+    ...syntheticFiscalYear(2025),
+    project_num: '1R21GM000002-01',
+    appl_id: 31000000,
+    core_project_num: 'R21GM000002',
+    project_start_date: '2025-01-01T00:00:00',
+    project_end_date: '2026-12-31T00:00:00',
+  };
+
+  it('collapses the fiscal-year records of one project into a single award (#3930)', () => {
+    const obs = piGrantsToObservations(
+      [
+        syntheticFiscalYear(2023),
+        syntheticFiscalYear(2025),
+        syntheticFiscalYear(2024),
+        otherSyntheticProject,
+      ],
+      'researcher-abc',
+      'dept-existing-row',
+    );
+    const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(recentGrants.map((grant) => grant.id)).toEqual(['R21GM000002', 'R01GM000001']);
+    expect(recentGrants[1]).toMatchObject({
+      title: 'Synthetic project title 2025',
+      dollarAmount: 2025,
+      url: 'https://reporter.nih.gov/project-details/30002025',
+    });
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    const periods = obs.find((o) => o.field === 'recentGrantPeriods')?.value as any[];
+    expect(periods.map((period) => period.id)).toEqual(['R21GM000002', 'R01GM000001']);
+  });
+
+  it('spans the project dates and keeps a project running while any record runs', () => {
+    const [award] = piGrantsToObservations(
+      [
+        syntheticFiscalYear(2023, { project_end_date: '2025-03-31T00:00:00' }),
+        syntheticFiscalYear(2024, {
+          project_start_date: '2023-09-01T00:00:00',
+          project_end_date: '2029-03-31T00:00:00',
+        }),
+      ],
+      'researcher-abc',
+      'dept-existing-row',
+    ).find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(award.startDate.toISOString().slice(0, 10)).toBe('2023-04-01');
+    expect(award.endDate.toISOString().slice(0, 10)).toBe('2029-03-31');
+
+    const [openEnded] = piGrantsToObservations(
+      [syntheticFiscalYear(2023), syntheticFiscalYear(2024, { project_end_date: undefined })],
+      'researcher-abc',
+      'dept-existing-row',
+    ).find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(openEnded.endDate).toBeUndefined();
+  });
+
+  it('reads the project from the split project number when the core number is absent', () => {
+    const split = { activity_code: 'R01', ic_code: 'GM', serial_num: '000001', support_year: '02' };
+    const obs = piGrantsToObservations(
+      [
+        syntheticFiscalYear(2023, { core_project_num: undefined, project_num_split: split }),
+        syntheticFiscalYear(2024, {
+          core_project_num: undefined,
+          project_num_split: { ...split, support_year: '03' },
+        }),
+      ],
+      'researcher-abc',
+      'dept-existing-row',
+    );
+    const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(recentGrants.map((grant) => grant.id)).toEqual(['R01GM000001']);
+  });
+
+  it('spends the display cap on distinct projects and counts every project', () => {
+    const grants = Array.from({ length: 12 }, (_v, project) =>
+      [2023, 2024, 2025].map((fiscalYear) =>
+        syntheticFiscalYear(fiscalYear, {
+          core_project_num: `R01GM1000${String(project).padStart(2, '0')}`,
+          appl_id: 40000000 + project * 10 + fiscalYear - 2023,
+          project_start_date: `2024-${String(project + 1).padStart(2, '0')}-01T00:00:00`,
+        }),
+      ),
+    ).flat();
+    const obs = piGrantsToObservations(grants, 'researcher-abc', 'dept-existing-row');
+    const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(new Set(recentGrants.map((grant) => grant.id)).size).toBe(10);
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(12);
+    expect(obs.find((o) => o.field === 'recentGrantPeriods')?.value).toHaveLength(12);
   });
 
   it('returns no observations on empty inputs', () => {

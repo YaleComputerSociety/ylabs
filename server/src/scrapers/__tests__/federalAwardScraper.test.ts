@@ -377,6 +377,7 @@ describe('FederalAwardScraper.run', () => {
     const rg = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(rg.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['DOE', 'NASA']);
     expect(rg.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    expect(rg.find((o) => o.field === 'recentGrantPeriods')?.value).toHaveLength(2);
   });
 
   it('respects ctx.options.limit by capping awards fetched', async () => {
