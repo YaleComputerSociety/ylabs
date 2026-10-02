@@ -417,7 +417,7 @@ describe('Research page', () => {
     );
     const browseGrid = browseSection.querySelector('.grid.gap-3');
     expect(browseLayout?.className).toContain('grid gap-5');
-    expect(browseGrid?.className).toContain('grid gap-3');
+    expect(browseGrid?.className).toContain('grid grid-cols-1 gap-3');
     expect(browseGrid?.className).toContain('lg:grid-cols-2');
     expect(browseGrid?.className).toContain('2xl:grid-cols-[repeat(3,minmax(0,1fr))]');
     expect(browseGrid?.className).not.toContain('items-start');

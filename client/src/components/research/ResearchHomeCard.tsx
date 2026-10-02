@@ -9,6 +9,7 @@ import {
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
+import SlashBreakableText from '../shared/SlashBreakableText';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
@@ -191,10 +192,10 @@ const ResearchHomeCard = ({
                   onOpen?.(home);
                 }}
               >
-                {home.label}
+                <SlashBreakableText text={home.label} />
               </Link>
             ) : (
-              home.label
+              <SlashBreakableText text={home.label} />
             )}
           </h3>
         </div>

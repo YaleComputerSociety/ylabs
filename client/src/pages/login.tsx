@@ -61,7 +61,7 @@ const Login = () => {
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
-      <div className="mx-auto grid w-full max-w-6xl items-start gap-8 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[minmax(0,1fr)_390px] lg:pt-24">
+      <div className="mx-auto grid grid-cols-1 w-full max-w-6xl items-start gap-8 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[minmax(0,1fr)_390px] lg:pt-24">
         <section className="mx-auto max-w-2xl text-center lg:mx-0 lg:text-left">
           <div className="flex items-center justify-center gap-3 lg:justify-start">
             <img
@@ -79,7 +79,7 @@ const Login = () => {
             Search by idea, method, professor, or pathway. y/labs maps undergraduate curiosity to
             research at Yale, and surfaces signals pointing you to more information.
           </p>
-          <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 gap-2 text-left sm:grid-cols-3">
             {['Research directory', 'Signals', 'Official sources'].map((item) => (
               <div key={item} className="yr-card rounded-card px-3 py-3">
                 <p className="text-sm font-semibold text-ink">{item}</p>

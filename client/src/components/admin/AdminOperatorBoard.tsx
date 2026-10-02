@@ -1261,7 +1261,7 @@ const AdminOperatorBoard = () => {
         </section>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {[
           ['Research', board.trustTiers.research],
           ['Programs', board.trustTiers.programs],
@@ -1290,7 +1290,7 @@ const AdminOperatorBoard = () => {
 
       <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-3 text-sm font-semibold text-ink">Gate Status</h4>
-        <div className="grid gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
           {board.gates.repairQueue && (
             <div className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="text-sm font-semibold text-ink">Automatic repair</div>
@@ -1628,7 +1628,7 @@ const AdminOperatorBoard = () => {
               patched
             </span>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Repair lanes
@@ -1691,7 +1691,7 @@ const AdminOperatorBoard = () => {
               resolved
             </span>
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <div className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Top blockers
@@ -1753,7 +1753,7 @@ const AdminOperatorBoard = () => {
         <p className="mb-3 text-sm text-muted">
           Visibility queues grouped by the decision an operator needs to make.
         </p>
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           {decisionLanes.map((lane) => {
             const copy = decisionLaneCopy[lane.kind];
             return (
@@ -1869,7 +1869,7 @@ const AdminOperatorBoard = () => {
                 <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
                   Source Conflict Decision Lanes
                 </div>
-                <div className="mt-2 grid gap-2 md:grid-cols-3">
+                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
                   {sourceLanes.map((lane) => (
                     <div
                       key={lane.queue}
@@ -1952,7 +1952,7 @@ const AdminOperatorBoard = () => {
             ))}
           </div>
         )}
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {board.sourceFreshness.rows.slice(0, 8).map((row) => (
             <div key={row.sourceName} className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="flex items-start justify-between gap-2">

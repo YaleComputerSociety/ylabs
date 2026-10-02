@@ -404,6 +404,11 @@ Don't:
 Breakpoints follow the MUI theme values: `sm` 640, `md` 768, `lg` 1024, `xl` 1280.
 
 - Design mobile first; the single-column layout is the baseline.
+- A responsive grid declares its base column, `grid grid-cols-1 sm:grid-cols-2`, never `grid sm:grid-cols-2` alone.
+Without a base column the implicit track is sized to its widest item's min-content, so one long word in one card widened every card and the page.
+- Served text breaks anywhere rather than widening its box: `[data-scroll-container]` and every `[role='dialog']` set `overflow-wrap: anywhere` in the base layer, and tables inside them keep whole words and scroll in their own wrapper.
+A slash-joined name renders through `components/shared/SlashBreakableText.tsx`, so a display heading breaks after the slash instead of mid-word.
+`src/__tests__/gridBaseColumnGuard.test.ts` fails on a responsive grid with no base column, and the student-journey smoke (`scripts/e2e-student-journey-smoke.mjs`) injects a 120-character token at 320px and fails on sideways scroll.
 - Filter rails collapse into disclosures on small viewports.
 - Verify layouts at 1280 to 1536px where sticky rails are most likely to overflow.
 
