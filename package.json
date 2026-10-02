@@ -89,7 +89,7 @@
     "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn --cwd client test:ci && yarn security:preflight"
   },
   "dependencies": {
-    "concurrently": "^9.2.4",
+    "concurrently": "^10.0.5",
     "dotenv": "^18.0.5",
     "mongoose": "^9.10.3"
   },
@@ -97,7 +97,7 @@
     "mongoose": "9.10.3",
     "shell-quote": "1.10.0",
     "brace-expansion@npm:^5.0.5": "5.0.12",
-    "js-yaml": "4.3.2"
+    "js-yaml": "5.4.2"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -105,7 +105,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
-    "js-yaml": "4.3.2",
+    "js-yaml": "5.4.2",
     "playwright": "^1.63.0",
     "prettier": "3.8.3",
     "typescript": "^5.3.0",
