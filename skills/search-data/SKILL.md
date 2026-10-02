@@ -300,12 +300,20 @@ Paid two to four times, that is the difference between a 0.3s search and a 1.4s 
 So `getResearchSearchQueryVector` (`server/src/services/researchSearchQueryEmbedding.ts`) embeds the query once, caches it per query text, and `searchResearchGroupsViaMeili` passes the result as `vector` on every hybrid call.
 Meilisearch skips its own embedder whenever `vector` is present, which is also why the missing-embedder degradation must delete `vector` alongside `hybrid`: a `vector` with no `hybrid` block is a pure semantic search, not the keyword fallback that degradation means.
 
-A `null` vector is not an error path.
-No `OPENAI_API_KEY`, a failed call, or a malformed response all omit `vector` and let Meilisearch embed the query itself, so search keeps working at the old latency.
+`getResearchSearchQueryVector` returns `{ vector, semanticLegAffordable }` rather than a bare vector, and the two fields answer different questions.
+`vector: null` with `semanticLegAffordable: true` means no `OPENAI_API_KEY` is configured (or the query is blank): the search omits `vector` and Meilisearch embeds the query with its own embedder, which is the intended path in that configuration.
+`semanticLegAffordable: false` obliges the caller to delete `hybrid`, `rankingScoreThreshold` and `showRankingScoreDetails` rather than only omitting `vector`, and the search serves its keyword leg marked `degraded: true`.
+It is returned for a budget or breaker refusal, described below, and for a failed call: a thrown request, a timeout, or a `200` with no usable vector, whether this request made the call or joined one already in flight.
 
-`getResearchSearchQueryVector` therefore returns `{ vector, semanticLegAffordable }` rather than a bare vector, and the two fields answer different questions.
-`vector: null` with `semanticLegAffordable: true` is the fail-open path above.
-`semanticLegAffordable: false` is the budgeted path below, and it obliges the caller to delete `hybrid`, `rankingScoreThreshold` and `showRankingScoreDetails` rather than only omitting `vector`.
+### A failed query embedding costs the search almost nothing (#4192)
+
+A failed call used to keep `hybrid`, so Meilisearch embedded the query itself through the same failing upstream and retried it up to its own deadline before degrading to keyword.
+Measured in process against a throwaway Meilisearch v1.13 holding a copy of the Development index, with a stub embedder for both the query call and Meilisearch's own: with the upstream answering 500, each of the five text searches before the breaker opened took 8.3 s to 9.9 s, and Meilisearch made 19 to 25 embedder requests per search; with the upstream hanging, each took 18.2 s to 19.3 s, the 10 s query timeout plus a primary query that timed out inside Meilisearch, so it fell through to the Mongo fallback, which answers 503 since #4187.
+Declining the semantic leg on failure brings those searches to 0.2 s to 1.0 s against a 500 and 2.3 s to 3.1 s against a hang, with one upstream call each, and once the breaker opens a search makes no call and answers in about 0.3 s.
+Their hits, totals and facets were identical to the same eight queries served with no embedder configured, so the answer during an outage is exactly the keyword answer.
+
+`EMBEDDING_REQUEST_TIMEOUT_MS` is 2 s, down from 10 s: 30 real calls measured 175 ms at p50, 455 ms at p90 and 1.1 s at worst, and a stalled upstream costs every search that is waiting on it the whole bound.
+A hybrid query Meilisearch still cannot embed, which can only happen when no key is configured and Meilisearch's own embedder fails, answers `vector_embedding_error`; `searchWithFallbacks` treats it like a missing embedder and retries the keyword leg once.
 
 ### The query embedding is a budgeted call, not a free one (`researchSearchQueryEmbeddingBudget.ts`)
 
@@ -332,6 +340,7 @@ The per-address number is therefore set well above what a cohort of genuine sear
 Each is floored the way `FIRST_CONTACT_RATE_LIMIT_MAX` is floored, so a mistyped or zeroed override cannot switch the semantic leg off for everyone.
 
 The breaker opens for the cooldown on an upstream rejection, which is a direct instruction to stop, and on five consecutive failures of any other kind, because one timeout is not evidence that the next call will fail.
+The first call after a cooldown is the exception: until a call succeeds, one failure there reopens the cooldown at once, because it is the same outage continuing, and otherwise each cooldown would let five more searches wait out the request timeout.
 A success forgets the run of failures, and only a call that produced a usable vector counts as one.
 A `200` carrying an unparseable body is a paid call that returned nothing, so it counts toward the failure run rather than resetting it; treating it as a success would let a gateway answering that way pay the whole window ceiling indefinitely with the breaker permanently reset.
 

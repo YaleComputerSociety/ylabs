@@ -80,6 +80,7 @@ let spentInWindow = 0;
 const spentByClient = new Map<string, number>();
 let cooldownUntil = 0;
 let consecutiveFailures = 0;
+let reopenOnNextFailure = false;
 
 const rollWindowIfElapsed = (now: number): void => {
   if (now - windowStartedAt < WINDOW_MS) return;
@@ -92,6 +93,7 @@ const openCooldown = (now: number, reason: string): void => {
   const { cooldownMs } = researchSearchQueryEmbeddingBudgetLimits();
   cooldownUntil = now + cooldownMs;
   consecutiveFailures = 0;
+  reopenOnNextFailure = true;
   console.warn(
     `Research search query embedding paused for ${cooldownMs}ms (${reason}); serving the keyword leg.`,
   );
@@ -137,12 +139,16 @@ export const reserveResearchSearchQueryEmbedding = (
 
 export const recordResearchSearchQueryEmbeddingSuccess = (): void => {
   consecutiveFailures = 0;
+  reopenOnNextFailure = false;
 };
 
 /**
  * An upstream rejection is a direct instruction to stop, so it opens the cooldown on
  * its own. Any other failure only opens it once it repeats, because a single timeout
- * is not evidence that the next call will fail too.
+ * is not evidence that the next call will fail too. The exception is the first call
+ * after a cooldown: until one succeeds, a failure there is the same outage
+ * continuing, so it reopens the cooldown at once rather than letting another run of
+ * searches each wait out the request timeout.
  */
 export const recordResearchSearchQueryEmbeddingFailure = (
   kind: 'upstream-rejected' | 'error',
@@ -150,6 +156,10 @@ export const recordResearchSearchQueryEmbeddingFailure = (
 ): void => {
   if (kind === 'upstream-rejected') {
     openCooldown(now, 'upstream rejected the request');
+    return;
+  }
+  if (reopenOnNextFailure) {
+    openCooldown(now, 'the first call after a cooldown failed');
     return;
   }
   consecutiveFailures += 1;
@@ -171,4 +181,5 @@ export const resetResearchSearchQueryEmbeddingBudget = (): void => {
   spentByClient.clear();
   cooldownUntil = 0;
   consecutiveFailures = 0;
+  reopenOnNextFailure = false;
 };

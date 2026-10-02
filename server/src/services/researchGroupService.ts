@@ -826,7 +826,12 @@ const matchesQualityFilters = (
   });
 };
 
-const isMissingMeiliEmbedderError = (error: unknown): boolean => {
+const UNUSABLE_MEILI_EMBEDDER_ERROR_CODES = new Set([
+  'invalid_search_embedder',
+  'vector_embedding_error',
+]);
+
+const isUnusableMeiliEmbedderError = (error: unknown): boolean => {
   const maybeError = error as {
     code?: string;
     message?: string;
@@ -834,8 +839,8 @@ const isMissingMeiliEmbedderError = (error: unknown): boolean => {
   };
 
   return (
-    maybeError?.code === 'invalid_search_embedder' ||
-    maybeError?.cause?.code === 'invalid_search_embedder' ||
+    UNUSABLE_MEILI_EMBEDDER_ERROR_CODES.has(maybeError?.code ?? '') ||
+    UNUSABLE_MEILI_EMBEDDER_ERROR_CODES.has(maybeError?.cause?.code ?? '') ||
     /Cannot find embedder/i.test(maybeError?.message || '') ||
     /Cannot find embedder/i.test(maybeError?.cause?.message || '')
   );
@@ -1456,8 +1461,8 @@ export async function searchResearchGroupsViaMeili(
   }
 
   // Search, degrading gracefully on recoverable errors: drop the semantic
-  // embedder if a config-drift race made it unavailable after the check above,
-  // and drop the browseRankScore sort key if the running index has not yet had
+  // embedder if a config-drift race made it unavailable after the check above
+  // or it could not embed the query, and drop the browseRankScore sort key if the running index has not yet had
   // it added to sortableAttributes. Each degradation is applied at most once;
   // anything else propagates.
   const searchWithFallbacks = async (): Promise<{
@@ -1482,7 +1487,7 @@ export async function searchResearchGroupsViaMeili(
           params,
         };
       } catch (error) {
-        if (params.hybrid && isMissingMeiliEmbedderError(error)) {
+        if (params.hybrid && isUnusableMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
           // Left behind, `vector` turns the keyword fallback into a pure

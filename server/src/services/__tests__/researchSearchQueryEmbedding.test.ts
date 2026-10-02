@@ -151,13 +151,13 @@ describe('getResearchSearchQueryVector', () => {
     expect(researchSearchQueryEmbeddingBudgetSnapshot().spentInWindow).toBe(0);
   });
 
-  it('keeps the semantic leg affordable and caches nothing when one request fails', async () => {
+  it('declines the semantic leg and caches nothing when one request fails', async () => {
     mocks.post.mockRejectedValue(new Error('gateway timeout'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(await getResearchSearchQueryVector('cancer')).toEqual({
       vector: null,
-      semanticLegAffordable: true,
+      semanticLegAffordable: false,
     });
     expect(researchSearchQueryEmbeddingCacheSize()).toBe(0);
 
@@ -336,7 +336,7 @@ describe('the breaker seen through getResearchSearchQueryVector', () => {
       mocks.post.mockRejectedValueOnce(rejection(429));
       expect(await getResearchSearchQueryVector('cooldown-first', '203.0.113.7')).toEqual({
         vector: null,
-        semanticLegAffordable: true,
+        semanticLegAffordable: false,
       });
 
       mocks.post.mockClear();
@@ -371,13 +371,14 @@ describe('the breaker seen through getResearchSearchQueryVector', () => {
         expect(
           (await getResearchSearchQueryVector(`repeat-${index}`, '203.0.113.7'))
             .semanticLegAffordable,
-        ).toBe(true);
+        ).toBe(false);
       }
       expect(mocks.post).toHaveBeenCalledTimes(4);
 
       expect(
         (await getResearchSearchQueryVector('repeat-4', '203.0.113.7')).semanticLegAffordable,
-      ).toBe(true);
+      ).toBe(false);
+      expect(mocks.post).toHaveBeenCalledTimes(5);
       mocks.post.mockClear();
 
       expect(await getResearchSearchQueryVector('repeat-5', '203.0.113.7')).toEqual({
@@ -401,7 +402,7 @@ describe('the breaker seen through getResearchSearchQueryVector', () => {
       for (let index = 0; index < 5; index += 1) {
         expect(await getResearchSearchQueryVector(`empty-${index}`, 'ip:203.0.113.7')).toEqual({
           vector: null,
-          semanticLegAffordable: true,
+          semanticLegAffordable: false,
         });
       }
       expect(mocks.post).toHaveBeenCalledTimes(5);
@@ -457,12 +458,11 @@ describe('the breaker seen through getResearchSearchQueryVector', () => {
       ]);
 
       mocks.post.mockRejectedValue(new Error('gateway timeout'));
+      mocks.post.mockClear();
       for (let index = 0; index < 4; index += 1) {
-        expect(
-          (await getResearchSearchQueryVector(`forget-again-${index}`, '203.0.113.7'))
-            .semanticLegAffordable,
-        ).toBe(true);
+        await getResearchSearchQueryVector(`forget-again-${index}`, '203.0.113.7');
       }
+      expect(mocks.post).toHaveBeenCalledTimes(4);
     } finally {
       consoleError.mockRestore();
       consoleWarn.mockRestore();
