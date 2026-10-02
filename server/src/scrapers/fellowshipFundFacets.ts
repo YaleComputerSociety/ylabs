@@ -19,8 +19,8 @@
  * whose owning lane also states a window took whichever pass ran last.
  */
 import {
-  FUND_AUTHORITY_FIELDS,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
+  fundAuthorityFieldsStated,
   fundFacetsDescribeProgram,
 } from './fellowshipSourcePrecedence';
 
@@ -84,6 +84,13 @@ export function fundKeyCitedByFellowship(
   return keys.size === 1 ? [...keys][0] : null;
 }
 
+export function fundSpeaksForFellowship(
+  row: Record<string, any> | null | undefined,
+  fundTitle: unknown,
+): boolean {
+  return fundKeyCitedByFellowship(row) !== null && fundFacetsDescribeProgram(row?.title, fundTitle);
+}
+
 interface FacetObservationLike {
   _id?: unknown;
   field?: unknown;
@@ -94,11 +101,10 @@ export function preferFundFacetObservations<T extends FacetObservationLike>(
   observations: readonly T[],
   fundFacetObservations: readonly T[],
 ): T[] {
-  const statedByFund = new Set(
+  const statedByFund = fundAuthorityFieldsStated(
     fundFacetObservations
       .filter((observation) => observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE)
-      .map((observation) => String(observation.field))
-      .filter((field) => FUND_AUTHORITY_FIELDS.has(field)),
+      .map((observation) => String(observation.field)),
   );
   if (statedByFund.size === 0) return [...observations];
   const included = new Set(observations.map((observation) => String(observation._id)));

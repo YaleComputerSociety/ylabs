@@ -145,6 +145,7 @@ import {
 import {
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
+  fundSpeaksForFellowship,
   preferFundFacetObservations,
 } from './fellowshipFundFacets';
 import {
@@ -7295,7 +7296,7 @@ export async function projectFromLog(
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
       resolved,
-      fundTitle: newestFundTitle(materializationObs),
+      fundSpeaksForRow: fundSpeaksForFellowship(entityDoc, newestFundTitle(materializationObs)),
     })) {
       delete set[field];
       delete set[`fieldProvenance.${field}`];

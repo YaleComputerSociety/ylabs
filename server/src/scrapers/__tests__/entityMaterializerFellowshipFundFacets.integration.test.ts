@@ -278,13 +278,63 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
       OFFICE_KEY,
       OFFICE,
       OFFICE_PAGE,
-      { deadline: new Date('2027-01-15T04:59:59.999Z') },
+      {
+        deadline: new Date('2027-01-15T04:59:59.999Z'),
+        isAcceptingApplications: true,
+        reviewRequired: false,
+      },
       '2026-03-02T00:00:00Z',
     );
     await seedFund(FUND_PAGE, FUND_FACETS, '2026-02-01T00:00:00Z');
+    await observe(
+      FUND_KEY,
+      GRANTS,
+      FUND_PAGE,
+      { isAcceptingApplications: false, reviewRequired: true },
+      '2026-02-01T00:00:00Z',
+    );
 
-    await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+    const rows = [];
+    for (const entityKey of [OFFICE_KEY, FUND_KEY, OFFICE_KEY]) {
+      await materializeEntity('fellowship', { entityKey });
+      rows.push(await officeRow());
+    }
 
-    expect((await officeRow())?.deadline?.toISOString()).toBe('2027-01-15T04:59:59.999Z');
+    for (const row of rows) {
+      expect(row?.deadline?.toISOString()).toBe('2027-01-15T04:59:59.999Z');
+      expect(row?.isAcceptingApplications).toBe(true);
+    }
+  });
+
+  it("a row citing two funds keeps the owning lane's window on every pass", async () => {
+    await seedOfficeRow([FUND_PAGE, OTHER_FUND_PAGE]);
+    await observe(
+      OFFICE_KEY,
+      OFFICE,
+      OFFICE_PAGE,
+      { deadline: new Date('2027-01-15T04:59:59.999Z') },
+      '2026-03-02T00:00:00Z',
+    );
+    await observe(
+      FUND_KEY,
+      GRANTS,
+      FUND_PAGE,
+      {
+        title: 'Fixture Summer Inquiry Award (Catalog)',
+        sourceName: GRANTS,
+        sourceUrl: FUND_PAGE,
+        applicationLink: FUND_PAGE,
+        deadline: new Date('2027-03-01T17:00:00.000Z'),
+      },
+      '2026-02-01T00:00:00Z',
+    );
+
+    const deadlines = [];
+    for (const entityKey of [OFFICE_KEY, FUND_KEY, OFFICE_KEY]) {
+      await materializeEntity('fellowship', { entityKey });
+      deadlines.push((await officeRow())?.deadline?.toISOString());
+    }
+
+    expect(deadlines).toEqual(Array(3).fill('2027-01-15T04:59:59.999Z'));
   });
 });
