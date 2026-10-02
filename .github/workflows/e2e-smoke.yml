@@ -43,17 +43,18 @@ jobs:
           - 7700:7700
         env:
           MEILI_ENV: development
-          MEILI_MASTER_KEY: e2eSmokeMeiliMasterKey123
+          MEILI_MASTER_KEY: e2e-smoke-meili-${{ github.run_id }}-${{ github.run_attempt }}
           MEILI_NO_ANALYTICS: 'true'
 
     env:
       NODE_ENV: development
       PORT: '4000'
       SERVER_BASE_URL: http://localhost:4000
-      SESSION_SECRET: k7Qm2Xb9Rp4Zt6Vy1Nc3Hs5Jd8Lf0Wg2Ea
+      # Built per run so no credential-shaped literal is committed (#4198).
+      SESSION_SECRET: e2e-smoke-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
       MONGODBURL: mongodb://localhost:27017/ylabs_e2e_smoke
       MEILISEARCH_HOST: http://localhost:7700
-      MEILISEARCH_API_KEY: e2eSmokeMeiliMasterKey123
+      MEILISEARCH_API_KEY: e2e-smoke-meili-${{ github.run_id }}-${{ github.run_attempt }}
       E2E_BASE_URL: http://localhost:4000
 
     steps:

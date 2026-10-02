@@ -5,7 +5,7 @@ const SECRET_RULES = [
   },
   {
     rule: 'openai-api-key',
-    pattern: /\bsk-(?:proj|live|test)?-[A-Za-z0-9_-]{48,}\b/g,
+    pattern: /\bsk-(?:[a-z]+-)?(?=[A-Za-z0-9_-]*[0-9])(?=[A-Za-z0-9_-]*[A-Z])[A-Za-z0-9_-]{32,}/g,
   },
   {
     rule: 'github-token',
@@ -26,8 +26,23 @@ const SECRET_RULES = [
 ];
 
 const YALIES_API_HOST_RE = /\bapi\.yalies\.io\b/i;
-const YALIES_API_KEY_ASSIGNMENT_RE =
-  /\bYALIES_API_KEY\b\s*[=:]\s*["']?([A-Za-z0-9._~+/=-]{20,})/gi;
+const SECRET_ENV_NAMES = [
+  'OPENAI_API_KEY',
+  'SESSION_SECRET',
+  'MEILISEARCH_API_KEY',
+  'YALIES_API_KEY',
+  'YALIES_NEW_API_KEY',
+  'YALIES_OLD_API_KEY',
+  'BRAVE_SEARCH_API_KEY',
+  'EXA_API_KEY',
+  'PARALLEL_API_KEY',
+  'TAVILY_API_KEY',
+];
+const SECRET_ENV_ASSIGNMENT_RE = new RegExp(
+  `\\b(${SECRET_ENV_NAMES.join('|')})\\b\\s*[=:]\\s*["']?([A-Za-z0-9._~+/=-]{20,})`,
+  'gi',
+);
+const assignmentRuleFor = (name) => `${name.toLowerCase().replaceAll('_', '-')}-assignment`;
 const BEARER_TOKEN_RE = /\bBearer\s+([A-Za-z0-9._~+/=-]{20,})\b/gi;
 
 const PLACEHOLDER_PATTERNS = [
@@ -47,29 +62,27 @@ const lineNumberForIndex = (content, index) => content.slice(0, index).split('\n
 const isAllowedPlaceholder = (matchText) =>
   PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(matchText));
 
-const yaliesCredentialFindings = (file) => {
-  const findings = [];
-  const patterns = [
-    { rule: 'yalies-api-key-assignment', pattern: YALIES_API_KEY_ASSIGNMENT_RE },
-    ...(YALIES_API_HOST_RE.test(file.content)
-      ? [{ rule: 'yalies-bearer-token', pattern: BEARER_TOKEN_RE }]
-      : []),
-  ];
+const looksLikeGeneratedCredential = (value) => /[0-9]/.test(value) && /[A-Za-z]/.test(value);
 
-  for (const { rule, pattern } of patterns) {
-    pattern.lastIndex = 0;
-    for (const match of file.content.matchAll(pattern)) {
-      const credential = match[1] || '';
-      if (isAllowedPlaceholder(credential)) continue;
-      findings.push({
-        path: file.path,
-        line: lineNumberForIndex(file.content, match.index || 0),
-        rule,
-      });
-    }
-  }
+const secretEnvAssignmentFindings = (file) =>
+  Array.from(file.content.matchAll(SECRET_ENV_ASSIGNMENT_RE))
+    .filter((match) => looksLikeGeneratedCredential(match[2] || ''))
+    .filter((match) => !isAllowedPlaceholder(match[2] || ''))
+    .map((match) => ({
+      path: file.path,
+      line: lineNumberForIndex(file.content, match.index || 0),
+      rule: assignmentRuleFor(match[1]),
+    }));
 
-  return findings;
+const yaliesBearerFindings = (file) => {
+  if (!YALIES_API_HOST_RE.test(file.content)) return [];
+  return Array.from(file.content.matchAll(BEARER_TOKEN_RE))
+    .filter((match) => !isAllowedPlaceholder(match[1] || ''))
+    .map((match) => ({
+      path: file.path,
+      line: lineNumberForIndex(file.content, match.index || 0),
+      rule: 'yalies-bearer-token',
+    }));
 };
 
 export function candidateSecretScanPaths(paths) {
@@ -87,7 +100,7 @@ export function findSecretFindings(files) {
   const findings = [];
 
   for (const file of files) {
-    findings.push(...yaliesCredentialFindings(file));
+    findings.push(...secretEnvAssignmentFindings(file), ...yaliesBearerFindings(file));
     for (const rule of SECRET_RULES) {
       rule.pattern.lastIndex = 0;
       for (const match of file.content.matchAll(rule.pattern)) {

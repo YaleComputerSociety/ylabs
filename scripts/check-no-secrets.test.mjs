@@ -135,3 +135,87 @@ test('allows Yalies environment references and bearer examples outside Yalies co
 
   assert.deepEqual(findSecretFindings(files), []);
 });
+
+const syntheticToken = (length) =>
+  ['Zq', '7x', 'Fk', '2w'].join('').repeat(length).slice(0, length);
+
+test('flags every current OpenAI key family', () => {
+  const families = {
+    project: ['sk', 'proj', syntheticToken(60)].join('-'),
+    legacy: ['sk', syntheticToken(48)].join('-'),
+    serviceAccount: ['sk', 'svcacct', syntheticToken(60)].join('-'),
+    admin: ['sk', 'admin', syntheticToken(60)].join('-'),
+  };
+  for (const [family, key] of Object.entries(families)) {
+    const findings = findSecretFindings([{ path: 'probe.txt', content: `const key = "${key}";` }]);
+    assert.deepEqual(
+      findings.map(({ rule }) => rule),
+      ['openai-api-key'],
+      `the ${family} key family must be flagged exactly once`,
+    );
+    assert.ok(!JSON.stringify(findings).includes(key));
+  }
+});
+
+test('flags a committed value for every secret-bearing env var the app reads', () => {
+  const value = syntheticToken(40);
+  const names = [
+    'OPENAI_API_KEY',
+    'SESSION_SECRET',
+    'MEILISEARCH_API_KEY',
+    'YALIES_API_KEY',
+    'YALIES_NEW_API_KEY',
+    'YALIES_OLD_API_KEY',
+    'BRAVE_SEARCH_API_KEY',
+    'EXA_API_KEY',
+    'PARALLEL_API_KEY',
+    'TAVILY_API_KEY',
+  ];
+  for (const name of names) {
+    for (const content of [
+      `${name}=${value}`,
+      `${name}: "${value}"`,
+      `export ${name} = '${value}'`,
+    ]) {
+      const findings = findSecretFindings([{ path: 'operator.env', content }]);
+      assert.deepEqual(
+        findings.map(({ rule }) => rule),
+        [`${name.toLowerCase().replaceAll('_', '-')}-assignment`],
+        `${content.replace(value, '<value>')} must be flagged`,
+      );
+      assert.ok(!JSON.stringify(findings).includes(value));
+    }
+  }
+});
+
+test('allows references, redactions, short values, and wordy placeholders for secret-bearing names', () => {
+  const files = [
+    {
+      path: 'server/src/config.ts',
+      content: [
+        'const sessionSecret = process.env.SESSION_SECRET;',
+        'OPENAI_API_KEY: process.env.OPENAI_API_KEY,',
+        'MEILISEARCH_API_KEY=<redacted>',
+        'SESSION_SECRET=${{ secrets.SESSION_SECRET }}',
+        'TAVILY_API_KEY=',
+        'EXA_API_KEY=short',
+        'SESSION_SECRET: STRONG_SESSION_SECRET,',
+        'MEILISEARCH_API_KEY: args.validated.apiKey,',
+        'OPENAI_API_KEY: "stub-key-not-a-real-credential",',
+      ].join('\n'),
+    },
+  ];
+
+  assert.deepEqual(findSecretFindings(files), []);
+});
+
+test('does not flag kebab-case identifiers that start with sk-', () => {
+  const files = [
+    {
+      path: 'client/src/styles.css',
+      content: '.sk-skeleton-loading-placeholder-for-the-research-card-grid { display: none; }',
+    },
+  ];
+
+  assert.deepEqual(findSecretFindings(files), []);
+});
