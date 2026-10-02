@@ -51,6 +51,21 @@ describe('withBalancedLeadingQuotation', () => {
     }
   });
 
+  it('judges a straight opener by the mark that closes its span, not by the count of marks', () => {
+    expect(withBalancedLeadingQuotation('"Deep Reef" surveys use 12" coring tubes')).toBe(
+      '"Deep Reef" surveys use 12" coring tubes',
+    );
+    expect(withBalancedLeadingQuotation('"Deep Reef" surveys use 12" coring tubes.')).toBe(
+      '"Deep Reef" surveys use 12" coring tubes.',
+    );
+  });
+
+  it('keeps a leading elision written with a closing curly mark', () => {
+    expect(withBalancedLeadingQuotation('’90s bleaching events shaped the reef survey.')).toBe(
+      '’90s bleaching events shaped the reef survey.',
+    );
+  });
+
   it('keeps an opener whose only later curly mark is an apostrophe inside a word unbalanced', () => {
     expect(withBalancedLeadingQuotation('‘The group’s reef survey counts.')).toBe(
       '‘The group’s reef survey counts.’',
