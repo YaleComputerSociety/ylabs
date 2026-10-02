@@ -2736,6 +2736,7 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
+  if (isResearchInterestsSentence(first)) return '';
   if (
     hasResearchDescriptionVerb(first) ||
     /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)
