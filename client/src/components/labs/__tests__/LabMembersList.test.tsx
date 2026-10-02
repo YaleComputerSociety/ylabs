@@ -380,3 +380,41 @@ describe('LabMembersList lead email line', () => {
     expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
   });
 });
+
+describe('LabMembersList text size floor', () => {
+  const contact = {
+    role: 'pi',
+    user: {
+      _id: 'user-9',
+      netid: 'fixture',
+      fname: 'Ada',
+      lname: 'Fixture',
+      displayName: 'Ada Fixture',
+      title: 'Professor of Synthetic Studies',
+      primaryDepartment: 'Computer Science',
+      primary_department: 'Computer Science',
+      email: 'ada.fixture@example.test',
+      orcid: '0000-0002-1825-0097',
+    },
+  } as unknown as LabMember;
+
+  const UNDERSIZED_TEXT_CLASS = /\btext-\[(?:\d|0\.\d)/;
+
+  it.each([true, false])('sets no line below text-xs with singleColumn %s', (singleColumn) => {
+    const { container } = render(
+      <MemoryRouter>
+        <ConfigContext.Provider value={defaultConfigContext}>
+          <LabMembersList members={[contact]} singleColumn={singleColumn} />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
+    const undersized = Array.from(container.querySelectorAll('*'))
+      .map((element) => element.className)
+      .filter(
+        (className) => typeof className === 'string' && UNDERSIZED_TEXT_CLASS.test(className),
+      );
+    expect(undersized).toEqual([]);
+  });
+});

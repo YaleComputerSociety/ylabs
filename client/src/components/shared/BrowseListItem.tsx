@@ -151,7 +151,7 @@ const BrowseListItem = React.memo(
           <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
             <div className="flex items-center gap-1">
               <span
-                className={`text-[10px] font-medium px-1.5 py-0.5 rounded-card ${statusBadge.className}`}
+                className={`text-xs font-medium px-1.5 py-0.5 rounded-card ${statusBadge.className}`}
               >
                 {statusBadge.label}
               </span>

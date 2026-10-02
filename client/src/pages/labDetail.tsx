@@ -722,17 +722,17 @@ const SourcesSection = ({
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-ink">{source.label}</p>
                     {isSameActionDestination(source.url, primaryProfileUrl) && (
-                      <span className="inline-flex items-center rounded-card border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-ink-soft">
+                      <span className="inline-flex items-center rounded-card border border-line-brand bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-ink-soft">
                         opened above
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
-                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-xs font-medium text-muted">
                         may be unavailable
                       </span>
                     )}
                     {source.isPrivateNetworkOnly && (
-                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-xs font-medium text-muted">
                         on-campus network only
                       </span>
                     )}
