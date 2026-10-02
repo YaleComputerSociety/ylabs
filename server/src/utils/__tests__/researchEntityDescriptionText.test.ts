@@ -269,6 +269,73 @@ describe('sanitizeFacultyResearchEntityText institution names', () => {
   });
 });
 
+describe("sanitizeFacultyResearchEntityText rewrites only the row's own laboratory (#4432)", () => {
+  const facultyResearch = {
+    name: 'Ada Fixture Faculty Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+
+  it('fixes the two measured garbles: a laboratory study and a laboratory research heading', () => {
+    for (const copy of [
+      'She conducts both Phase 1 human laboratory studies and outpatient clinical trials.',
+      'Laboratory research: mechanism of treatment resistance in prostate cancer.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("leaves laboratory as a modifier, a field name, or somebody else's group alone", () => {
+    for (const copy of [
+      'He completed his Ph.D. in the laboratory of Rowan Example.',
+      "Her work in Dr. Example's laboratory led to the discovery of a new pathway.",
+      'She is Professor of Laboratory Medicine.',
+      'Our laboratory research focuses on kidney tissue engineering.',
+      'Her laboratory work is mentored by a senior colleague.',
+      'She studies laboratory animal welfare.',
+      'Experiments are conducted in both field and laboratory.',
+      'The function of this clinical laboratory is to provide rapid hormone analysis.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("leaves a named lab that is not the row's own alone", () => {
+    for (const copy of [
+      'He works in manifold learning with the Example Lab at Yale.',
+      'She is an alum of the Yale Landscape Lab.',
+      'He leads the Yale Omics & Longevity Lab, which develops biomarkers.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("still rewrites the row's own laboratory and named lab", () => {
+    const cases: Array<[string, string]> = [
+      ['Our laboratory studies neutrinos.', 'Our research program studies neutrinos.'],
+      [
+        'The laboratory investigates how cells divide. In 2010 the Fixture Laboratory developed a new assay.',
+        'The research program investigates how cells divide. In 2010 the Fixture research program developed a new assay.',
+      ],
+      [
+        "Fixture's laboratory has developed new assays.",
+        "Fixture's research program has developed new assays.",
+      ],
+      [
+        'Her NIH R01-funded laboratory is focused on cell division.',
+        'Her NIH R01-funded research program is focused on cell division.',
+      ],
+      [
+        'In 2012 the Fixture Lab will also initiate partnerships.',
+        'In 2012 the Fixture research group will also initiate partnerships.',
+      ],
+    ];
+    for (const [copy, expected] of cases) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(expected);
+    }
+  });
+});
+
 describe('sanitizeFacultyResearchEntityText', () => {
   it('rephrases lab-only copy for faculty research entities only', () => {
     const facultyResearch = {

@@ -2495,7 +2495,7 @@ export function stripSelfReferencePlaceholderNoun(value: string): string {
 
 /**
  * The relabels below exist to stop a person-scoped row claiming it is a laboratory, so they
- * rewrite `Laboratory` and `<Name> Lab` unconditionally. A research institution whose own
+ * rewrite the row's own `Laboratory` and `<Name> Lab`. A research institution whose own
  * legal name ends in "Laboratory" is not that claim, and rewriting it states something
  * false about a third party: a served row read "he joined the Los Alamos National research
  * program", and another placed an accelerator "at Brookhaven National research program".
@@ -2535,14 +2535,74 @@ export function sanitizeFacultyResearchEntityText(
   if (!isFacultyResearchTextEntity(entity)) return value;
   const baseName = facultyResearchLabelBase(entity || {});
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
+  const ownNameTokens = new Set(normalizePersonNameTokens(baseName).map(withoutPossessiveSuffix));
 
   return withInstitutionNamesProtected(value, (masked) =>
-    relabelFacultyResearchText(masked, possessive),
+    relabelFacultyResearchText(masked, possessive, ownNameTokens),
   );
 }
 
-function relabelFacultyResearchText(value: string, possessive: string): string {
-  const relabelled = value
+const withoutPossessiveSuffix = (token: string): string => token.replace(/'s?$/, '');
+
+function namesThisRow(nameWord: string, ownNameTokens: ReadonlySet<string>): boolean {
+  const lastToken = normalizePersonNameTokens(nameWord).map(withoutPossessiveSuffix).pop();
+  return Boolean(lastToken && lastToken.length > 1 && ownNameTokens.has(lastToken));
+}
+
+/**
+ * Nouns `laboratory` modifies rather than heads. "Our laboratory research focuses on" is
+ * about research, so rewriting it served "Our research program research focuses on" (#4432).
+ */
+const LABORATORY_AS_MODIFIER_NOUN =
+  '(?:research|work|experiments?|experimentation|techniques?|testing|findings|animals?|medicine|methods?|models|investigations?|data|results|science|skills|settings?|training|procedures|protocols|measures|values|analyses|assays|diagnosis|diagnostics|services|equipment|space|based)';
+
+const LABORATORY_SELF_ADJECTIVE = String.raw`(?:[A-Z][A-Z0-9]+|[\p{L}\d]+-[\p{L}\d-]+|independent|own|new|current)`;
+
+const LABORATORY_HEAD = String.raw`((?:${LABORATORY_SELF_ADJECTIVE}\s+){0,2})[Ll]aboratory\b(?!\s+(?:of|for)\b)(?![\s-]+${LABORATORY_AS_MODIFIER_NOUN}\b)`;
+
+const SELF_DETERMINER_LABORATORY = new RegExp(
+  String.raw`\b([Tt]he|[Tt]his|[Oo]ur|[Mm]y|[Hh]is|[Hh]er|[Tt]heir|[Yy]our)(\s+)${LABORATORY_HEAD}`,
+  'gu',
+);
+
+const NAMED_LABORATORY = new RegExp(String.raw`\b([A-Z][\p{L}.'’-]*)(\s+)${LABORATORY_HEAD}`, 'gu');
+
+/**
+ * Only the row's own laboratory is rewritten. The word is also a modifier ("human
+ * laboratory studies", "laboratory animal medicine"), a heading ("Laboratory research:")
+ * and somebody else's group ("the laboratory of" a mentor), and rewriting those served
+ * prose that no longer meant anything (#4432). A named laboratory counts as the row's own
+ * only when the name is one of the row's own name tokens.
+ */
+function relabelOwnLaboratory(value: string, ownNameTokens: ReadonlySet<string>): string {
+  return value
+    .replace(
+      NAMED_LABORATORY,
+      (match: string, nameWord: string, spacing: string, adjectives: string) =>
+        namesThisRow(nameWord, ownNameTokens)
+          ? `${nameWord}${spacing}${adjectives}research program`
+          : match,
+    )
+    .replace(SELF_DETERMINER_LABORATORY, '$1$2$3research program');
+}
+
+/**
+ * A `<Name> Lab` that is not the row's own is a third party's lab or a named unit ("the
+ * Yale Landscape Lab", a podcast, another faculty member's group), and calling it a
+ * research group renames somebody else (#4432).
+ */
+function relabelOwnNamedLab(value: string, ownNameTokens: ReadonlySet<string>): string {
+  return value.replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, (match: string, name: string) =>
+    namesThisRow(name, ownNameTokens) ? `${name} research group` : match,
+  );
+}
+
+function relabelFacultyResearchText(
+  value: string,
+  possessive: string,
+  ownNameTokens: ReadonlySet<string>,
+): string {
+  const beforeOwnLabs = value
     .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
@@ -2613,10 +2673,12 @@ function relabelFacultyResearchText(value: string, possessive: string): string {
       'These research $1 $2',
     )
     .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
-    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
-    .replace(/\bLaboratory\b/g, 'research program')
-    .replace(/\blaboratory\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
+    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work');
+  const withOwnLabsRelabelled = relabelOwnNamedLab(
+    relabelOwnLaboratory(beforeOwnLabs, ownNameTokens),
+    ownNameTokens,
+  );
+  const relabelled = withOwnLabsRelabelled
     .replace(/\blab site\b/gi, 'research website')
     .replace(/\blab website\b/gi, 'research website')
     // A lab named inside a prepositional phrase is a place or a body of people,
