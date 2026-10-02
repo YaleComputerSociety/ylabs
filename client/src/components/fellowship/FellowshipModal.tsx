@@ -285,7 +285,7 @@ const FellowshipModal = ({
                   ref={titleRef}
                   id="program-detail-title"
                   tabIndex={-1}
-                  className="text-xl font-semibold text-ink leading-tight focus:outline-none"
+                  className="text-xl font-semibold text-ink leading-tight focus:outline-hidden"
                 >
                   {fellowship.title}
                 </h2>

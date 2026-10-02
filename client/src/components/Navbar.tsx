@@ -237,7 +237,7 @@ export default function Navbar() {
                             component={Link}
                             to={link.to}
                             disableRipple
-                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
+                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] hover:!text-[var(--yr-blue)]'}`}
                             sx={{
                               borderRadius: '6px 6px 0 0',
                               transition:
@@ -308,7 +308,7 @@ export default function Navbar() {
                             component={Link}
                             to={link.to}
                             disableRipple
-                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
+                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] hover:!text-[var(--yr-blue)]'}`}
                             sx={{
                               borderRadius: '6px 6px 0 0',
                               transition:

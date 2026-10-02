@@ -124,7 +124,7 @@ const LabMemberCard = ({
           />
         ) : (
           <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-line-brand font-semibold text-brand`}
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
           >
             {initials || fullName.charAt(0).toUpperCase() || '?'}
           </div>

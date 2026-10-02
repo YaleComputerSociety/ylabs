@@ -689,7 +689,7 @@ const Analytics = () => {
           <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
             <div className="max-w-3xl">
               <p className="yr-kicker">Primary dashboard question</p>
-              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-ink sm:text-4xl">
+              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-ink sm:text-4xl sm:leading-10">
                 Research Discovery Health
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">

@@ -185,7 +185,7 @@ export default function AdminCorrectionReports() {
               ref={reviewTitleRef}
               id="report-review-title"
               tabIndex={-1}
-              className="text-lg font-semibold focus:outline-none"
+              className="text-lg font-semibold focus:outline-hidden"
             >
               {selected.entitySnapshot.name || selected.entitySlug}
             </h2>

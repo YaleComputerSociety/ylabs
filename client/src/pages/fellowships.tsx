@@ -772,7 +772,7 @@ const Fellowships = () => {
           <div className="grid grid-cols-1 gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
               <p className="yr-kicker">Program planning</p>
-              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
+              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-ink sm:text-5xl sm:leading-none">
                 Programs & Fellowships
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">

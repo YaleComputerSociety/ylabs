@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..');
 
-const GENERIC_SHADOW = /\bshadow-(?:sm|md|lg|xl|2xl)\b/;
+const GENERIC_SHADOW = /\bshadow-(?:2xs|xs|sm|md|lg|xl|2xl)\b/;
 const ELEVATION_TOKEN = /--yr-shadow-(?:raised|lifted|overlay|modal)\b/g;
 
 const sourceFiles = (dir: string): string[] =>

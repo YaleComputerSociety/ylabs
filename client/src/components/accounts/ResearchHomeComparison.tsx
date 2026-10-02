@@ -392,7 +392,7 @@ const ResearchHomeComparison = ({
               ref={titleRef}
               id="compare-research-homes-title"
               tabIndex={-1}
-              className="text-lg font-semibold leading-tight text-ink focus:outline-none"
+              className="text-lg font-semibold leading-tight text-ink focus:outline-hidden"
             >
               Compare saved research
             </h2>

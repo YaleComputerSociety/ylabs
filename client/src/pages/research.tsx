@@ -1668,12 +1668,12 @@ const Research = () => {
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl xl:text-3xl">
+            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base xl:hidden"
+              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base sm:leading-6 xl:hidden"
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and how to get involved when the source evidence is
@@ -1766,11 +1766,11 @@ const Research = () => {
             )}
             <div
               aria-hidden={isAuthLoading || undefined}
-              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}${isAuthLoading || isAuthenticated ? ' xl:hidden' : ''}`}
+              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
             >
               <p
                 aria-hidden={isAuthenticated || undefined}
-                className={`[grid-area:1/1]${isAuthenticated ? ' invisible' : ''}`}
+                className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
               >
                 You&apos;re browsing as a guest.{' '}
                 <Link
@@ -1785,7 +1785,7 @@ const Research = () => {
               </p>
               <p
                 aria-hidden={!isAuthenticated || undefined}
-                className={`[grid-area:1/1]${isAuthenticated ? '' : ' invisible'}`}
+                className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
               >
                 You&apos;re signed in. Research you save is on{' '}
                 <Link
