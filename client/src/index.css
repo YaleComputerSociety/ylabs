@@ -408,8 +408,12 @@ code {
     border-radius: var(--yr-radius-control);
   }
 
-  .yr-focus-ring {
-    outline: none;
+  /* The ring colour is set at rest because Tailwind 4's transition-colors
+     animates outline-color: only the discrete outline-style may change on focus,
+     or the ring fades in from the text colour. */
+  .yr-focus-ring,
+  .yr-focus-ring-peer {
+    outline: 2px none color-mix(in srgb, var(--yr-blue) 72%, white);
   }
 
   .yr-focus-ring:focus-visible {
@@ -443,7 +447,7 @@ code {
   }
 
   .yr-focus-ring-inset {
-    outline: none;
+    outline: 2px none color-mix(in srgb, var(--yr-blue) 72%, white);
   }
 
   /* Drawn inside the border box via a negative offset, for a control whose
