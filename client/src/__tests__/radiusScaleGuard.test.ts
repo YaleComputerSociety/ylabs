@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..');
 
-const GENERIC_RADIUS = /\brounded-(?:sm|md|lg|xl|2xl)\b/;
+const GENERIC_RADIUS =
+  /\brounded-(?:(?:[trbl]|tl|tr|bl|br|[se]|ss|se|es|ee)-)?(?:sm|md|lg|xl|2xl)\b/;
 
 /**
  * Bare `rounded` is 0.25rem and reads as "no radius chosen", which is how 11

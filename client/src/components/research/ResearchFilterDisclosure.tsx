@@ -383,7 +383,7 @@ const ResearchFilterDisclosure = ({
               data-testid="research-filter-backdrop"
               aria-hidden="true"
               onMouseDown={() => closeFilters()}
-              className="fixed inset-0 z-40 bg-[var(--yr-navy)]/30 sm:hidden"
+              className="fixed inset-0 z-40 bg-scrim sm:hidden"
             />
             <div
               id={panelId}
@@ -406,7 +406,7 @@ const ResearchFilterDisclosure = ({
                   first.focus();
                 }
               }}
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay"
             >
               <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--yr-line)] px-4 py-3">
                 <div className="min-w-0">

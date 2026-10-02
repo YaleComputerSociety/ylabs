@@ -341,7 +341,7 @@ const ResearchHomeComparison = ({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16"
+      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-y-auto bg-scrim p-4 pt-16"
       onClick={onClose}
     >
       <div

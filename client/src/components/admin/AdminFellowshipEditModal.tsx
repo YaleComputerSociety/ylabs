@@ -217,7 +217,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center z-[1200] overflow-y-auto py-8"
+      className="fixed inset-0 bg-scrim flex items-start justify-center z-[1200] overflow-y-auto py-8"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -466,7 +466,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-between gap-3 px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-lg">
+        <div className="flex flex-wrap justify-between gap-3 px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-overlay">
           <button
             onClick={() => void handleDelete()}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors yr-focus-ring"

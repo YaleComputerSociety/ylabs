@@ -237,7 +237,7 @@ const FellowshipModal = ({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
+      className="fixed inset-0 bg-scrim z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
       onClick={onClose}
     >
       <div
@@ -442,7 +442,7 @@ const FellowshipModal = ({
                         <p className="text-xs text-brand">{applicationStatus.detail}</p>
                       </div>
                       {cycleStatus.category === 'nextCycle' && (
-                        <div className="rounded-card bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
+                        <div className="rounded-card bg-panel border border-sky-100 px-2.5 py-2">
                           <p className="text-xs font-medium text-sky-800">
                             Past cycle, useful for next-cycle planning.
                           </p>
@@ -644,7 +644,7 @@ const FellowshipModal = ({
                 {fellowship.bestNextStep && (
                   <section>
                     <h3 className={sectionHeadingClass}>What To Do Next</h3>
-                    <p className="rounded-card border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
+                    <p className="rounded-card border border-line-brand bg-brand-soft p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -670,7 +670,7 @@ const FellowshipModal = ({
                   (fellowship.applicationInformation || applicationMaterials.length > 0) && (
                     <section>
                       <h3 className={sectionHeadingClass}>Application Process</h3>
-                      <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft/50 p-4">
+                      <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft p-4">
                         {applicationMaterials.length > 0 && (
                           <div>
                             <p className="mb-2 text-xs font-semibold text-brand-navy">
