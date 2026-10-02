@@ -115,7 +115,7 @@ export const createInitialFellowshipSearchState = (
   sortOrder: -1,
   sortDirection: 'desc',
   fellowships: [],
-  isLoading: false,
+  isLoading: true,
   loadError: false,
   searchExhausted: false,
   total: 0,

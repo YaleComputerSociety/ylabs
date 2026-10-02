@@ -111,6 +111,33 @@ describe('FellowshipSearchContextProvider program routes', () => {
     });
   });
 
+  it('reports loading while the filter options are still pending, before any search is sent', async () => {
+    let resolveFilters: (value: unknown) => void = () => {};
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') {
+        return new Promise((resolve) => {
+          resolveFilters = resolve;
+        });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters');
+    });
+    expect(screen.getByTestId('is-loading').textContent).toBe('true');
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(expect.stringContaining('/programs/search'));
+
+    await act(async () => {
+      resolveFilters({ data: {} });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('is-loading').textContent).toBe('false');
+    });
+  });
+
   it('loads the full result set into context on first paint so an apply-now program on a later page is not gated behind pagination', async () => {
     const total = 133;
     const pageSize = 100;

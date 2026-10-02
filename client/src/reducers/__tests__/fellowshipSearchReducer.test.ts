@@ -70,6 +70,10 @@ describe('fellowshipSearchReducer', () => {
     expect(state.filterOptions.yearOfStudy).toEqual([]);
   });
 
+  it('initial state is loading until the first search settles', () => {
+    expect(createInitialFellowshipSearchState().isLoading).toBe(true);
+  });
+
   it('SET_QUERY_STRING updates the query', () => {
     const state = createInitialFellowshipSearchState();
     const next = fellowshipSearchReducer(state, {
