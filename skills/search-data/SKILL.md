@@ -313,7 +313,6 @@ Declining the semantic leg on failure brings those searches to 0.2 s to 1.0 s ag
 Their hits, totals and facets were identical to the same eight queries served with no embedder configured, so the answer during an outage is exactly the keyword answer.
 
 `EMBEDDING_REQUEST_TIMEOUT_MS` is 2 s, down from 10 s: 30 real calls measured 175 ms at p50, 455 ms at p90 and 1.1 s at worst, and a stalled upstream costs every search that is waiting on it the whole bound.
-A hybrid query Meilisearch still cannot embed, which can only happen when no key is configured and Meilisearch's own embedder fails, answers `vector_embedding_error`; `searchWithFallbacks` treats it like a missing embedder and retries the keyword leg once.
 
 ### The query embedding is a budgeted call, not a free one (`researchSearchQueryEmbeddingBudget.ts`)
 

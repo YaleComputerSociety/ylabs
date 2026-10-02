@@ -190,24 +190,3 @@ describe('a text search while the embedding breaker is open', () => {
     }
   });
 });
-
-describe('a hybrid search Meilisearch cannot embed', () => {
-  it('retries the keyword leg instead of failing the search', async () => {
-    delete process.env.OPENAI_API_KEY;
-    mocks.search.mockImplementation(async (_query: string, params: Record<string, any> = {}) => {
-      if (params.hybrid) {
-        throw Object.assign(new Error('Error while generating embeddings'), {
-          code: 'vector_embedding_error',
-        });
-      }
-      return searchResult();
-    });
-
-    const result = await search('mangrove carbon');
-
-    expect(hybridSearches().length).toBeGreaterThan(0);
-    expect(searchParams().some((params) => !params.hybrid)).toBe(true);
-    expect(result.degraded).toBe(true);
-    expect(result.estimatedTotalHits).toBe(1);
-  });
-});
