@@ -946,6 +946,7 @@ A time stated in another zone is not read, so the date falls back to that whole-
 Pages never state seconds, so a deadline ending in `:59.999` is how a reader knows no time was stated; there is no separate flag to drift from the value.
 That rule also reads the end of a UTC day, which every lane stored before #4215, as date-only, and `programDeadlineClosesAt` (`utils/programDeadlineInstant.ts`) closes such a deadline at the end of its New York day, so the served deadline and the "deadline passed" status agree before a re-scrape rewrites it.
 The client mirrors both rules in `client/src/utils/programDates.ts` and shows a time, with an `ET` label, only when one was stated.
+Both admin fellowship editors write through the same rules: they edit a New York date with an optional New York time (`client/src/utils/programDateDraft.ts`, #4228), and a date the admin did not change is saved as stored rather than re-serialized.
 
 A fellowship lane observes facts only and never emits a `classifyProgram` field (`programKind`, `programCategory`, `entryMode`, `studentFacingCategory`, `bestNextStep`, and the rest).
 The projection derives them from the resolved facts on every resolve (`scrapers/fellowshipClassificationDerivation.ts`, #3904), so a classifier fix reaches stored rows on the next materialize, and a test asserts the derived label through `classificationFromObservedFacts` rather than reading it off a lane's observations.
