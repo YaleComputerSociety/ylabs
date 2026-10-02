@@ -31,6 +31,8 @@ import {
   profileGridLeadershipExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
+  yqiMemberReferenceCardExtractor,
+  directoryListingLeadershipExtractor,
   naturalCarbonCaptureExtractor,
   customCardLabsExtractor,
   contentSpotlightFacultyExtractor,
@@ -532,6 +534,64 @@ const MSI_FIXTURE = readFileSync(
   join(__dirname, 'fixtures', 'microbialSciencesFaculty.html'),
   'utf8',
 );
+
+const referenceCard = (name: string, href: string, title: string, categories: string[]) => `
+  <div class="reference-card">
+    <ul class="taxonomy-list taxonomy-list--categories">
+      ${categories.map((category) => `<li class="taxonomy-list__item">${category}</li>`).join('')}
+    </ul>
+    <h2 class="reference-card__heading"><a class="reference-card__heading-link" href="${href}">${name}</a></h2>
+    <div class="reference-card__subheading">${title}</div>
+  </div>`;
+
+const directoryCard = (name: string, href: string, title: string) => `
+  <li class="directory-listing-card">
+    <h3 class="directory-listing-card__heading"><a class="directory-listing-card__heading-link" href="${href}">${name}</a></h3>
+    <div class="directory-listing-card__subheading"><div>${title}</div></div>
+  </li>`;
+
+describe('yqiMemberReferenceCardExtractor (#3787)', () => {
+  const html = `<main>
+    ${referenceCard('Avery Example', 'https://shared-lab.example.yale.edu/', 'Professor of Physics', ['Faculty', 'YQI Member'])}
+    ${referenceCard('Blake Example', 'https://shared-lab.example.yale.edu/', 'Research Scientist in Applied Physics', ['Staff', 'YQI Member'])}
+    ${referenceCard('Casey Example', 'https://admin.example.yale.edu/', 'Institute Managing Director', ['Executive Board', 'Staff'])}
+    ${referenceCard('Devon Example', '/profile/devon-example', 'Events Coordinator', ['Staff'])}
+  </main>`;
+  const members = yqiMemberReferenceCardExtractor(html, {
+    pageUrl: 'https://quantuminstitute.yale.edu/our-mission/our-members',
+  }).members;
+
+  it('reads only cards tagged as institute members, so staff never become leads', () => {
+    expect(members.map((member) => member.name)).toEqual(['Avery Example', 'Blake Example']);
+    expect(members.every((member) => member.role === 'core-faculty')).toBe(true);
+  });
+
+  it('keeps two members who link the same lab site', () => {
+    expect(members.map((member) => member.profileUrl)).toEqual([
+      'https://shared-lab.example.yale.edu/',
+      'https://shared-lab.example.yale.edu/',
+    ]);
+  });
+});
+
+describe('directoryListingLeadershipExtractor (#3787)', () => {
+  it('reads the directors of a leadership-and-staff page and drops deputy and admin staff', () => {
+    const html = `<ul>
+      ${directoryCard('Avery Example', '/profile/avery-example', 'Deputy Director')}
+      ${directoryCard('Blake Example', '/profile/blake-example', 'Operations Manager')}
+      ${directoryCard('Casey Example', '/profile/casey-example', 'Director')}
+      ${directoryCard('Devon Example', '/profile/devon-example', 'Senior Administrative Assistant')}
+    </ul>`;
+
+    const members = directoryListingLeadershipExtractor(html, {
+      pageUrl: 'https://whc.yale.edu/leadership-and-staff',
+    }).members;
+
+    expect(members.map((member) => [member.name, member.role])).toEqual([
+      ['Casey Example', 'director'],
+    ]);
+  });
+});
 
 describe('directoryListingCardExtractor', () => {
   it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
