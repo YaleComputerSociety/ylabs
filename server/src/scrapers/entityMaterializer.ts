@@ -510,6 +510,7 @@ function resolvedShortDescriptionCandidateIsUsable(
   isProgramLike: boolean,
 ): boolean {
   if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  if (!sanitizeResearchEntityShortDescription(candidate)) return false;
   if (isUngroundedSynthesizedCard({ card: candidate, body: fullDescription })) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
@@ -529,6 +530,7 @@ export async function resolveMaterializedShortDescription(
     !!current && current.toLowerCase() === researchAreasCardSummary.toLowerCase();
   const currentClearsCardBar =
     !isBareResearchAreasFallback &&
+    Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
   if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
   const grounded = await resolveGroundedCardDescription({
@@ -536,6 +538,7 @@ export async function resolveMaterializedShortDescription(
     researchAreas: input.researchAreas,
     isProgramLike: input.isProgramLike,
     synthesize: input.synthesize,
+    refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
   });
   if (
     !grounded ||
@@ -5963,7 +5966,8 @@ function adoptServableFullDescription(input: {
  * line, so a higher-confidence verbatim "we study ..." card outranked a servable card
  * from another lane and the row served no card at all. When the projected card would
  * serve blank, the next ranked candidate that would serve is adopted; when none would,
- * the stored card is left alone for the dedicated card re-derivation below.
+ * the stored card is left for the dedicated card re-derivation below, which treats a
+ * card the serve sanitizer blanks as not clearing the card bar and synthesizes one.
  */
 function adoptServableShortDescription(input: {
   now: Date;

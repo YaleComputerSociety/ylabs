@@ -1092,11 +1092,8 @@ function bodyForBiography(raw: string, context: { entityType?: string; kind?: st
 // above all, and an emitted card that serves blank also stops `withSynthesizedCard` from
 // writing one that would serve (#4392).
 export function isServableCardLine(card: string, fullDescription: string): boolean {
-  return (
-    Boolean(card) &&
-    shortDescriptionQuality(card, fullDescription).isUseful &&
-    Boolean(sanitizeResearchEntityShortDescription(card))
-  );
+  const served = card ? sanitizeResearchEntityShortDescription(card) : '';
+  return Boolean(served) && shortDescriptionQuality(served, fullDescription).isUseful;
 }
 
 function usefulShortDescription(value: unknown, fullDescription: string): string {

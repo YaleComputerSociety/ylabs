@@ -99,12 +99,41 @@ describe('a card the serve sanitizer blanks yields to a ranked card that serves 
     expect(second.set.shortDescription ?? SERVABLE_CARD).toBe(SERVABLE_CARD);
   });
 
-  it('leaves the stored card alone when no ranked card would serve', async () => {
+  it('synthesizes a grounded card when no ranked card would serve', async () => {
     const result = await projectFromLog(
       'researchEntity',
-      input([card(FIRST_PERSON_CARD, 'synthetic-index-source', 0.92)]),
+      input([card(FIRST_PERSON_CARD, 'synthetic-index-source', 0.92)], {
+        synthesizeCardDescription: async () => SERVABLE_CARD,
+      }),
     );
-    expect(result.set.shortDescription ?? FIRST_PERSON_CARD).toBe(FIRST_PERSON_CARD);
+    expect(result.set.shortDescription).toBe(SERVABLE_CARD);
+  });
+
+  it('keeps a stored servable card over a winner the serve sanitizer blanks', async () => {
+    let synthesisCalls = 0;
+    const result = await projectFromLog(
+      'researchEntity',
+      input([card(FIRST_PERSON_CARD, 'synthetic-index-source', 0.92)], {
+        entityDoc: { ...entityDoc, shortDescription: SERVABLE_CARD },
+        synthesizeCardDescription: async () => {
+          synthesisCalls++;
+          return '';
+        },
+      }),
+    );
+    expect(result.set.shortDescription ?? SERVABLE_CARD).toBe(SERVABLE_CARD);
+    expect(synthesisCalls).toBe(0);
+  });
+
+  it('never stores a card the serve sanitizer blanks', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      input([card(FIRST_PERSON_CARD, 'synthetic-index-source', 0.92)], {
+        entityDoc: { ...entityDoc, shortDescription: '' },
+        synthesizeCardDescription: async () => FIRST_PERSON_CARD,
+      }),
+    );
+    expect(result.set.shortDescription ?? '').not.toBe(FIRST_PERSON_CARD);
   });
 
   it('never touches a manually locked card', async () => {
