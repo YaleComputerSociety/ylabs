@@ -1520,6 +1520,35 @@ describe('departmentUndergradResearchScraper', () => {
       ]);
     });
 
+    it('keeps a route one spelling states when another spelling of the same department states none', async () => {
+      vi.mocked(resolveOrgUnitSlugForDepartmentName).mockImplementation(async (name) =>
+        name === 'Synthetic Studies' || name === 'Synthetic Studies Program'
+          ? 'synthetic-studies'
+          : null,
+      );
+      const scraper = new DepartmentUndergradResearchScraper({
+        pageConfigs: [
+          pageConfig('synthetic-research', FIRST),
+          { ...pageConfig('synthetic-essay', SECOND), department: 'Synthetic Studies Program' },
+        ],
+        fetchHtml: async (url) => {
+          if (url === FIRST) return ROUTE_PAGE;
+          if (url === SECOND) return DEADLINE_PAGE;
+          return '';
+        },
+      });
+      const emitted: ObservationInput[] = [];
+      await scraper.run(buildContext(scraper, emitted));
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: expect.objectContaining({ evidenceQuote: expect.stringContaining('ABCD 4491') }),
+          sourceUrl: FIRST,
+        }),
+      ]);
+    });
+
     it('withdraws nothing when a page for the department could not be read', async () => {
       const { emitted } = await runOver(async (url) => {
         if (url === FIRST) throw new Error('Request failed with status code 503');

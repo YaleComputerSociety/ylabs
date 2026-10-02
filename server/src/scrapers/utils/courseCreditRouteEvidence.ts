@@ -54,7 +54,7 @@ const NOT_A_ROUTE_STATEMENT_PATTERNS: readonly RegExp[] = [
   /\bif (?:you|a student|students|they) (?:do(?:es)? not|don't|fail|miss)\b|\bmust (?:then )?drop\b|\bwill not be (?:able|permitted|allowed)\b/i,
   /\b(?:receive|earn|get|obtain|achieve|maintain)s? (?:an?|a grade of|a minimum grade of) ["“]?[A-D][+-]?(?![A-Za-z])/,
   /\bgrades? of\b|\bminimum grade\b|\bwith distinction\b|\bgrade point average\b|\bGPA\b/i,
-  /\b(?:not|cannot|can't|never)\s+(?:be\s+)?(?:receive|get|earn|granted|eligible)\b|\bcredit is not\b/i,
+  /\b(?:not|cannot|can't|never)\s+(?:be\s+)?(?:receive|get|earn|granted|eligible|award(?:ed)?)\b|\bcredit is not\b/i,
   /\bAP credits?\b|\badvanced placement\b|\btransfer(?:red|ring)? credits?\b|\bstudy abroad\b/i,
   /\bpetition\b|\bmore than (?:one|two|three|four|five|\d+)\b/i,
 ];

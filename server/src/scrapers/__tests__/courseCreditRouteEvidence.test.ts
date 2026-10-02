@@ -152,6 +152,17 @@ describe('a sentence that names the route but does not state how to take it (#40
     ).toBeNull();
   });
 
+  it('refuses a sentence that says the university does not award credit', () => {
+    const refusal =
+      'Yale does not award academic credit for research done at other institutions, even if done in the context of a course.';
+    const reading = readCourseCreditRouteFromHtml(
+      page(`<p>${refusal}</p><p>${ROUTE}</p>`, 'Senior Essay'),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading).toEqual({ evidenceQuote: ROUTE, supportingQuoteCount: 1 });
+  });
+
   it('refuses a page-length rule that names the route and its course', () => {
     expect(
       readCourseCreditRouteFromHtml(

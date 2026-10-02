@@ -876,35 +876,51 @@ export class DepartmentUndergradResearchScraper implements IScraper {
   }
 
   /**
-   * A withdrawal is emitted only when every page configured for the department
-   * was read on this run, so a fetch failure or an `--only` filter never
+   * A withdrawal is emitted only when every page configured for the department's
+   * OrgUnit, under any spelling of its name, was read on this run, so a fetch failure or an `--only` filter never
    * withdraws a route another page still states (#4045).
    */
   private async emitCourseCreditRoutes(
     ctx: ScraperContext,
     readsByDepartment: Map<string, DepartmentCourseCreditRead[]>,
   ): Promise<{ stated: number; withdrawn: number }> {
-    const configuredUrlsByDepartment = new Map<string, Set<string>>();
-    for (const config of [...this.pageConfigs, ...COURSE_CREDIT_ROUTE_SEED_PAGES]) {
-      const urls = configuredUrlsByDepartment.get(config.department) ?? new Set<string>();
-      urls.add(config.url);
-      configuredUrlsByDepartment.set(config.department, urls);
-    }
-    let stated = 0;
-    let withdrawn = 0;
+    const slugByDepartmentName = new Map<string, string | null>();
+    const resolveSlug = async (departmentName: string): Promise<string | null> => {
+      if (!slugByDepartmentName.has(departmentName)) {
+        slugByDepartmentName.set(
+          departmentName,
+          await resolveOrgUnitSlugForDepartmentName(departmentName),
+        );
+      }
+      return slugByDepartmentName.get(departmentName) ?? null;
+    };
+    const readsByOrgUnit = new Map<string, DepartmentCourseCreditRead[]>();
     for (const [departmentName, reads] of readsByDepartment) {
-      const stating = reads.filter((read) => read.reading !== null);
-      const latestStating = stating[stating.length - 1];
-      const readUrls = new Set(reads.map((read) => read.sourceUrl));
-      const everyPageRead = [...(configuredUrlsByDepartment.get(departmentName) ?? [])].every(
-        (url) => readUrls.has(url),
-      );
-      if (!latestStating && !everyPageRead) continue;
-      const orgUnitSlug = await resolveOrgUnitSlugForDepartmentName(departmentName);
+      const orgUnitSlug = await resolveSlug(departmentName);
       if (!orgUnitSlug) {
         ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
         continue;
       }
+      readsByOrgUnit.set(orgUnitSlug, [...(readsByOrgUnit.get(orgUnitSlug) ?? []), ...reads]);
+    }
+    const configuredUrlsByOrgUnit = new Map<string, Set<string>>();
+    for (const config of [...this.pageConfigs, ...COURSE_CREDIT_ROUTE_SEED_PAGES]) {
+      const orgUnitSlug = await resolveSlug(config.department);
+      if (!orgUnitSlug || !readsByOrgUnit.has(orgUnitSlug)) continue;
+      const urls = configuredUrlsByOrgUnit.get(orgUnitSlug) ?? new Set<string>();
+      urls.add(config.url);
+      configuredUrlsByOrgUnit.set(orgUnitSlug, urls);
+    }
+    let stated = 0;
+    let withdrawn = 0;
+    for (const [orgUnitSlug, reads] of readsByOrgUnit) {
+      const stating = reads.filter((read) => read.reading !== null);
+      const latestStating = stating[stating.length - 1];
+      const readUrls = new Set(reads.map((read) => read.sourceUrl));
+      const everyPageRead = [...(configuredUrlsByOrgUnit.get(orgUnitSlug) ?? [])].every((url) =>
+        readUrls.has(url),
+      );
+      if (!latestStating && !everyPageRead) continue;
       const value: OrgUnitCourseCreditRouteObservationValue = latestStating?.reading
         ? {
             schemaVersion: 1,
