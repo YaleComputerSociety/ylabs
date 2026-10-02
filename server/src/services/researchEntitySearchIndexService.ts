@@ -15,11 +15,12 @@ import {
   researchEntitySortTitleQualifier,
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
-import { getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
+import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
   MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  type MeiliTaskWaitingIndex,
 } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
@@ -132,6 +133,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   pageSize?: number;
   clearExisting?: boolean;
   getIndex?: typeof getMeiliIndex;
+  getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
   /**
@@ -149,6 +151,10 @@ export interface ResearchEntitySearchIndexRebuildResult {
   indexedDocumentCount: number;
   pageCount: number;
   clearedExisting: boolean;
+  swap?: ResearchEntitySearchIndexSwapResult;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
 }
 
 export interface ResearchEntitySearchMemberNameFields {
@@ -742,43 +748,85 @@ async function applyResearchEntitySearchEmbedderSetting(
   }
 }
 
-export async function rebuildResearchEntitySearchIndex(
-  options: ResearchEntitySearchIndexRebuildOptions = {},
-): Promise<ResearchEntitySearchIndexRebuildResult> {
-  // Validated before anything reaches the network or the database, so a bad argument still
-  // fails on the argument rather than on a connection timeout.
-  const pageSize = normalizeRebuildPageSize(options.pageSize);
-  const clearExisting = options.clearExisting ?? false;
-  // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
-  // than inheriting the server's warm. Without it every index document holds the fragments and
-  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
-  // rather than in the per-document builder, which `syncEntity` also calls once per row.
-  await (options.warmVocabulary || warmControlledVocabularyHeadings)();
-  const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-  const fetchPage = options.fetchPage || fetchResearchEntityPage;
-  const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+export const RESEARCH_ENTITY_SEARCH_STAGING_INDEX_SUFFIX = '_next';
 
-  const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
+export const researchEntitySearchStagingIndexUid = (liveIndexUid: string): string =>
+  `${liveIndexUid}${RESEARCH_ENTITY_SEARCH_STAGING_INDEX_SUFFIX}`;
+
+export interface ResearchEntitySearchIndexAdminClient {
+  index: (uid: string) => any;
+  getRawIndex: (uid: string) => Promise<unknown>;
+  createIndex: (uid: string, options?: { primaryKey?: string }) => unknown;
+  swapIndexes: (swaps: Array<{ indexes: [string, string] }>) => unknown;
+  deleteIndex: (uid: string) => unknown;
+  tasks?: MeiliTaskWaitingIndex['tasks'];
+}
+
+interface ResearchEntitySearchIndexSwapResult {
+  liveIndexUid: string;
+  stagingIndexUid: string;
+  createdLiveIndex: boolean;
+  previousIndexDeleted: boolean;
+}
+
+interface ResearchEntitySearchIndexPopulateResult {
+  fetchedDocumentCount: number;
+  indexedDocumentCount: number;
+  pageCount: number;
+}
+
+const isMeiliIndexNotFoundError = (error: unknown): boolean => {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  return candidate?.cause?.code === 'index_not_found' || candidate?.code === 'index_not_found';
+};
+
+async function meiliIndexExists(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<boolean> {
+  try {
+    await client.getRawIndex(uid);
+    return true;
+  } catch (error) {
+    if (isMeiliIndexNotFoundError(error)) return false;
+    throw error;
+  }
+}
+
+async function deleteMeiliIndexAndConfirm(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<void> {
+  await assertMeiliTaskSucceeded(
+    client,
+    await client.deleteIndex(uid),
+    `deleteIndex ${uid}`,
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
+}
+
+async function indexHasStoredEmbedder(index: ResearchEntitySearchIndexLike): Promise<boolean> {
+  const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+  return Boolean(
+    embedders && typeof embedders === 'object' && RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
+  );
+}
+
+async function applyResearchEntitySearchIndexSettings(index: any): Promise<void> {
   await assertMeiliTaskSucceeded(
     index,
-    settingsTask,
+    await index.updateSettings(getResearchEntitySearchIndexSettings()),
     'updateSettings',
     MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   );
-  await applyResearchEntitySearchEmbedderSetting(
-    index,
-    usableOpenAiApiKey(),
-    resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME) !== RESEARCH_ENTITY_SEARCH_INDEX_NAME,
-  );
-  if (clearExisting) {
-    await assertMeiliTaskSucceeded(
-      index,
-      await index.deleteAllDocuments(),
-      'deleteAllDocuments',
-      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
-    );
-  }
+}
 
+async function addEveryResearchEntityDocument(
+  index: any,
+  pageSize: number,
+  fetchPage: (page: number, pageSize: number) => Promise<any[]>,
+  fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+): Promise<ResearchEntitySearchIndexPopulateResult> {
   let page = 1;
   let fetchedDocumentCount = 0;
   let indexedDocumentCount = 0;
@@ -811,12 +859,176 @@ export async function rebuildResearchEntitySearchIndex(
     page += 1;
   }
 
+  return { fetchedDocumentCount, indexedDocumentCount, pageCount };
+}
+
+async function assertStagingIndexHoldsEveryDocument(
+  stagingIndex: any,
+  stagingUid: string,
+  indexedDocumentCount: number,
+): Promise<void> {
+  const stats = await stagingIndex.getStats();
+  const storedDocumentCount = stats?.numberOfDocuments;
+  if (storedDocumentCount !== indexedDocumentCount) {
+    throw new Error(
+      `Refusing to swap: ${stagingUid} holds ${storedDocumentCount} documents but the rebuild indexed ${indexedDocumentCount}.`,
+    );
+  }
+}
+
+async function replaceResearchEntitySearchIndexBySwap(args: {
+  client: ResearchEntitySearchIndexAdminClient;
+  liveUid: string;
+  openAiApiKey: string | null;
+  targetsPrefixedIndex: boolean;
+  populate: (index: any) => Promise<ResearchEntitySearchIndexPopulateResult>;
+}): Promise<
+  ResearchEntitySearchIndexPopulateResult & { swap: ResearchEntitySearchIndexSwapResult }
+> {
+  const { client, liveUid } = args;
+  const stagingUid = researchEntitySearchStagingIndexUid(liveUid);
+  const liveExists = await meiliIndexExists(client, liveUid);
+
+  if (
+    !args.openAiApiKey &&
+    args.targetsPrefixedIndex &&
+    liveExists &&
+    (await indexHasStoredEmbedder(client.index(liveUid)))
+  ) {
+    throw new Error(
+      `Refusing to rebuild ${liveUid}: it has a stored embedder and OPENAI_API_KEY is unset or a placeholder, so the replacement index would serve keyword-only search. Set OPENAI_API_KEY in the rebuilding shell.`,
+    );
+  }
+
+  if (await meiliIndexExists(client, stagingUid)) {
+    console.warn(`Deleting ${stagingUid} left behind by an earlier rebuild that did not finish.`);
+    await deleteMeiliIndexAndConfirm(client, stagingUid);
+  }
+
+  await assertMeiliTaskSucceeded(
+    client,
+    await client.createIndex(stagingUid, { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY }),
+    `createIndex ${stagingUid}`,
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
+
+  let createdLiveIndex = false;
+  let counts: ResearchEntitySearchIndexPopulateResult;
+  try {
+    const stagingIndex = client.index(stagingUid);
+    await applyResearchEntitySearchIndexSettings(stagingIndex);
+    if (args.openAiApiKey) {
+      await assertMeiliTaskSucceeded(
+        stagingIndex,
+        await stagingIndex.updateEmbedders(
+          buildResearchEntitySearchEmbedderConfig(args.openAiApiKey),
+        ),
+        'updateEmbedders',
+        MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+      );
+    }
+    counts = await args.populate(stagingIndex);
+    await assertStagingIndexHoldsEveryDocument(
+      stagingIndex,
+      stagingUid,
+      counts.indexedDocumentCount,
+    );
+    if (!liveExists) {
+      await assertMeiliTaskSucceeded(
+        client,
+        await client.createIndex(liveUid, { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY }),
+        `createIndex ${liveUid}`,
+        MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+      );
+      createdLiveIndex = true;
+    }
+    await assertMeiliTaskSucceeded(
+      client,
+      await client.swapIndexes([{ indexes: [liveUid, stagingUid] }]),
+      `swapIndexes ${liveUid} ${stagingUid}`,
+      MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+    );
+  } catch (error) {
+    await deleteMeiliIndexAndConfirm(client, stagingUid).catch((cleanupError) =>
+      console.warn(
+        `Could not delete the partial ${stagingUid}; the next rebuild deletes it:`,
+        sanitizeLogValue(cleanupError),
+      ),
+    );
+    throw error;
+  }
+  invalidateResearchEntitySearchEmbedderCache();
+
+  let previousIndexDeleted = true;
+  await deleteMeiliIndexAndConfirm(client, stagingUid).catch((error) => {
+    previousIndexDeleted = false;
+    console.warn(
+      `${liveUid} now serves the rebuilt documents, but the previous copy at ${stagingUid} was not deleted; the next rebuild deletes it:`,
+      sanitizeLogValue(error),
+    );
+  });
+
+  return {
+    ...counts,
+    swap: {
+      liveIndexUid: liveUid,
+      stagingIndexUid: stagingUid,
+      createdLiveIndex,
+      previousIndexDeleted,
+    },
+  };
+}
+
+export async function rebuildResearchEntitySearchIndex(
+  options: ResearchEntitySearchIndexRebuildOptions = {},
+): Promise<ResearchEntitySearchIndexRebuildResult> {
+  // Validated before anything reaches the network or the database, so a bad argument still
+  // fails on the argument rather than on a connection timeout.
+  const pageSize = normalizeRebuildPageSize(options.pageSize);
+  const clearExisting = options.clearExisting ?? false;
+  const startedAt = new Date();
+  // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
+  // than inheriting the server's warm. Without it every index document holds the fragments and
+  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
+  // rather than in the per-document builder, which `syncEntity` also calls once per row.
+  await (options.warmVocabulary || warmControlledVocabularyHeadings)();
+  const fetchPage = options.fetchPage || fetchResearchEntityPage;
+  const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+  const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
+  const openAiApiKey = usableOpenAiApiKey();
+  const populate = (index: any) =>
+    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames);
+
+  let outcome: ResearchEntitySearchIndexPopulateResult & {
+    swap?: ResearchEntitySearchIndexSwapResult;
+  };
+  if (clearExisting) {
+    outcome = await replaceResearchEntitySearchIndexBySwap({
+      client: await (options.getClient || getMeiliClient)(),
+      liveUid,
+      openAiApiKey,
+      targetsPrefixedIndex,
+      populate,
+    });
+  } else {
+    const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+    await applyResearchEntitySearchIndexSettings(index);
+    await applyResearchEntitySearchEmbedderSetting(index, openAiApiKey, targetsPrefixedIndex);
+    outcome = await populate(index);
+  }
+
+  const finishedAt = new Date();
   return {
     indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
     pageSize,
-    fetchedDocumentCount,
-    indexedDocumentCount,
-    pageCount,
+    fetchedDocumentCount: outcome.fetchedDocumentCount,
+    indexedDocumentCount: outcome.indexedDocumentCount,
+    pageCount: outcome.pageCount,
     clearedExisting: clearExisting,
+    ...(outcome.swap ? { swap: outcome.swap } : {}),
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
   };
 }

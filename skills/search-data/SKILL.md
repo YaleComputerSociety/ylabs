@@ -103,6 +103,10 @@ A retired index base name must be added there when its surface is removed, or `r
 Development has no index prefix, so `reindex:meili` does not reconcile it, and a retired unprefixed index there is deleted by hand.
 After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to rebuild the prefixed `researchentities` index and delete any retired prefixed indexes.
 Rebuild scripts do full repopulation.
+A replacing rebuild (`--clear`, and every `reindex:meili --confirm`) never deletes documents from the serving index: it builds into a fresh `<index>_next` with the same settings and embedder, confirms its document count, swaps it in with one `swapIndexes` task, and deletes the old copy, so search is never empty or partial during a rebuild (#4151).
+A failure before the swap deletes the partial `_next` and leaves the serving index untouched, the next rebuild deletes a `_next` a lost shell left behind, and `planIndexReconcile` reports it under `staging` so it is never retired or reported as unknown.
+A prefixed index with a stored embedder is refused when the shell has no usable `OPENAI_API_KEY`, because a fresh index cannot inherit the redacted key and would serve keyword-only search.
+The rebuild output records `startedAt`, `finishedAt`, and `durationMs`.
 An index document is built from the whole Mongo row, because the sanitizer reads `fieldProvenance` and other stored fields while it builds, and is then projected to `RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS`: the primary key, `slug`, and every searchable, filterable, and sortable attribute, derived from the settings so the two cannot drift (#3944).
 Provenance, operator bookkeeping, detail-only lists such as `recentGrants` and `sourceLinkHealth`, and retired or unmodelled fields therefore never reach the index, so retiring a stored field needs no index-side denylist entry.
 A field a new index reader, filter, sort, or the embedder `documentTemplate` needs must be added to the settings, or listed in the allowlist, before it is indexed at all; the unit tests in `researchEntitySearchIndexService.test.ts` fail when a template field or a known reader's field falls outside it.
@@ -155,7 +159,7 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
 | `yarn --cwd server research-search:relevance`           | Read-only: measure served search relevance and typo robustness against Development. See "Measuring search quality" below. |
-| `yarn --cwd server reindex:meili`                       | Guarded post-copy rebuild for beta/production; verifies `SCRAPER_ENV`, `MEILISEARCH_HOST`, non-empty `MEILISEARCH_INDEX_PREFIX`, and a matching Mongo database with non-archived documents before clearing; dry-run default, apply requires `--confirm`. |
+| `yarn --cwd server reindex:meili`                       | Guarded post-copy rebuild for beta/production; verifies `SCRAPER_ENV`, `MEILISEARCH_HOST`, non-empty `MEILISEARCH_INDEX_PREFIX`, and a matching Mongo database with non-archived documents before rebuilding into a fresh index and swapping it in; dry-run default, apply requires `--confirm`. |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |

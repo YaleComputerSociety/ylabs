@@ -60,7 +60,7 @@ They come from the Render dashboard for the target service.
 | -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
 | `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
-| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails **after** clearing.                                                                                                    |
+| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged.                                                                                                  |
 | `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
 
 The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
@@ -96,7 +96,11 @@ node scripts/reindex-search-index.mjs beta --apply
 ```
 
 There is a five second pause before it starts, so Ctrl-C is available.
-The index is cleared and rebuilt, and retired indexes are deleted.
+The rebuild builds every document into a fresh `<prefix>_researchentities_next` index with the same settings and embedder, confirms its document count, swaps it with the serving index in one Meilisearch `swapIndexes` task, and then deletes the old copy, so search never serves an empty or partial index (#4151).
+A failure before the swap deletes the partial `_next` index and leaves the serving index as it was; an `_next` index left by a lost shell is deleted by the next rebuild, and the reconcile plan reports it under `staging` rather than as unknown.
+The output records `startedAt`, `finishedAt`, and `durationMs`, and `swap.previousIndexDeleted: false` means only the clean-up failed: the serving index is already the rebuilt one.
+A prefixed index with a stored embedder is refused when the shell has no usable `OPENAI_API_KEY`, because the fresh index would otherwise serve keyword-only search.
+Retired indexes are deleted afterwards.
 Unrecognized prefixed indexes are left in place and reported for manual review rather than deleted.
 
 ### 3. Verify Beta
@@ -157,7 +161,7 @@ The fifth one is the one that bites, because it is checked last.
 The preflight and the index reconcile plan print first, so a production run without it looks like it is working and then refuses at the write.
 The wrapper now reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is preferable to the raw `yarn` invocation.
 
-It also refuses to run when the database reports **zero** non-archived entities, which is the guard against clearing a live index because a Mongo copy had not landed yet.
+It also refuses to run when the database reports **zero** non-archived entities, which is the guard against replacing a live index with an empty one because a Mongo copy had not landed yet.
 
 The rebuild is idempotent and re-runnable.
 Running it twice is safe.
@@ -187,5 +191,5 @@ See #2458 for the full inventory of code paths that read an empty `observations`
 
 Two things this runbook does not yet answer, because they need an owner decision rather than a guess:
 
-- **Does the reindex need a maintenance window?** The index is cleared before it is rebuilt, so there is a window where searches return few or no results. How long depends on document count and page size (`--page-size`, default 250). If that window matters for students, the rebuild should be scheduled rather than run ad hoc, or changed to build into a new index and swap.
-- **Is a partial rebuild possible?** Today it is all-documents: `reindex:meili` clears and rebuilds. If only some rows are stale, a targeted rebuild would be cheaper and would remove the empty-index window, but no such path exists yet.
+- **Does the reindex need a maintenance window?** No. Since #4151 the rebuild builds into a fresh index and swaps it in atomically, so search serves the previous index until the new one is complete. It does need disk headroom for two copies of the index while it runs.
+- **Is a partial rebuild possible?** Today it is all-documents: `reindex:meili` rebuilds every document. If only some rows are stale, a targeted rebuild would be cheaper, but no such path exists yet.
