@@ -140,7 +140,26 @@ describe('sanitizeObservationField', () => {
         'We combine imaging and sequencing to study how cells divide.',
       ]);
       expect(result.rejected).toBe(true);
-      expect(result.reason).toBe('method-chip-sentence-shaped');
+      expect(result.reason).toBe('method-chip-not-a-method');
+    });
+
+    it('drops activity and publication labels from a method list', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Flow cytometry',
+        'teaching',
+        'Peer-Reviewed Publications',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Flow cytometry']);
+    });
+
+    it('rejects a method list that names only activities', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'teaching',
+        'outreach',
+      ]);
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('method-chip-not-a-method');
     });
 
     it('leaves a clean method list untouched', () => {

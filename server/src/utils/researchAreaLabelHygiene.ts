@@ -201,6 +201,110 @@ export const sanitizeResearchAreaLabel = (value: unknown): string => {
   return trimmed;
 };
 
+const NON_METHOD_ACTIVITY_HEADS = [
+  'teaching',
+  'teaches',
+  'lecturing',
+  'lectures',
+  'lecture series',
+  'seminars',
+  'workshops',
+  'presentations',
+  'training',
+  'trainings',
+  'training programs',
+  'consultation',
+  'consultations',
+  'consulting',
+  'mentoring',
+  'mentorship',
+  'outreach',
+  'outreach programs',
+  'education',
+  'courses',
+  'patient care',
+  'clinical care',
+];
+
+const NON_METHOD_ACTIVITY_MODIFIERS = [
+  'annual',
+  'classroom',
+  'clinical',
+  'community',
+  'community based',
+  'didactic',
+  'educational',
+  'graduate',
+  'interactive',
+  'interdisciplinary',
+  'medical',
+  'monthly',
+  'on site',
+  'peer',
+  'peer to peer',
+  'professional',
+  'public',
+  'research',
+  'scientific',
+  'site',
+  'undergraduate',
+  'user',
+  'weekly',
+];
+
+const PUBLICATION_LABEL_MODIFIERS = [
+  'academic',
+  'peer reviewed',
+  'recent',
+  'scholarly',
+  'selected',
+];
+
+const PUBLICATION_LABEL_HEADS = [
+  'abstracts',
+  'articles',
+  'book chapters',
+  'chapters',
+  'commentaries',
+  'commentary',
+  'original research',
+  'publications',
+  'research',
+  'reviews',
+];
+
+const longestFirstAlternation = (phrases: readonly string[]): string =>
+  [...phrases].sort((a, b) => b.length - a.length).join('|');
+
+const ACTIVITY_LABEL = `(?:(?:${longestFirstAlternation(NON_METHOD_ACTIVITY_MODIFIERS)}) )?(?:${longestFirstAlternation(NON_METHOD_ACTIVITY_HEADS)})`;
+const ACTIVITY_LABEL_RE = new RegExp(`^${ACTIVITY_LABEL}(?: and ${ACTIVITY_LABEL})?$`);
+const PUBLICATION_LABEL_RE = new RegExp(
+  `^(?:(?:${longestFirstAlternation(PUBLICATION_LABEL_MODIFIERS)}) (?:${longestFirstAlternation(PUBLICATION_LABEL_HEADS)})` +
+    '|publications|articles|commentaries|reviews' +
+    '|publications? (?:in|of) (?:(?:academic|scholarly|peer reviewed) )?(?:journals|articles))$',
+);
+
+const methodLabelWords = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[\u2010-\u2015-]/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * An activity the person does (teaching, consultation, outreach) or a publication-list
+ * heading names no technique, so it is not a method (#4049). Only the bare head, or the head
+ * after a generic modifier, is refused: a modifier that names a technique keeps the chip, which
+ * is what separates "simulation training", "rater training" and "systematic reviews" from
+ * "clinical training" and "reviews".
+ */
+export const isActivityOrPublicationLabel = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const words = methodLabelWords(value);
+  return ACTIVITY_LABEL_RE.test(words) || PUBLICATION_LABEL_RE.test(words);
+};
+
 /**
  * `methods` renders through the same chip pill as `researchAreas` but shares
  * none of its vocabulary, which is how a page's own prose reached students as a
@@ -214,7 +318,9 @@ export const sanitizeMethodChipLabel = (value: unknown): string => {
   const collapsed = value.replace(/\s+/g, ' ').trim();
   if (!collapsed) return '';
   if (isSentenceShapedChip(collapsed)) return '';
-  return stripChipSentenceStop(collapsed);
+  const trimmed = stripChipSentenceStop(collapsed);
+  if (isActivityOrPublicationLabel(trimmed)) return '';
+  return trimmed;
 };
 
 export const sanitizeResearchAreaLabelList = (values: unknown): string[] => {

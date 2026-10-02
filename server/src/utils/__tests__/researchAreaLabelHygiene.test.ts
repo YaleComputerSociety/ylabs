@@ -344,6 +344,47 @@ describe('sanitizeMethodChipLabel', () => {
     expect(sanitizeMethodChipLabel(undefined)).toBe('');
     expect(sanitizeMethodChipLabel('   ')).toBe('');
   });
+
+  it('refuses an activity the person does, alone or after a generic modifier', () => {
+    for (const label of [
+      'teaching',
+      'Consultation',
+      'workshops',
+      'Outreach Programs',
+      'clinical training',
+      'Peer-to-Peer Teaching',
+      'Lectures and seminars',
+      'Education and Training',
+      'patient care',
+    ]) {
+      expect(sanitizeMethodChipLabel(label)).toBe('');
+    }
+  });
+
+  it('refuses a publication-list heading', () => {
+    for (const label of [
+      'Peer-Reviewed Original Research',
+      'Peer-reviewed publications',
+      'publications',
+      'Publication in Academic Journals',
+      'Scholarly Research',
+    ]) {
+      expect(sanitizeMethodChipLabel(label)).toBe('');
+    }
+  });
+
+  it('keeps a technique that an activity word only qualifies', () => {
+    for (const label of [
+      'simulation training',
+      'rater training',
+      'systematic reviews',
+      'retrospective chart review',
+      'psychiatric consultation',
+      'curriculum development',
+    ]) {
+      expect(sanitizeMethodChipLabel(label)).toBe(label);
+    }
+  });
 });
 
 describe('endsWithChipSentenceStop', () => {

@@ -40,6 +40,17 @@ describe('groundMethods', () => {
     expect(groundMethods(many, `${text} ${many.join(' ')}`, 5)).toHaveLength(5);
   });
 
+  it('refuses grounded activity and publication labels while keeping grounded techniques', () => {
+    const profile =
+      'Her work uses functional MRI and includes teaching and consultation. Selected Publications: Peer-Reviewed Original Research';
+    expect(
+      groundMethods(
+        ['functional MRI', 'teaching', 'consultation', 'Peer-Reviewed Original Research'],
+        profile,
+      ),
+    ).toEqual(['functional MRI']);
+  });
+
   it('returns an empty array for non-array input', () => {
     expect(groundMethods(undefined, text)).toEqual([]);
     expect(groundMethods('flow cytometry', text)).toEqual([]);
