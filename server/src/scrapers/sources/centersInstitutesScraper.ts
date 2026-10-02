@@ -860,19 +860,16 @@ export const yqiMemberReferenceCardExtractor: CenterExtractor = (html, ctx) =>
       .some((item) => $(item).text().trim() === YQI_MEMBER_CATEGORY),
   );
 
-const CENTER_LEAD_ROLES = new Set<MemberRole>(['director', 'co-director']);
-
 /**
- * A leadership-and-staff page lists the center's leads beside administrative
- * staff, and only the leads are center members a student can reach (#3787).
+ * A leadership-and-staff page lists the center's directors beside deputy and
+ * administrative staff, and only the directors are center members a student can
+ * reach (#3787).
  */
 export const directoryListingLeadershipExtractor: CenterExtractor = (html, ctx) => {
   const { members, ...rest } = extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
   return {
     ...rest,
-    members: members.filter(
-      (member) => member.role !== undefined && CENTER_LEAD_ROLES.has(member.role),
-    ),
+    members: members.filter((member) => member.role === 'director'),
   };
 };
 

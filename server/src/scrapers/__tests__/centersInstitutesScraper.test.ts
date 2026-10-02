@@ -575,7 +575,7 @@ describe('yqiMemberReferenceCardExtractor (#3787)', () => {
 });
 
 describe('directoryListingLeadershipExtractor (#3787)', () => {
-  it('reads the leads of a leadership-and-staff page and drops administrative staff', () => {
+  it('reads the directors of a leadership-and-staff page and drops deputy and admin staff', () => {
     const html = `<ul>
       ${directoryCard('Avery Example', '/profile/avery-example', 'Deputy Director')}
       ${directoryCard('Blake Example', '/profile/blake-example', 'Operations Manager')}
@@ -588,7 +588,6 @@ describe('directoryListingLeadershipExtractor (#3787)', () => {
     }).members;
 
     expect(members.map((member) => [member.name, member.role])).toEqual([
-      ['Avery Example', 'co-director'],
       ['Casey Example', 'director'],
     ]);
   });
