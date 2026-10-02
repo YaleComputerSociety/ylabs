@@ -58,6 +58,11 @@ Both carry the same student-facing message asking them to try again, never redir
 Unlike the error handler's database `503`, neither sets `Retry-After`, because the callback is a top-level browser navigation that ignores it.
 The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and an axios error carries the validation URL with the ticket in it.
 A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
+The validation request itself is bounded by the same `CAS_VALIDATION_TIMEOUT_MS`, because the pinned `passport-cas` calls `axios.get` with no timeout and axios defaults to none (#4190).
+`boundCasServerRequests` in `server/src/utils/casValidationRequestBound.ts` adds a request interceptor, scoped to URLs under `SSOBASEURL`, that sets a timeout and an `AbortSignal.timeout` deadline, so a CAS that accepts the connection and never answers has its socket released at the deadline instead of holding one open per retry, and the late verdict never reaches the login write.
+It installs on the axios instance `passport-cas` itself requires, resolved through `casStrategyHttpClient`, because the server's ESM `import axios` and the strategy's CommonJS `require('axios')` load two different instances.
+The value is the route deadline on purpose: a CAS 1.0 validation is one small GET that answers well under a second, a shorter bound would only change which timer reports the same `503`, and a longer one would keep a socket open after the student was already asked to retry.
+Keep both bounds when #4036 replaces the package, so the bound never depends on a dependency's defaults.
 `server/src/__tests__/casLoginCallbackFailures.test.ts` drives all four outcomes through the mounted app against a stub CAS.
 
 Dev login bypass:
