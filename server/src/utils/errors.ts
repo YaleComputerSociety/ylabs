@@ -41,5 +41,16 @@ export class IncorrectPermissionsError extends Error {
   }
 }
 
+export class SearchUnavailableError extends Error {
+  status: number;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'SearchUnavailableError';
+    this.status = 503;
+    Object.setPrototypeOf(this, SearchUnavailableError.prototype);
+  }
+}
+
 export const isNotFoundError = (error: unknown): boolean =>
   error instanceof NotFoundError || (error as { name?: unknown } | null)?.name === 'NotFoundError';

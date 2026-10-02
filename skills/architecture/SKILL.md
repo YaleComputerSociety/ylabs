@@ -156,7 +156,7 @@ The serving process and an operator script want opposite things from the driver,
 `initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
 `triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
 The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
-The socket ceiling stays above the slowest request this server makes, a database-fallback search over the whole corpus, and under the hosting platform's own request timeout.
+The socket ceiling stays above the slowest request this server makes and under the hosting platform's own request timeout.
 Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
 
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.

@@ -14,6 +14,49 @@ vi.mock('../../services/meiliSyncService', () => ({
   deleteFromIndex: meiliMocks.deleteFromIndex,
 }));
 
+const SCHOOL_CLAUSE = /schools = "((?:[^"\\]|\\.)*)"/g;
+
+const storedRowsMatching = async (filter: string): Promise<Array<Record<string, any>>> => {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('no database connection');
+  const schools = [...filter.matchAll(SCHOOL_CLAUSE)].map((match) => match[1]);
+  const rows = await db.collection('research_entities').find({ archived: false }).toArray();
+  return rows.filter(
+    (row) =>
+      schools.length === 0 ||
+      (Array.isArray(row.schools) && row.schools.some((value) => schools.includes(value))),
+  );
+};
+
+const facetDistributionOf = (rows: Array<Record<string, any>>, facets: string[] = []) =>
+  Object.fromEntries(
+    facets.map((field) => {
+      const counts: Record<string, number> = {};
+      for (const row of rows) {
+        const values = Array.isArray(row[field]) ? row[field] : [row[field]];
+        for (const value of new Set(values)) {
+          if (typeof value === 'string' && value) counts[value] = (counts[value] ?? 0) + 1;
+        }
+      }
+      return [field, counts];
+    }),
+  );
+
+vi.mock('../../utils/meiliClient', () => ({
+  getMeiliIndex: vi.fn(async () => ({
+    getEmbedders: vi.fn(async () => ({})),
+    search: vi.fn(async (_query: string, params: { filter?: string; facets?: string[] } = {}) => {
+      const rows = await storedRowsMatching(params.filter ?? '');
+      return {
+        hits: rows.map((row) => ({ id: String(row._id) })),
+        estimatedTotalHits: rows.length,
+        totalHits: rows.length,
+        facetDistribution: facetDistributionOf(rows, params.facets),
+      };
+    }),
+  })),
+}));
+
 import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';

@@ -84,6 +84,7 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { SearchUnavailableError } from '../utils/errors';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import {
   personNameHasLifespanSuffix,
@@ -93,10 +94,6 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
-import {
-  researchEntitySortTitle,
-  researchEntitySortTitleQualifier,
-} from '../utils/servedResearchEntityTitle';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   listDepartmentCourseCreditRoutes,
@@ -104,7 +101,6 @@ import {
 } from './departmentResearchContextService';
 import {
   QUERY_TOPIC_ALIASES,
-  STUDENT_QUERY_ALIASES,
   WORKING_STYLE_PHRASE_ALIASES,
   WORKING_STYLE_PHRASE_MAX_TOKENS,
 } from './searchTopicAliases';
@@ -1540,18 +1536,12 @@ export async function searchResearchGroupsViaMeili(
     degraded = outcome.degraded;
     finalSearchParams = outcome.params;
   } catch (error) {
-    console.error(
-      'ResearchEntity Meilisearch failed; falling back to Mongo search:',
-      sanitizeLogValue(error),
-    );
-    return searchResearchGroupsViaMongoFallback(
-      normalizedQuery.raw,
-      safeFilters,
-      safePage,
-      safePageSize,
-      sort,
-      safeOptions,
-    );
+    console.error('ResearchEntity Meilisearch failed; answering 503:', sanitizeLogValue(error));
+    // No in-process substitute is served: gating the whole corpus synchronously held
+    // the event loop for every other request for over ten seconds per search (#4187).
+    throw new SearchUnavailableError('Research search is temporarily unavailable', {
+      cause: error,
+    });
   }
 
   const settleSearch = async <T>(
@@ -2035,213 +2025,6 @@ export async function searchResearchGroupsViaMeili(
     },
   );
 }
-
-const researchEntitySearchText = (entity: any): string =>
-  foldLatinDiacritics(
-    [
-      entity.name,
-      entity.displayName,
-      ...(Array.isArray(entity.leadProfessorNames) ? entity.leadProfessorNames : []),
-      ...(Array.isArray(entity.professorNames) ? entity.professorNames : []),
-      entity.shortDescription,
-      entity.fullDescription,
-      entity.summary,
-      ...(Array.isArray(entity.departments) ? entity.departments : []),
-      ...(Array.isArray(entity.researchAreas) ? entity.researchAreas : []),
-      ...(Array.isArray(entity.keywords) ? entity.keywords : []),
-      ...(Array.isArray(entity.studentSearchTerms) ? entity.studentSearchTerms : []),
-      ...(Array.isArray(entity.schools) ? entity.schools : []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase(),
-  )
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const escapedRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const haystackHasTerm = (haystack: string, term: string): boolean => {
-  const normalizedTerm = term.toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!normalizedTerm) return true;
-  if (normalizedTerm.length <= 3) {
-    return new RegExp(`(^|\\s)${escapedRegExp(normalizedTerm)}(\\s|$)`, 'i').test(haystack);
-  }
-  return haystack.includes(normalizedTerm);
-};
-
-const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
-  const normalizedQuery = normalizeResearchSearchQuery(query);
-  if (normalizedQuery.raw === '') return true;
-  if (!normalizedQuery.query || normalizedQuery.tokens.length === 0) return false;
-  const haystack = researchEntitySearchText(entity);
-  if (normalizedQuery.aliasTerms) {
-    return normalizedQuery.aliasTerms.some((alias) => haystackHasTerm(haystack, alias));
-  }
-  return normalizedQuery.tokens.every((token) => {
-    const aliases = STUDENT_QUERY_ALIASES[token];
-    if (aliases) return aliases.some((alias) => haystackHasTerm(haystack, alias));
-    return haystackHasTerm(haystack, token);
-  });
-};
-
-const facetCounts = (entities: any[], field: string): Record<string, number> => {
-  const counts: Record<string, number> = {};
-  for (const entity of entities) {
-    const values = Array.isArray(entity?.[field]) ? entity[field] : [entity?.[field]];
-    for (const value of new Set(values)) {
-      if (typeof value !== 'string' || !value.trim()) continue;
-      counts[value] = (counts[value] || 0) + 1;
-    }
-  }
-  return counts;
-};
-
-const compareSortKeys = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
-
-const sortResearchEntitiesForMongoFallback = (
-  entities: any[],
-  query: string,
-  sort: ResearchGroupSearchSort,
-): any[] => {
-  const sorted = [...entities];
-  if (sort.sortBy) {
-    const direction = sort.sortOrder === 'asc' ? 1 : -1;
-    sorted.sort((a, b) => {
-      if (sort.sortBy === 'name') {
-        return (
-          direction *
-          (compareSortKeys(researchEntitySortTitle(a), researchEntitySortTitle(b)) ||
-            compareSortKeys(
-              researchEntitySortTitleQualifier(a),
-              researchEntitySortTitleQualifier(b),
-            ))
-        );
-      }
-      const aValue = a[sort.sortBy as string];
-      const bValue = b[sort.sortBy as string];
-      if (aValue instanceof Date || bValue instanceof Date) {
-        return direction * (new Date(aValue || 0).getTime() - new Date(bValue || 0).getTime());
-      }
-      return direction * String(aValue || '').localeCompare(String(bValue || ''));
-    });
-    return sorted;
-  }
-
-  if (!query) {
-    sorted.sort((a, b) => {
-      const rankDiff = Number(b.browseRankScore || 0) - Number(a.browseRankScore || 0);
-      if (rankDiff !== 0) return rankDiff;
-      return new Date(b.lastObservedAt || 0).getTime() - new Date(a.lastObservedAt || 0).getTime();
-    });
-    return sorted;
-  }
-
-  sorted.sort((a, b) => {
-    const observedDiff =
-      new Date(b.lastObservedAt || 0).getTime() - new Date(a.lastObservedAt || 0).getTime();
-    if (observedDiff !== 0) return observedDiff;
-    return String(a.displayName || a.name || '').localeCompare(
-      String(b.displayName || b.name || ''),
-    );
-  });
-  return sorted;
-};
-
-const searchResearchGroupsViaMongoFallback = async (
-  query: string,
-  filters: ResearchGroupFilterInput,
-  page: number,
-  pageSize: number,
-  sort: ResearchGroupSearchSort,
-  options: ResearchGroupSearchOptions,
-): Promise<ResearchGroupSearchResult> => {
-  const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
-  const safePage = Math.min(
-    maxReachableResearchSearchPage(safePageSize),
-    Math.max(1, Math.floor(page) || 1),
-  );
-  const offset = (safePage - 1) * safePageSize;
-  const trimmedQuery = boundedResearchSearchQuery(query);
-  const candidates = await ResearchEntity.find(
-    mongoFilterFromResearchFilters(filters, options.includeNonPublic),
-  ).lean();
-  const visibleCandidates = withServablePublicResearchEntities(
-    (candidates as any[]).filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
-    options.includeNonPublic,
-  );
-  // Mirror the Meili path's disjunctive faceting (issue #1080): a facet the
-  // request is actively filtering on is counted over candidates that drop only
-  // that facet's own clause, so its dropdown keeps every sibling value; other
-  // active filters still constrain the counts.
-  const disjunctiveMongoFacetCounts = async (
-    filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType',
-    field: string,
-  ): Promise<Record<string, number>> => {
-    if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
-    const omittedFilters = { ...filters, [filterKey]: [] };
-    const omittedCandidates = (await ResearchEntity.find(
-      mongoFilterFromResearchFilters(omittedFilters, options.includeNonPublic),
-    ).lean()) as any[];
-    const omittedVisible = withServablePublicResearchEntities(
-      omittedCandidates.filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
-      options.includeNonPublic,
-    );
-    return facetCounts(omittedVisible, field);
-  };
-  const facetDistribution = await (async (): Promise<
-    Record<string, Record<string, number>> | undefined
-  > => {
-    if (options.includeFacets === false) return undefined;
-    const [
-      schoolFacetCounts,
-      departmentFacetCounts,
-      researchAreaFacetCounts,
-      entityTypeFacetCounts,
-    ] = await Promise.all([
-      disjunctiveMongoFacetCounts('school', 'schools'),
-      disjunctiveMongoFacetCounts('departments', 'departments'),
-      filters.researchAreas?.length
-        ? disjunctiveMongoFacetCounts('researchAreas', 'researchAreas')
-        : undefined,
-      disjunctiveMongoFacetCounts('entityType', 'entityType'),
-    ]);
-    return {
-      school: schoolFacetCounts,
-      departments: departmentFacetCounts,
-      ...(researchAreaFacetCounts
-        ? { researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {} }
-        : {}),
-      entityType: entityTypeFacetCounts,
-    };
-  })();
-  const sortedCandidates = sortResearchEntitiesForMongoFallback(
-    visibleCandidates,
-    trimmedQuery,
-    sort,
-  );
-  const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
-  const leadMemberNameRead = await optionalPublicLeadMemberNames(pageEntities);
-  return addResearchEntitySearchAliases(
-    {
-      hits: pageEntities.map((entity) => ({
-        ...entity,
-        _id: researchGroupDocumentId(entity._id),
-      })),
-      estimatedTotalHits: sortedCandidates.length,
-      page: safePage,
-      pageSize: safePageSize,
-      facetDistribution,
-      degraded: true,
-    },
-    {
-      includeOperatorFields: options.includeNonPublic,
-      ...leadMemberNameAliasOptions(leadMemberNameRead),
-    },
-  ) as ResearchGroupSearchResult;
-};
 
 const MAX_PUBLIC_MEMBER_PROFILE_URLS = 20;
 const PUBLIC_MEMBER_PROFILE_URL_KEY_RE = /^[a-z0-9_-]{1,64}$/i;
