@@ -93,6 +93,8 @@ export interface FieldLockReleaseDecision {
   movedSiblingFields?: string[];
   /** Released on the engine's own plan rather than on a recorded reason. */
   provenInert?: boolean;
+  neverBacked?: boolean;
+  acceptsEngineValue?: boolean;
 }
 
 /**
@@ -114,6 +116,8 @@ export interface FieldLockReleaseDecision {
  */
 export interface FieldLockReleaseRules {
   releaseProvenInert?: boolean;
+  neverBackedFields?: readonly string[];
+  acceptEngineValueFields?: readonly string[];
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -183,6 +187,9 @@ export function decideFieldLockReleases(
     if (fieldLockGatesNonMaterializerWriteLane(field)) {
       return { ...base, verdict: 'keep_gates_other_writer' as const, engineValue: undefined };
     }
+    if (rules.neverBackedFields?.includes(field)) {
+      return decideNeverBackedFieldLockRelease(entity, base, answer, rules);
+    }
     if (!revisitable && !rules.releaseProvenInert) {
       return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
     }
@@ -243,6 +250,52 @@ export function decideFieldLockReleases(
     }
     return { ...base, engineValue, verdict: 'release' as const };
   });
+}
+
+/**
+ * A lock whose provenance names a lane that never observed the field on this row is a
+ * repair's own write dressed as evidence (#3788), so it is a workaround by construction,
+ * the way a lock that holds no value is. It is released wherever doing so moves nothing a
+ * student reads: the engine derives the held value, or no projection writes the field at
+ * all. A lock over a cleared field stays shut on silence, because there the silence can
+ * be the lock's own effect and a release hands the field back to the lane it was cleared
+ * against. When the engine derives a different value, the lock is released only for a
+ * field the operator named after reading that value.
+ */
+function decideNeverBackedFieldLockRelease(
+  entity: LockedFieldEntity,
+  base: Omit<FieldLockReleaseDecision, 'verdict' | 'engineValue'>,
+  answer: MaterializerProjectionAnswer | undefined,
+  rules: FieldLockReleaseRules,
+): FieldLockReleaseDecision {
+  const neverBacked = { ...base, neverBacked: true };
+  if (!answer) return { ...neverBacked, verdict: 'keep_engine_silent', engineValue: undefined };
+  const named = projectionNamesField(answer, base.field);
+  if (!named && base.assertsNoValue) {
+    return { ...neverBacked, verdict: 'keep_engine_silent', engineValue: undefined };
+  }
+  const engineValue = plannedFieldValue(answer, base.field, base.storedValue);
+  const agrees = fieldLockReleaseAgrees(engineValue, base.storedValue);
+  const accepted = !agrees && Boolean(rules.acceptEngineValueFields?.includes(base.field));
+  if (!agrees && !accepted) {
+    return { ...neverBacked, engineValue, verdict: 'keep_engine_disagrees' };
+  }
+  const movedSiblingFields = siblingFieldsGatedByFieldLock(base.field).filter(
+    (sibling) =>
+      !fieldLockReleaseAgrees(plannedFieldValue(answer, sibling, entity[sibling]), entity[sibling]),
+  );
+  const unacceptedSiblings = movedSiblingFields.filter(
+    (sibling) => !rules.acceptEngineValueFields?.includes(sibling),
+  );
+  if (unacceptedSiblings.length > 0) {
+    return { ...neverBacked, engineValue, verdict: 'keep_sibling_field_moves', movedSiblingFields };
+  }
+  return {
+    ...neverBacked,
+    engineValue,
+    verdict: 'release',
+    ...(accepted ? { acceptsEngineValue: true } : {}),
+  };
 }
 
 export const releasedFieldsFromDecisions = (

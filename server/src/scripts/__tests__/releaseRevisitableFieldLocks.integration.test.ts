@@ -243,4 +243,72 @@ describe('research-entity:release-field-locks (#2612)', () => {
       ),
     ).rejects.toThrow(/requires dryRun/i);
   }, 60000);
+
+  describe('a lock over provenance its lane never observed (#3788)', () => {
+    const REPAIR_TOPICS = ['Lock Release', 'Field Provenance'];
+    const LANE_TOPICS = ['Lock Release', 'Field Provenance', 'Observation Evidence'];
+    const seedNeverBacked = async () => {
+      await seedEntity({ researchAreas: REPAIR_TOPICS, manuallyLockedFields: ['researchAreas'] });
+      await ResearchEntity.collection.updateOne(
+        { slug: SLUG },
+        {
+          $set: {
+            'fieldProvenance.researchAreas': {
+              sourceName: 'synthetic-retired-repair',
+              sourceUrl: 'https://example.edu/lab/',
+              observedAt: new Date('2026-01-01T00:00:00Z'),
+            },
+          },
+        },
+      );
+    };
+    const run = (acceptEngineValues: string[] = []) =>
+      runReleaseRevisitableFieldLocks({
+        apply: true,
+        confirm: true,
+        releaseProvenInert: false,
+        releaseNeverBacked: true,
+        acceptEngineValues,
+        slugs: [SLUG],
+      });
+    const storedTopics = async () =>
+      (await ResearchEntity.findOne({ slug: SLUG }).lean<{ researchAreas?: string[] }>())
+        ?.researchAreas;
+
+    it('keeps the lock when a lane states a different value nobody accepted', async () => {
+      await seedNeverBacked();
+      await seedObservation('researchAreas', LANE_TOPICS);
+
+      const result = await run();
+
+      expect(result.decisions.map((decision) => decision.verdict)).toEqual([
+        'keep_engine_disagrees',
+      ]);
+      expect((await storedRow())?.manuallyLockedFields).toEqual(['researchAreas']);
+    }, 60000);
+
+    it('hands the field to the lane once the operator accepts its value', async () => {
+      await seedNeverBacked();
+      await seedObservation('researchAreas', LANE_TOPICS);
+
+      const result = await run([`${SLUG}:researchAreas`]);
+      expect(result.appliedReleases).toBe(1);
+      expect((await storedRow())?.manuallyLockedFields).toEqual([]);
+
+      await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+      await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+      expect(await storedTopics()).toEqual(LANE_TOPICS);
+    }, 60000);
+
+    it('releases a lock no lane competes with and keeps the stored value', async () => {
+      await seedNeverBacked();
+      await seedObservation('name', 'Release Fixture Lab');
+
+      const result = await run();
+      expect(result.appliedReleases).toBe(1);
+
+      await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+      expect(await storedTopics()).toEqual(REPAIR_TOPICS);
+    }, 60000);
+  });
 });

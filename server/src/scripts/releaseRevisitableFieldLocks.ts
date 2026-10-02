@@ -24,6 +24,8 @@
  *   yarn --cwd server research-entity:release-field-locks
  *   yarn --cwd server research-entity:release-field-locks --apply \
  *     --confirm-field-lock-release [--slugs=a,b] [--output ./tmp/report.json]
+ *   yarn --cwd server research-entity:release-field-locks --release-never-backed --slugs=a,b \
+ *     [--accept-engine-value=a:fullDescription] [--apply --confirm-field-lock-release]
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -33,6 +35,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { lockedNeverBackedProvenanceFields } from '../scrapers/neverBackedFieldProvenance';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldLockRelease } from '../utils/researchEntityFieldLocks';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -55,17 +58,26 @@ export interface ReleaseRevisitableFieldLocksOptions {
   apply: boolean;
   confirm: boolean;
   releaseProvenInert: boolean;
+  releaseNeverBacked?: boolean;
+  acceptEngineValues?: string[];
   slugs: string[];
   output?: string;
 }
 
+const acceptedFieldsForSlug = (accepted: readonly string[], slug: string): string[] =>
+  accepted
+    .filter((entry) => entry.slice(0, entry.lastIndexOf(':')) === slug)
+    .map((entry) => entry.slice(entry.lastIndexOf(':') + 1));
+
 export function parseReleaseRevisitableFieldLocksArgs(
   argv: string[],
 ): ReleaseRevisitableFieldLocksOptions {
-  const options: ReleaseRevisitableFieldLocksOptions = {
+  const options: ReleaseRevisitableFieldLocksOptions & { acceptEngineValues: string[] } = {
     apply: false,
     confirm: false,
     releaseProvenInert: false,
+    releaseNeverBacked: false,
+    acceptEngineValues: [],
     slugs: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -75,7 +87,10 @@ export function parseReleaseRevisitableFieldLocksArgs(
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === '--confirm-field-lock-release') options.confirm = true;
     else if (arg === '--release-proven-inert') options.releaseProvenInert = true;
-    else if (arg.startsWith('--slugs=')) {
+    else if (arg === '--release-never-backed') options.releaseNeverBacked = true;
+    else if (arg.startsWith('--accept-engine-value=')) {
+      options.acceptEngineValues.push(arg.slice('--accept-engine-value='.length).trim());
+    } else if (arg.startsWith('--slugs=')) {
       options.slugs = arg
         .slice('--slugs='.length)
         .split(',')
@@ -94,6 +109,23 @@ export function parseReleaseRevisitableFieldLocksArgs(
     throw new Error(
       `${SCRIPT_NAME} --release-proven-inert requires --slugs; it releases locks that record no reason, on rows an operator has read.`,
     );
+  }
+  if (options.releaseNeverBacked && options.slugs.length === 0) {
+    throw new Error(
+      `${SCRIPT_NAME} --release-never-backed requires --slugs; it releases locks an operator has read one row at a time.`,
+    );
+  }
+  for (const entry of options.acceptEngineValues) {
+    const separator = entry.lastIndexOf(':');
+    const slug = entry.slice(0, separator);
+    if (separator <= 0 || separator === entry.length - 1 || !options.slugs.includes(slug)) {
+      throw new Error(
+        `${SCRIPT_NAME} --accept-engine-value takes <slug>:<field> for a slug named in --slugs: ${entry}`,
+      );
+    }
+  }
+  if (options.acceptEngineValues.length > 0 && !options.releaseNeverBacked) {
+    throw new Error(`${SCRIPT_NAME} --accept-engine-value requires --release-never-backed.`);
   }
   return options;
 }
@@ -120,7 +152,7 @@ async function askEngineForRow(
   rowId: unknown,
   slug: string,
   revisedFields: readonly string[],
-  releaseProvenInert: boolean,
+  ignoreLockRecord: boolean,
 ): Promise<
   { plannedSet?: Record<string, unknown>; plannedUnset?: Record<string, unknown> } | undefined
 > {
@@ -130,7 +162,7 @@ async function askEngineForRow(
   const answer = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
-    releaseProvenInert
+    ignoreLockRecord
       ? { dryRun: true, auditFieldLocksIgnoringRecord: revisedFields }
       : { dryRun: true, reviseRevisitableFieldLocks: revisedFields },
   );
@@ -158,11 +190,23 @@ export async function runReleaseRevisitableFieldLocks(
     const slug = typeof row.slug === 'string' ? row.slug : '';
     try {
       if (!slug) throw new Error('row has no slug to materialize by');
+      const neverBackedFields = options.releaseNeverBacked
+        ? await lockedNeverBackedProvenanceFields({ stored: row })
+        : [];
       const rowDecisions = await resolveFieldLockReleases(
         row,
         (revisedFields) =>
-          askEngineForRow(row._id, slug, revisedFields, options.releaseProvenInert),
-        { releaseProvenInert: options.releaseProvenInert },
+          askEngineForRow(
+            row._id,
+            slug,
+            revisedFields,
+            options.releaseProvenInert || neverBackedFields.length > 0,
+          ),
+        {
+          releaseProvenInert: options.releaseProvenInert,
+          neverBackedFields,
+          acceptEngineValueFields: acceptedFieldsForSlug(options.acceptEngineValues ?? [], slug),
+        },
       );
       decisions.push(...rowDecisions);
       const released = releasedFieldsFromDecisions(rowDecisions);
@@ -226,9 +270,11 @@ async function main(): Promise<void> {
       console.log(
         `  ${decision.slug} ${decision.field} [${decision.reason}${
           decision.assertsNoValue ? ', asserts no value' : ''
-        }]\n     stored ${describeValue(decision.storedValue)}\n     engine ${describeValue(
+        }${decision.neverBacked ? ', never backed' : ''}]\n     stored ${describeValue(decision.storedValue)}\n     engine ${describeValue(
           decision.engineValue,
         )}\n     ${decision.verdict.toUpperCase()}${decision.provenInert ? ' (proven inert)' : ''}${
+          decision.acceptsEngineValue ? ' (accepts the engine value)' : ''
+        }${
           decision.movedSiblingFields?.length
             ? ` (would move ${decision.movedSiblingFields.join(', ')})`
             : ''

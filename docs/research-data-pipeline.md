@@ -803,6 +803,19 @@ The plan must NAME the field, so the stored-value fallback in `plannedFieldValue
 And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
 The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
+#### Releasing a lock over provenance its lane never observed: `--release-never-backed` (#3788)
+
+The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
+`--release-never-backed` is that path.
+A lock whose field's provenance names a lane that never observed the field on the row (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
+It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
+A lock over a cleared field stays shut on silence, for the reason the fence above gives.
+When the engine derives a different value, the verdict is `keep_engine_disagrees` with the engine's value in the report, and the lock is released only for a field the operator names with `--accept-engine-value=<slug>:<field>` after reading that value; a sibling the release would move has to be named too.
+If the engine's value is inadmissible, refuse it with `research-entity:refuse-field-value` first and read the next plan, so the correction is a refusal rather than a lock.
+An accepted value is written by the next resolve, so rematerialize the named rows and re-gate after the release.
+The flag requires `--slugs`, and every verdict it decides carries `neverBacked: true`.
+After release the entry is unlocked, so the next resolve either attributes the field to the observation that states its value or the #3769 stage retires the false attribution.
+
 ### The canonical topic vocabulary and its review gate (#3377)
 
 `researchAreas` chips are plain canonical strings, and the vocabulary that decides which strings are canonical is `TaxonomyTerm`.

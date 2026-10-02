@@ -65,6 +65,34 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
   return retired;
 }
 
+/**
+ * The locked fields whose provenance names a lane that never observed the field on this
+ * row, which the retirement stage above deliberately leaves to the lock release path.
+ */
+export async function lockedNeverBackedProvenanceFields(input: {
+  stored: Record<string, unknown> | null | undefined;
+  sourceObservedField?: SourceObservedFieldLookup;
+}): Promise<string[]> {
+  if (!input.stored) return [];
+  const lookup = input.sourceObservedField ?? sourceEverObservedField;
+  const locked = Array.isArray(input.stored.manuallyLockedFields)
+    ? input.stored.manuallyLockedFields.filter(
+        (field): field is string => typeof field === 'string',
+      )
+    : [];
+  const entityKey = textValue(input.stored.slug) || undefined;
+  const entityId = input.stored._id ? String(input.stored._id) : undefined;
+  const fields: string[] = [];
+  for (const [field, entry] of fieldProvenanceEntries(input.stored.fieldProvenance)) {
+    if (!locked.includes(field)) continue;
+    if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
+    const sourceName = textValue((entry as { sourceName?: unknown }).sourceName);
+    if (await lookup({ entityKey, entityId, field, sourceName })) continue;
+    fields.push(field);
+  }
+  return fields;
+}
+
 export interface LiveFieldObservation {
   _id?: unknown;
   sourceId?: unknown;
