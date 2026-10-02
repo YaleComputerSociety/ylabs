@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import * as meiliClient from '../../utils/meiliClient';
 import {
   buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
@@ -928,6 +929,55 @@ describe('researchEntitySearchIndexService', () => {
       }
     } finally {
       logSpy.mockRestore();
+      invalidateResearchEntitySearchEmbedderCache();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+      else delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('leaves the stored embedder of a prefixed index alone when the rebuild has no usable key', async () => {
+    const calls: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => {
+        calls.push('updateEmbedders');
+        return { taskUid: 2 };
+      },
+      resetEmbedders: async () => {
+        calls.push('resetEmbedders');
+        return { taskUid: 5 };
+      },
+      deleteAllDocuments: async () => ({ taskUid: 3 }),
+      addDocuments: async () => ({ taskUid: 4 }),
+      getEmbedders: async () => (calls.includes('resetEmbedders') ? {} : { default: {} }),
+      tasks: succeedingTaskClient,
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    const prefixSpy = vi
+      .spyOn(meiliClient, 'resolveIndexName')
+      .mockImplementation((name: string) => `beta_${name}`);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      for (const unusable of [undefined, '<your-openai-key>']) {
+        if (unusable === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = unusable;
+        const result = await rebuildResearchEntitySearchIndex({
+          warmVocabulary: async () => new Set<string>(),
+          pageSize: 5,
+          clearExisting: true,
+          getIndex: async () => fakeIndex as any,
+          fetchPage: async (page: number) =>
+            page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+          fetchMemberNames: async () => new Map(),
+        });
+        expect(result.indexedDocumentCount).toBe(1);
+      }
+      expect(calls).toEqual([]);
+      expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('configured');
+    } finally {
+      warnSpy.mockRestore();
+      prefixSpy.mockRestore();
       invalidateResearchEntitySearchEmbedderCache();
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
       else delete process.env.OPENAI_API_KEY;

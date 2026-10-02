@@ -15,7 +15,7 @@ import {
   researchEntitySortTitleQualifier,
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
-import { getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
   MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
@@ -710,6 +710,7 @@ interface ResearchEntitySearchEmbedderWritableIndex {
 async function applyResearchEntitySearchEmbedderSetting(
   index: Parameters<typeof assertMeiliTaskSucceeded>[0] & ResearchEntitySearchEmbedderWritableIndex,
   openAiApiKey: string | null,
+  targetsPrefixedIndex: boolean,
 ): Promise<void> {
   if (openAiApiKey && typeof index.updateEmbedders === 'function') {
     await assertMeiliTaskSucceeded(
@@ -719,6 +720,12 @@ async function applyResearchEntitySearchEmbedderSetting(
       MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
     );
     invalidateResearchEntitySearchEmbedderCache();
+    return;
+  }
+  if (!openAiApiKey && targetsPrefixedIndex) {
+    console.warn(
+      'OPENAI_API_KEY is unset or a placeholder; leaving the stored embedder of the prefixed ResearchEntity index unchanged.',
+    );
     return;
   }
   if (!openAiApiKey && typeof index.resetEmbedders === 'function') {
@@ -758,7 +765,11 @@ export async function rebuildResearchEntitySearchIndex(
     'updateSettings',
     MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   );
-  await applyResearchEntitySearchEmbedderSetting(index, usableOpenAiApiKey());
+  await applyResearchEntitySearchEmbedderSetting(
+    index,
+    usableOpenAiApiKey(),
+    resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME) !== RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+  );
   if (clearExisting) {
     await assertMeiliTaskSucceeded(
       index,
