@@ -27,6 +27,7 @@ import {
   type PublicPlanningContext,
 } from './planningContextService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { routeParam } from '../utils/routeParams';
 
 /** The subset of AnalyticsEventType that describes research-surface activity. */
 export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
@@ -479,7 +480,7 @@ export const emitResearchEvent = async (
 export const logResearchEventOnSuccess = (
   eventType: AnalyticsEventType,
   entityType: ResearchEntityType,
-  getEntityId: (req: Request) => string | undefined = (req) => req.params.id,
+  getEntityId: (req: Request) => string | undefined = (req) => routeParam(req, 'id'),
   getPayload: (req: Request) => unknown = () => ({ surface: entityType }),
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {

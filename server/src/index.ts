@@ -19,6 +19,12 @@ initializeErrorTracking();
 const port = Number(process.env.PORT || 4000);
 const listenHost = serverListenHost();
 
+const failStartup = async (error: unknown) => {
+  await captureStartupError(error);
+  console.error('Failed to start app:', sanitizeLogValue(error));
+  process.exit(1);
+};
+
 const startApp = async () => {
   try {
     await initializeConnections(mongoOptions);
@@ -36,7 +42,13 @@ const startApp = async () => {
       ),
     );
 
-    const server = app.listen(port, listenHost, () => {
+    // Express 5 hands a listen failure such as EADDRINUSE to this callback instead
+    // of leaving it uncaught, so the process must exit here to stay fail-fast.
+    const server = app.listen(port, listenHost, (listenError?: Error) => {
+      if (listenError) {
+        void failStartup(listenError);
+        return;
+      }
       console.log(`Server is ready at: ${listenHost}:${port} 🐶`);
       // Log the effective value so an unset or fat-fingered env var is visible
       // rather than inferred from behaviour (#2319).
@@ -60,9 +72,7 @@ const startApp = async () => {
     // cut. See serverShutdown.ts for the drain window and why it is bounded.
     registerGracefulShutdown(server);
   } catch (error) {
-    await captureStartupError(error);
-    console.error('Failed to start app:', sanitizeLogValue(error));
-    process.exit(1);
+    await failStartup(error);
   }
 };
 

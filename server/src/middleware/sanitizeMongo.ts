@@ -52,14 +52,7 @@ export const sanitizeMongo = (req: Request, res: Response, next: NextFunction) =
   if (req.body && typeof req.body === 'object') {
     req.body = scrub(req.body);
   }
-  if (req.query && typeof req.query === 'object') {
-    const cleaned = scrub(req.query) as Record<string, unknown>;
-    for (const key of Object.keys(req.query)) {
-      if (!Object.prototype.hasOwnProperty.call(cleaned, key)) delete (req.query as any)[key];
-    }
-    for (const [k, v] of Object.entries(cleaned)) {
-      (req.query as any)[k] = v;
-    }
-  }
+  // Express 5 re-parses req.query from the URL on every read, so the query
+  // cannot be rewritten in place; the rejection above is its only guard.
   next();
 };

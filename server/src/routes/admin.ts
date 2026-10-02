@@ -449,7 +449,7 @@ router.put(
   asyncHandler(async (req: Request, res: Response) => {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const { name, field } = req.body;
+    const { name, field } = req.body ?? {};
     const update: any = {};
 
     if (name !== undefined) {
@@ -510,7 +510,7 @@ router.post(
   '/departments',
   writeLimit,
   asyncHandler(async (req: Request, res: Response) => {
-    const { abbreviation, name, displayName, categories, primaryCategory } = req.body;
+    const { abbreviation, name, displayName, categories, primaryCategory } = req.body ?? {};
 
     if (!abbreviation || !name || !primaryCategory) {
       return res
@@ -557,7 +557,8 @@ router.put(
   asyncHandler(async (req: Request, res: Response) => {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
+    const { abbreviation, name, displayName, categories, primaryCategory, isActive } =
+      req.body ?? {};
     const update: any = {};
 
     if (abbreviation !== undefined) {
@@ -679,7 +680,7 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   asyncHandler(async (req: Request, res: Response) => {
-    const fellowship = await updateFellowship(req.params.id, req.body.data);
+    const fellowship = await updateFellowship(req.params.id, req.body?.data);
     res.json({ fellowship: adminFellowshipDto(fellowship) });
   }),
 );
