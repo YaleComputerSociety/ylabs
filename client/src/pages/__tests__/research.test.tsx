@@ -1111,12 +1111,14 @@ describe('Research page', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Filter by school')).toHaveValue('Yale College'),
     );
+    await screen.findByRole('option', { name: 'School of Medicine (4)' });
     vi.mocked(window.scrollTo).mockClear();
 
     fireEvent.change(screen.getByLabelText('Filter by school'), {
       target: { value: 'School of Medicine' },
     });
 
+    expect(screen.getByLabelText('Filter by school')).toHaveValue('School of Medicine');
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
 
     vi.mocked(window.scrollTo).mockClear();
