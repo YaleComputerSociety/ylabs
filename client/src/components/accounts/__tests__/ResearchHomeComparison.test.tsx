@@ -76,7 +76,7 @@ describe('ResearchHomeComparison', () => {
 
     expect(await screen.findByRole('link', { name: 'Lab A' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Lab B' })).toBeTruthy();
-    expect(screen.getByText('School of Engineering')).toBeTruthy();
+    expect(await screen.findByText('School of Engineering')).toBeTruthy();
     expect(screen.getByText(/robotics/i)).toBeTruthy();
     expect(screen.getByText('Studies autonomous robots.')).toBeTruthy();
 
