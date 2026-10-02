@@ -2149,16 +2149,27 @@ async function listingsSharingProfileUrl(
 const SITE_LEAD_ROLES: RoleAssignmentRole[] = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
 const SITE_ENTITY_LIMIT = 20;
 
+function websiteIdentityUrlKey(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const pathname = url.pathname.replace(/\/+$/, '').toLowerCase();
+    return host ? `${host}${pathname}` : '';
+  } catch {
+    return '';
+  }
+}
+
 async function liveLeadsOfEntitiesAtWebsite(
   url: string,
   scope: RosterListingScope,
 ): Promise<any[]> {
-  const identityKey = officialProfileIdentityUrlKey(url);
-  if (!identityKey) return [];
+  const siteKey = websiteIdentityUrlKey(url);
+  if (!siteKey) return [];
   const entities = (await ResearchEntity.find({
     archived: { $ne: true },
     slug: { $ne: scope.researchGroupKey },
-    websiteUrl: { $in: officialProfileUrlStoredPatterns([identityKey]) },
+    websiteUrl: { $in: officialProfileUrlStoredPatterns([siteKey]) },
   })
     .select('_id')
     .limit(SITE_ENTITY_LIMIT)
@@ -2847,9 +2858,7 @@ export async function materializeInferredPiMembership(
 }
 
 type RosterEmailAliasResolution =
-  | { status: 'resolved'; netid: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'resolved'; netid: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
