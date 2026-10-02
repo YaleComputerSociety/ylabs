@@ -142,12 +142,14 @@ const LabMemberCard = ({
           </p>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}>
+          <span
+            className={`${singleColumn ? 'rounded-control leading-snug' : 'rounded-full'} px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}
+          >
             {roleLabel}
           </span>
           {departmentLabel && (
             <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal leading-snug' : 'max-w-[10rem] truncate'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
+              className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
             >
               {departmentLabel}
             </span>
