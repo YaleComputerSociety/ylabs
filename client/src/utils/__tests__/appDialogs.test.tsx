@@ -1,9 +1,11 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../testUtils/axe';
 import { confirmAction, showAlert } from '../appDialogs';
+
+vi.unmock('../appDialogs');
 
 const waitForNoDialog = () => waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 

@@ -3,7 +3,7 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 // Node 26 ships `localStorage` and `sessionStorage` as its own globals, and `localStorage` reads
 // as undefined unless the process was started with `--localstorage-file`. Vitest's jsdom
 // environment only copies a window key onto `globalThis` when that key is absent there, so Node's
@@ -75,3 +75,12 @@ for (const key of ['localStorage', 'sessionStorage'] as const) {
 afterEach(() => {
   cleanup();
 });
+
+// The shared dialog mounts its own React root on document.body, outside Testing Library's
+// cleanup, and an open MUI modal hides every sibling from the accessibility tree. A dialog that
+// one test's failure path opens late, after a lazy import, would hide the next test's render, so
+// every test gets a spy by default and utils/__tests__/appDialogs.test.tsx unmocks the real one.
+vi.mock('./utils/appDialogs', () => ({
+  showAlert: vi.fn(() => Promise.resolve()),
+  confirmAction: vi.fn(() => Promise.resolve(false)),
+}));
