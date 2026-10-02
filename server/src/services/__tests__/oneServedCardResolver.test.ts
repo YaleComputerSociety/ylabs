@@ -179,3 +179,30 @@ describe('a browse card is the detail card of the same row', () => {
     expect(card?.text).toBe(detailCardFor(labRow, []));
   });
 });
+
+describe('a served card never opens on an unmatched quotation mark (#4341)', () => {
+  const closingQuoteBody =
+    'The group studies reef recovery after bleaching events.” The studies identified pathways that let coral larvae settle on damaged substrates and grow into colonies.';
+
+  it('serves the browse, detail and gate card without the stray closing quote', () => {
+    const entity = facultyResearchRow({
+      shortDescription:
+        '” The studies identified pathways that let coral larvae settle on damaged substrates and grow into colonies.',
+      fullDescription: closingQuoteBody,
+    });
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    const served = servedResearchEntityCopy(representation.entity, []);
+    const browseCard = String(
+      toPublicResearchEntityDto(entity, { forList: true }).cardDescription?.text || '',
+    );
+
+    for (const card of [
+      servedCardFor(entity),
+      browseCard,
+      servedResearchEntityCardDescription(served),
+      servedResearchEntityCardWithoutLastResort(served),
+    ]) {
+      expect(card).toMatch(/^The studies identified pathways/);
+    }
+  });
+});

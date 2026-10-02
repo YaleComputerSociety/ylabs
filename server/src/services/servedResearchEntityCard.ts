@@ -50,6 +50,7 @@ import {
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
 import { buildResearchAreasCardSummary } from '../utils/researchEntityDescriptionQuality';
+import { withBalancedLeadingQuotation } from '../utils/cardLeadingQuotation';
 
 export const MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
 export const MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
@@ -342,15 +343,15 @@ export function servedResearchEntityCardWithoutLastResort(
   entityType?: ResearchEntityType,
 ): string {
   const resolvedEntityType = servedResearchEntityType(served, entityType);
-  return (
+  return withBalancedLeadingQuotation(
     groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
-    resolveServedShortDescriptionOutcome({
-      shortDescription: '',
-      fullDescription: served.fullDescription,
-      researchAreas: served.researchAreas,
-      entityType: resolvedEntityType,
-      kind: served.kind,
-    }).card
+      resolveServedShortDescriptionOutcome({
+        shortDescription: '',
+        fullDescription: served.fullDescription,
+        researchAreas: served.researchAreas,
+        entityType: resolvedEntityType,
+        kind: served.kind,
+      }).card,
   );
 }
 
@@ -368,8 +369,8 @@ export function servedResearchEntityCardDescription(
   entityType?: ResearchEntityType,
 ): string {
   const resolvedEntityType = servedResearchEntityType(served, entityType);
-  return (
+  return withBalancedLeadingQuotation(
     groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
-    servedShortDescriptionFallback(served, resolvedEntityType)
+      servedShortDescriptionFallback(served, resolvedEntityType),
   );
 }
