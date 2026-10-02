@@ -1105,6 +1105,9 @@ function usefulShortDescription(value: unknown, fullDescription: string): string
   if (isServableCardLine(text, fullDescription)) return text;
   const rewritten = text ? firstPersonShortToCardShort(text, fullDescription) : '';
   if (isServableCardLine(rewritten, fullDescription)) return rewritten;
+  const textRefusedOnlyAtServe =
+    Boolean(text) && shortDescriptionQuality(text, fullDescription).isUseful;
+  if (textRefusedOnlyAtServe) return '';
   const derived = deriveShortDescriptionFromFullDescription(fullDescription);
   return isServableCardLine(derived, fullDescription) ? derived : '';
 }

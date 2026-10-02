@@ -14,6 +14,7 @@ import {
   selectBestDescriptionPageProse,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
 import type { ObservationInput, ScraperContext } from '../types';
 import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
 
@@ -1186,7 +1187,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const firstPersonCard =
       'At the Example Laboratory, we model and mechanistically study human infectious, inflammatory, and fibrotic diseases.';
 
-    function scraperFor(callCardLLM: ReturnType<typeof vi.fn>) {
+    function scraperFor(callCardLLM: CardSynthesisLLMFn) {
       return new LabMicrositeDescriptionLLMExtractor({
         identityCorpusLoader: async () => ({
           knownPersonSurnames: NO_SURNAME_ROSTER,
