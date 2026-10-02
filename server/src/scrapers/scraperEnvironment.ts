@@ -80,12 +80,13 @@ export function assertScraperEnvironmentMatchesMongoTarget(args: {
   mongoUrl?: string;
   env?: NodeJS.ProcessEnv;
 }): void {
-  if (!args.mongoUrl) return;
+  const env = args.env || process.env;
+  const mongoUrl = args.mongoUrl ?? env.MONGODBURL;
+  if (!mongoUrl) return;
   if (!guardedEnvironments(args.environment)) return;
 
-  const env = args.env || process.env;
   const declared = declaredDatabaseNameOverride(args.environment, env);
-  const actual = resolveMongoDatabaseName(args.mongoUrl);
+  const actual = resolveMongoDatabaseName(mongoUrl);
 
   if (!actual) {
     throw new Error(
@@ -177,7 +178,7 @@ export function applyScraperEnvironmentGuards(args: {
     options,
     autoMaterialize,
     warnings,
-    dbLabel: summarizeMongoUrl(args.mongoUrl),
+    dbLabel: summarizeMongoUrl(args.mongoUrl ?? env.MONGODBURL),
   };
 }
 
@@ -219,6 +220,6 @@ export function applyObservationPruneEnvironmentGuards(args: {
     environment,
     apply,
     warnings,
-    dbLabel: summarizeMongoUrl(args.mongoUrl),
+    dbLabel: summarizeMongoUrl(args.mongoUrl ?? env.MONGODBURL),
   };
 }
