@@ -8,13 +8,12 @@ const FOLLOW_CALL_TEXT =
   /^(?:(?:follow|connect with|share|tag) us\b.{0,40}|(?:follow us on |our )?social(?: media)?(?: links| channels| accounts)?)[.!:]?$/i;
 
 const FOLLOW_LINK_TEXT =
-  /^(?:|@\S+|.*\b(?:twitter|x|facebook|instagram|linkedin|youtube|tiktok|threads|bluesky|bsky|mastodon|flickr|vimeo|pinterest)\b.*)$/i;
+  /^(?:|@\S+|(?:(?:follow|find|visit|connect with)(?: us)?(?: on)? |our )?(?:twitter|x|facebook|instagram|linkedin|youtube|tiktok|threads|bluesky|bsky|mastodon|flickr|vimeo|pinterest)(?: (?:icon|page|profile|channel|account))?)$/i;
 
 const LABEL_ELEMENT_SELECTOR =
   'h1, h2, h3, h4, h5, h6, dt, legend, [class*="heading"], [class*="title"], [class*="eyebrow"], [class*="label"]';
 
 const MAX_SOCIAL_BLOCK_OWN_TEXT = 25;
-const MAX_FOLLOW_LINK_TEXT = 30;
 const MAX_FOLLOW_BLOCK_TEXT = 200;
 
 const collapsedText = (value: string): string => value.replace(/\s+/g, ' ').trim();
@@ -36,11 +35,7 @@ function ownTextOutsideLinks($: CheerioAPI, el: Element): string {
 
 function isFollowLink($: CheerioAPI, link: Element): boolean {
   const label = collapsedText($(link).text());
-  return (
-    isSocialPlatformHref($(link).attr('href')) &&
-    label.length <= MAX_FOLLOW_LINK_TEXT &&
-    FOLLOW_LINK_TEXT.test(label)
-  );
+  return isSocialPlatformHref($(link).attr('href')) && FOLLOW_LINK_TEXT.test(label);
 }
 
 function containsFollowLink($: CheerioAPI, el: Element): boolean {

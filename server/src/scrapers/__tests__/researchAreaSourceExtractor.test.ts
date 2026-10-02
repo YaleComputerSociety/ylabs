@@ -262,6 +262,14 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     expect(deriveCanonicalResearchAreasFromPage(canonicalizer, shortTitle).areas).toEqual(
       expect.arrayContaining(['Machine Learning', 'Genomics']),
     );
+    const platformWordTitles = `
+      <ul>
+        <li><a href="https://vimeo.com/example">X-ray views of genomics</a></li>
+        <li><a href="https://www.youtube.com/watch?v=example">Machine learning on YouTube</a></li>
+      </ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, platformWordTitles).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
   });
 
   it('keeps a topic section headed by a social-media label that carries no follow link (#4047)', () => {
