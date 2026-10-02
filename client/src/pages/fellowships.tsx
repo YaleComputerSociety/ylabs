@@ -767,7 +767,7 @@ const Fellowships = () => {
 
   return (
     <div className="yr-page min-h-[calc(100vh-12rem)]">
-      <div className="mx-auto w-full max-w-screen-2xl px-4 pb-10 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-4 pb-10 sm:px-6 lg:px-8">
         <div className="pt-8 pb-6">
           <div className="grid grid-cols-1 gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
