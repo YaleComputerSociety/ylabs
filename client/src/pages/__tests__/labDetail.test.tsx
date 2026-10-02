@@ -2597,6 +2597,8 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('A Yale research profile with limited public description.');
     expect(screen.getByText('Research summary')).toBeTruthy();
     expect(screen.getByText('No published research summary yet')).toBeTruthy();
+    expect(text).toContain('y/labs has not found a description it can publish for this one');
+    expect(text).not.toContain('Yale Research');
     await waitFor(() => expect(captureClientError).toHaveBeenCalledWith(expect.any(Error)));
     expect(text).not.toContain('Research connected to Fixture Care Pathway Design');
     expect(text).not.toContain('Research connected to Behavioral Studies.');
