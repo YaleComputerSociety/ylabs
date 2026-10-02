@@ -3769,15 +3769,26 @@ describe('the structured record an external-award page carries (#4363)', () => {
     );
   });
 
-  it('states no deadline for a window with one date, which does not say whether it opens or closes', () => {
-    const candidate = externalAward({
-      window:
-        '<div class="field-item even"><span class="date-display-single" content="2019-06-21T00:00:00-04:00">Friday, June 21, 2019</span></div>',
-    });
+  const singleDateWindow =
+    '<div class="field-item even"><span class="date-display-single" content="2019-06-21T00:00:00-04:00">Friday, June 21, 2019</span></div>';
+
+  it('reads no date from a window with one date, which does not say whether it opens or closes', () => {
+    const candidate = externalAward({ window: singleDateWindow });
 
     expect(candidate.deadline).toBeUndefined();
     expect(candidate.applicationOpenDate).toBeUndefined();
-    expect(claimOf(candidate)).toContain('deadline');
+    expect(claimOf(candidate)).not.toContain('deadline');
+  });
+
+  it('lets the prose state the deadline when the window has one date', () => {
+    const candidate = externalAward({
+      window: singleDateWindow,
+      description: 'The application deadline is March 1, 2027 for the summer research cohort.',
+    });
+
+    expect(candidate.deadline?.toISOString()).toBe(
+      parseProgramDate('March 1, 2027', 'deadline')?.toISOString(),
+    );
   });
 
   it('answers the year of study from the listed years when the prose names none', () => {

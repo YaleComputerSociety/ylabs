@@ -13,7 +13,6 @@ import type { YearOfStudy } from './fundYearOfStudy';
  */
 export interface ExternalAwardRecord {
   websiteUrls: string[];
-  statesWindow: boolean;
   deadline?: Date;
   applicationOpenDate?: Date;
   yearsOfStudy: YearOfStudy[];
@@ -66,7 +65,7 @@ function windowEnds(window: cheerio.Cheerio<any>): { opens: string; closes: stri
 /**
  * A window with one date does not say whether that date opens or closes it, and the
  * single dates measured are mostly the day the records were imported, so only a range
- * yields a deadline and an opening date.
+ * yields a deadline and an opening date; any other window leaves the page's prose to decide.
  */
 function windowDates(
   window: cheerio.Cheerio<any>,
@@ -100,6 +99,12 @@ function yearsOfStudy($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): YearOf
   return years;
 }
 
+export function withoutRecordWindow(root: cheerio.Cheerio<any>): cheerio.Cheerio<any> {
+  const copy = root.clone();
+  copy.find(WINDOW_FIELD).remove();
+  return copy;
+}
+
 export function externalAwardRecord(
   $: cheerio.CheerioAPI,
   root: cheerio.Cheerio<any>,
@@ -109,7 +114,6 @@ export function externalAwardRecord(
   const window = root.find(WINDOW_FIELD).first();
   return {
     websiteUrls: websiteUrls($, root, pageUrl),
-    statesWindow: window.length > 0,
     ...windowDates(window, referenceDate),
     yearsOfStudy: yearsOfStudy($, root),
   };

@@ -35,7 +35,7 @@ import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
-import { externalAwardRecord } from '../utils/externalAwardRecord';
+import { externalAwardRecord, withoutRecordWindow } from '../utils/externalAwardRecord';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -776,12 +776,10 @@ function textBlocks(root: cheerio.Cheerio<any>): string[] {
 
 /**
  * The years a page admits, read with the same prose rules as a Student Grants Database
- * fund, where the page's eligibility sentences play the fund's eligibility section. These
- * pages carry no year filter, so prose that names no year emits nothing.
- */
-/**
- * A page's own structured year list plays the part the grants database's year filter
- * does: the prose decides when it names years, and the list answers when it is silent.
+ * fund, where the page's eligibility sentences play the fund's eligibility section. A
+ * page's own structured year list plays the part the grants database's year filter does:
+ * the prose decides when it names years, and the list answers when it is silent, so a page
+ * with neither emits nothing.
  */
 function statedYearOfStudy(
   blocks: readonly string[],
@@ -1683,19 +1681,14 @@ function candidateFromDetailPage(
   );
   const applicationInformation = applicationSectionText($);
   const record = externalAwardRecord($, contentRoot, pageUrl, referenceDate);
-  const deadlineStatement = record.statesWindow
-    ? record.deadline
-      ? 'stated'
-      : 'none'
-    : programDeadlineStatement(bodyText);
-  const deadline = record.statesWindow
-    ? record.deadline
-    : deadlineStatement === 'none'
-      ? undefined
-      : statedDeadline(bodyText, referenceDate);
-  const applicationOpenDate = record.statesWindow
+  const proseDateText = normalizeWhitespace(withoutRecordWindow(chromeFreeRoot).text());
+  const deadlineStatement = record.deadline ? 'stated' : programDeadlineStatement(proseDateText);
+  const deadline =
+    record.deadline ??
+    (deadlineStatement === 'none' ? undefined : statedDeadline(proseDateText, referenceDate));
+  const applicationOpenDate = record.deadline
     ? record.applicationOpenDate
-    : parseProgramDate(bestApplicationOpenText(bodyText), 'opens', referenceDate);
+    : parseProgramDate(bestApplicationOpenText(proseDateText), 'opens', referenceDate);
   const recordLinks = record.websiteUrls.map((url) => ({
     label: EXTERNAL_AWARD_WEBSITE_LABEL,
     url: normalizeLinkUrl(url),
