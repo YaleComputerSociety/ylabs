@@ -258,13 +258,14 @@ function sanitizeResearchAreaListField(value: unknown): SanitizedObservationFiel
 
 /**
  * Cleaned in place and rejected only when nothing survives, matching the research-area
- * arm: a list whose every chip is a whole sentence asserted nothing usable, and a
- * rejection is what stops it reading as a retraction of the values already stored.
+ * arm: a list whose every chip is a whole sentence, an activity or a publication heading
+ * asserted nothing usable, and a rejection is what stops it reading as a retraction of
+ * the values already stored.
  */
 function sanitizeMethodListField(value: unknown): SanitizedObservationField {
   if (!Array.isArray(value)) return accepted(value);
   const cleaned = value.map((chip) => sanitizeMethodChipLabel(chip)).filter(Boolean);
-  return cleaned.length > 0 ? accepted(cleaned) : rejected('method-chip-sentence-shaped');
+  return cleaned.length > 0 ? accepted(cleaned) : rejected('method-chip-not-a-method');
 }
 
 function sanitizeProseField(value: string): SanitizedObservationField {

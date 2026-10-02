@@ -504,6 +504,23 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(true);
   });
 
+  it('ignores a methods observation that states no method, so clear-on-empty can withdraw it (#4049)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['teaching', 'Peer-Reviewed Original Research'],
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['teaching', 'flow cytometry'],
+      }),
+    ).toBe(false);
+  });
+
   it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {
     const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
     expect(

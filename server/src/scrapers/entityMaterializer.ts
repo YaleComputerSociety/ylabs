@@ -112,6 +112,7 @@ import {
   type MergedInResearchEntityRow,
 } from '../services/researchEntityCanonicalTombstone';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
+import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import {
   deriveCanonicalKeys,
   resolveCanonical,
@@ -1352,10 +1353,27 @@ export function shouldIgnoreObservationForEntityMaterialization(
   ) {
     return true;
   }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === 'methods' &&
+    statesNoAdmissibleMethod(observation.value)
+  ) {
+    return true;
+  }
   return (
     isResearchEntityObservationType(entityType) &&
     !!observation.field &&
     RETIRED_ACCESS_OBSERVATION_FIELDS.has(observation.field)
+  );
+}
+
+// The projection keeps a rejected value rather than dropping it, so a list that states no
+// method at all would otherwise stay stored; ignoring it lets clear-on-empty withdraw it.
+function statesNoAdmissibleMethod(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((chip) => !sanitizeMethodChipLabel(chip))
   );
 }
 
