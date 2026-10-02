@@ -564,6 +564,39 @@ describe(
         expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
       });
 
+      it('ends the other listing edge when the owner listing once stated that role', async () => {
+        const avery = await labSiteOwner('Avery');
+        await accountHolder('Blair');
+        await Observation.create({
+          entityType: 'researchGroupMember',
+          entityKey: `${CENTER_SLUG}:avery-synthetic`,
+          field: 'role',
+          value: 'core-faculty',
+          sourceId: SOURCE_ID,
+          sourceName: SOURCE_NAME,
+          confidence: 0.8,
+          observedAt: LONG_AGO,
+          superseded: false,
+        });
+        const misattached = await edgeOn(avery, 'CORE_FACULTY', {
+          rosterProvenance: {
+            sourceName: SOURCE_NAME,
+            profileUrl: LAB_SITE_URL,
+            membershipKey: labSiteKey('core-faculty'),
+            identityBasis: 'profile-url',
+            observedAt: LONG_AGO,
+          },
+        });
+
+        await runLane({}, [
+          labSiteListing('Avery', 'director'),
+          labSiteListing('Blair', 'core-faculty'),
+        ]);
+
+        expect((await edgeById(misattached))?.state).toBe('HISTORICAL');
+        expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
+      });
+
       it('does not treat a listing on another entity as sharing the url', async () => {
         const avery = await labSiteOwner('Avery');
         const otherListingKey = 'center-fixture-elsewhere:blair-synthetic';

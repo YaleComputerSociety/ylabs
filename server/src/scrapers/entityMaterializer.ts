@@ -2080,7 +2080,7 @@ export interface RosterListingScope {
 
 interface SharedProfileUrlListing {
   names: string[];
-  roles: string[];
+  role: string;
 }
 
 const listedNamesAgree = (left: string, right: string): boolean =>
@@ -2116,21 +2116,32 @@ async function listingsSharingProfileUrl(
     entityKey: { $in: keysOnThisEntity },
     field: { $in: ['name', 'inferredUserName', 'role'] },
   })
-    .select('entityKey field value')
-    .lean()) as Array<{ entityKey?: unknown; field?: unknown; value?: unknown }>;
-  const byKey = new Map<string, SharedProfileUrlListing>();
+    .select('entityKey field value sourceName confidence observedAt')
+    .lean()) as any[];
+  const observationsByKey = new Map<string, ResolverObservation[]>();
   for (const row of rows) {
     const key = textValue(row.entityKey);
-    const entry = byKey.get(key) ?? { names: [], roles: [] };
-    if (row.field === 'role') entry.roles.push(normalizeMemberRole(row.value));
-    else if (row.field === 'name') entry.names.push(textValue(row.value));
-    else entry.names.push(memberNameFromInferredUserName(row.value));
-    byKey.set(key, entry);
+    observationsByKey.set(key, [
+      ...(observationsByKey.get(key) ?? []),
+      {
+        field: row.field,
+        value: row.value,
+        sourceName: row.sourceName,
+        confidence: row.confidence,
+        observedAt: row.observedAt,
+      },
+    ]);
   }
-  return [...byKey.values()].map((entry) => ({
-    names: uniqueStrings(entry.names),
-    roles: uniqueStrings(entry.roles),
-  }));
+  return [...observationsByKey.values()].map((observations) => {
+    const listed = resolveAllFields(observations);
+    return {
+      names: uniqueStrings([
+        listed.name?.value,
+        memberNameFromInferredUserName(listed.inferredUserName?.value),
+      ]),
+      role: normalizeMemberRole(listed.role?.value),
+    };
+  });
 }
 
 async function profileUrlHolderForListing(
@@ -2150,7 +2161,7 @@ async function profileUrlHolderForListing(
   const role = normalizeMemberRole(resolved.role?.value);
   const holderOwnListingStatesRole = listings.some(
     (entry) =>
-      entry.roles.includes(role) &&
+      entry.role === role &&
       entry.names.some((name) => observedPersonNameAgreesWith(holder.displayName, name)),
   );
   return { holder: null, holderEdgeToEnd: holderOwnListingStatesRole ? null : holder };
