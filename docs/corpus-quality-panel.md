@@ -18,7 +18,7 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 
 Four rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
-#4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is now materially cheaper and has not been re-timed end to end.
+#4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is materially cheaper per row; re-timed end to end on 2026-10-02 over a larger served corpus, the whole report took about 27 s.
 The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
 Every snapshot-sourced row carries a `measured` tag, the header topic average carries its measurement date, and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
@@ -123,6 +123,12 @@ The serving process records a measurement itself, using the connection it alread
 Staleness-driven rather than interval-driven, deliberately.
 A daily timer loses a day whenever the process restarts or the host spins down, and this deploy is kept awake by an external ping rather than by traffic, so "fire once every 24h from boot" would silently skip.
 Asking about staleness is correct across restarts and cheap when the answer is no.
+
+A measurement that is due is not cheap, and it runs on the serving event loop, so `readCorpusQualityReport` yields to the event loop before every served row it measures (#4193).
+Without the yield, the per-row representation ran in synchronous batches of 400 rows: measured over the Development corpus on 2026-10-02, one report took about 27 s with 8 event-loop stalls over 200 ms and the longest at 3.8 s, so every request on the instance waited.
+With it the same report takes about the same time, with no stall over 200 ms, a p99 event-loop delay of 38 ms, and a maximum of 150 ms, and the report it returns is byte-identical to the synchronous pass.
+A worker thread or a scheduled script would also have moved the work, but each needs its own database connection and a separate build entry, and the yield already brings every stall under the 200 ms bound, so it was chosen on that measurement.
+`corpusQualityReportEventLoop.test.ts` pins both halves: the report gives the event loop a turn per row, and its output equals the synchronous pass.
 
 The environment is discovered from the connected database name via `operatorEnvironmentForDatabaseName`, not from a flag, so a row can never be labelled with an environment it did not come from.
 A database the mapping cannot place records nothing.
