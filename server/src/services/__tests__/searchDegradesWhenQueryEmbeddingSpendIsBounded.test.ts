@@ -229,10 +229,8 @@ describe('a search after the upstream rejects an embedding request', () => {
         {},
         { embeddingSpendKey: CLIENT },
       );
-      // The rejected request itself keeps the old fail-open behaviour: Meilisearch
-      // embeds for itself, so the student still gets the semantic answer.
-      expect(hybridSearches().length).toBeGreaterThan(1);
-      expect(duringRejection.degraded).toBeFalsy();
+      expect(hybridSearches()).toHaveLength(0);
+      expect(duringRejection.degraded).toBe(true);
 
       mocks.search.mockClear();
       mocks.post.mockClear();
