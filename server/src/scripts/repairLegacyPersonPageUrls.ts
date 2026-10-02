@@ -15,9 +15,9 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'data:repair-legacy-person-page-urls';
 const FETCH_TIMEOUT_MS = 20000;

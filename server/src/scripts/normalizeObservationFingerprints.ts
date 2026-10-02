@@ -19,7 +19,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'observations:normalize-fingerprints';
 const BATCH_SIZE = 1000;

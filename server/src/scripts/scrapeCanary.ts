@@ -45,7 +45,7 @@ export function parseScrapeCanaryArgs(argv: string[]): ScrapeCanaryCliOptions {
 
 async function main(): Promise<number> {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   const options = parseScrapeCanaryArgs(process.argv.slice(2));
   const refusal = installMongoWriteRefusal(mongoose);
 

@@ -61,9 +61,9 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:retarget-foreign-lab-websites';
 const PROFILE_LINK_SOURCE = 'ysm-faculty-directory';

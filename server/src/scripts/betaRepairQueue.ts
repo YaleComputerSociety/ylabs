@@ -20,7 +20,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface BetaRepairQueueCliOptions extends VisibilityRepairQueueOptions {
   confirmBetaRepairQueueApply?: boolean;

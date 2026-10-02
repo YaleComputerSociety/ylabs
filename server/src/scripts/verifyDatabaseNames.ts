@@ -12,7 +12,7 @@ import {
   type DatabaseCopyPair,
 } from './databaseCopyPairs';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const COPY_PAIR_URL_VARIABLES: Record<DatabaseCopyPair, { source: string; target: string }> = {
   'development-to-beta': { source: 'DEVELOPMENT_MONGODBURL', target: 'BETA_MONGODBURL' },

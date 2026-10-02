@@ -121,7 +121,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   main().catch((error) => {
     console.error('Failed to audit archived-lab restore candidates:', sanitizeLogValue(error));
     process.exitCode = 1;

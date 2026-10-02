@@ -10,9 +10,9 @@ import { personProfileSourceMatchesEntity } from '../scrapers/utils/personProfil
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:purge-miskeyed-profile-descriptions';
 const SOURCE_NAME = 'lab-microsite-description-llm';

@@ -29,7 +29,7 @@ import {
   type SearchEventRow,
 } from './collapseSearchEpisodeHistoryCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'analytics:collapse-search-episodes';
 

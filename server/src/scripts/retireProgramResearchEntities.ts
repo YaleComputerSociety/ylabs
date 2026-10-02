@@ -22,7 +22,7 @@ import {
   type RetireProgramResearchEntitiesPlan,
 } from './retireProgramResearchEntitiesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_NAME = 'research-entity:retire-program-entities';

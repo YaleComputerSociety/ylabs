@@ -40,7 +40,7 @@ import { connectScriptMongo } from '../db/connections';
 const MIRRORED_CITATION_ROLLBACK_REASON =
   'mirrored person-page citation collapsed to one address: the duplicate spellings assert the same page (#3362)';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface CollapseMirroredCitationsOptions {
   apply: boolean;

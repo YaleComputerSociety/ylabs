@@ -39,7 +39,7 @@ if (fs.existsSync(betaOperatorProfilePath) && !process.env.BETA_MONGODBURL) {
     process.env.BETA_MONGODBURL = betaOperatorProfile.MONGODBURL;
   }
 }
-dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
+dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
 
 type SyncMode = 'dry-run' | 'apply';
 type SyncCollectionCategory =

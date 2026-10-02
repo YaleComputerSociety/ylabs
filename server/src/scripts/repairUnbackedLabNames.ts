@@ -29,7 +29,7 @@ import {
 } from './repairUnbackedLabNamesCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:repair-unbacked-lab-names';
 

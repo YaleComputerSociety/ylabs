@@ -21,7 +21,7 @@ import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV = 'SCRAPER_SWEEP_AUTO_MERGE_FRA';
 export const DEFAULT_EPONYMOUS_FRA_MERGE_MAX = 250;

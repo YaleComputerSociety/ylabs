@@ -19,7 +19,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const PROFILE_PAGE_WEBSITE_URL_PATTERN =
   /(\/profile\/|\/people\/|\/person\/|\/faculty\/|\/faculty-directory\/|\/directory\/faculty\/|\/who-we-are\/faculty\/)/i;

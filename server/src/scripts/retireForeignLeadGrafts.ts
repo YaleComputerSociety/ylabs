@@ -25,7 +25,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ENTITY_PROJECTION =
   '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls studentVisibilityTier';

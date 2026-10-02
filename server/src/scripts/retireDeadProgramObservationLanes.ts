@@ -40,9 +40,9 @@ import {
   retireLaneVerdict,
 } from './retireDeadProgramObservationLanesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface DeadProgramLaneRow {
   entityKey: string;

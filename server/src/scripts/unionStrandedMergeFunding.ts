@@ -34,9 +34,9 @@ import {
   planStrandedFundingObservationRelink,
 } from './researchEntityPiDedupeCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:union-stranded-merge-funding';
 

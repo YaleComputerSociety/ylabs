@@ -20,7 +20,7 @@ import {
 } from './syncBetaToDevelopment';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
+dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
 const developmentUrl = process.env.MONGODBURL || '';
 const betaProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
 const betaProfile = fs.existsSync(betaProfilePath)

@@ -13,7 +13,7 @@ import {
   assertRetireBibliographicMirrorInvariants,
 } from './retireBibliographicMirrorCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 

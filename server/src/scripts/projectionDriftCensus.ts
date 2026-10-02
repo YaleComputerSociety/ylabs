@@ -23,11 +23,11 @@ import {
 } from './projectionDriftCensusCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 async function loadCensusRows(sample: number, slugs: string[], includeArchived: boolean) {
   if (slugs.length > 0) {
