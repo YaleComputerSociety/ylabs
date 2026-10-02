@@ -280,7 +280,8 @@ const ACTIVITY_LABEL = `(?:(?:${longestFirstAlternation(NON_METHOD_ACTIVITY_MODI
 const ACTIVITY_LABEL_RE = new RegExp(`^${ACTIVITY_LABEL}(?: and ${ACTIVITY_LABEL})?$`);
 const PUBLICATION_LABEL_RE = new RegExp(
   `^(?:(?:${longestFirstAlternation(PUBLICATION_LABEL_MODIFIERS)}) (?:${longestFirstAlternation(PUBLICATION_LABEL_HEADS)})` +
-    '|publications|articles|commentaries|reviews' +
+    '|publications|articles|commentaries|reviews|citations?|doi|pmid|pmcid' +
+    '|peer reviewed (?:original research|publications|articles|reviews) .+' +
     '|publications? (?:in|of) (?:(?:academic|scholarly|peer reviewed) )?(?:journals|articles))$',
 );
 
@@ -294,8 +295,9 @@ const methodLabelWords = (value: string): string =>
 
 /**
  * An activity the person does (teaching, consultation, outreach) or a publication-list
- * heading names no technique, so it is not a method (#4049). Only the bare head, or the head
- * after a generic modifier, is refused: a modifier that names a technique keeps the chip, which
+ * heading names no technique, so it is not a method (#4049). Only the bare head, the head
+ * after a generic modifier, a bare citation identifier, or a peer-reviewed publication heading
+ * followed by its list is refused: a modifier that names a technique keeps the chip, which
  * is what separates "simulation training", "rater training" and "systematic reviews" from
  * "clinical training" and "reviews".
  */

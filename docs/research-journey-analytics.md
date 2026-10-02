@@ -179,6 +179,8 @@ A session cookie with its signature is a credential, so that default hands the p
 Every category is set off explicitly rather than left unset, because since Sentry 11 an unset category collects by default, so a category an upgrade adds or renames would silently fall back to on.
 Each side's `errorTrackingPayload.test.ts` asserts the SDK's resolved collection options against the full list, so a new or renamed category fails the suite rather than shipping.
 The global error handler is the only server capture path: `expressIntegration({ shouldHandleError: false })` turns off Express's automatic capture, which would otherwise fire first and win the dedupe over the route-template report, and `server/src/utils/__tests__/errorTrackingExpressCapture.test.ts` fails if a route error produces any other event.
+Express 5 forwards a rejected async handler to that handler on its own, and the same test pins that such a rejection on a mounted router is reported once, under its route template rather than its concrete path.
+A route template in Express 5 syntax that carries an optional `{...}` group or a `*name` wildcard is reported without its mount prefix, because its segment count no longer tells the mount apart from the matched path.
 A message the server writes itself must still not interpolate a netid, email, or slug, because no scrubber can recognise one.
 The route template keeps its mount path even from the global error handler, where Express has already cleared `req.baseUrl`, by taking the leading request segments the template does not cover.
 That is safe only while every router is mounted at a static path, so mounting one at a param path means changing that recovery first.

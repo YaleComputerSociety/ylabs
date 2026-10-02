@@ -17,6 +17,7 @@ import {
   updateWatchedProgramPlan as updateWatchedProgramPlanService,
 } from '../services/researchPlanService';
 import { publicProgramForReader } from './programPayload';
+import { routeParam } from '../utils/routeParams';
 
 const setPrivateAccountResponseHeaders = (response: Response) => {
   response.setHeader('Cache-Control', 'no-store, private, max-age=0');
@@ -133,7 +134,7 @@ export const updateSavedResearchEntityPlan = async (
     const currentUser = request.user as { netId?: string };
     const plans = await updateSavedResearchEntityPlanService(
       currentUser.netId,
-      request.params.entityId,
+      routeParam(request, 'entityId'),
       request.body?.data?.plan || request.body?.plan || {},
     );
     setPrivateAccountResponseHeaders(response);
@@ -245,7 +246,7 @@ export const updateWatchedProgramPlan = async (
     const currentUser = request.user as { netId?: string };
     const plans = await updateWatchedProgramPlanService(
       currentUser.netId,
-      request.params.programId,
+      routeParam(request, 'programId'),
       request.body?.data?.plan || request.body?.plan || {},
     );
     setPrivateAccountResponseHeaders(response);

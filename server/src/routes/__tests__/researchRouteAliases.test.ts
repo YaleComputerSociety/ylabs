@@ -3,7 +3,7 @@ import router from '../index';
 
 function mountedRouter(prefix: string): unknown {
   const probePath = `/${prefix}/search`;
-  return (router as any).stack.find((layer: any) => layer.regexp?.test(probePath))?.handle;
+  return (router as any).stack.find((layer: any) => layer.match(probePath))?.handle;
 }
 
 describe('research routes', () => {

@@ -527,7 +527,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         aria-expanded={isEditing}
                         className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
-                            ? 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                            ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >

@@ -3,6 +3,7 @@ import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority
 import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
+  isServableCardLine,
   descriptionExtractionToObservations,
   groundDescriptionExtraction,
   htmlToText,
@@ -13,6 +14,7 @@ import {
   selectBestDescriptionPageProse,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
 import type { ObservationInput, ScraperContext } from '../types';
 import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
 
@@ -1177,6 +1179,80 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(
       'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
     );
+  });
+
+  describe('an extracted card the serve sanitizer would blank (#4392)', () => {
+    const fullDescription =
+      'At the Example Laboratory, we model and mechanistically study human infectious, inflammatory, and fibrotic diseases. We combine in vitro and in vivo models with bioinformatic approaches and perturbation studies to examine the role of immune cells in disease.';
+    const firstPersonCard =
+      'At the Example Laboratory, we model and mechanistically study human infectious, inflammatory, and fibrotic diseases.';
+
+    function scraperFor(callCardLLM: CardSynthesisLLMFn) {
+      return new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'voice-1',
+            slug: 'example-laboratory',
+            name: 'Example Laboratory',
+            websiteUrl: 'https://example.yale.edu/example-laboratory/',
+          },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({
+          url: 'https://example.yale.edu/example-laboratory/',
+          html: `<main><p>${fullDescription}</p></main>`,
+        }),
+        callLLM: vi.fn().mockResolvedValue({
+          fullDescription,
+          shortDescription: firstPersonCard,
+          topics: [],
+          methods: [],
+        } satisfies DescriptionExtraction),
+        callCardLLM,
+      });
+    }
+
+    it('is a line the quality bar accepts and the serve sanitizer blanks', () => {
+      expect(isServableCardLine(firstPersonCard, fullDescription)).toBe(false);
+      expect(
+        isServableCardLine(
+          'Studies how immune cells drive infectious, inflammatory, and fibrotic diseases.',
+          fullDescription,
+        ),
+      ).toBe(true);
+    });
+
+    it('is not emitted, and a grounded card is synthesized in its place', async () => {
+      const { ctx, emitted } = makeContext();
+      const synthesized =
+        'Studies the role of immune cells in human infectious, inflammatory, and fibrotic diseases using in vitro and in vivo models.';
+      const callCardLLM = vi.fn().mockResolvedValue(synthesized);
+
+      await scraperFor(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledOnce();
+      const cards = emitted.filter((obs) => obs.field === 'shortDescription');
+      expect(cards.map((obs) => obs.value)).toEqual([synthesized]);
+    });
+
+    it('emits no card when the synthesized line would serve blank too', async () => {
+      const { ctx, emitted } = makeContext();
+      const callCardLLM = vi
+        .fn()
+        .mockResolvedValue(
+          'We model and mechanistically study human infectious, inflammatory, and fibrotic diseases.',
+        );
+
+      await scraperFor(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledOnce();
+      expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(false);
+      expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+    });
   });
 
   it('does not synthesize a card when the extraction already carries a usable one (#557)', async () => {

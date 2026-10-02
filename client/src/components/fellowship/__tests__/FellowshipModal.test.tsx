@@ -544,3 +544,61 @@ describe('FellowshipModal', () => {
     ).toBe(false);
   });
 });
+
+describe('FellowshipModal for a program whose served deadline is stale (#4363)', () => {
+  const officialPage = 'https://funding.example.edu/fixture-award';
+  const staleProgram: Partial<Fellowship> = {
+    deadlineStale: true,
+    deadline: null,
+    applicationOpenDate: null,
+    isAcceptingApplications: false,
+    sourceUrl: officialPage,
+  };
+
+  it('points to the official page for the current deadline and shows no date', () => {
+    renderModal(staleProgram);
+    const dialog = screen.getByRole('dialog');
+
+    const message = within(dialog).getByRole('link', {
+      name: 'Check the official page for the current deadline',
+    });
+    expect(message.getAttribute('href')).toBe(officialPage);
+    expect(within(dialog).getAllByText('Dates not confirmed')).toHaveLength(2);
+    expect(within(dialog).queryByText('Deadline')).toBeNull();
+    expect(within(dialog).queryByText('Application opens')).toBeNull();
+    expect(dialog.textContent).not.toMatch(/passed|not currently open|Not accepting|Closed/i);
+    expect(dialog.textContent).not.toMatch(/\b20\d\d\b/);
+  });
+
+  it('never shows a stated date even when an older client payload still carries one', () => {
+    renderModal({ ...staleProgram, deadline: '2019-11-15T23:59:59.999Z' });
+    const dialog = screen.getByRole('dialog');
+
+    expect(dialog.textContent).not.toContain('2019');
+    expect(dialog.textContent).not.toMatch(/passed/i);
+  });
+
+  it('states the message as plain text when the program has no official page link', () => {
+    renderModal({ ...staleProgram, sourceUrl: '' });
+    const dialog = screen.getByRole('dialog');
+
+    expect(
+      within(dialog).getAllByText(/Check the official page for the current deadline/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(dialog).queryByRole('link', {
+        name: 'Check the official page for the current deadline',
+      }),
+    ).toBeNull();
+  });
+
+  it('labels the bottom action for the official page instead of a closed window', () => {
+    renderModal(staleProgram);
+    const dialog = screen.getByRole('dialog');
+
+    expect(
+      within(dialog).getByText('Check the official page for the current deadline.'),
+    ).toBeTruthy();
+    expect(within(dialog).getByRole('link', { name: /Open the official page/ })).toBeTruthy();
+  });
+});

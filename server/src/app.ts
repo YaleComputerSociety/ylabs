@@ -31,7 +31,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDistPath = path.join(__dirname, '../../client/dist');
-const clientIndexPath = path.join(clientDistPath, 'index.html');
 const API_BODY_LIMIT = '64kb';
 const API_URLENCODED_PARAMETER_LIMIT = 100;
 // GET/HEAD/OPTIONS paths the CSRF origin guard must still treat as
@@ -228,12 +227,14 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
-app.get('*', (req, res) => {
+app.get('/{*clientPath}', (req, res) => {
   if (!shouldServeSpaFallback(req)) {
     return sendStaticNotFound(res);
   }
 
-  res.sendFile(clientIndexPath);
+  // A root keeps send's dotfile check on 'index.html' alone, so a checkout under a
+  // dot directory still serves the SPA shell.
+  res.sendFile('index.html', { root: clientDistPath });
 });
 
 app.use(errorHandler);

@@ -82,7 +82,9 @@ export function computeCatalogFreshness(
   for (const record of records) {
     const publicView = publicFellowshipForStudent(record, now);
     const isAccepting = publicView?.isAcceptingApplications === true;
-    const bucket = deadlineBucket(publicView?.deadline, now);
+    // A stale deadline is withheld from the student, but it is the strongest staleness signal.
+    const bucket =
+      publicView?.deadlineStale === true ? 'past' : deadlineBucket(publicView?.deadline, now);
     const isProjected = publicView?.deadlineProjectedNextCycle === true;
     const key = sourceKeyOf(record);
 

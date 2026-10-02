@@ -34,6 +34,7 @@ import {
   researchJourneyEventRequiresEntity,
   type ResearchEventOutcome,
 } from '../services/researchAnalytics';
+import { routeParam } from '../utils/routeParams';
 
 const router = Router();
 const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
@@ -462,7 +463,9 @@ router.get(
   validateNetid('netid'),
   asyncHandler(async (request: Request, response: Response) => {
     const limit = parseAnalyticsLimit(request.query.limit, 300);
-    const analytics = await getUserAnalyticsDrilldown(request.params.netid, { limit });
+    const analytics = await getUserAnalyticsDrilldown(routeParam(request, 'netid'), {
+      limit,
+    });
 
     if (!analytics) {
       return response.status(404).json({ error: 'User analytics not found' });

@@ -28,7 +28,7 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 | Layer           | Technology                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v7, TailwindCSS v3                            |
-| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 9                                    |
+| Server          | Express 5, TypeScript, Passport.js (CAS strategy), Mongoose 9                                    |
 | Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
 | Package Manager | Yarn 4 via Corepack                                                                              |
@@ -440,7 +440,8 @@ All mount under `/api`.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side tests also run under **Vitest**.
+Client-side tests run under **Vitest 5** with a `jsdom` 30 environment.
+Server-side tests also run under **Vitest 5**.
 
 ### Running tests
 

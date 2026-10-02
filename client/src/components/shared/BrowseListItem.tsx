@@ -1,7 +1,7 @@
 /**
  * List view row component for browsable listings and fellowships.
  */
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useMemo, type ReactNode } from 'react';
 import {
   BrowsableItem,
   getItemId,
@@ -35,6 +35,8 @@ interface BrowseListItemProps {
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
+  /** Controls that act on this item, rendered inside the card's own border. */
+  footer?: ReactNode;
 }
 
 const BrowseListItem = React.memo(
@@ -45,6 +47,7 @@ const BrowseListItem = React.memo(
     onOpenModal,
     onAdminEdit,
     isCompact,
+    footer,
   }: BrowseListItemProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
@@ -173,6 +176,7 @@ const BrowseListItem = React.memo(
             </div>
           </div>
         </div>
+        {footer && <div className="relative z-[1] border-t border-line px-4 py-3">{footer}</div>}
       </div>
     );
   },

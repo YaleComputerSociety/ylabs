@@ -10,6 +10,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   Fellowship: fellowshipModelMock,
 }));
 
+import { publicProgramForReader } from '../../controllers/programPayload';
 import {
   publicFellowshipForStudent,
   readFellowships,
@@ -307,6 +308,7 @@ describe('fellowship public serializer', () => {
       deadline: undefined,
       closed: false,
       projectedNextCycle: false,
+      stale: false,
     });
   });
 
@@ -677,5 +679,122 @@ describe('a deadline served from another copy of the fund (#4382)', () => {
     const payload = publicFellowshipForStudent(keptCopy, afterTheSpringDeadline);
     expect(payload.deadline).not.toEqual(springDateOnly);
     expect(payload.isAcceptingApplications).toBe(false);
+  });
+});
+
+describe('a deadline that closed more than one cycle ago is stale (#4363)', () => {
+  const statedEndOfDay = new Date('2025-10-03T03:59:59.999Z');
+  const oneCycleLater = new Date('2026-10-03T03:59:59.999Z');
+  const recurring = {
+    _id: '67d8928150621bcef434a1f4',
+    title: 'Fixture Annual Research Award',
+    summary: 'An annual award for undergraduate research.',
+    applicationLink: 'https://funding.example.edu/fixture-award',
+    sourceUrl: 'https://funding.example.edu/fixture-award',
+    isAcceptingApplications: false,
+    applicationOpenDate: new Date('2025-06-26T04:00:00.000Z'),
+    deadline: statedEndOfDay,
+  };
+
+  it('still projects the next cycle at exactly twelve months', () => {
+    expect(servedProgramDeadline(recurring, oneCycleLater)).toEqual({
+      deadline: oneCycleLater,
+      closed: true,
+      projectedNextCycle: true,
+      stale: false,
+    });
+  });
+
+  it('withholds the deadline once more than twelve months have passed', () => {
+    const justAfter = new Date(oneCycleLater.getTime() + 1);
+    expect(servedProgramDeadline(recurring, justAfter)).toEqual({
+      deadline: undefined,
+      closed: true,
+      projectedNextCycle: false,
+      stale: true,
+    });
+  });
+
+  it('is stale whether or not the program looks recurring', () => {
+    const oneOff = {
+      ...recurring,
+      title: 'Book Purchase Reimbursement',
+      summary: 'A single reimbursement for course materials.',
+    };
+    const justAfter = new Date(oneCycleLater.getTime() + 1);
+    expect(servedProgramDeadline(oneOff, oneCycleLater)).toMatchObject({
+      deadline: statedEndOfDay,
+      closed: true,
+      stale: false,
+    });
+    expect(servedProgramDeadline(oneOff, justAfter).stale).toBe(true);
+  });
+
+  it('keeps the next-cycle estimate for a deadline that passed within twelve months', () => {
+    const threeMonthsLater = new Date('2026-01-05T12:00:00.000Z');
+    const payload = publicFellowshipForStudent(recurring, threeMonthsLater);
+    expect(payload.deadline).toEqual(oneCycleLater);
+    expect(payload.deadlineProjectedNextCycle).toBe(true);
+    expect(payload.deadlineStale).toBe(false);
+    expect(payload.applicationOpenDate).toEqual(recurring.applicationOpenDate);
+  });
+
+  it('leaves an upcoming deadline unchanged', () => {
+    const beforeTheDeadline = new Date('2025-09-01T12:00:00.000Z');
+    expect(servedProgramDeadline(recurring, beforeTheDeadline)).toEqual({
+      deadline: statedEndOfDay,
+      closed: false,
+      projectedNextCycle: false,
+      stale: false,
+    });
+  });
+
+  it('serves an upcoming duplicate window in place of a stale own deadline', () => {
+    const now = new Date('2027-03-01T12:00:00.000Z');
+    const window = new Date('2027-04-01T03:59:59.999Z');
+    const served = servedProgramDeadline(
+      {
+        ...recurring,
+        upcomingDuplicateWindow: {
+          deadline: window,
+          isAcceptingApplications: true,
+          sourceProgramId: '67d8928150621bcef434a1f5',
+        },
+      },
+      now,
+    );
+    expect(served.stale).toBe(false);
+    expect(served.deadline).toEqual(window);
+    expect(served.duplicateWindow).toBeDefined();
+  });
+
+  it('serves a source page several cycles out of date with no date and an explicit flag', () => {
+    const now = new Date('2026-10-02T12:00:00.000Z');
+    const stalePage = {
+      ...recurring,
+      isAcceptingApplications: true,
+      applicationOpenDate: new Date('2019-06-26T04:00:00.000Z'),
+      deadline: new Date('2019-11-16T04:59:59.999Z'),
+    };
+    const student = publicFellowshipForStudent(stalePage, now);
+    expect(student).not.toHaveProperty('deadline');
+    expect(student).not.toHaveProperty('applicationOpenDate');
+    expect(student.deadlineStale).toBe(true);
+    expect(student.deadlineProjectedNextCycle).toBe(false);
+    expect(student.isAcceptingApplications).toBe(false);
+
+    const reader = publicProgramForReader(student);
+    expect(reader.deadline).toBeUndefined();
+    expect(reader.applicationOpenDate).toBeUndefined();
+    expect(reader.deadlineStale).toBe(true);
+    expect(reader.isAcceptingApplications).toBe(false);
+    expect(reader.sourceUrl).toBe('https://funding.example.edu/fixture-award');
+  });
+
+  it('flags no ordinary program as stale on the reader payload', () => {
+    const reader = publicProgramForReader(
+      publicFellowshipForStudent(recurring, new Date('2025-09-01T12:00:00.000Z')),
+    );
+    expect(reader.deadlineStale).toBe(false);
   });
 });

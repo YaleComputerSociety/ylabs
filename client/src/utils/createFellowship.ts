@@ -45,6 +45,7 @@ export function createFellowship(data: any): Fellowship {
     // showed a green "Open" pill for next year's estimate and the detail modal suppressed its
     // own "unconfirmed, verify at source" warning (#3904).
     deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
+    deadlineStale: data.deadlineStale === true,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',

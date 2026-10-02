@@ -158,9 +158,17 @@ Applied globally or to `/api` in `app.ts`.
 |------------|---------|
 | `securityHeaders` | CSP, permissions policy, and `X-*` headers. |
 | `csrfOriginGuard(allowList)` | Rejects unsafe-method `/api` requests from non-allowlisted origins or referrers. |
-| `sanitizeMongo` | Strips Mongo operator and prototype-pollution keys from body/query. |
+| `sanitizeMongo` | Refuses with `400` a body or query carrying Mongo operator, dotted, bracketed, or prototype-pollution keys. |
 | `createCorsOriginHandler` | Dynamic CORS origin handler. |
 | `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers. |
+
+### Express 5 request contract
+
+The server runs Express 5 (#4374), and four of its rules bear on these middlewares.
+`req.query` is a getter that re-parses the URL on every read, so a middleware cannot rewrite it in place; `sanitizeMongo` therefore refuses an unsafe query rather than scrubbing it, and nothing may depend on a mutated `req.query`.
+The app sets `query parser` to `simple` explicitly, so a query value is a string or an array of strings and `a[b]=1` stays the literal key `a[b]`, which the sanitizer refuses.
+`req.body` is `undefined` rather than `{}` when no parser ran, so read it as `req.body ?? {}` or `req.body?.field`.
+A route param is typed `string | string[]` because a `*name` wildcard captures segments, so read a named param with `routeParam` from `server/src/utils/routeParams.ts`, which answers `''` for anything that is not a single string.
 
 The CORS policy is an allowlist in every runtime.
 `allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward) talk to the API with credentials.
