@@ -6,6 +6,7 @@ import {
 import {
   candidateToObservations,
   createFundShortLinkResolver,
+  createRecordWebsiteLinkChecker,
   DEFAULT_PAGE_URLS,
   extractIndexSeedChildDetailUrls,
   MACMILLAN_COUNCIL_GRANT_PAGE_URLS,
@@ -18,6 +19,7 @@ import {
   readFellowshipCatalogPage,
   rowsMintedByRefusedPages,
   sourceKeyForTitle,
+  withoutGoneRecordWebsiteLinks,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 import { parseProgramDate } from '../utils/programDeadline';
@@ -3689,5 +3691,182 @@ describe('the deadline a page with several cycles is planned at (#4227)', () => 
       endOfNewYorkDay('July 30, 2026', midsummer)?.toISOString(),
     );
     expect(await plannedDeadline(autumn)).toBe(endOfNewYorkDay('January 4, 2027')?.toISOString());
+  });
+});
+
+describe('the structured record an external-award page carries (#4363)', () => {
+  const externalAwardUrl = 'https://funding.yale.edu/external-award/fixture-summer-research';
+
+  const field = (name: string, label: string, items: string) =>
+    `<div class="field field-name-field-${name} field-type-text field-label-above"><div class="field-label">${label}:&nbsp;</div><div class="field-items">${items}</div></div>`;
+
+  const externalAward = ({
+    description = 'Offers funded summer laboratory research experience at host institutions across the country.',
+    website = '<div class="field-item even"><a href="http://www.fixture-research-program.org/apply">http://www.fixture-research-program.org/apply</a></div>',
+    window = '<div class="field-item even"><span class="date-display-range"><span class="date-display-start" content="2019-06-21T00:00:00-04:00">Friday, June 21, 2019</span> to <span class="date-display-end" content="2020-02-10T00:00:00-05:00">Monday, February 10, 2020</span></span></div>',
+    years = '<div class="field-item even">Sophomore</div><div class="field-item odd">Junior</div><div class="field-item even">Senior</div>',
+  } = {}) =>
+    parseFellowshipCatalogPage(
+      `<h1>Fixture Summer Research Program</h1>
+        <div class="node node-external-award">
+          ${field('description', 'Description', `<div class="field-item even"><p>${description}</p></div>`)}
+          ${field('application-website-lin', 'Application or Website Link', website)}
+          ${field('adviser', 'Adviser', '<div class="field-item even">Any Adviser</div>')}
+          ${field('application-deadline', 'Application Open/Deadline', window)}
+          ${field('citizenship', 'Citizenship', '<div class="field-item even">US Citizen</div>')}
+          ${field('application-year', 'Application Year', years)}
+        </div>`,
+      externalAwardUrl,
+      new Date('2026-10-02T12:00:00Z'),
+    )[0];
+
+  const claimOf = (candidate: Parameters<typeof candidateToObservations>[0]) =>
+    candidateToObservations(candidate).find((obs) => obs.field === 'sourceKey')
+      ?.assertsNoValueFor ?? [];
+
+  it('keeps the application or website link on the outside program host as the route', () => {
+    const candidate = externalAward();
+
+    expect(candidate.links).toContainEqual({
+      label: 'Application or program website',
+      url: 'http://www.fixture-research-program.org/apply',
+    });
+    expect(candidate.applicationLink).toBe('http://www.fixture-research-program.org/apply');
+  });
+
+  it('unwraps a mail-gateway link to the program page it wraps', () => {
+    const wrapped = `https://nam12.safelinks.protection.outlook.com/?url=${encodeURIComponent(
+      'https://www.fixture-research-program.org/fellowship.html',
+    )}&amp;data=05%7C01&amp;reserved=0`;
+    const candidate = externalAward({
+      website: `<div class="field-item even"><a href="${wrapped}">link</a></div>`,
+    });
+
+    expect(candidate.applicationLink).toBe(
+      'https://www.fixture-research-program.org/fellowship.html',
+    );
+  });
+
+  it('plans the closing date of the window as the deadline and its first date as the opening', () => {
+    const candidate = externalAward();
+
+    expect(candidate.deadline?.toISOString()).toBe(
+      parseProgramDate('February 10, 2020', 'deadline')?.toISOString(),
+    );
+    expect(candidate.applicationOpenDate?.toISOString()).toBe(
+      parseProgramDate('June 21, 2019', 'opens')?.toISOString(),
+    );
+  });
+
+  it('reads a window written as plain text the same way', () => {
+    const candidate = externalAward({
+      window:
+        '<div class="field-item">Thursday, September 1, 2022 to Tuesday, October 18, 2022</div>',
+    });
+
+    expect(candidate.deadline?.toISOString()).toBe(
+      parseProgramDate('October 18, 2022', 'deadline')?.toISOString(),
+    );
+  });
+
+  const singleDateWindow =
+    '<div class="field-item even"><span class="date-display-single" content="2019-06-21T00:00:00-04:00">Friday, June 21, 2019</span></div>';
+
+  it('reads no date from a window with one date, which does not say whether it opens or closes', () => {
+    const candidate = externalAward({ window: singleDateWindow });
+
+    expect(candidate.deadline).toBeUndefined();
+    expect(candidate.applicationOpenDate).toBeUndefined();
+    expect(claimOf(candidate)).not.toContain('deadline');
+  });
+
+  it('lets the prose state the deadline when the window has one date', () => {
+    const candidate = externalAward({
+      window: singleDateWindow,
+      description: 'The application deadline is March 1, 2027 for the summer research cohort.',
+    });
+
+    expect(candidate.deadline?.toISOString()).toBe(
+      parseProgramDate('March 1, 2027', 'deadline')?.toISOString(),
+    );
+  });
+
+  it('answers the year of study from the listed years when the prose names none', () => {
+    expect(externalAward().yearOfStudy).toEqual(['Sophomore', 'Junior', 'Senior']);
+  });
+
+  it('reads no year from a list carrying the graduate option, which says nothing mappable', () => {
+    const candidate = externalAward({
+      years:
+        '<div class="field-item even">Senior</div><div class="field-item odd">Graduate Student and Alumni</div>',
+    });
+
+    expect(candidate.yearOfStudy).toEqual([]);
+  });
+
+  it('lets prose that names years decide over the list', () => {
+    const candidate = externalAward({
+      description: 'Eligible are juniors in the natural sciences who plan a research career.',
+    });
+
+    expect(candidate.yearOfStudy).toEqual(['Junior']);
+  });
+
+  it('emits no year of study when the list carries an option the vocabulary cannot name', () => {
+    const candidate = externalAward({
+      years:
+        '<div class="field-item even">Sophomore</div><div class="field-item odd">Postdoc</div>',
+    });
+
+    expect(candidate.yearOfStudy).toEqual([]);
+  });
+
+  it('drops a website link whose page is gone and falls back to the next route', async () => {
+    const candidate = externalAward({
+      website:
+        '<div class="field-item even"><a href="https://www.fixture-research-program.org/moved">old</a></div>',
+    });
+    const checker = createRecordWebsiteLinkChecker({
+      probe: async () => 404,
+      sleep: async () => undefined,
+    });
+
+    const checked = await withoutGoneRecordWebsiteLinks(candidate, checker);
+
+    expect(checked.links).toEqual([]);
+    expect(checked.applicationLink).toBeUndefined();
+    expect(checker.metrics).toEqual({ probed: 1, dead: 1, failed: 0, capped: 0 });
+  });
+
+  it('keeps a website link behind a bot challenge or a failed request', async () => {
+    const candidate = externalAward();
+    const challenged = createRecordWebsiteLinkChecker({
+      probe: async () => 403,
+      sleep: async () => undefined,
+    });
+    const failing = createRecordWebsiteLinkChecker({
+      probe: async () => {
+        throw new Error('timeout');
+      },
+      sleep: async () => undefined,
+    });
+
+    expect((await withoutGoneRecordWebsiteLinks(candidate, challenged)).applicationLink).toBe(
+      candidate.applicationLink,
+    );
+    expect((await withoutGoneRecordWebsiteLinks(candidate, failing)).applicationLink).toBe(
+      candidate.applicationLink,
+    );
+    expect(failing.metrics.failed).toBe(1);
+  });
+
+  it('never probes a link the page did not carry in its record field', async () => {
+    const probe = vi.fn(async () => 404);
+    const checker = createRecordWebsiteLinkChecker({ probe, sleep: async () => undefined });
+    const candidate = externalAward({ website: '' });
+
+    await withoutGoneRecordWebsiteLinks(candidate, checker);
+
+    expect(probe).not.toHaveBeenCalled();
   });
 });
