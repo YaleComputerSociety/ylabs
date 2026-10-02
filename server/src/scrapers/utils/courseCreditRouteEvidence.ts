@@ -38,9 +38,11 @@ const CREDIT_WORD_PATTERN =
 const COURSE_CODE_PATTERN = /\b[A-Z]{2,6}(?:&[A-Z]{1,4})? ?\d{3,4}[ab]?\b/;
 
 const ROUTE_STATEMENT_PATTERN =
-  /\b(?:enrol{1,2}(?:s|ed|ing|ment)?|offers?|offered|receives?|receiving|earns?|earning|(?:take|taken|taking) for|for (?:academic |course |graduation )?credit|(?:completed|written|done|conducted) (?:in|over|through|as)|consists? of|register(?:s|ed|ing)? (?:for|in))\b/i;
+  /\b(?:enrol{1,2}(?:s|ed|ing|ment)?|offers?|offered|receives?|receiving|earns?|earning|(?:take|taken|taking) for|for (?:academic |course |graduation )?credit|(?:completed|written|done|conducted) (?:by \S+ )?(?:in|over|through|as)|consists? of|register(?:s|ed|ing)? (?:for|in))\b/i;
 
 const COURSE_NOUN_PATTERN = /\bcourses?\b/i;
+
+const RESEARCH_PATTERN = /\bresearch\b/i;
 
 /**
  * Calibrated by hand against the 19 department quotes stored on Development
@@ -52,7 +54,7 @@ const NOT_A_ROUTE_STATEMENT_PATTERNS: readonly RegExp[] = [
   /\bif (?:you|a student|students|they) (?:do(?:es)? not|don't|fail|miss)\b|\bmust (?:then )?drop\b|\bwill not be (?:able|permitted|allowed)\b/i,
   /\b(?:receive|earn|get|obtain|achieve|maintain)s? (?:an?|a grade of|a minimum grade of) ["“]?[A-D][+-]?(?![A-Za-z])/,
   /\bgrades? of\b|\bminimum grade\b|\bwith distinction\b|\bgrade point average\b|\bGPA\b/i,
-  /\b(?:not|cannot|can't|never)\b(?:\s+\S+){0,3}?\s+(?:receive|get|earn|granted|eligible)\b|\bcredit is not\b/i,
+  /\b(?:not|cannot|can't|never)\s+(?:be\s+)?(?:receive|get|earn|granted|eligible)\b|\bcredit is not\b/i,
   /\bAP credits?\b|\badvanced placement\b|\btransfer(?:red|ring)? credits?\b|\bstudy abroad\b/i,
   /\bpetition\b|\bmore than (?:one|two|three|four|five|\d+)\b/i,
 ];
@@ -62,7 +64,9 @@ export function statesHowToTakeCourseCreditRoute(sentence: string): boolean {
   const namesRoute = ROUTE_PHRASE_PATTERN.test(sentence);
   const namesCourseCode = COURSE_CODE_PATTERN.test(sentence);
   const statesHow = ROUTE_STATEMENT_PATTERN.test(sentence);
-  if (namesRoute && namesCourseCode) return true;
+  const namesResearchOrCredit =
+    RESEARCH_PATTERN.test(sentence) || CREDIT_WORD_PATTERN.test(sentence);
+  if (namesRoute && namesCourseCode && namesResearchOrCredit) return true;
   if ((namesRoute || namesCourseCode) && statesHow) return true;
   return CREDIT_WORD_PATTERN.test(sentence) && COURSE_NOUN_PATTERN.test(sentence) && statesHow;
 }

@@ -152,6 +152,29 @@ describe('a sentence that names the route but does not state how to take it (#40
     ).toBeNull();
   });
 
+  it('refuses a page-length rule that names the route and its course', () => {
+    expect(
+      readCourseCreditRouteFromHtml(
+        page(
+          '<p>The senior essay for ABCD 4491 should be between 25 and 40 pages long.</p>',
+          'Senior Essay',
+        ),
+        DEPARTMENT_URL,
+      ),
+    ).toBeNull();
+  });
+
+  it('admits a route whose negation governs majorship rather than receiving credit', () => {
+    const sentence =
+      'Students need not be majors to receive course credit for directed research in ABCD 4710.';
+    const reading = readCourseCreditRouteFromHtml(
+      page(`<p>${sentence}</p>`, 'Directed Research'),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading?.evidenceQuote).toBe(sentence);
+  });
+
   it('admits a route named beside its course with no verb of taking it', () => {
     const reading = readCourseCreditRouteFromHtml(
       page(
