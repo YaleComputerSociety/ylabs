@@ -39,7 +39,7 @@ describe('programBoardSectionOf', () => {
   it('files a source-backed program with no posted dates under no dates, not deadline passed', () => {
     const undated = served({ deadline: null });
     const status = getFellowshipCycleStatus(undated, now);
-    expect(status.label).toBe('No Dates Posted');
+    expect(status.label).toBe('No dates posted');
     expect(sectionOf({ deadline: null })).toBe('noDates');
     expect(sectionOf({ deadline: null, isAcceptingApplications: true })).toBe('noDates');
   });

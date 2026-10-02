@@ -290,7 +290,7 @@ const resultSummary = (
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
   }
   if (results.pathways.length > 0) {
-    parts.push(pluralize(results.pathways.length, 'verified way in', 'verified ways in'));
+    parts.push(pluralize(results.pathways.length, 'way to get involved', 'ways to get involved'));
   }
   return parts.join(', ');
 };
@@ -1711,7 +1711,7 @@ const Research = () => {
               className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base xl:hidden"
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
-              find relevant research profiles and verified ways in when the source evidence is
+              find relevant research profiles and how to get involved when the source evidence is
               strong enough.
             </p>
 

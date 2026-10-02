@@ -337,10 +337,10 @@ describe('SavedResearchPlans', () => {
     );
   });
 
-  it('enables comparison only when two to four homes are selected', async () => {
+  it('enables comparison only when two to four saved research profiles are selected', async () => {
     withSavedPlans();
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <SavedResearchPlans />
       </MemoryRouter>,
@@ -349,6 +349,10 @@ describe('SavedResearchPlans', () => {
     await screen.findByText('Owner Lab');
     const compareButton = screen.getByRole('button', { name: /^Compare/ });
     expect(compareButton).toBeDisabled();
+    expect(
+      screen.getByText('Select 2 to 4 saved research profiles to compare them side by side.'),
+    ).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\bhomes?\b/i);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Owner Lab to compare' }));
     expect(compareButton).toBeDisabled();
@@ -378,7 +382,7 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
   });
 
-  it('caps comparison selection at four saved homes', async () => {
+  it('caps comparison selection at four saved research profiles', async () => {
     withManySavedPlans(5);
 
     render(

@@ -434,7 +434,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
           <p className="text-sm text-ink-soft">
             {selectedCount === 0
-              ? 'Select 2 to 4 saved homes to compare them side by side.'
+              ? 'Select 2 to 4 saved research profiles to compare them side by side.'
               : `${selectedCount} selected to compare`}
           </p>
           <button

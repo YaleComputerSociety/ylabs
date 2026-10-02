@@ -129,9 +129,9 @@ describe('department research guidance (#4285)', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).not.toMatch(APPLICATION_AFFORDANCE);
-    expect(within(dialog).queryByText('Key Dates')).toBeNull();
-    expect(within(dialog).queryByText('Application Process')).toBeNull();
-    expect(within(dialog).queryByText('Eligibility Filters')).toBeNull();
+    expect(within(dialog).queryByText('Key dates')).toBeNull();
+    expect(within(dialog).queryByText('Application process')).toBeNull();
+    expect(within(dialog).queryByText('Eligibility filters')).toBeNull();
     expect(within(dialog).queryByText(/Do you need a mentor first/)).toBeNull();
     const actions = within(dialog).getAllByRole('link', {
       name: "Read the department's guidance",

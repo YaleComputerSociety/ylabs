@@ -1174,6 +1174,62 @@ await step('a programs visit sends one search and keeps a failed load an error',
   }
 });
 
+const INTERNAL_PROGRAM_FACET_NAMES = [
+  'Journey',
+  'Program Kind',
+  'Entry Mode',
+  'Legacy Type',
+  'Legacy category',
+];
+const TAB_EDGE_TOLERANCE = 1;
+
+await step('a student sees only student-worded program filter tabs, all in view', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage
+        .getByRole('button', { name: /^Filters/ })
+        .first()
+        .click();
+      const dialog = syntheticPage.getByRole('dialog', { name: 'Program filters' });
+      await dialog.waitFor({ timeout: 20000 });
+      const { tabs, dialogBox } = await dialog.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const strip = [...element.querySelectorAll('button[aria-pressed]')];
+        return {
+          dialogBox: { left: box.left, right: box.right },
+          tabs: strip.map((tab) => {
+            const rect = tab.getBoundingClientRect();
+            return { name: tab.textContent.trim(), left: rect.left, right: rect.right };
+          }),
+        };
+      });
+      record('program filter tabs', {
+        width: viewport.width,
+        tabs: tabs.map((tab) => tab.name),
+      });
+      const internal = tabs.filter((tab) => INTERNAL_PROGRAM_FACET_NAMES.includes(tab.name));
+      assert(
+        internal.length === 0,
+        `A student at ${viewport.width}px sees internal program facet tabs: ${internal.map((tab) => tab.name).join(', ')}.`,
+      );
+      const clipped = tabs.filter(
+        (tab) =>
+          tab.left < dialogBox.left - TAB_EDGE_TOLERANCE ||
+          tab.right > dialogBox.right + TAB_EDGE_TOLERANCE,
+      );
+      assert(
+        tabs.length > 0 && clipped.length === 0,
+        `The program filter tabs at ${viewport.width}px run past the popover edge: ${clipped.map((tab) => tab.name).join(', ')}.`,
+      );
+    });
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,

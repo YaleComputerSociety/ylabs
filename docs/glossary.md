@@ -199,6 +199,12 @@ These appear in older code and docs and must not be introduced in new copy, labe
 | `ResearchGroupMember` | `RoleAssignment` |
 | `AccessSignal`, `UndergraduateLogisticsClaim` | `Signal` with a type |
 | `Listing`, Pathways | `/research`, backed by `ResearchEntity` |
+| Yale Research (the product name), retired by #3186 | y/labs |
+| home, homes, saved homes (a saved item) | research, or "saved research profiles" |
+| "ways in", "verified ways in" (student copy) | "how to get involved" |
+| Journey, Program Kind, Entry Mode, Legacy Type (program filter tabs) | Opportunity, Program type, How you apply; the legacy category facet is operator-only |
 
 A client guard test enforces the copy half: `client/src/__tests__/deprecatedVocabularyGuard.test.ts`.
+It reads every JSX text node and every string in a JSX expression, a copy-bearing JSX attribute, or a `label`, `title`, `description`, or similar property, with whitespace collapsed, so a phrase split across source lines is still one phrase, and fails on the retired product name, the "home" noun, "ways in", and the internal program facet names.
+The rendered surfaces are held to the same words as well: `fellowships.test.tsx` and `FellowshipModal.test.tsx` for `/programs`, `labDetail.test.tsx` for the profile empty state, `research.test.tsx` for browse, `SavedResearchPlans.test.tsx` for the dashboard, and the student-journey smoke.
 `docs/decisions.md` holds the decisions behind each retirement.

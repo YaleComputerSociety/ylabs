@@ -373,6 +373,10 @@ describe('Research page', () => {
     expect(container.textContent).toContain(
       'Search by interest, professor, course topic, method, or question.',
     );
+    expect(container.textContent).toContain(
+      'find relevant research profiles and how to get involved when the source evidence is',
+    );
+    expect(container.textContent).not.toMatch(/\bways? in\b/i);
     expect(container.textContent).not.toContain('How to use this');
     expect(container.textContent).not.toContain('Trust constraint');
     expect(container.textContent).not.toContain('Topic-first discovery');
