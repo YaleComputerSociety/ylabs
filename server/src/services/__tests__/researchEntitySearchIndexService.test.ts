@@ -881,6 +881,90 @@ describe('researchEntitySearchIndexService', () => {
     else delete process.env.OPENAI_API_KEY;
   });
 
+  it('removes a stored embedder when the rebuild has no usable OPENAI_API_KEY', async () => {
+    const calls: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => {
+        calls.push('updateEmbedders');
+        return { taskUid: 2 };
+      },
+      resetEmbedders: async () => {
+        calls.push('resetEmbedders');
+        return { taskUid: 5 };
+      },
+      deleteAllDocuments: async () => ({ taskUid: 3 }),
+      addDocuments: async () => ({ taskUid: 4 }),
+      getEmbedders: async () => (calls.at(-1) === 'resetEmbedders' ? {} : { default: {} }),
+      tasks: succeedingTaskClient,
+    };
+    const run = () =>
+      rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
+        pageSize: 5,
+        clearExisting: true,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async (page: number) =>
+          page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+        fetchMemberNames: async () => new Map(),
+      });
+    const prev = process.env.OPENAI_API_KEY;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      process.env.OPENAI_API_KEY = 'sk-test';
+      await run();
+      expect(calls).toEqual(['updateEmbedders']);
+      expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('configured');
+
+      for (const unusable of [undefined, '', '<your-openai-key>']) {
+        calls.length = 0;
+        if (unusable === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = unusable;
+        const result = await run();
+        expect(calls).toEqual(['resetEmbedders']);
+        expect(result.indexedDocumentCount).toBe(1);
+        expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('absent');
+      }
+    } finally {
+      logSpy.mockRestore();
+      invalidateResearchEntitySearchEmbedderCache();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+      else delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('surfaces a failed resetEmbedders task instead of reporting a keyword-only rebuild', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      resetEmbedders: async () => ({ taskUid: 2 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2
+            ? { status: 'failed', error: { code: 'index_not_found', message: 'gone' } }
+            : { status: 'succeeded' },
+      },
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await expect(
+        rebuildResearchEntitySearchIndex({
+          warmVocabulary: async () => new Set<string>(),
+          pageSize: 5,
+          getIndex: async () => fakeIndex as any,
+          fetchPage: async () => [],
+          fetchMemberNames: async () => new Map(),
+        }),
+      ).rejects.toThrow(/resetEmbedders task 2 did not succeed.*index_not_found/s);
+    } finally {
+      logSpy.mockRestore();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    }
+  });
+
   it('surfaces a failed updateEmbedders task instead of swallowing it', async () => {
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
