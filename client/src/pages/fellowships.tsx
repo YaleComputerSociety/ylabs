@@ -262,7 +262,7 @@ const boardSections: Array<{
   {
     key: 'noDates',
     title: 'No dates posted',
-    description: 'No application window is listed. Check the source for timing.',
+    description: 'No current application window is listed. Check the official page for timing.',
   },
   {
     key: 'archive',

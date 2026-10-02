@@ -39,6 +39,7 @@ const SECTION_FOR_CYCLE: Record<FellowshipCycleCategory, ProgramBoardSection> = 
   openingSoon: 'openingSoon',
   projectedNextCycle: 'nextCycle',
   nextCycle: 'nextCycle',
+  staleDeadline: 'noDates',
   closed: 'noDates',
 };
 
