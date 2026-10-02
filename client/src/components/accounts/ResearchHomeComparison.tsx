@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -111,8 +112,7 @@ const ResearchHomeComparison = ({
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeOnEscape = useEffectEvent(onClose);
 
   const [columns, setColumns] = useState<ComparisonColumn[]>(() =>
     uniqueEntities.map((base) => ({ status: 'loading', base })),
@@ -168,7 +168,7 @@ const ResearchHomeComparison = ({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCloseRef.current();
+        closeOnEscape();
       }
     };
     document.addEventListener('keydown', handleEscape);

@@ -142,7 +142,7 @@ export function assertResearchSearchRelevanceTarget(input: {
   mongoUrl?: string;
   meiliHost?: string;
 }): void {
-  let database = '';
+  let database: string;
   try {
     database = new URL(input.mongoUrl || '').pathname.replace(/^\//, '');
   } catch {

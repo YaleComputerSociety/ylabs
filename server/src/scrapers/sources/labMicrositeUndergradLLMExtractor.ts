@@ -1159,7 +1159,7 @@ export const defaultCallLLM: CallLLMFn = async ({
   try {
     parsed = JSON.parse(content) as LLMExtraction;
   } catch (err: any) {
-    throw new Error(`LLM returned invalid JSON: ${sanitizeLogValue(err)}`);
+    throw new Error(`LLM returned invalid JSON: ${sanitizeLogValue(err)}`, { cause: err });
   }
   return parsed;
 };

@@ -416,7 +416,7 @@ async function attemptProfileSynthesis(
   profileUrl: string,
 ): Promise<ProfileSynthesisAttempt> {
   const { entity } = step;
-  let pageText = '';
+  let pageText: string;
   try {
     pageText = await step.fetchProfileText(profileUrl);
   } catch {

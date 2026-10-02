@@ -493,7 +493,7 @@ async function main(): Promise<void> {
   const pairs: Array<{ entity: SampleEntity; outcomes: ArmOutcome[] }> = [];
 
   for (const entity of sample) {
-    let pageText = '';
+    let pageText: string;
     try {
       const response = await fetchPublicHttpUrl(entity.pageUrl, {
         timeoutMs: 20_000,

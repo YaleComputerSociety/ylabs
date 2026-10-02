@@ -451,7 +451,7 @@ export class YaleDirectoryScraper implements IScraper {
             ? 'Yalies API returned 401 (auth failed)'
             : sanitizeLogValue(err instanceof Error ? err.message : String(err));
         const failure = `Yalies page ${pageNum} could not be read (${reason}); pagination aborted`;
-        if (pageNum === 1) throw new Error(failure);
+        if (pageNum === 1) throw new Error(failure, { cause: err });
         ctx.log(`${failure}; the faculty roster is incomplete.`);
         partialFailures.push(failure);
         break;

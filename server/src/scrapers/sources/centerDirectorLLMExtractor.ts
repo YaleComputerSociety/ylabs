@@ -369,7 +369,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
     sourceUrl: string;
   } | null> {
     if (!this.apiKey || !center.websiteUrl || !center.slug) return null;
-    let landing: { url: string; html: string } | null = null;
+    let landing: { url: string; html: string } | null;
     try {
       landing = await this.fetchPage(center.websiteUrl);
     } catch (error) {

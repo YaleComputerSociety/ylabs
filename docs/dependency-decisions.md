@@ -4,6 +4,22 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The lint toolchain moves to ESLint 10 (#4375)
+
+`eslint` and `@eslint/js` are on 10, with `typescript-eslint` 8.71, `eslint-plugin-react-hooks` 7, `eslint-config-prettier` 10 and `globals` 17.
+`typescript-eslint` 8.71 declares `typescript >=4.8.4 <6.1.0`, so the installed TypeScript 5.9 is supported; TypeScript 7 waits on a `typescript-eslint` release that admits it.
+The `.yarnrc.yml` ignore for `eslint (deprecation)` is removed, because its exit condition was this move, and every moderate audit stays clean without it.
+
+`eslint-plugin-react` is removed rather than upgraded.
+Its latest release declares no ESLint 10 peer range, and the config enabled none of its rules: it only switched off two JSX-scope rules that were never on.
+
+The root `brace-expansion@npm:^1.1.7` override is removed with it.
+That range was requested only by `minimatch` 3, which only the ESLint 9 toolchain loaded, and ESLint 10 loads `minimatch` 10, so the override matched nothing and the dead-override guard in `scripts/security-preflight.test.mjs` failed on it.
+The `^5.0.5` override still matches and stays.
+
+ESLint 10's `@eslint/js` recommended set adds `no-useless-assignment` and `preserve-caught-error`, and both findings were fixed in source: dead initializers before a `try` are gone, and a rethrown error now carries the caught one as its `cause`.
+The `eslint-plugin-react-hooks` recommended config is adopted whole, except `react-hooks/refs` and `react-hooks/set-state-in-effect`, which stay at `warn` because they flag loader effects and latest-value refs that are correct without the React Compiler; #4379 clears them and restores `error`.
+
 ## 2026-09-30: Dead overrides, a spent advisory ignore and `ts-node` are removed (#4037)
 
 An override that matches nothing reads as a security pin, so nobody removes it and every dependency review re-derives that it does nothing.

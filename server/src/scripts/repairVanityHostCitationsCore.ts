@@ -63,7 +63,7 @@ export function decideVanityRepair(
   if (!/^https:\/\//i.test(destination)) {
     return { repoint: false, refusal: 'destination-not-https' };
   }
-  let sameHost = true;
+  let sameHost: boolean;
   try {
     sameHost = new URL(citationUrl).hostname === new URL(destination).hostname;
   } catch {

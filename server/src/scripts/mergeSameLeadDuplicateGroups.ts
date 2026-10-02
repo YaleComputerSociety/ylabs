@@ -272,7 +272,7 @@ async function main(): Promise<void> {
       if (merge.survivorGainsFunding && !survivorRow.fieldProvenance?.recentGrants) {
         applied.survivorsGainedFundingWithNoBackingObservation += 1;
       }
-      let survivorDetail = null;
+      let survivorDetail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
       try {
         survivorDetail = await getResearchGroupDetail(String(survivorRow.slug));
       } catch {
@@ -290,7 +290,7 @@ async function main(): Promise<void> {
         if (redirect && redirect === String(survivorRow.slug))
           applied.redirectsResolvingToTheSurvivor += 1;
         else applied.redirectsNotResolving += 1;
-        let loserDetail = null;
+        let loserDetail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
         try {
           loserDetail = await getResearchGroupDetail(String(loser.slug));
         } catch {

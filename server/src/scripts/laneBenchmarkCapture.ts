@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   const capturedAt = new Date();
   beginBenchmarkCapture();
   let pages;
-  let unfrozenRequestCount = 0;
+  let unfrozenRequestCount: number;
   let run;
   try {
     run = await runLaneDry({ ...args, referenceDate: capturedAt });

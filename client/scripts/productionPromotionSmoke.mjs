@@ -41,7 +41,7 @@ const request = async (route, options = {}) => {
     },
   });
   const text = await response.text();
-  let json = null;
+  let json;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {

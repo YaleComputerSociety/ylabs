@@ -597,7 +597,7 @@ export class NihReporterScraper implements IScraper {
         const failure = `NIH RePORTER fetch failed at offset=${offset}: ${sanitizeLogValue(
           err instanceof Error ? err.message : err,
         )}; pagination aborted`;
-        if (pages === 0) throw new Error(failure);
+        if (pages === 0) throw new Error(failure, { cause: err });
         ctx.log(`${failure}; the grant window is incomplete.`);
         partialFailures.push(failure);
         break;

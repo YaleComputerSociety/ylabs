@@ -188,7 +188,7 @@ export async function judgeReviewBand(
 ): Promise<JudgeResult[]> {
   const results: JudgeResult[] = [];
   for (const { a, b } of pairs) {
-    let raw: JudgeVerdict | null = null;
+    let raw: JudgeVerdict | null;
     try {
       raw = await options.callLLM({
         model: options.model ?? CARD_SYNTHESIS_MODEL,

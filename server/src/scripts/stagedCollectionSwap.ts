@@ -163,7 +163,9 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
       rollbackError = caughtRollbackError;
     }
     if (rollbackError) {
-      throw new AggregateError([error, rollbackError], `${label} and rollback failed`);
+      throw new AggregateError([error, rollbackError], `${label} and rollback failed`, {
+        cause: error,
+      });
     }
     throw error;
   } finally {

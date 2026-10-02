@@ -79,7 +79,7 @@ export function writeBackfillGlobalRegionsOutput(report: unknown, output?: strin
 }
 
 export function assertDevelopmentTarget(mongoUrl: string | undefined): void {
-  let database = '';
+  let database: string;
   try {
     database = new URL(mongoUrl || '').pathname.replace(/^\//, '');
   } catch {

@@ -883,8 +883,8 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
     'ci.yml must run yarn lint so a lint error fails the required check (ylabs#3070)',
   );
 
-  // Warnings stay advisory: --max-warnings would make the two standing
-  // unused-variable warnings blocking, which #3070 deliberately declined.
+  // Warnings stay advisory: --max-warnings would make the standing React
+  // Compiler warnings blocking (#4379), and #3070 deliberately declined that.
   assert.doesNotMatch(ciWorkflow, /^\s*run:[^\n]*yarn lint[^\n]*--max-warnings/m);
   assert.doesNotMatch(packageJson.scripts.lint, /--max-warnings/);
 

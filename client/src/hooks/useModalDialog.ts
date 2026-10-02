@@ -1,4 +1,4 @@
-import { KeyboardEvent, useEffect, useRef } from 'react';
+import { KeyboardEvent, useEffect, useEffectEvent, useRef } from 'react';
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -47,8 +47,7 @@ export default function useModalDialog<InitialFocus extends HTMLElement = HTMLEl
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const initialFocusRef = useRef<InitialFocus>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeOnEscape = useEffectEvent(onClose);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -56,7 +55,7 @@ export default function useModalDialog<InitialFocus extends HTMLElement = HTMLEl
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCloseRef.current();
+        closeOnEscape();
       }
     };
     document.addEventListener('keydown', handleEscape);

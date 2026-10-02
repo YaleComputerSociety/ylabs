@@ -447,6 +447,7 @@ await step('the saved entity appears on the dashboard', async () => {
     });
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\nServer saved-plan state at failure: ${stored}`,
+      { cause: error },
     );
   }
 });

@@ -137,7 +137,6 @@ async function main(): Promise<void> {
   let kindObservationsCorrected = 0;
   let entityTypesCorrected = 0;
   let rematerialized = 0;
-  let servedNameStillAssertsALab = 0;
   let gateCounts: StudentVisibilityGateReport['counts'] | null = null;
 
   if (!options.dryRun && outcome.plans.length > 0) {
@@ -240,7 +239,7 @@ async function main(): Promise<void> {
   })
     .select('slug name kind entityType')
     .lean()) as unknown as Array<Record<string, unknown>>;
-  servedNameStillAssertsALab = after.filter(
+  const servedNameStillAssertsALab = after.filter(
     (doc) =>
       /\s+(?:Lab|Laboratory)$/i.test(String(doc.name ?? '').trim()) ||
       String(doc.entityType ?? '').toUpperCase() === 'LAB',

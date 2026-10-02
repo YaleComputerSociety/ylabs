@@ -120,7 +120,7 @@ async function probeProfilePage(
   entity: FraProfileSynthesisEntity,
   profileUrl: string,
 ): Promise<ProfileProbe> {
-  let pageText = '';
+  let pageText: string;
   try {
     pageText = htmlToText((await fetchPageWithPolicy(profileUrl)).html);
   } catch {

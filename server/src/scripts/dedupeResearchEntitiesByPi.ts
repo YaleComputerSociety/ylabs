@@ -1764,6 +1764,7 @@ async function archiveOrDeleteDuplicateDocument(args: {
       if (outcome === 'blocked') {
         throw new Error(
           `Archiving ${args.collectionName} ${args.id} hit a duplicate key; archive-mode dedupe will not delete conflict rows.`,
+          { cause: error },
         );
       }
       const result = await collection.deleteOne({ _id: id });
@@ -1970,6 +1971,7 @@ async function relinkScalarReferences(args: {
             `Relinking ${spec.collection}.${spec.field} hit a duplicate key for ${
               serializedDocumentId(row._id) || ''
             }; archive-mode dedupe will not delete reference rows.`,
+            { cause: error },
           );
         }
         const outcome =

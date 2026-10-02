@@ -1528,7 +1528,7 @@ export async function searchResearchGroupsViaMeili(
     totalHits?: number;
     facetDistribution?: Record<string, Record<string, number>>;
   };
-  let degraded = false;
+  let degraded: boolean;
   let finalSearchParams: Record<string, any> = searchParams;
   try {
     const outcome = await searchWithFallbacks();
