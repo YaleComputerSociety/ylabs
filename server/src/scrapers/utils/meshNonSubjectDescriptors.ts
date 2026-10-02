@@ -513,8 +513,8 @@ function researchAreaProvenanceSourceUrl(fieldProvenance: unknown): string {
   return typeof sourceUrl === 'string' ? sourceUrl : '';
 }
 
-// Serve-time as well as ingest-time, because a stored list whose every entry is a place
-// has no successor observation to supersede it once the lanes stop emitting one.
+// Serve-time as well as ingest-time, because a stored list whose every entry is a non-subject
+// descriptor has no successor observation to supersede it once the lanes stop emitting one.
 export function withoutMeshSourcedNonSubjectResearchAreas(
   areas: readonly string[],
   fieldProvenance: unknown,
