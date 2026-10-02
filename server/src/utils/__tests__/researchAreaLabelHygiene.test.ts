@@ -373,6 +373,18 @@ describe('sanitizeMethodChipLabel', () => {
     }
   });
 
+  it('refuses a citation identifier or a publication-type heading with a trailing list', () => {
+    for (const label of [
+      'DOI',
+      'PMID',
+      'PMCID',
+      'Citations',
+      'Peer-Reviewed Reviews, Practice Guidelines, Standards, and Consensus Statements',
+    ]) {
+      expect(sanitizeMethodChipLabel(label)).toBe('');
+    }
+  });
+
   it('keeps a technique that an activity word only qualifies', () => {
     for (const label of [
       'simulation training',
@@ -381,6 +393,7 @@ describe('sanitizeMethodChipLabel', () => {
       'retrospective chart review',
       'psychiatric consultation',
       'curriculum development',
+      'citation analysis',
     ]) {
       expect(sanitizeMethodChipLabel(label)).toBe(label);
     }
