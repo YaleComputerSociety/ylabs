@@ -64,4 +64,41 @@ describe('server error report capture path', () => {
     expect(events[0]).not.toContain('auto.http.express');
     expect(events[0]).not.toContain(SYNTHETIC_NETID);
   });
+
+  it('reports a rejected async handler on a mounted router exactly once', async () => {
+    Sentry.init({
+      ...buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
+      transport: capturingTransport,
+    });
+    process.env.SENTRY_DSN = 'https://public@example.com/1';
+
+    const { default: express } = await import('express');
+    const app = express();
+    const router = express.Router();
+    router.get('/:netid', async () => {
+      throw new Error('synthetic async failure');
+    });
+    app.use('/api/users', router);
+    app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
+      captureServerError(error, req);
+      res.status(500).json({ error: 'Internal server error' });
+    });
+
+    const origin = await new Promise<string>((resolve) => {
+      server = app.listen(0, () => {
+        const { port } = server?.address() as AddressInfo;
+        resolve(`http://127.0.0.1:${port}`);
+      });
+    });
+    const response = await fetch(`${origin}/api/users/${SYNTHETIC_NETID}`);
+    expect(response.status).toBe(500);
+    await Sentry.flush(2000);
+
+    const events = sentEnvelopes.filter((envelope) => envelope.includes('"type":"event"'));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toContain('synthetic async failure');
+    expect(events[0]).toContain('/api/users/:netid');
+    expect(events[0]).not.toContain('auto.http.express');
+    expect(events[0]).not.toContain(SYNTHETIC_NETID);
+  });
 });

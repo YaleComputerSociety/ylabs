@@ -89,7 +89,7 @@ export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
 
 const UNMATCHED_ROUTE = 'unmatched';
 
-const COUNTABLE_TEMPLATE = /^[^*?()+]*$/;
+const COUNTABLE_TEMPLATE = /^[^*?()+{}]*$/;
 
 const pathSegments = (path: string): string[] => path.split('/').filter(Boolean);
 
