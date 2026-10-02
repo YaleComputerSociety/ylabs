@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -100,6 +101,19 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
 };
 
 const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;
+
+const LABEL_COLUMN_WIDTH = '10rem';
+const GUTTER_WIDTH = '1.5rem';
+const MIN_COMPARED_COLUMN_WIDTH = 160;
+
+const comparedColumnWidth = (columnCount: number) =>
+  `calc((100% - ${LABEL_COLUMN_WIDTH} - ${GUTTER_WIDTH}) / ${columnCount})`;
+
+const labelCellClassName =
+  'sticky left-0 z-[1] bg-[var(--yr-panel)] py-3 pl-6 pr-3 text-xs font-semibold uppercase tracking-wide text-muted';
+
+const comparedCellClassName =
+  'border-b border-[var(--yr-line)] p-3 last:pr-6 [overflow-wrap:anywhere]';
 
 const ResearchHomeComparison = ({
   entities,
@@ -333,6 +347,25 @@ const ResearchHomeComparison = ({
     { key: 'links', label: 'Official links' },
   ];
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hasColumnsPastEdge, setHasColumnsPastEdge] = useState(false);
+  const tableMinWidth = `calc(${LABEL_COLUMN_WIDTH} + ${GUTTER_WIDTH} + ${columns.length * MIN_COMPARED_COLUMN_WIDTH}px)`;
+
+  const readColumnsPastEdge = useCallback(() => {
+    const region = scrollRef.current;
+    if (!region) return;
+    setHasColumnsPastEdge(region.scrollWidth - region.clientWidth - region.scrollLeft > 1);
+  }, []);
+
+  useEffect(() => {
+    readColumnsPastEdge();
+    const region = scrollRef.current;
+    if (!region || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(readColumnsPastEdge);
+    observer.observe(region);
+    return () => observer.disconnect();
+  }, [columns.length, readColumnsPastEdge]);
+
   const columnHeaderTitle = (column: ComparisonColumn): string => {
     if (column.status === 'ready') return researchEntityTitle(column.entity);
     return researchEntityDisplayName(column.base) || column.base.name;
@@ -378,18 +411,36 @@ const ResearchHomeComparison = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
-          <table className="w-full min-w-[640px] border-collapse text-left">
+        {hasColumnsPastEdge && (
+          <p className="flex-shrink-0 px-6 pt-4 text-xs text-muted" aria-hidden="true">
+            Scroll sideways to read every column.
+          </p>
+        )}
+
+        <div ref={scrollRef} onScroll={readColumnsPastEdge} className="flex-1 overflow-auto py-6">
+          <table
+            className="w-full border-collapse text-left"
+            style={{ minWidth: tableMinWidth, tableLayout: 'fixed' }}
+          >
+            <colgroup>
+              <col style={{ width: LABEL_COLUMN_WIDTH }} />
+              {columns.map((column) => (
+                <col key={column.base._id} style={{ width: comparedColumnWidth(columns.length) }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th scope="col" className="w-40 p-3 align-bottom text-xs font-semibold text-muted">
+                <th
+                  scope="col"
+                  className="sticky left-0 z-[1] bg-[var(--yr-panel)] py-3 pl-6 pr-3 align-bottom text-xs font-semibold text-muted"
+                >
                   <span className="sr-only">Field</span>
                 </th>
                 {columns.map((column) => (
                   <th
                     key={column.base._id}
                     scope="col"
-                    className="border-b border-[var(--yr-line)] p-3 align-bottom"
+                    className="border-b border-[var(--yr-line)] p-3 align-bottom last:pr-6 [overflow-wrap:anywhere]"
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
@@ -416,14 +467,11 @@ const ResearchHomeComparison = ({
             <tbody>
               {fieldRows.map((row) => (
                 <tr key={row.key} className="align-top">
-                  <th
-                    scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
-                  >
+                  <th scope="row" className={labelCellClassName}>
                     {row.label}
                   </th>
                   {columns.map((column) => (
-                    <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
+                    <td key={column.base._id} className={comparedCellClassName}>
                       {renderCell(column, row.key)}
                     </td>
                   ))}
@@ -431,17 +479,14 @@ const ResearchHomeComparison = ({
               ))}
               {anyNoteIncluded && (
                 <tr className="align-top">
-                  <th
-                    scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
-                  >
+                  <th scope="row" className={labelCellClassName}>
                     Your private note
                   </th>
                   {columns.map((column) => {
                     const note = (notesByEntityId[column.base._id] || '').trim();
                     const included = includedNoteIds.has(column.base._id) && note;
                     return (
-                      <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
+                      <td key={column.base._id} className={comparedCellClassName}>
                         {included ? (
                           <p className="text-xs italic text-ink-soft">{note}</p>
                         ) : (
