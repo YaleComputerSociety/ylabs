@@ -406,7 +406,7 @@ Breakpoints follow the MUI theme values: `sm` 640, `md` 768, `lg` 1024, `xl` 128
 Without a base column the implicit track is sized to its widest item's min-content, so one long word in one card widened every card and the page.
 - Served text breaks anywhere rather than widening its box: `[data-scroll-container]` and every `[role='dialog']` set `overflow-wrap: anywhere` in the base layer, and tables inside them keep whole words and scroll in their own wrapper.
 A slash-joined name renders through `components/shared/SlashBreakableText.tsx`, so a display heading breaks after the slash instead of mid-word.
-The student-journey smoke (`scripts/e2e-student-journey-smoke.mjs`) enforces the grid and wrap rules: it injects a 120-character token at 320px and fails on sideways scroll.
+`src/__tests__/gridBaseColumnGuard.test.ts` fails on a responsive grid with no base column, and the student-journey smoke (`scripts/e2e-student-journey-smoke.mjs`) injects a 120-character token at 320px and fails on sideways scroll.
 - Filter rails collapse into disclosures on small viewports.
 - Verify layouts at 1280 to 1536px where sticky rails are most likely to overflow.
 
