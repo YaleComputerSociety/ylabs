@@ -51,7 +51,25 @@ function isSocialLinkBlock($: CheerioAPI, el: Element): boolean {
   return ownText === '' || FOLLOW_CALL_TEXT.test(ownText);
 }
 
+const MAX_FOLLOW_LABEL_CLIMB = 3;
+
+function followBlockForLabel($: CheerioAPI, label: Element): Element | null {
+  let candidate = label.parent as Element | null;
+  for (let depth = 0; candidate && depth < MAX_FOLLOW_LABEL_CLIMB; depth += 1) {
+    if (candidate.name === 'body' || candidate.name === 'html') return null;
+    if (collapsedText($(candidate).text()).length > MAX_FOLLOW_BLOCK_TEXT) return null;
+    if (containsFollowLink($, candidate)) return candidate;
+    candidate = candidate.parent as Element | null;
+  }
+  return null;
+}
+
 function removeSocialFollowBlocks($: CheerioAPI): void {
+  for (const label of $(LABEL_ELEMENT_SELECTOR).toArray()) {
+    if (!label.parent || !FOLLOW_CALL_TEXT.test(collapsedText($(label).text()))) continue;
+    const block = followBlockForLabel($, label);
+    if (block) $(block).remove();
+  }
   for (const link of $('a[href]').toArray()) {
     if (!isFollowLink($, link) || !link.parent) continue;
     let block: Element | null = null;
@@ -61,17 +79,6 @@ function removeSocialFollowBlocks($: CheerioAPI): void {
       block = ancestor;
     }
     if (block) $(block).remove();
-  }
-  for (const label of $(LABEL_ELEMENT_SELECTOR).toArray()) {
-    if (!FOLLOW_CALL_TEXT.test(collapsedText($(label).text()))) continue;
-    const parent = $(label).parent();
-    const parentEl = parent.get(0);
-    if (!parentEl || !containsFollowLink($, parentEl)) continue;
-    if (parentEl.name !== 'body' && collapsedText(parent.text()).length <= MAX_FOLLOW_BLOCK_TEXT) {
-      parent.remove();
-    } else {
-      $(label).remove();
-    }
   }
 }
 

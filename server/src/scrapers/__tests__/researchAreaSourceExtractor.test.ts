@@ -235,6 +235,22 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     expect(result.areas).toEqual(['Neuroscience']);
   });
 
+  it('ignores a follow call whose platform links sit in a sibling container (#4047)', () => {
+    const html = `
+      <p>The institute studies genomics.</p>
+      <div class="quick-links">
+        <div class="quick-links__text">
+          <h2 class="quick-links__heading">Follow us on social media</h2>
+          <p class="quick-links__description">Keep up to date and tag us on social media</p>
+        </div>
+        <ul class="quick-links__list">
+          <li><a href="https://x.com/example">X</a></li>
+          <li><a href="https://www.linkedin.com/company/example">LinkedIn</a></li>
+        </ul>
+      </div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(['Genomics']);
+  });
+
   it('keeps a social-media topic the page itself declares or studies (#4047)', () => {
     const labeled = `
       <h3>Expertise</h3>
