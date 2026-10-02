@@ -136,7 +136,7 @@ import {
 import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
-  FUND_FACET_FIELDS,
+  FUND_AUTHORITY_FIELDS,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
@@ -4629,14 +4629,14 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_FACET_FIELDS, 'title'] },
+      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title'] },
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
   if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
   return kept.filter(
     (observation: any) =>
       observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
-      FUND_FACET_FIELDS.has(String(observation.field)),
+      FUND_AUTHORITY_FIELDS.has(String(observation.field)),
   );
 }
 

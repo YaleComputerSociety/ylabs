@@ -233,4 +233,58 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     expect(after.tier).not.toBe('suppressed');
     expect(after.reasons).not.toContain('non_research_program');
   });
+
+  it("the owning lane's pass keeps the fund's application window over its own (#4412)", async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await observe(
+      OFFICE_KEY,
+      OFFICE,
+      OFFICE_PAGE,
+      {
+        deadline: new Date('2019-11-16T04:59:59.999Z'),
+        applicationOpenDate: new Date('2019-06-26T04:00:00.000Z'),
+      },
+      '2026-03-02T00:00:00Z',
+    );
+    await observe(
+      FUND_KEY,
+      GRANTS,
+      FUND_PAGE,
+      {
+        title: 'Fixture Summer Inquiry Award (Catalog)',
+        sourceName: GRANTS,
+        sourceUrl: FUND_PAGE,
+        deadline: new Date('2027-03-01T17:00:00.000Z'),
+        applicationOpenDate: new Date('2026-12-01T05:00:00.000Z'),
+      },
+      '2026-02-01T00:00:00Z',
+    );
+
+    await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+    const afterOwningPass = await officeRow();
+    await materializeEntity('fellowship', { entityKey: FUND_KEY });
+    await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+    const afterBothPasses = await officeRow();
+
+    for (const row of [afterOwningPass, afterBothPasses]) {
+      expect(row?.deadline?.toISOString()).toBe('2027-03-01T17:00:00.000Z');
+      expect(row?.applicationOpenDate?.toISOString()).toBe('2026-12-01T05:00:00.000Z');
+    }
+  });
+
+  it("an owning lane's window stands where the fund states none", async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await observe(
+      OFFICE_KEY,
+      OFFICE,
+      OFFICE_PAGE,
+      { deadline: new Date('2027-01-15T04:59:59.999Z') },
+      '2026-03-02T00:00:00Z',
+    );
+    await seedFund(FUND_PAGE, FUND_FACETS, '2026-02-01T00:00:00Z');
+
+    await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+
+    expect((await officeRow())?.deadline?.toISOString()).toBe('2027-01-15T04:59:59.999Z');
+  });
 });

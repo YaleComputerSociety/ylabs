@@ -80,6 +80,15 @@ describe('preferFundFacetObservations', () => {
     ).toEqual(['a']);
   });
 
+  it("replaces another lane's application window where the fund states one (#4412)", () => {
+    expect(
+      preferFundFacetObservations(
+        [lane('a', 'deadline'), lane('b', 'applicationOpenDate'), lane('c', 'title')],
+        [fund('f1', 'deadline'), fund('f2', 'applicationOpenDate')],
+      ).map((observation) => observation._id),
+    ).toEqual(['c', 'f1', 'f2']);
+  });
+
   it('does not read a fund observation the pass already holds twice', () => {
     const own = fund('f1', 'purpose');
     expect(preferFundFacetObservations([own], [own])).toEqual([own]);

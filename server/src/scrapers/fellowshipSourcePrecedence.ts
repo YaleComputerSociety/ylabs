@@ -33,7 +33,7 @@ const FELLOWSHIP_IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   'sourceFingerprint',
 ]);
 
-const APPLICATION_WINDOW_FIELDS: ReadonlySet<string> = new Set([
+export const APPLICATION_WINDOW_FIELDS: ReadonlySet<string> = new Set([
   'deadline',
   'applicationOpenDate',
   'isAcceptingApplications',
@@ -48,6 +48,14 @@ export const FUND_FACET_FIELDS: ReadonlySet<string> = new Set([
   'yearOfStudy',
   'citizenshipStatus',
   'globalRegions',
+]);
+
+// Where the fund states one of these, every pass over a row citing that fund resolves the
+// fund's value, so the owning lane's pass and the fund's pass cannot write different
+// windows in turn (#4412).
+export const FUND_AUTHORITY_FIELDS: ReadonlySet<string> = new Set([
+  ...FUND_FACET_FIELDS,
+  ...APPLICATION_WINDOW_FIELDS,
 ]);
 
 // A row can cite a fund page that is not its own program's: a common application that

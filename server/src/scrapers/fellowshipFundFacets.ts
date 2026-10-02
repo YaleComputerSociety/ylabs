@@ -13,9 +13,13 @@
  * observations too, and where the fund states a facet its value replaces every other
  * lane's for that field. Both passes then resolve the same value, which makes this a
  * derivation: it writes nothing on its own and needs no lock.
+ *
+ * The application window is read the same way (#4412). The fund page is the window's
+ * authority on another lane's row, but only the fund's own pass applied that, so a row
+ * whose owning lane also states a window took whichever pass ran last.
  */
 import {
-  FUND_FACET_FIELDS,
+  FUND_AUTHORITY_FIELDS,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fundFacetsDescribeProgram,
 } from './fellowshipSourcePrecedence';
@@ -94,7 +98,7 @@ export function preferFundFacetObservations<T extends FacetObservationLike>(
     fundFacetObservations
       .filter((observation) => observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE)
       .map((observation) => String(observation.field))
-      .filter((field) => FUND_FACET_FIELDS.has(field)),
+      .filter((field) => FUND_AUTHORITY_FIELDS.has(field)),
   );
   if (statedByFund.size === 0) return [...observations];
   const included = new Set(observations.map((observation) => String(observation._id)));
