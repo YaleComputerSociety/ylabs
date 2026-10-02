@@ -6,6 +6,7 @@ import {
   deriveCanonicalResearchAreasFromPage,
   extractLabeledResearchAreaItems,
   isRejectedAreaSourceUrl,
+  isSharedAreaFilteredDirectoryUrl,
   researchAreaObservationsFromExtraction,
   type CandidateAreaEntity,
   type FetchedAreaPage,
@@ -168,6 +169,54 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
       },
     ]);
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['blank-area']);
+  });
+});
+
+describe('shared area-filtered directory pages (#4030)', () => {
+  const areaPage = 'https://school.example.edu/faculty-research/faculty-directory/finance';
+  const ownProfile = 'https://school.example.edu/faculty-research/faculty-directory/ada-fixture';
+  const citers = new Map([
+    ['https://school.example.edu/faculty-research/faculty-directory/finance', 9],
+    ['https://school.example.edu/faculty-research/faculty-directory/ada-fixture', 3],
+    ['https://school.example.edu/faculty-research/faculty-directory/marketing', 2],
+  ]);
+  const row = { slug: 'faculty-ada-fixture', name: 'Ada Fixture' };
+
+  it('refuses a directory leaf that three or more rows cite and that does not name the row', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(areaPage, row, citers)).toBe(true);
+  });
+
+  it('keeps the row its own directory profile even when several rows cite it', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(ownProfile, row, citers)).toBe(false);
+  });
+
+  it('keeps a directory leaf fewer than three rows cite', () => {
+    expect(
+      isSharedAreaFilteredDirectoryUrl(
+        'https://school.example.edu/faculty-research/faculty-directory/marketing',
+        row,
+        citers,
+      ),
+    ).toBe(false);
+  });
+
+  it('drops the shared directory page from the candidate urls and records the refusal', () => {
+    const doc = {
+      _id: 'j',
+      slug: 'faculty-ada-fixture',
+      name: 'Ada Fixture',
+      websiteUrl: areaPage,
+      sourceUrls: [ownProfile],
+      researchAreas: [],
+    };
+    expect(candidateAreaUrlsForDoc(doc, citers)).toEqual([ownProfile]);
+    const [candidate] = candidateAreaEntitiesFromDocs([doc], { citerCounts: citers });
+    expect(candidate.sourceUrls).toEqual([ownProfile]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
+  it('refuses nothing when no citer counts are supplied', () => {
+    expect(candidateAreaUrlsForDoc({ websiteUrl: areaPage })).toEqual([areaPage]);
   });
 });
 
