@@ -196,18 +196,14 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
     expect(detail?.shortDescription).toBe(card?.shortDescription);
     expect(detail?.fullDescription).toBe(OWN_LEAD_FULL);
   }, 60000);
-  it(
-    'serves no unguarded copy and reports degraded when the lead-name read fails on the Meilisearch browse path',
-    async () => {
-      mocks.rosterReadFails = true;
-      const { card, degraded } = await browseCardFor(GRAFT_SLUG);
+  it('serves no unguarded copy and reports degraded when the lead-name read fails on the Meilisearch browse path', async () => {
+    mocks.rosterReadFails = true;
+    const { card, degraded } = await browseCardFor(GRAFT_SLUG);
 
-      expect(degraded).toBe(true);
-      expect(card).toBeDefined();
-      expect(card?.name).toBe('Quill Capillary Barrier Lab');
-      expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
-      expect(JSON.stringify(card)).not.toContain('capillary barrier failure');
-    },
-    60000,
-  );
+    expect(degraded).toBe(true);
+    expect(card).toBeDefined();
+    expect(card?.name).toBe('Quill Capillary Barrier Lab');
+    expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
+    expect(JSON.stringify(card)).not.toContain('capillary barrier failure');
+  }, 60000);
 });
