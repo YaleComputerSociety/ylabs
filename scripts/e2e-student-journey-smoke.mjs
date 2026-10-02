@@ -816,13 +816,21 @@ await step('a lazy route keeps the footer below the fold while it loads', async 
           window.__pageShift = 0;
           window.__footerTops = [];
           const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+          const isOnScreen = (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.bottom > 0 &&
+            rect.top < window.innerHeight &&
+            rect.right > 0 &&
+            rect.left < window.innerWidth;
+          const footerMovedOnScreen = (source) =>
+            Boolean(elementOf(source.node)?.closest?.('footer')) &&
+            (isOnScreen(source.previousRect) || isOnScreen(source.currentRect));
           new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
               if (entry.hadRecentInput) continue;
               window.__pageShift += entry.value;
-              if (entry.sources.some((source) => elementOf(source.node)?.closest?.('footer'))) {
-                window.__footerShift += entry.value;
-              }
+              if (entry.sources.some(footerMovedOnScreen)) window.__footerShift += entry.value;
             }
           }).observe({ type: 'layout-shift', buffered: true });
           const sampleFooter = () => {
