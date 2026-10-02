@@ -369,7 +369,10 @@ export default function Navbar() {
               anchor="right"
               open={drawerOpen}
               onClose={toggleDrawer(false)}
-              slotProps={{ paper: { id: 'primary-mobile-menu', 'aria-label': 'Main menu' } }}
+              slotProps={{
+                paper: { id: 'primary-mobile-menu', 'aria-label': 'Main menu' },
+                backdrop: { sx: { backgroundColor: 'var(--yr-scrim)' } },
+              }}
             >
               {mobileMenu()}
             </Drawer>

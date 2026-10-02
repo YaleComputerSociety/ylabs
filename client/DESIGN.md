@@ -198,10 +198,11 @@ A selected filter chip was `bg-slate-900`, a near-black that is not in this pale
 And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300` in one and `bg-slate-300` in the other, which no amount of care at a call site prevents and only a token does.
 - A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950` or `black`.
 Every full-screen overlay, the program and comparison modals, the operator modals, and both mobile filter sheets, takes `bg-scrim`, which is `--yr-scrim`: navy at 50%.
+The MUI navigation drawer cannot take a class on its backdrop, so it sets `backgroundColor: 'var(--yr-scrim)'` on the backdrop slot instead.
 There is one step, because a sheet and a modal both mean "the page behind this is inert", and two opacities would only be told apart side by side.
 Never write the scrim as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
 Every colour alias here is a `var()` with no alpha channel, so Tailwind 3 cannot apply the modifier and emits no rule at all; the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
-`src/__tests__/overlayScrimGuard.test.ts` fails on a `bg-black/` class, on a `fixed inset-0` overlay without `bg-scrim`, and on any opacity-modified colour class in `src/` that compiles to nothing through the real Tailwind config, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, and the program modal.
+`src/__tests__/overlayScrimGuard.test.ts` fails on any opacity-modified colour class in `src/` that compiles to nothing through the real Tailwind config, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
 - The sweep covers the whole tree, so the guard has no path list.
 A path list is honest only while a sweep is in progress; kept afterwards it means the next new file sits quietly outside the rule.

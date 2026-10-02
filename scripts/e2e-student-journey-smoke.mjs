@@ -748,6 +748,14 @@ await step('every overlay dims the page with the one navy scrim', async () => {
       '[data-testid="filter-sheet-backdrop"]',
     );
   });
+  await withSyntheticBrowsePage(mobile, async (syntheticPage) => {
+    await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await syntheticPage.getByRole('button', { name: 'Open menu' }).first().click();
+    scrims['navigation menu'] = await backgroundOf(
+      syntheticPage,
+      '.MuiDrawer-root .MuiBackdrop-root',
+    );
+  });
   for (const viewport of [mobile, { width: 1440, height: 900 }]) {
     await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
       await syntheticPage.goto(`${baseUrl}/programs?program=e2e-program-1`, {

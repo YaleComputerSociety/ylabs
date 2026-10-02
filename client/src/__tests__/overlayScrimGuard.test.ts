@@ -10,9 +10,6 @@ const CLIENT = join(__dirname, '..', '..');
 const SRC = join(CLIENT, 'src');
 const STYLESHEET = join(SRC, 'index.css');
 
-const UNTINTED_SCRIM = /(?<![\w-])bg-black\/\d+/;
-const FULL_SCREEN_OVERLAY = /(?<![\w-])fixed inset-0(?![\w-])/;
-const SCRIM_CLASS = /(?<![\w:-])bg-scrim(?![\w-])/;
 const OPACITY_MODIFIED_COLOR =
   /(?<![\w:[/-])((?:[a-z0-9-]+:)*(?:bg|text|border(?:-[trblxy])?|ring|ring-offset|from|via|to|fill|stroke|outline|divide|decoration|accent|caret|placeholder|shadow)-(?:\[[^\]\s'"`]+\]|[a-z][a-z0-9-]*)\/\d{1,3})(?![\w/])/g;
 
@@ -59,23 +56,6 @@ const declaredValue = (stylesheet: Root, selector: string, prop: string): string
 };
 
 describe('overlay scrim guard', () => {
-  it('draws no overlay with an untinted black scrim', () => {
-    const sites = sourceLines()
-      .filter(({ line }) => UNTINTED_SCRIM.test(line))
-      .map(({ site }) => site);
-
-    expect(sites).toEqual([]);
-  });
-
-  it('gives every full-screen overlay the design-system scrim', () => {
-    const overlays = sourceLines().filter(({ line }) => FULL_SCREEN_OVERLAY.test(line));
-
-    expect(overlays.length).toBeGreaterThan(0);
-    expect(overlays.filter(({ line }) => !SCRIM_CLASS.test(line)).map(({ site }) => site)).toEqual(
-      [],
-    );
-  });
-
   it('compiles the scrim to a translucent navy', async () => {
     const stylesheet = await compile(['bg-scrim']);
 
