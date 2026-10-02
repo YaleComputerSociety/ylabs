@@ -239,6 +239,10 @@ The research and program sort menus were two hand-rolled copies of one listbox, 
 The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.
 A filled fill means "this is the one action on this surface"; six of them means none of them.
 Demote the CTA to a text link in `brand` with the shared arrow, which is what the sibling browse card already did, and anchor it on a `border-t border-line` hairline so the CTA row aligns across a row of cards.
+- The hairline needs a floor gap above it, not only the `mt-auto` that pins it to the bottom.
+`mt-auto` resolves to 0 on the tallest card of a row, so a description directly above it sat on the divider on every card at 375px and 768px.
+Put `mt-auto pt-4` on a wrapper and the `border-t` on the row inside it, so the row still pins to the bottom and never sits closer than one `4` spacing step to the content above.
+`components/research/__tests__/ResearchHomeCard.test.tsx` holds the browse card to that.
 - A card that looks clickable is one real target, not a wrapper with a pointer cursor.
 Stretch its one action over the card with `after:absolute after:inset-0` on the action and `relative` on the card, and lift any other control above the overlay with `relative z-[1]`.
 Never put `onClick` on the wrapper instead: the program card lost its wrapper handler for keyboard access and kept `cursor-pointer`, so a 277x319 card promised a target and delivered a 20px button.

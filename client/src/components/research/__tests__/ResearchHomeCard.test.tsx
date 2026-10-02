@@ -259,6 +259,47 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
   });
 
+  it('keeps the compact card topic count visible at every width', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            labels: [
+              'alpha topic modeling',
+              'beta field methods',
+              'gamma archive analysis',
+              'delta source review',
+              'epsilon data curation',
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Alpha Topic Modeling')).toBeTruthy();
+    expect(screen.getByText('Beta Field Methods')).toBeTruthy();
+    expect(screen.queryByText('Gamma Archive Analysis')).toBeNull();
+    const moreCounts = screen.getAllByText(/^\+\d+ more$/);
+    expect(moreCounts.map((element) => element.textContent)).toEqual(['+3 more']);
+    expect(moreCounts[0].className.split(/\s+/)).not.toContain('hidden');
+    expect(moreCounts[0].className).not.toMatch(/\b(?:sm|md|lg|xl):hidden\b/);
+  });
+
+  it('keeps a spacing floor between the description and the action divider', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard variant="compact" home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    const divider = screen.getByRole('link', { name: 'View profile' }).parentElement;
+    expect(divider?.className.split(/\s+/)).toContain('border-t');
+    expect(divider?.className.split(/\s+/)).not.toContain('mt-auto');
+    const actionRow = divider?.parentElement;
+    expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
+  });
+
   it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
     render(
       <MemoryRouter>
