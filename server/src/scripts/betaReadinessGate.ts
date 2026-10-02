@@ -174,7 +174,7 @@ async function main(): Promise<void> {
       message:
         legacyResidueCount === 0
           ? 'Canonical hard migration check found no legacy source collection rows.'
-          : 'Legacy source collections still contain rows; run/verify canonical migration cleanup before Beta writes.',
+          : 'Legacy source collections still contain rows; clean them up in Development and let the Development-to-Beta refresh mirror the result.',
       legacyCollectionCounts,
     },
     sourceMetadata: {

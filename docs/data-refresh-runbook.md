@@ -447,6 +447,8 @@ Before changing Beta, record its backup or manual recovery artifact and run the 
 SCRAPER_ENV=beta yarn --cwd server beta:readiness
 ```
 
+The diagnostic exits non-zero while any gate is blocked, and `betaBackup` stays blocked until `--confirm-beta-backup` is passed, so a non-zero exit without that flag is expected; read the other gates in the report.
+
 Generate and review the plan locally:
 
 ```bash
