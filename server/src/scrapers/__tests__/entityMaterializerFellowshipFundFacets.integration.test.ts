@@ -268,7 +268,13 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     await seedOfficeRow([FUND_PAGE]);
     await observe(OFFICE_KEY, OFFICE, OFFICE_PAGE, { archived: false }, '2026-03-02T00:00:00Z');
     await seedFund(FUND_PAGE, FUND_FACETS, '2026-02-01T00:00:00Z');
-    await observe(FUND_KEY, GRANTS, FUND_PAGE, { title: 'Common Application' }, '2026-02-02T00:00:00Z');
+    await observe(
+      FUND_KEY,
+      GRANTS,
+      FUND_PAGE,
+      { title: 'Common Application' },
+      '2026-02-02T00:00:00Z',
+    );
     await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-04-01T00:00:00Z');
 
     await materializeEntity('fellowship', { entityKey: FUND_KEY });

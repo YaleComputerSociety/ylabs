@@ -64,7 +64,7 @@ The endpoint remains first-party, authenticated, private, and covered by the exi
 Every usage aggregate leaves out maintainer traffic: rows from any netid that holds an `admin_grants` row, in any status, and legacy rows typed `admin`.
 Admin authority is a grant rather than a user type, and an admin session records the persisted user type (usually `undergraduate`), so filtering on `userType` alone misses current maintainers.
 Before #3673 nothing was excluded, and the 4 Production grant holders had written 48% of all Production rows.
-The per-user table still lists every actor, maintainers included.
+The per-user table still lists every actor, maintainers included, though it is built over non-search events only (see `skills/auth-security/SKILL.md`, #4159).
 
 A signed-in visitor is a distinct netid with any recorded event in the window, typed by that netid's most recent row.
 The dashboard's `today` and `semester` ranges, and the "today" breakdown on every usage card, start at midnight `America/New_York`, the zone Yale's students and operators live in (#4008).
