@@ -64,6 +64,9 @@ export const fencedEnvironmentKeys = (): string[] =>
 export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
   for (const key of fencedEnvironmentKeys()) delete env[key];
   env.YLABS_SKIP_LOCAL_DOTENV = 'true';
+  // A suite must never join, or become, the machine-wide host slot broker a live scrape on
+  // the same machine is using; a suite that tests the broker re-enables it in a private directory.
+  env.SCRAPER_MACHINE_HOST_SLOTS = 'off';
   return env;
 };
 

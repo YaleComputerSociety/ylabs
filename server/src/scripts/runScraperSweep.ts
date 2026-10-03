@@ -21,8 +21,10 @@ import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import {
+  ChainedHostSlotLimiter,
   DEFAULT_PER_HOST_CONCURRENCY,
   HostConcurrencyLimiter,
+  type HostSlotLimiter,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import {
   brokerSocketPath,
@@ -35,6 +37,7 @@ import {
   resolveSweepPageReuseMaxBytes,
 } from '../scrapers/utils/sweepPageReuse';
 import { SweepPageStore, type SweepPageStoreStats } from '../scrapers/utils/sweepPageStore';
+import { machineHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
 import { SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS } from './backfillSourceLinkHealthCore';
@@ -597,11 +600,14 @@ export function sweepHostSlotBrokerPath(tmpdir: string = os.tmpdir(), pid = proc
 export async function startSweepHostSlotBroker(
   env: NodeJS.ProcessEnv = process.env,
   socketPath: string = sweepHostSlotBrokerPath(),
-  options: { pageReuse?: boolean } = {},
+  options: { pageReuse?: boolean; machineWide?: HostSlotLimiter } = {},
 ): Promise<HostSlotBroker> {
   return HostSlotBroker.listen(
     socketPath,
-    new HostConcurrencyLimiter(resolveSweepHostSlotBudget(env)),
+    new ChainedHostSlotLimiter([
+      new HostConcurrencyLimiter(resolveSweepHostSlotBudget(env)),
+      options.machineWide ?? machineHostSlotLimiter(),
+    ]),
     options.pageReuse
       ? {
           pageStore: new SweepPageStore(resolveSweepPageReuseMaxBytes(env), SWEEP_PAGE_REUSE_HOSTS),

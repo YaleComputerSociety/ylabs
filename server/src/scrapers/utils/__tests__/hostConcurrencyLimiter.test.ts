@@ -154,6 +154,30 @@ describe('HostConcurrencyLimiter', () => {
     }
   });
 
+  it('re-spaces the next grant when a wait overshoots, so a late timer never narrows a gap', async () => {
+    vi.useFakeTimers();
+    try {
+      let overshoots = 1;
+      const limiter = new HostConcurrencyLimiter(8, {
+        sleep: (ms) =>
+          new Promise((resolve) => setTimeout(resolve, ms + (overshoots-- > 0 ? 73 : 0))),
+      });
+      const startedAt = Date.now();
+      const grants: number[] = [];
+      const jobs = Array.from({ length: 3 }, () =>
+        limiter.acquire('medicine.yale.edu').then((release) => {
+          grants.push(Date.now() - startedAt);
+          release();
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all(jobs);
+      expect(grants).toEqual([0, 473, 873]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not space out hosts without an override', async () => {
     let clock = 0;
     const sleeps: number[] = [];
