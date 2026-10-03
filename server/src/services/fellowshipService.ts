@@ -942,7 +942,7 @@ export const searchFellowships = async (params: {
   const spelling = correctSpelling
     ? await correctProgramSearchQuerySpelling(typedQuery)
     : { query: typedQuery, corrections: [] };
-  const safeQuery = spelling.query;
+  const safeQuery = boundedSearchQuery(spelling.query);
   const safeYearOfStudy = boundedSearchFilterValues(yearOfStudy);
   const safeTermOfAward = boundedSearchFilterValues(termOfAward);
   const safePurpose = boundedSearchFilterValues(purpose);
