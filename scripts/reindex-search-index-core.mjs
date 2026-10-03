@@ -125,7 +125,7 @@ export function describeMissingEnvVars(missing) {
 }
 
 // Only the host is shown, never credentials. MONGODBURL carries a password and
-// MEILISEARCH_API_KEY is a secret, so the plan reports whether each is present
+// a Meilisearch key is a secret, so the plan reports whether each is present
 // rather than echoing it: an operator running this on a server may be sharing a
 // terminal or a screenshot.
 function describeMeiliWriteKeyPresence(env) {

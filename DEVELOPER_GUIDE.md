@@ -393,8 +393,8 @@ Listing CRUD is retired and must not be used as the search sync path.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
-- `getMeiliClient()` - lazy-loaded singleton
-- `getMeiliIndex(name)` - returns a prefixed index (e.g., `prod_researchentities`)
+- `getMeiliClient()` / `getMeiliIndex(name)` - write-key client and prefixed index (e.g., `prod_researchentities`) for the reindex and scripts
+- `getMeiliSearchClient()` / `getMeiliSearchIndex(name)` - search-key client and index for the request path; key roles are in `docs/meilisearch-reindex-runbook.md#meilisearch-keys`
 - `resolveIndexName(name)` - pure function for prefix resolution
 
 ---
