@@ -125,7 +125,11 @@ import {
 import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
-import { materializeAccessForResearchGroup, type AccessObservation } from './accessMaterializer';
+import {
+  materializeAccessForResearchGroup,
+  type AccessObservation,
+  type AccessSignalChangePlan,
+} from './accessMaterializer';
 import {
   sanitizeObservationField,
   withHarvestTextDefectsCorrected,
@@ -344,6 +348,7 @@ interface MaterializeOptions {
    * report compares fields and would not see them, so it leaves this off (#3874).
    */
   keepPostProjectionEvidence?: boolean;
+  accessSignalsOnly?: boolean;
   onlyReconcileFieldProvenance?: boolean;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
@@ -593,6 +598,7 @@ interface MaterializeResult {
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
   fellowshipAbsenceClears?: FellowshipAbsenceClear[];
+  accessSignalChanges?: AccessSignalChangePlan;
 }
 
 /**
@@ -8015,6 +8021,27 @@ export async function materializeEntity(
     }
   }
 
+  const accessPassObservations =
+    mergedInKeys.length > 0 || foreignContactWithheld ? (obs as AccessObservation[]) : undefined;
+  if (options.accessSignalsOnly && isResearchEntityObservationType(entityType) && entityIdString) {
+    const accessResult = await materializeAccessForResearchGroup(
+      { researchEntityId: entityIdString, entityKey: identifier.entityKey },
+      accessPassObservations,
+      { dryRun: options.dryRun },
+    );
+    return {
+      entityType,
+      entityId: entityIdString,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      ...(accessResult.skipped ? { skipped: accessResult.skipped } : {}),
+      ...(accessResult.changes ? { accessSignalChanges: accessResult.changes } : {}),
+    };
+  }
+
   const storedLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
   // `reviseRevisitableFieldLocks` asks what this projection would produce if the
   // named locks were not there, which is the only way to learn whether the engine
@@ -8486,9 +8513,7 @@ export async function materializeEntity(
             researchEntityId: entityIdString,
             entityKey: identifier.entityKey,
           },
-          mergedInKeys.length > 0 || foreignContactWithheld
-            ? (obs as AccessObservation[])
-            : undefined,
+          accessPassObservations,
         );
     postMaterializationMetrics = {
       entryPathways: 0,

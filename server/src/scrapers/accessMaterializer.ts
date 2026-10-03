@@ -5,14 +5,17 @@
  * on the research-entity index rather than a separate pathway index.
  */
 import mongoose from 'mongoose';
+import { attributedArchiveSet } from '../models/entityArchival';
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { Signal } from '../models/signal';
 import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
 import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
+import { omitSuppressionLockedFields } from '../services/suppressionLockUtils';
 import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
@@ -28,6 +31,7 @@ import {
   observationIsKeyedToRow,
   type ContactEvidenceRow,
 } from './rowKeyedContactEvidence';
+import { contactQuoteStatesAnInstruction } from './contactInstructionQuoteAdmission';
 
 export { isExplicitUndergradUnavailabilityPhrase };
 
@@ -92,13 +96,43 @@ export interface AccessMaterializationResult {
   staleEvidenceSkipped: number;
   errors: number;
   skipped?: string;
+  changes?: AccessSignalChangePlan;
 }
 
 export interface AccessArtifactDerivationResult {
   researchEntityId?: string;
   artifacts: DerivedAccessArtifacts;
+  observations?: AccessObservation[];
   skipped?: string;
 }
+
+export interface StoredAccessSignal {
+  _id?: unknown;
+  derivationKey?: unknown;
+  archived?: unknown;
+  archivedReason?: unknown;
+  suppression?: { reason?: string; lockedFields?: string[] };
+}
+
+export interface AccessSignalChange {
+  signalId: string;
+  derivationKey: string;
+}
+
+export interface AccessSignalChangePlan {
+  retired: AccessSignalChange[];
+  revived: AccessSignalChange[];
+}
+
+export const ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON = 'access-materializer:evidence-withdrawn';
+
+export const EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  'signal:REACH_OUT_PLAUSIBLE': ['undergradAccessEvidence'],
+  'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': [
+    'contactInstructionsQuote',
+    'undergradAccessEvidence',
+  ],
+};
 
 function observationId(obs: AccessObservation): string | undefined {
   return serializedDocumentId(obs._id);
@@ -294,6 +328,20 @@ function makeSignal(input: {
   };
 }
 
+function newestReadPerSource(observations: AccessObservation[]): AccessObservation[] {
+  const newest = new Map<string, AccessObservation>();
+  for (const obs of observations) {
+    const incumbent = newest.get(obs.sourceName);
+    if (
+      !incumbent ||
+      new Date(obs.observedAt).getTime() > new Date(incumbent.observedAt).getTime()
+    ) {
+      newest.set(obs.sourceName, obs);
+    }
+  }
+  return [...newest.values()];
+}
+
 function uniqueByDerivationKey<T extends { derivationKey: string }>(items: T[]): T[] {
   return Array.from(new Map(items.map((item) => [item.derivationKey, item])).values());
 }
@@ -417,21 +465,29 @@ export function deriveAccessArtifactsFromObservations(
   const negativeAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'no',
   );
+  const currentAccessEvidence = newestReadPerSource(undergradAccessEvidence);
+  const currentPositiveAccessEvidence = currentAccessEvidence.filter(
+    (obs) => undergradAccessVerdict(obs.value) === 'yes',
+  );
+  const currentNegativeAccessEvidence = currentAccessEvidence.filter(
+    (obs) => undergradAccessVerdict(obs.value) === 'no',
+  );
   const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
     (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
   );
   const undergradAccessQuote =
-    publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
-    publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
-  if (positiveAccessEvidence.length > 0) {
-    const score = maxConfidence(positiveAccessEvidence);
+    publicExcerpt(
+      bestObservation(newestReadPerSource(byField.get('undergradRoleEvidenceQuote') || []))?.value,
+    ) || publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
+  if (currentPositiveAccessEvidence.length > 0) {
+    const score = maxConfidence(currentPositiveAccessEvidence);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
         type: 'REACH_OUT_PLAUSIBLE',
         score,
-        observations: positiveAccessEvidence,
+        observations: currentPositiveAccessEvidence,
         excerpt: undergradAccessQuote || undefined,
       }),
     );
@@ -479,8 +535,10 @@ export function deriveAccessArtifactsFromObservations(
   // minted into undergraduate action evidence: an explicit negative verdict
   // vetoes the credit, matching the join-page path's positive-evidence guard
   // above so an "open to undergrads: no" lab is never surfaced as reach-out.
-  const contactInstructionObservations = byField.get('contactInstructionsQuote') || [];
-  const hasExplicitUndergradExclusion = negativeAccessEvidence.length > 0;
+  const contactInstructionObservations = newestReadPerSource(
+    byField.get('contactInstructionsQuote') || [],
+  ).filter((obs) => contactQuoteStatesAnInstruction(obs.value));
+  const hasExplicitUndergradExclusion = currentNegativeAccessEvidence.length > 0;
   if (contactInstructionObservations.length > 0 && !hasExplicitUndergradExclusion) {
     const score = maxConfidence(contactInstructionObservations);
     accessSignals.push(
@@ -620,8 +678,9 @@ async function resolveResearchEntityId(identifier: {
 
 /**
  * An empty observation read yields no signals here, and that is a no-op rather
- * than a retraction: `materializeAccessForResearchGroup` upserts what it derived
- * and never archives what it did not. So do NOT move an observation-store
+ * than a retraction: `materializeAccessForResearchGroup` archives a signal it did
+ * not derive only when the read holds that signal's own evidence fields (#3921),
+ * so an empty read archives nothing. So do NOT move an observation-store
  * availability guard into this function, which #2514 proposed. Three paths reach
  * the read below without supplying observations - the reconcile lane, the entity
  * materializer through the wrapper, and the orphan-reference repair's
@@ -661,12 +720,78 @@ export async function deriveAccessArtifactsForResearchGroup(
 
   const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
 
-  return { researchEntityId, artifacts };
+  return { researchEntityId, artifacts, observations };
+}
+
+function archiveIsSuppressionLocked(signal: StoredAccessSignal): boolean {
+  return !('archived' in omitSuppressionLockedFields({ archived: true }, signal));
+}
+
+export function planEvidenceGovernedSignalChanges(
+  derivedKeys: ReadonlySet<string>,
+  observations: readonly AccessObservation[],
+  stored: readonly StoredAccessSignal[],
+): AccessSignalChangePlan {
+  const fieldsRead = new Set(observations.map((obs) => obs.field));
+  const plan: AccessSignalChangePlan = { retired: [], revived: [] };
+  for (const signal of stored) {
+    const derivationKey = firstString(signal.derivationKey);
+    const evidenceFields = EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS[derivationKey];
+    const signalId = serializedDocumentId(signal._id);
+    if (!evidenceFields || !signalId || archiveIsSuppressionLocked(signal)) continue;
+    const derived = derivedKeys.has(derivationKey);
+    if (signal.archived === true) {
+      if (derived && signal.archivedReason === ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON) {
+        plan.revived.push({ signalId, derivationKey });
+      }
+      continue;
+    }
+    if (!derived && evidenceFields.some((field) => fieldsRead.has(field))) {
+      plan.retired.push({ signalId, derivationKey });
+    }
+  }
+  return plan;
+}
+
+async function storedEvidenceGovernedSignals(
+  researchEntityId: string,
+): Promise<StoredAccessSignal[]> {
+  return (await Signal.find({
+    researchEntityId: toAccessMaterializerObjectId(researchEntityId),
+    derivationKey: { $in: Object.keys(EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS) },
+  })
+    .select('_id derivationKey archived archivedReason suppression')
+    .lean()) as unknown as StoredAccessSignal[];
+}
+
+async function applyAccessSignalChanges(
+  accessSignals: readonly DerivedAccessSignal[],
+  changes: AccessSignalChangePlan,
+): Promise<void> {
+  const revivedKeys = new Set(changes.revived.map((change) => change.derivationKey));
+  for (const signal of accessSignals) {
+    await upsertSignal(
+      revivedKeys.has(signal.derivationKey) ? { ...signal, archived: false } : signal,
+    );
+  }
+  if (changes.retired.length === 0) return;
+  await Signal.updateMany(
+    {
+      _id: { $in: changes.retired.map((change) => toAccessMaterializerObjectId(change.signalId)) },
+      archived: { $ne: true },
+    },
+    {
+      $set: attributedArchiveSet(ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON, {
+        lastMaterializedAt: new Date(),
+      }),
+    },
+  );
 }
 
 export async function materializeAccessForResearchGroup(
   identifier: { researchEntityId?: string; entityKey?: string },
   inputObservations?: AccessObservation[],
+  options: { dryRun?: boolean } = {},
 ): Promise<AccessMaterializationResult> {
   const derivation = await deriveAccessArtifactsForResearchGroup(identifier, inputObservations);
   if (!derivation.researchEntityId) {
@@ -679,16 +804,19 @@ export async function materializeAccessForResearchGroup(
     };
   }
   const { researchEntityId, artifacts } = derivation;
-
-  for (const signal of artifacts.accessSignals) {
-    await upsertSignal(signal);
-  }
+  const changes = planEvidenceGovernedSignalChanges(
+    new Set(artifacts.accessSignals.map((signal) => signal.derivationKey)),
+    derivation.observations ?? [],
+    await storedEvidenceGovernedSignals(researchEntityId),
+  );
+  if (!options.dryRun) await applyAccessSignalChanges(artifacts.accessSignals, changes);
 
   return {
     researchEntityId,
     accessSignals: artifacts.accessSignals.length,
     staleEvidenceSkipped: 0,
     errors: 0,
+    changes,
   };
 }
 

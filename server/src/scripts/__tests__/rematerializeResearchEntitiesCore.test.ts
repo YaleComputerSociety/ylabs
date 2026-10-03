@@ -24,6 +24,7 @@ import {
   summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
+  summarizeAccessSignalChanges,
 } from '../rematerializeResearchEntitiesCore';
 
 describe('parseRematerializeResearchEntitiesArgs', () => {
@@ -49,7 +50,7 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
 
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
-      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact or --unbacked-research-areas is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',
     );
   });
 
@@ -257,6 +258,7 @@ describe('assertRematerializeApplyAllowed', () => {
     unbackedProvenance: false,
     foreignContact: false,
     unbackedResearchAreas: false,
+    accessSignals: false,
   };
 
   it('is a no-op for dry-run', () => {
@@ -761,5 +763,63 @@ describe('--unbacked-research-areas (#3836)', () => {
     expect(() =>
       parseRematerializeResearchEntitiesArgs(['--unbacked-research-areas', '--foreign-contact']),
     ).toThrow('runs on its own');
+  });
+});
+
+describe('the access-signals mode (#3921, #3928)', () => {
+  const retired = {
+    retired: [{ signalId: 's1', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' }],
+    revived: [],
+  };
+
+  it('selects its own cohort and runs on its own', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--access-signals'])).toMatchObject({
+      accessSignals: true,
+      slugs: [],
+    });
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--access-signals', '--only-fields=researchAreas']),
+    ).toThrow('--access-signals writes access signals only');
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--access-signals', '--foreign-contact']),
+    ).toThrow('--access-signals writes access signals only');
+  });
+
+  it('re-gates a row whose access signals changed even though no field did', () => {
+    expect(
+      selectRematerializeRegateEntityIds([
+        { entityId: 'a1', found: true, changes: [], accessSignalChanges: retired },
+        {
+          entityId: 'b2',
+          found: true,
+          changes: [],
+          accessSignalChanges: { retired: [], revived: [] },
+        },
+      ]),
+    ).toEqual(['a1']);
+  });
+
+  it('counts retirements and revivals per derivation key', () => {
+    expect(
+      summarizeAccessSignalChanges([
+        { entityId: 'a1', found: true, changes: [], accessSignalChanges: retired },
+        {
+          entityId: 'b2',
+          found: true,
+          changes: [],
+          accessSignalChanges: {
+            retired: [{ signalId: 's2', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' }],
+            revived: [
+              { signalId: 's3', derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE' },
+            ],
+          },
+        },
+        { entityId: 'c3', found: true, changes: [] },
+      ]),
+    ).toEqual({
+      entitiesChanged: 2,
+      retiredByKey: { 'signal:REACH_OUT_PLAUSIBLE': 2 },
+      revivedByKey: { 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': 1 },
+    });
   });
 });

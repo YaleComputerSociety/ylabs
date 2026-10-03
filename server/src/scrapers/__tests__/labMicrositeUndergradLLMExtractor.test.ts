@@ -418,10 +418,16 @@ describe('extractionToObservations quote grounding', () => {
       evidenceQuote: 'Undergraduates help with field work.',
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
-      contactInstructionsQuote: 'Welcome to the lab.',
+      contactInstructionsQuote: 'Please email the lab manager to join.',
     };
     const obs = extractionToObservations('lab-c', 'https://x.example/', ext, fixedDate, {
-      sourcePages: pages,
+      sourcePages: [
+        {
+          url: 'https://x.example/',
+          text: 'Welcome to the lab. Please email the lab manager to join.',
+        },
+        pages[1],
+      ],
       quoteSourceUrl: 'https://x.example/',
     });
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')?.sourceUrl).toBe(
@@ -433,6 +439,40 @@ describe('extractionToObservations quote grounding', () => {
     expect(
       (obs.find((o) => o.field === 'undergradAccessEvidence')?.value as any).quoteSourceUrl,
     ).toBe('https://x.example/join');
+  });
+});
+
+describe('extractionToObservations contact quote admission (#3928)', () => {
+  const fixedDate = new Date('2026-04-27T12:00:00Z');
+  const contactObservation = (contactInstructionsQuote: string) =>
+    extractionToObservations(
+      'lab-contact',
+      'https://x.example/',
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        contactInstructionsQuote,
+      },
+      fixedDate,
+      {
+        sourcePages: [{ url: 'https://x.example/', text: `Welcome. ${contactInstructionsQuote}` }],
+      },
+    ).find((o) => o.field === 'contactInstructionsQuote');
+
+  it('drops a quote that is only an address or a contact heading', () => {
+    expect(contactObservation('fixture.person@example.edu')).toBeUndefined();
+    expect(contactObservation('Contact fixture.person@example.edu')).toBeUndefined();
+    expect(contactObservation('Get In Touch')).toBeUndefined();
+  });
+
+  it('keeps a quote that tells a student how to reach out', () => {
+    expect(
+      contactObservation('Interested students should email fixture.person@example.edu with a CV.')
+        ?.value,
+    ).toBe('Interested students should email [email redacted] with a CV.');
   });
 });
 
@@ -1185,14 +1225,14 @@ describe('extractionToObservations', () => {
       evidenceSource: 'explicit_text',
       joinPageUrl: 'https://x.example/join',
       undergradRoleQuote: '',
-      contactInstructionsQuote: 'Call 203-432-1234 or email manager@yale.edu.',
+      contactInstructionsQuote: 'Call 203-432-1234 or email manager@yale.edu to arrange a visit.',
       explicitConstraintQuote: '',
     };
     const obs = extractionToObservations('lab-5', 'https://x/', ext, fixedDate, {
       sourcePages: [
         {
           url: 'https://x/',
-          text: 'Email pi.person@yale.edu to discuss undergraduate research. Call 203-432-1234 or email manager@yale.edu.',
+          text: 'Email pi.person@yale.edu to discuss undergraduate research. Call 203-432-1234 or email manager@yale.edu to arrange a visit.',
         },
       ],
     });
@@ -1201,7 +1241,7 @@ describe('extractionToObservations', () => {
       'Email [email redacted] to discuss undergraduate research.',
     );
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
-      'Call [phone redacted] or email [email redacted].',
+      'Call [phone redacted] or email [email redacted] to arrange a visit.',
     );
     expect(
       (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,
