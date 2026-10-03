@@ -183,7 +183,11 @@ describe('admin search analytics are aggregates only', () => {
     const users = await getUserAnalytics({ sort: 'totalEvents' });
     const drilldown = await getUserAnalyticsDrilldown('synth01');
     const analytics = await getAnalytics();
-    const perStudentPayloads = { users, drilldown, mostActive: analytics.engagement.mostActiveUsers };
+    const perStudentPayloads = {
+      users,
+      drilldown,
+      mostActive: analytics.engagement.mostActiveUsers,
+    };
 
     expect(keysIn(perStudentPayloads).has('searches')).toBe(false);
     expect(drilldown?.user.totalEvents).toBe(1);

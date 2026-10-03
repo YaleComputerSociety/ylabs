@@ -171,8 +171,7 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   };
 };
 
-export type AnalyticsUserSort =
-  'lastActive' | 'totalEvents' | 'logins' | 'researchViews';
+export type AnalyticsUserSort = 'lastActive' | 'totalEvents' | 'logins' | 'researchViews';
 export type AnalyticsSortDirection = 'asc' | 'desc';
 
 export interface AnalyticsUsersQuery {

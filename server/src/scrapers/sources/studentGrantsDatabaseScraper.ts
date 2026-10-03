@@ -343,7 +343,11 @@ function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadli
   return window;
 }
 
-const CYCLE_PROSE_SECTION_IDS = ['lblApplicationInformation', 'lblBriefDescription', 'lblDescription'];
+const CYCLE_PROSE_SECTION_IDS = [
+  'lblApplicationInformation',
+  'lblBriefDescription',
+  'lblDescription',
+];
 
 function nextStatedApplicationWindow(
   $: cheerio.CheerioAPI,
