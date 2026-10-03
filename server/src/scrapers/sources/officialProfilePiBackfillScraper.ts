@@ -1620,7 +1620,7 @@ function affiliationIsALabWebsiteSlot(
   const record =
     value && typeof value === 'object' ? (value as Record<string, any>) : { name: value };
   const rawUrl = textValue(record.url || record['@id']);
-  let url = '';
+  let url: string;
   try {
     url = rawUrl ? new URL(rawUrl, profileUrl).toString() : '';
   } catch {
@@ -1672,7 +1672,7 @@ export function profileAttestsItsLabWebsiteIsGone(
     if (carriesALabWebsiteSlot) return;
     const link = $(el);
     const href = textValue(link.attr('href'));
-    let absolute = '';
+    let absolute: string;
     try {
       absolute = new URL(href, profileUrl).toString();
     } catch {
