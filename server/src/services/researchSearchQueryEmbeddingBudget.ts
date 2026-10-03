@@ -19,6 +19,8 @@
  * per-address key would let one caller on a routed prefix mint a fresh bucket per
  * request and spend the whole window ceiling alone.
  */
+import { captureServerWarning } from '../utils/errorTracking';
+
 const WINDOW_MS = 60_000;
 
 const DEFAULT_MAX_PER_WINDOW = 600;
@@ -94,6 +96,7 @@ const openCooldown = (now: number, reason: string): void => {
   console.warn(
     `Research search query embedding paused for ${cooldownMs}ms (${reason}); serving the keyword leg.`,
   );
+  captureServerWarning('embedding_breaker_open');
 };
 
 const normalizedClientKey = (clientKey?: string): string | undefined => {

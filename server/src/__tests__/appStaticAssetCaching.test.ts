@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
+import serverBuildConfig from '../../tsup.config';
 
 const ORIGINAL_ENV = { ...process.env };
 const STRONG_SESSION_SECRET = 'R8h!vK2p#Q7zLm4$T9nWx6%Yc3@F5sJ0';
@@ -18,6 +19,7 @@ const validateAccount = vi.fn(async () => null);
 
 let clientDistPath = '';
 const clientPublicPath = fileURLToPath(new URL('../../../client/public', import.meta.url));
+const serverBuildPath = fileURLToPath(new URL('../../build', import.meta.url));
 
 const signCookie = (name: string, value: string): string =>
   createHmac('sha1', STRONG_SESSION_SECRET)
@@ -215,6 +217,42 @@ describe('client static asset serving', () => {
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toContain('no-store');
     });
+  });
+
+  it('emits server source maps into the server build output only', () => {
+    expect(serverBuildConfig).toMatchObject({ sourcemap: true, outDir: 'build' });
+  });
+
+  it('never serves a server bundle source map from any path', async () => {
+    const serverMapPath = path.join(serverBuildPath, 'index.js.map');
+    const createdBuildDirectory = !existsSync(serverBuildPath);
+    const createdMap = !existsSync(serverMapPath);
+    if (createdMap) {
+      mkdirSync(serverBuildPath, { recursive: true });
+      writeFileSync(serverMapPath, '{"sources":["server-only"]}');
+    }
+    prepareDeployedApp();
+
+    try {
+      await withRunningApp(async (baseUrl) => {
+        for (const mapPath of [
+          '/index.js.map',
+          '/build/index.js.map',
+          '/server/build/index.js.map',
+        ]) {
+          const response = await fetch(`${baseUrl}${mapPath}`, {
+            headers: { 'x-forwarded-proto': 'https' },
+          });
+          const body = await response.text();
+
+          expect(response.status).toBe(404);
+          expect(body).not.toContain('sources');
+        }
+      });
+    } finally {
+      if (createdBuildDirectory) rmSync(serverBuildPath, { recursive: true, force: true });
+      else if (createdMap) rmSync(serverMapPath, { force: true });
+    }
   });
 
   it('serves the shared link preview image as a png cached immutable for a year', async () => {

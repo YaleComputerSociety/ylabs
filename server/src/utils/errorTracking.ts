@@ -69,10 +69,12 @@ export const buildErrorTrackingOptions = (
   beforeBreadcrumb: dropBreadcrumb,
 });
 
-const getErrorTrackingConfig = (): ErrorTrackingConfig => ({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
-  release: process.env.SENTRY_RELEASE,
+export const getErrorTrackingConfig = (
+  env: NodeJS.ProcessEnv = process.env,
+): ErrorTrackingConfig => ({
+  dsn: env.SENTRY_DSN,
+  environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV || 'development',
+  release: env.SENTRY_RELEASE || env.RENDER_GIT_COMMIT || undefined,
 });
 
 export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
@@ -112,13 +114,21 @@ const mountPathOf = (req: Request, template: string): string => {
 // that identifies the caller (`AuthenticatedSessionUser` in passport.ts), and
 // no stable non-reversible account handle exists to stand in for it, so no
 // user identity is sent to the error-reporting provider at all.
-const errorReportRoute = (req: Request): string => {
+export const errorReportRoute = (req: Request): string => {
   const template = (req.route as { path?: unknown } | undefined)?.path;
   if (typeof template !== 'string' || template.length === 0) {
     return UNMATCHED_ROUTE;
   }
 
   return `${mountPathOf(req, template)}${template === '/' ? '' : template}` || '/';
+};
+
+const PLATFORM_REQUEST_ID_HEADER = 'rndr-id';
+const PLATFORM_REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+
+export const platformRequestId = (req: Request): string | undefined => {
+  const value = req.headers?.[PLATFORM_REQUEST_ID_HEADER];
+  return typeof value === 'string' && PLATFORM_REQUEST_ID_PATTERN.test(value) ? value : undefined;
 };
 
 export const captureServerError = (error: Error, req: Request) => {
@@ -128,6 +138,7 @@ export const captureServerError = (error: Error, req: Request) => {
 
   const session = req.user as { userType?: string } | undefined;
   const route = errorReportRoute(req);
+  const rndrId = platformRequestId(req);
 
   Sentry.captureException(error, {
     tags: {
@@ -135,6 +146,7 @@ export const captureServerError = (error: Error, req: Request) => {
       path: route,
       authenticated: session ? 'true' : 'false',
       userType: session?.userType || 'unknown',
+      ...(rndrId ? { rndrId } : {}),
     },
     contexts: {
       request: {
@@ -142,6 +154,38 @@ export const captureServerError = (error: Error, req: Request) => {
         method: req.method,
       },
     },
+  });
+};
+
+export type DegradedSignal =
+  | 'mongo_topology_lost'
+  | 'embedding_breaker_open'
+  | 'corpus_snapshot_failed'
+  | 'gate_refresh_failed';
+
+const DEGRADED_SIGNAL_REPORT_WINDOW_MS = 60_000;
+const lastReportedAt = new Map<DegradedSignal, number>();
+
+const reportedWithinWindow = (signal: DegradedSignal, now: number): boolean => {
+  const previous = lastReportedAt.get(signal);
+  return previous !== undefined && now - previous < DEGRADED_SIGNAL_REPORT_WINDOW_MS;
+};
+
+export const captureServerWarning = (signal: DegradedSignal) => {
+  if (!initializeErrorTracking()) {
+    return;
+  }
+
+  const now = Date.now();
+  if (reportedWithinWindow(signal, now)) {
+    return;
+  }
+  lastReportedAt.set(signal, now);
+
+  Sentry.captureMessage(signal, {
+    level: 'warning',
+    fingerprint: [signal],
+    tags: { signal },
   });
 };
 

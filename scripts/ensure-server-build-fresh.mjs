@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverRoot = path.join(repoRoot, 'server');
-const buildDir = path.join(serverRoot, 'build');
 const buildEntrypoint = path.join(serverRoot, 'build', 'index.js');
-const forbiddenBuildArtifacts = [path.join(buildDir, 'index.js.map')];
 const freshnessInputs = [
   path.join(serverRoot, 'src'),
   path.join(serverRoot, 'package.json'),
@@ -44,18 +42,16 @@ const newestMtimeMs = (targetPath) => {
 };
 
 if (!fs.existsSync(buildEntrypoint)) {
-  fail('server/build/index.js is missing. Run `yarn build:server` before `yarn --cwd server start`.');
-}
-
-for (const artifact of forbiddenBuildArtifacts) {
-  if (fs.existsSync(artifact)) {
-    fail('server build contains source-map artifacts. Run `yarn build:server` with sourcemap disabled before start.');
-  }
+  fail(
+    'server/build/index.js is missing. Run `yarn build:server` before `yarn --cwd server start`.',
+  );
 }
 
 const buildMtimeMs = fs.statSync(buildEntrypoint).mtimeMs;
 const sourceMtimeMs = Math.max(...freshnessInputs.map(newestMtimeMs));
 
 if (sourceMtimeMs > buildMtimeMs + 1000) {
-  fail('server/build/index.js is older than server source or build config. Run `yarn build:server` before start.');
+  fail(
+    'server/build/index.js is older than server source or build config. Run `yarn build:server` before start.',
+  );
 }

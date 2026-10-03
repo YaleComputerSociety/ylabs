@@ -8,12 +8,14 @@ vi.mock('../../db/connections', async (importOriginal) => ({
   triggerReconnect,
 }));
 
-vi.mock('../../utils/errorTracking', () => ({
+vi.mock('../../utils/errorTracking', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/errorTracking')>()),
   captureServerError: vi.fn(),
+  captureServerWarning: vi.fn(),
 }));
 
 import { errorHandler } from '../errorHandler';
-import { captureServerError } from '../../utils/errorTracking';
+import { captureServerError, captureServerWarning } from '../../utils/errorTracking';
 
 const createResponse = () => {
   const response = {
@@ -82,6 +84,17 @@ describe('a request that could not reach the database', () => {
     handle(unreachableDatabaseErrors['a socket timeout']);
     handle(unreachableDatabaseErrors['a server-selection timeout']);
     expect(captureServerError).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a lost topology as one degraded-service warning and the other outages as none', () => {
+    handle(unreachableDatabaseErrors['a lost topology']);
+    expect(captureServerWarning).toHaveBeenCalledTimes(1);
+    expect(captureServerWarning).toHaveBeenCalledWith('mongo_topology_lost');
+
+    vi.mocked(captureServerWarning).mockClear();
+    handle(unreachableDatabaseErrors['a socket timeout']);
+    handle(unreachableDatabaseErrors['a server-selection timeout']);
+    expect(captureServerWarning).not.toHaveBeenCalled();
   });
 
   it('answers 503 when the reason is only in the cause chain', () => {

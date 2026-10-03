@@ -1842,7 +1842,6 @@ test('served browser assets do not expose source maps or hidden static files', (
     new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
     'utf8',
   );
-  const tsupSource = fs.readFileSync(new URL('../server/tsup.config.ts', import.meta.url), 'utf8');
 
   assert.match(
     staticSource,
@@ -1864,8 +1863,6 @@ test('served browser assets do not expose source maps or hidden static files', (
     appSource,
     /app\.use\(express\.static\(path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\)\)\)/,
   );
-  assert.match(tsupSource, /sourcemap: false/);
-  assert.doesNotMatch(tsupSource, /sourcemap: true/);
 });
 
 test('server start refuses stale build artifacts', () => {
@@ -1879,21 +1876,15 @@ test('server start refuses stale build artifacts', () => {
 
   assert.equal(
     packageJson.scripts.start,
-    'node ../scripts/ensure-server-build-fresh.mjs && node build/index.js',
+    'node ../scripts/ensure-server-build-fresh.mjs && node --enable-source-maps build/index.js',
   );
   assert.match(
     guardSource,
     /const buildEntrypoint = path\.join\(serverRoot, 'build', 'index\.js'\)/,
   );
-  assert.match(
-    guardSource,
-    /const forbiddenBuildArtifacts = \[path\.join\(buildDir, 'index\.js\.map'\)\]/,
-  );
   assert.match(guardSource, /path\.join\(serverRoot, 'src'\)/);
   assert.match(guardSource, /path\.join\(serverRoot, 'tsup\.config\.ts'\)/);
   assert.match(guardSource, /fs\.existsSync\(buildEntrypoint\)/);
-  assert.match(guardSource, /for \(const artifact of forbiddenBuildArtifacts\)/);
-  assert.match(guardSource, /server build contains source-map artifacts/);
   assert.match(guardSource, /sourceMtimeMs > buildMtimeMs \+ 1000/);
   assert.match(guardSource, /Run `yarn build:server` before start/);
 });

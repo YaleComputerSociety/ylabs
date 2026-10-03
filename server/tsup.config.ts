@@ -8,7 +8,7 @@ export default defineConfig({
   target: 'node20',
   outDir: 'build',
   clean: true,
-  sourcemap: false,
+  sourcemap: true,
   splitting: false,
   bundle: true,
   // The bundle collapses all modules into build/index.js, so the .md prompt
