@@ -202,6 +202,7 @@
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",
     "scrape:sweep:weekly-development": "tsx src/scripts/weeklyDevelopmentSweep.ts",
+    "scrape:sweep:weekly-runs": "tsx src/scripts/weeklySweepRunsReport.ts",
     "scrape:canary": "tsx src/scripts/scrapeCanary.ts",
     "scrape-runs:reconcile-stale": "tsx src/scripts/reconcileStaleScrapeRuns.ts",
     "scrape:seed-sources": "tsx src/scrapers/seedSources.ts",

@@ -195,6 +195,7 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('engine_benchmark_snapshots')
     .insertOne({ benchmarkId: frozenBenchmarkId, planned: 3 });
+  await targetDb.collection('weekly_sweep_runs').insertOne({ status: 'succeeded', exitCode: 0 });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')
