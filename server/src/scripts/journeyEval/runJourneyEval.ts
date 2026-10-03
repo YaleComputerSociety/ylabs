@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { warmResearchSearchSpellingVocabulary } from '../../services/researchSearchSpellingVocabulary';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -256,6 +257,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
+  await warmResearchSearchSpellingVocabulary();
   const context = await buildContext(args);
   const programContext = await buildProgramJourneyContext({
     window: args.window,

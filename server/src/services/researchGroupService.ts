@@ -110,9 +110,17 @@ import {
 } from './departmentResearchContextService';
 import {
   QUERY_TOPIC_ALIASES,
+  RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
+  RESEARCH_ENTITY_MEILI_SYNONYMS,
+  STUDENT_QUERY_ALIASES,
   WORKING_STYLE_PHRASE_ALIASES,
   WORKING_STYLE_PHRASE_MAX_TOKENS,
 } from './searchTopicAliases';
+import {
+  correctSearchQuerySpelling,
+  type CorrectedSearchQuery,
+} from './searchQuerySpellingCorrection';
+import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
 import {
   maxReachableResearchSearchPage,
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
@@ -509,6 +517,12 @@ export interface ResearchGroupSearchOptions {
   // caller leaves it unset, which exempts it so a measurement never silently loses
   // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
+  correctSpelling?: boolean;
+}
+
+export interface ResearchSearchQueryCorrection {
+  originalQuery: string;
+  correctedQuery: string;
 }
 
 export interface ResearchGroupSearchResult {
@@ -518,6 +532,7 @@ export interface ResearchGroupSearchResult {
   pageSize: number;
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
+  queryCorrection?: ResearchSearchQueryCorrection;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -871,6 +886,7 @@ const sanitizeResearchGroupSearchOptions = (
       typeof options.embeddingSpendKey === 'string'
         ? options.embeddingSpendKey.trim().slice(0, 64) || undefined
         : undefined,
+    correctSpelling: options.correctSpelling !== false,
   };
 };
 
@@ -1396,12 +1412,64 @@ export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
 
 export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
 
+const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
+  [
+    ...STUDENT_QUERY_STOP_WORDS,
+    ...QUESTION_FRAME_VERBS_BEFORE_PREPOSITION,
+    ...QUESTION_FRAME_VERB_PREPOSITIONS,
+    INSTITUTION_CONTEXT_TOKEN,
+    ...INSTITUTION_CONTEXT_SUFFIXES,
+    ...RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
+    ...Object.keys(STUDENT_QUERY_ALIASES),
+    ...Object.keys(QUERY_TOPIC_ALIASES),
+    ...Object.keys(WORKING_STYLE_PHRASE_ALIASES),
+    ...Object.keys(RESEARCH_ENTITY_MEILI_SYNONYMS),
+  ].flatMap((phrase) => tokenizeStudentResearchQuery(phrase)),
+);
+
+export const correctResearchSearchQuerySpelling = (query: string): CorrectedSearchQuery =>
+  correctSearchQuerySpelling(
+    boundedResearchSearchQuery(query),
+    getResearchSearchSpellingVocabulary(),
+    SPELLING_PROTECTED_QUERY_TERMS,
+  );
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
  * is actually configured on the running index.
  */
 export async function searchResearchGroupsViaMeili(
+  query: string,
+  filters: ResearchGroupFilterInput,
+  page: number,
+  pageSize: number,
+  sort: ResearchGroupSearchSort = {},
+  options: ResearchGroupSearchOptions = {},
+): Promise<ResearchGroupSearchResult> {
+  const spelling =
+    options.correctSpelling === false
+      ? { query, corrections: [] }
+      : correctResearchSearchQuerySpelling(query);
+  const result = await searchResearchGroupsForQuery(
+    spelling.query,
+    filters,
+    page,
+    pageSize,
+    sort,
+    options,
+  );
+  if (spelling.corrections.length === 0) return result;
+  return {
+    ...result,
+    queryCorrection: {
+      originalQuery: boundedResearchSearchQuery(query),
+      correctedQuery: spelling.query,
+    },
+  };
+}
+
+async function searchResearchGroupsForQuery(
   query: string,
   filters: ResearchGroupFilterInput,
   page: number,

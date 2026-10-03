@@ -320,6 +320,7 @@ In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASE
 
 Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
 Re-run the harness before and after any of them, and move the overlap number rather than arguing about the mechanism.
+#4536 took the last of those, as spelling correction ahead of every layer rather than fuzzy matching inside each one; "A misspelled query word is corrected against the corpus vocabulary" below records why and what it measured.
 
 ### Every hybrid query in a request must carry the precomputed vector (#3149)
 
@@ -553,6 +554,43 @@ Measured with the harness on Development, 5,565 indexed documents, `--top-k 10`,
 
 The blast radius is confined to queries containing a catalog phrase: `machine learning`, `cancer biology`, `orgo`, `mcdb`, `black hole` and `neuroscience lab` all normalize to exactly the text they did before.
 `beginner friendly research` and `lab experience for a beginner` still return nothing, and no ranking change can fix them: `beginner`, `prior experience` and `no prior experience` appear in 0 documents, so the experience-level half of the question remains an acquisition gap.
+
+### A misspelled query word is corrected against the corpus vocabulary (#4536)
+
+`searchResearchGroupsViaMeili` rewrites a misspelled word to the corpus word it was meant to be before `normalizeResearchSearchQuery` runs, so the aliases, the synonyms, the keyword leg and the query embedding all see the corrected word.
+The correction lives in `server/src/services/searchQuerySpellingCorrection.ts`, which takes a vocabulary and a set of protected words and knows nothing about research, so the program surface can reuse it (#4537).
+
+The vocabulary is the index itself: `researchSearchSpellingVocabulary.ts` pages through every unarchived document with the search-only key and counts, per word, how many documents carry it.
+The server loads it after it starts listening and every six hours; a request reads only the loaded snapshot and never waits for it, so a request before the first load searches the words as typed.
+A script that calls the service directly must call `warmResearchSearchSpellingVocabulary()` first or it measures search without correction; `research-search:relevance` and `journey:eval` do.
+
+A word is corrected only when all of these hold:
+
+- It is not a protected query word: a stop word, an alias or synonym key, or a `disableOnWords` entry, because the alias layer already owns `orgo` and a correction would take it away.
+- It does not appear in a name field (`name`, `displayName`, `leadProfessorNames`, `professorNames`), however rarely, because a rare surname is exactly the shape of a typo and rewriting it hides the person searched for.
+- It appears in fewer than three documents, and the replacement appears in at least three, or in twenty times as many documents when the typed word itself appears.
+- The replacement is within one edit for a word of four to eight letters and two edits for nine or more, counting a swapped pair of letters as one edit; the nearer candidate wins, then the more frequent, then the alphabetically first.
+
+The response carries `queryCorrection: { originalQuery, correctedQuery }`, the result summary names the corrected query, and the page offers "Search instead for" the typed spelling, which re-runs the search with `correctSpelling: false`.
+The recorded search keeps the typed query and marks `spellingCorrected` in its metadata, so analytics still sees what the student typed.
+
+Measured on Development, 4,486 indexed documents, `--top-k 10`, before to after, settings fingerprint unchanged:
+
+| Metric | Before | After |
+| ------ | ------ | ----- |
+| mean average overlap, all perturbations | 0.566 | 0.887 |
+| mean average overlap, real misspellings | 0.36 | 1.0 |
+| mean average overlap, transposition / deletion / doubling / substitution | 0.404 / 0.520 / 0.528 / 0.516 | 0.842 / 0.835 / 0.848 / 0.833 |
+| mean precision@10 / mean reciprocal rank | 0.922 / 0.967 | 0.922 / 0.967 |
+| findings | 55 | 18 |
+
+Through `POST /api/research/search`, over 62 common topic misspellings, the top 10 shared on average 5.79 of 10 rows with the correctly spelled query before and 10 of 10 after, and the first result matched in 29 and then 62 cases.
+Over 14 four-letter typos, drawn from those the prototype corrects to the intended word, the overlap went from 0 to 10, with 9 of them returning nothing before.
+No correctly spelled control query and none of 150 sampled name words was rewritten.
+
+It is not perfect, and the notice exists for the failures.
+Over 1,190 held-out single-edit typos of corpus words the prototype recovered 93% and corrected 3.9% to a different real word; four-letter words recovered only 58%, because a short typo is often one edit from several words (`ocde` became `ocd`).
+`minWordSizeForTypos.oneTypo: 4` was measured as the alternative and rejected: four-letter typo overlap rose only from 0.25 to 2.15 of 10, and correctly spelled short queries drifted.
 
 ## Data shape rules
 

@@ -7,6 +7,7 @@ import { initializeConnections, mongoOptions, startMongoKeepAlive } from './db/c
 import { warmControlledVocabularyHeadings } from './utils/controlledVocabularyHeadings';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
+import { startResearchSearchSpellingVocabularyRefresh } from './services/researchSearchSpellingVocabulary';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
@@ -65,6 +66,8 @@ const startApp = async () => {
       // secret, a runner, or anyone remembering. See
       // corpusQualitySnapshotScheduler.ts.
       startCorpusQualitySnapshotScheduler();
+
+      startResearchSearchSpellingVocabularyRefresh();
     });
 
     // The platform stops an instance with SIGTERM, whose default action is an

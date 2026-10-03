@@ -88,7 +88,11 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         page: resolveSiteSearchPage(data?.page, body.page),
         suggestionProbe: body.suggestionProbe === true,
         requestArrivedAt,
-        metadata: { pageSize: data?.pageSize, degraded: data?.degraded === true },
+        metadata: {
+          pageSize: data?.pageSize,
+          degraded: data?.degraded === true,
+          spellingCorrected: Boolean(data?.queryCorrection),
+        },
       }).catch((error) =>
         console.error('Error logging research search event:', sanitizeLogValue(error)),
       );

@@ -174,4 +174,10 @@ export interface ResearchGroupSearchResponse {
   // The server answered from a fallback path, so the result set may be incomplete
   // and an empty one is not evidence that nothing matches.
   degraded?: boolean;
+  queryCorrection?: ResearchSearchQueryCorrection;
+}
+
+export interface ResearchSearchQueryCorrection {
+  originalQuery: string;
+  correctedQuery: string;
 }

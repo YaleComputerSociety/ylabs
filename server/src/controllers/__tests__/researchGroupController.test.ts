@@ -408,6 +408,7 @@ describe('researchGroupController', () => {
         qualityFilters: [],
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
     );
   });
@@ -448,7 +449,30 @@ describe('researchGroupController', () => {
         qualityFilters: [],
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
+    );
+  });
+
+  it('searches the words as typed when the student asks for the original spelling', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = { body: { q: 'imunology', correctSpelling: false } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      'imunology',
+      expect.any(Object),
+      1,
+      24,
+      {},
+      expect.objectContaining({ correctSpelling: false }),
     );
   });
 
@@ -488,6 +512,7 @@ describe('researchGroupController', () => {
         qualityFilters: ['missing-lead'],
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
     );
   });
