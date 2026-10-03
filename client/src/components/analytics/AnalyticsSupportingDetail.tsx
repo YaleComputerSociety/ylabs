@@ -165,7 +165,6 @@ const AnalyticsSupportingDetail = ({
       { header: 'Type', value: (row) => formatUserType(row.userType) },
       { header: 'Total Events', value: (row) => row.totalEvents },
       { header: 'Logins', value: (row) => row.logins },
-      { header: 'Site Searches', value: (row) => row.searches },
       { header: 'Profile Opens', value: (row) => row.researchViews },
       {
         header: 'Last Active',
@@ -846,7 +845,6 @@ const AnalyticsSupportingDetail = ({
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
                 <option value="logins">Logins</option>
-                <option value="searches">Site searches</option>
                 <option value="researchViews">Profile Opens</option>
               </select>
             </label>
@@ -943,15 +941,6 @@ const AnalyticsSupportingDetail = ({
                       <th className="px-4 py-3 text-right text-sm font-semibold text-ink-soft">
                         <button
                           type="button"
-                          onClick={() => updateUserActivitySort('searches')}
-                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
-                        >
-                          Site searches{sortLabel('searches')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-ink-soft">
-                        <button
-                          type="button"
                           onClick={() => updateUserActivitySort('researchViews')}
                           className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
@@ -972,7 +961,7 @@ const AnalyticsSupportingDetail = ({
                   <tbody>
                     {isUserActivityLoading && userActivity.users.length === 0 ? (
                       <tr>
-                        <td className="px-4 py-6 text-center text-muted" colSpan={8}>
+                        <td className="px-4 py-6 text-center text-muted" colSpan={6}>
                           Loading user activity…
                         </td>
                       </tr>
@@ -996,7 +985,6 @@ const AnalyticsSupportingDetail = ({
                           <td className="px-4 py-3 text-muted">{formatUserType(user.userType)}</td>
                           <td className="px-4 py-3 text-right font-medium">{user.totalEvents}</td>
                           <td className="px-4 py-3 text-right">{user.logins}</td>
-                          <td className="px-4 py-3 text-right">{user.searches}</td>
                           <td className="px-4 py-3 text-right">{user.researchViews}</td>
                           <td className="px-4 py-3 text-sm text-muted">
                             {formatDateTime(user.lastActive)}
@@ -1005,7 +993,7 @@ const AnalyticsSupportingDetail = ({
                       ))
                     ) : (
                       <tr>
-                        <td className="px-4 py-6 text-center text-muted" colSpan={8}>
+                        <td className="px-4 py-6 text-center text-muted" colSpan={6}>
                           No users match the current filters.
                         </td>
                       </tr>
@@ -1068,10 +1056,6 @@ const AnalyticsSupportingDetail = ({
                     <div className="rounded-card bg-[var(--yr-panel)] p-3">
                       <p className="text-muted">Logins</p>
                       <p className="text-lg font-semibold text-ink">{selectedUser.user.logins}</p>
-                    </div>
-                    <div className="rounded-card bg-[var(--yr-panel)] p-3">
-                      <p className="text-muted">Site searches</p>
-                      <p className="text-lg font-semibold text-ink">{selectedUser.user.searches}</p>
                     </div>
                     <div className="rounded-card bg-[var(--yr-panel)] p-3">
                       <p className="text-muted">Profile Opens</p>

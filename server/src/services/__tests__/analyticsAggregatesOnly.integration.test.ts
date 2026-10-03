@@ -147,7 +147,7 @@ describe('admin search analytics are aggregates only', () => {
     const users = await getUserAnalytics();
     const drilldown = await getUserAnalyticsDrilldown('synth01');
 
-    expect(users.users.length).toBe(students.length);
+    expect(users.users.map((user) => user.netid).sort()).toEqual(['synth01', 'synth03']);
     for (const netid of students) {
       expect(JSON.stringify(users)).not.toContain(emailFor(netid));
     }
@@ -168,7 +168,6 @@ describe('admin search analytics are aggregates only', () => {
     const drilldown = await getUserAnalyticsDrilldown('synth01');
     const serialized = JSON.stringify(drilldown);
 
-    expect(drilldown?.user.searches).toBe(2);
     expect(drilldown?.events.length).toBeGreaterThan(0);
     expect(
       drilldown?.events.filter((event) => searchFamilyEventTypes.includes(event.eventType)),
@@ -178,6 +177,31 @@ describe('admin search analytics are aggregates only', () => {
     expect(serialized).not.toContain('Synthetic Department');
     expect(keysIn(drilldown).has('searchQuery')).toBe(false);
     expect(keysIn(drilldown).has('searchDepartments')).toBe(false);
+  });
+
+  it("never reports one student's search count or search-driven activity", async () => {
+    const users = await getUserAnalytics({ sort: 'totalEvents' });
+    const drilldown = await getUserAnalyticsDrilldown('synth01');
+    const analytics = await getAnalytics();
+    const perStudentPayloads = { users, drilldown, mostActive: analytics.engagement.mostActiveUsers };
+
+    expect(keysIn(perStudentPayloads).has('searches')).toBe(false);
+    expect(drilldown?.user.totalEvents).toBe(1);
+    expect(new Date(drilldown!.user.lastEventAt!).getTime()).toBe(minutesAfterBase(61).getTime());
+    expect(users.users.find((user) => user.netid === 'synth03')?.totalEvents).toBe(1);
+    expect(await getUserAnalyticsDrilldown('synth04')).toBeNull();
+    expect(
+      analytics.engagement.mostActiveUsers.map((user: { userId: string; eventCount: number }) => [
+        user.userId,
+        user.eventCount,
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['synth01', 1],
+        ['synth03', 1],
+      ]),
+    );
+    expect(analytics.engagement.mostActiveUsers).toHaveLength(2);
   });
 
   it('shows a query only once enough distinct students searched it', async () => {

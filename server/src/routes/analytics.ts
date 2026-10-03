@@ -40,7 +40,6 @@ const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
   'lastActive',
   'totalEvents',
   'logins',
-  'searches',
   'researchViews',
 ];
 const ANALYTICS_SORT_DIRECTIONS: readonly AnalyticsSortDirection[] = ['asc', 'desc'];

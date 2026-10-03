@@ -144,7 +144,9 @@ Decided 2026-10-03 (#4159): an admin sees search-query counts and trends, never 
 No search-query row or list may carry an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
 This covers `topSearchQueries` (whose entries carry only `query` and `count`), the search-quality and search-query reports, and the action-needed query lists.
 The overview's `mostActiveUsers` list is user activity rather than search data: it carries no query and links to none.
-The per-user drilldown (`GET /api/analytics/users/:netid`) lists a student's events but leaves every `search`, `research_search` and `research_filter_change` event out of that list; the summary still reports the student's search count.
+There is no per-student attribution of search activity anywhere (#4159 follow-up).
+The user table (`GET /api/analytics/users`), the per-user drilldown (`GET /api/analytics/users/:netid`) and the overview's `mostActiveUsers` are built over non-search events only: every `search`, `research_search` and `research_filter_change` event is left out of their event lists, their `totalEvents` and `eventCount`, and their last-event time, and no per-student search count exists, so the table cannot be sorted by one.
+A student whose only activity is searching therefore has no row in the user table and no drilldown.
 A shown query row's `lastSearchedAt` is truncated to its UTC day, so no row can be matched to the moment one student searched.
 A query string, or a filter-only search's filter summary, is shown only once `MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY` (3) distinct students searched it.
 Below that it is folded into `suppressedQueries`, which counts the hidden query groups and their searches and zero-result searches, so the hidden demand stays visible as a number.
