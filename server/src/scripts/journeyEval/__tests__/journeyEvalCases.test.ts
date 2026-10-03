@@ -160,6 +160,7 @@ describe('creative-practice-label-attribution case (#4519)', () => {
   const practiceRow = {
     slug: 'synthetic-practice',
     name: 'Synthetic Performer Faculty Research',
+    entityType: 'FACULTY_RESEARCH_AREA',
     departments: ['Music'],
     school: 'School of Music',
     fullDescription:
@@ -169,6 +170,7 @@ describe('creative-practice-label-attribution case (#4519)', () => {
   const researchRow = {
     slug: 'synthetic-theory',
     name: 'Synthetic Theorist Faculty Research',
+    entityType: 'FACULTY_RESEARCH_AREA',
     departments: ['Music'],
     school: 'School of Music',
     fullDescription:

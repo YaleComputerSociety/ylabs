@@ -113,7 +113,13 @@ describe('decideCreativePractice (#4519)', () => {
   it('labels a person-scoped row but never an organizational one', () => {
     const fullDescription =
       'A pianist who has performed with orchestras on four continents and recorded the complete sonatas.';
-    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']) {
+    for (const entityType of [
+      'LAB',
+      'FACULTY_RESEARCH_AREA',
+      'FACULTY_PROJECT',
+      'FACULTY_RESEARCH',
+      'INDIVIDUAL_RESEARCH',
+    ]) {
       expect(
         decideCreativePractice({ ...MUSIC, entityType, fullDescription }).creativePractice,
       ).toBe(true);
@@ -124,6 +130,26 @@ describe('decideCreativePractice (#4519)', () => {
         evidence: [],
       });
     }
+  });
+
+  it('falls back to the kind only when a row states no entity type', () => {
+    const fullDescription =
+      'A pianist who has performed with orchestras on four continents and recorded the complete sonatas.';
+    const typeless = { ...MUSIC, entityType: undefined, fullDescription };
+    for (const kind of ['individual', 'solo', 'lab']) {
+      expect(decideCreativePractice({ ...typeless, kind }).creativePractice).toBe(true);
+    }
+    for (const kind of [undefined, '', 'unknown', 'center', 'program']) {
+      expect(decideCreativePractice({ ...typeless, kind }).creativePractice).toBe(false);
+    }
+    expect(
+      decideCreativePractice({
+        ...MUSIC,
+        entityType: 'CENTER',
+        kind: 'individual',
+        fullDescription,
+      }).creativePractice,
+    ).toBe(false);
   });
 
   it('reads the card only when no body serves', () => {

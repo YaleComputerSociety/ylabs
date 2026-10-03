@@ -1,3 +1,5 @@
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+
 export type CreativePracticeEvidence =
   'exhibition' | 'performance' | 'composition' | 'production' | 'writing' | 'practitioner';
 
@@ -107,16 +109,9 @@ export function cardSpeaksInResearchVoice(value: unknown): boolean {
   return RESEARCH_VOICE_VERB.test(text.replace(ARTWORK_AS_SUBJECT, ' '));
 }
 
-// The owner decision covers person-scoped rows only: a LAB in an arts school named after
-// one artist is that artist's practice, while a center or institute is an organization.
-const PERSON_SCOPED_ENTITY_TYPES: ReadonlySet<string> = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-]);
-
 export interface CreativePracticeInput extends ArtsPracticeContextInput {
   entityType?: unknown;
+  kind?: unknown;
   fullDescription?: unknown;
   shortDescription?: unknown;
 }
@@ -139,7 +134,7 @@ export const NOT_CREATIVE_PRACTICE: Readonly<CreativePracticeDecision> = Object.
 export function decideCreativePractice(
   input: CreativePracticeInput,
 ): Readonly<CreativePracticeDecision> {
-  if (!PERSON_SCOPED_ENTITY_TYPES.has(textValue(input.entityType))) return NOT_CREATIVE_PRACTICE;
+  if (!isPersonScopedResearchEntityShape(input)) return NOT_CREATIVE_PRACTICE;
   if (!isArtsPracticeContext(input)) return NOT_CREATIVE_PRACTICE;
   const evidenceText = textValue(input.fullDescription) || textValue(input.shortDescription);
   if (!evidenceText || statesResearchApartFromArtwork(evidenceText)) return NOT_CREATIVE_PRACTICE;

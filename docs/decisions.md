@@ -16,7 +16,7 @@ It is a serve-time derivation in `server/src/utils/creativePracticeDescription.t
 
 **The predicate.**
 A row is creative practice when four things hold.
-It is person-scoped: a `LAB`, `FACULTY_RESEARCH_AREA` or `FACULTY_PROJECT` row, because a lab in an arts school named after one artist is that artist's practice, while a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` is an organization and is never labelled.
+It is person-scoped by `isPersonScopedResearchEntityShape` in `server/src/models/storedVocabularies.ts` (a `LAB`, `FACULTY_RESEARCH_AREA` or `FACULTY_PROJECT` row, a legacy person type, or a typeless row whose `kind` is a person kind), because a lab in an arts school named after one artist is that artist's practice, while a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` is an organization and is never labelled.
 Its department (Music, Art, Architecture, Film and Media Studies, Theater, Dance, and Performance Studies, English Language and Literature) or its school (the music, art, drama and architecture schools, the Institute of Sacred Music) places it in an arts context.
 Its served body, or its card when no body serves, states at least two kinds of practice evidence among exhibitions, performances, compositions, productions, creative writing and a practitioner noun ("is a violinist", "as a playwright").
 And that text states no research: a research, scholarship, musicology, theory, cognition, history-of, analysis, dissertation, journal or university-press statement keeps the row research, and so does a synthesized body that opens in the research voice ("Studies ...", "Examines ...").
