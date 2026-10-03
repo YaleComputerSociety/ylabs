@@ -1343,6 +1343,12 @@ Any lowercase research statement outside the quoted spans exempts the text, so a
 Calibrated on all 3,459 served Development rows on 2026-10-02: 20 bodies and 1 card flagged, all 21 read as press copy or a citation, and no other served text changed.
 Because the serve path recomputes the bar, a row whose only body is press copy stops serving until the resolver or synthesis supplies a usable one.
 
+#### Role biographies, another organization's page text and education programs are not a description (#4528)
+
+`nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names three more shapes the quality bar refuses for both the body and the card: `role-biography` (a teaching-only or administrative biography that states no research, practice or clinical work), `third-party-page` (a call for submissions, an event's own page, a site's section blurbs) and `instruction-offering` (an education program's description filed as a lab).
+Any research or care word, a faculty rank, or one kind of creative practice evidence (`creativePracticeEvidence`) keeps a biography, so widen the shapes only against a full served-corpus walk.
+Calibrated on all 3,470 served Development rows on 2026-10-03: 5 bodies refused, all 5 read and wrong, and no other served text changed.
+
 #### Detecting grafted prose deterministically
 
 Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.

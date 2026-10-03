@@ -19,6 +19,7 @@ import {
   stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
 import { pressFeatureDescriptionShape } from './descriptionPressFeatureShape';
+import { nonResearchBodyShape } from './descriptionNonResearchBodyShape';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -59,6 +60,9 @@ export type DescriptionQualityFlag =
   | 'ungrounded-topic-short'
   | 'grant-significance-boilerplate'
   | 'fundraising-appeal'
+  | 'role-biography'
+  | 'third-party-page'
+  | 'instruction-offering'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -1503,6 +1507,8 @@ function computeFullDescriptionQuality(
   }
   const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
+  const nonResearchShape = text ? nonResearchBodyShape(text) : null;
+  if (nonResearchShape) flags.push(nonResearchShape);
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
@@ -1844,6 +1850,8 @@ function computeShortDescriptionQuality(
   }
   const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
+  const nonResearchShape = text ? nonResearchBodyShape(text) : null;
+  if (nonResearchShape) flags.push(nonResearchShape);
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
