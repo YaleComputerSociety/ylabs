@@ -31,7 +31,7 @@ import {
   foreignContactFieldSignalIds,
   underivedAccessSignalIds,
 } from '../scrapers/accessMaterializer';
-import { isOwnDepartmentUndergraduateResearchProgramme } from '../scrapers/undergradJoinPageAdmission';
+import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -3227,17 +3227,33 @@ const servableAccessSignalCitation = (signal: any, entity?: any): string | undef
   servedCitationUrl(
     'instruction',
     entity?.sourceLinkHealth,
-    isOwnDepartmentProgrammeJoinCitation(signal, entity)
+    isAdmittedProgrammeJoinCitation(signal, entity)
       ? publicHttpUrl(signal.source?.url)
       : publicResearchDetailSourceUrl(signal.source?.url, entity),
   );
 
-// The owner keeps a department's own undergraduate research or RA programme page as a way
-// in on that department's faculty rows (#4430), so its join-page link is served there even
-// though the programme page is refused as the person's own citation elsewhere.
-const isOwnDepartmentProgrammeJoinCitation = (signal: any, entity?: any): boolean =>
+// A programme-shaped page the join admission keeps as the row's own way in (the row's own
+// website, or its own department's undergraduate research programme) is served as the
+// join-page link even though a programme page is refused as a person's citation elsewhere
+// (#4430). Otherwise the claim below would be withheld for a page its own lane admitted.
+const isAdmittedProgrammeJoinCitation = (signal: any, entity?: any): boolean =>
   signal?.type === 'APPLICATION_FORM_EXISTS' &&
-  isOwnDepartmentUndergraduateResearchProgramme(signal.source?.url, entity);
+  isProgrammePageAdmittedAsJoinRoute(signal.source?.url, entity);
+
+// These types' claim is that a page exists ("a join, opportunities, or application page
+// was found"), so served without the page it names the claim asserts nothing a student can
+// act on: claim and page stand or fall together (#4430). Other types carry their own
+// excerpt, which still says something when the link is withheld.
+const ACCESS_SIGNAL_TYPES_CLAIMING_THEIR_PAGE: ReadonlySet<string> = new Set([
+  'APPLICATION_FORM_EXISTS',
+]);
+
+const servedAccessSignalStandsWithItsPage = (served: {
+  signalType?: unknown;
+  sourceUrl?: string;
+}): boolean =>
+  !ACCESS_SIGNAL_TYPES_CLAIMING_THEIR_PAGE.has(String(served.signalType)) ||
+  Boolean(served.sourceUrl);
 
 // Kept as a single object literal because `security-preflight` pins this serializer's
 // shape with a literal `=> ({ ... })` pattern, and a block body reads to that gate as the
@@ -3578,7 +3594,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         !underivedSignalIds.has(String(signal._id)),
     )
     .filter((signal) => !signalIsWithheldWayIn(signal, emeritusWayIn))
-    .map((signal) => publicAccessSignalForResearchDetail(signal, group));
+    .map((signal) => publicAccessSignalForResearchDetail(signal, group))
+    .filter(servedAccessSignalStandsWithItsPage);
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
     ...relationshipPayload.relatedResearchEntities,

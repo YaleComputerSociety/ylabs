@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isOwnDepartmentUndergraduateResearchProgramme,
+  isProgrammePageAdmittedAsJoinRoute,
   joinPageAnchorTextRefusal,
   joinPageUrlRefusal,
 } from '../undergradJoinPageAdmission';
@@ -185,6 +186,40 @@ describe("a department's own undergraduate research programme (#4430)", () => {
         'https://psychology.yale.edu/undergraduate/senior-essay',
         psychologyFaculty,
       ),
+    ).toBe(false);
+  });
+});
+
+describe("a programme-shaped page admitted as the row's own join route (#4430)", () => {
+  const ownOpportunities = 'https://examplelab.yale.edu/job-opportunities/research-opportunities';
+
+  it("admits a lab's own research-opportunities page on a person row whose website it sits under", () => {
+    const row = { ...facultyRow, websiteUrl: 'https://examplelab.yale.edu/' };
+    expect(isProgrammePageAdmittedAsJoinRoute(ownOpportunities, row)).toBe(true);
+    expect(joinPageUrlRefusal(ownOpportunities, row)).toBeNull();
+  });
+
+  it('does not admit the same page on a row whose website is elsewhere', () => {
+    const row = { ...facultyRow, websiteUrl: 'https://otherlab.yale.edu/' };
+    expect(isProgrammePageAdmittedAsJoinRoute(ownOpportunities, row)).toBe(false);
+    expect(joinPageUrlRefusal(ownOpportunities, row)).toBe('programme-page-of-another-entity');
+  });
+
+  it("admits a department's own undergraduate research page on that department's row", () => {
+    expect(
+      isProgrammePageAdmittedAsJoinRoute(
+        'https://psychology.yale.edu/undergraduate/research-opportunities',
+        { ...facultyRow, departments: ['Department of Psychology'] },
+      ),
+    ).toBe(true);
+  });
+
+  it('is not a programme exemption for an ordinary join page', () => {
+    expect(
+      isProgrammePageAdmittedAsJoinRoute('https://examplelab.yale.edu/join-us', {
+        ...facultyRow,
+        websiteUrl: 'https://examplelab.yale.edu/',
+      }),
     ).toBe(false);
   });
 });
