@@ -1236,19 +1236,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:*":
-  version: 17.0.21
-  resolution: "@types/node@npm:17.0.21"
-  checksum: 10c0/57a9ce212da7878fddd4e9ef3f83c0f395e1e71c032b3112f4163f357a87b949c392dd9280ae806bca7edfbea335da1cd248fd316c615632b746c87ba1b2ab6e
-  languageName: node
-  linkType: hard
-
-"@types/node@npm:26":
-  version: 26.6.3
-  resolution: "@types/node@npm:26.6.3"
+"@types/node@npm:*, @types/node@npm:26":
+  version: 26.6.4
+  resolution: "@types/node@npm:26.6.4"
   dependencies:
     undici-types: "npm:~8.9.0"
-  checksum: 10c0/51070287167d157d246a5ad83e6ead93aa310bbd9cc880ecd1f244a00c2a31491620f997fbbb6ba4ce164388694827999ec68c1d16c3fb64c1037056e64613c7
+  checksum: 10c0/094e7362df9200ba4c2da09131ca3b5d1aa51535a268a24e4ee2546d9c5a323d1d30cbdaaaa3db7ef8b2387572d1f9edabb11538ab7a09d3bca33ae5cddc2b1b
   languageName: node
   linkType: hard
 
