@@ -13,6 +13,11 @@ const TRAILING_COMPANY_ABBREVIATION = /\b(?:Bros|Inc|Corp|Co|Ltd|Mfg|Assn|Dept|U
 
 const MIN_CARD_SENTENCE_WORDS = 6;
 
+// A profile header the extractor glued onto the first sentence ("Graphic DesignUndergraduate
+// Senior Critic Instagram") is page chrome, not the person's practice.
+const GLUED_PROFILE_HEADER =
+  /[a-z](?:Undergraduate|Graduate|Instagram|Website|Lecturer|Critic|Professor|Director)\b|\bInstagram\b/;
+
 export type CreativePracticeCardDecision =
   | { card: string; withheldBy: null }
   | { card: string; withheldBy: 'researchVoiceCardReplacedByPracticeSentence' }
@@ -25,6 +30,7 @@ const isPracticeCardSentence = (sentence: string, previous: string | undefined):
   !TRAILING_COMPANY_ABBREVIATION.test(previous ?? '') &&
   sentence.split(' ').length >= MIN_CARD_SENTENCE_WORDS &&
   sentence.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH &&
+  !GLUED_PROFILE_HEADER.test(sentence) &&
   creativePracticeEvidence(sentence).length > 0 &&
   !statesResearchApartFromArtwork(sentence) &&
   !cardSpeaksInResearchVoice(sentence) &&

@@ -1370,8 +1370,15 @@ Because the serve path recomputes the bar, a row whose only body is press copy s
 #### Role biographies, another organization's page text and education programs are not a description (#4528)
 
 `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names three more shapes the quality bar refuses for both the body and the card: `role-biography` (a teaching-only or administrative biography that states no research, practice or clinical work), `third-party-page` (a call for submissions, an event's own page, a site's section blurbs) and `instruction-offering` (an education program's description filed as a lab, refused only on a `LAB` row, so the caller's `entityType` must reach `nonResearchBodyShape`).
-Any research or care word, a faculty rank, or one kind of creative practice evidence (`creativePracticeEvidence`) keeps a biography, so widen the shapes only against a full served-corpus walk.
+Any research or care word, a faculty rank, or one kind of creative practice evidence (`creativePracticeEvidence`) other than `design` or `instrument` keeps a biography, so widen the shapes only against a full served-corpus walk.
+Those two kinds are excluded because organ, brass and brand identity have ordinary meanings outside the arts (#4551).
 Calibrated on all 3,470 served Development rows on 2026-10-03: 5 bodies refused, all 5 read and wrong, and no other served text changed.
+
+#### A practice biography with no research is not a description (#4551)
+
+`isPracticeBiographyWithoutResearch` in the same file reads a body that says where a clinician or a lawyer practises ("maintains a private practice", "has a clinical practice at", "clinical lead at") and what they treat or whom they represent, and states no research, publication or teaching; the quality bar flags it `practice-biography` on the body only, never on a card.
+One statement of where the person practises is required, and the research test is case-insensitive on purpose, so a capitalised "Research Fellowship" or a named grant keeps the body.
+Calibrated on every non-archived Development row on 2026-10-03: 2 bodies flagged, both clinical practice biographies, and the route walk over all served rows changed no other body.
 
 #### Detecting grafted prose deterministically
 

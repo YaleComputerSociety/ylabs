@@ -1,7 +1,14 @@
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 export type CreativePracticeEvidence =
-  'exhibition' | 'performance' | 'composition' | 'production' | 'writing' | 'practitioner';
+  | 'exhibition'
+  | 'performance'
+  | 'composition'
+  | 'production'
+  | 'writing'
+  | 'design'
+  | 'instrument'
+  | 'practitioner';
 
 const ARTS_PRACTICE_DEPARTMENTS: ReadonlySet<string> = new Set([
   'music',
@@ -38,8 +45,16 @@ const PRACTICE_EVIDENCE: ReadonlyArray<readonly [CreativePracticeEvidence, RegEx
     /\b(?:novels?|novelist|poet(?:ry|s)?|poems?|collections? of (?:poems|stories|essays)|short stor(?:y|ies)|memoir|fiction|essayist|(?:her|his|their) books include)\b/i,
   ],
   [
+    'design',
+    /\b(?:typefaces?|type design(?:er|ers)?|typograph(?:y|ic|er|ers)|lettering|letterer|graphic design(?:er|ers)?|book design|brand identit(?:y|ies)|visual identit(?:y|ies)|mouthpiece designs?)\b/i,
+  ],
+  [
+    'instrument',
+    /\b(?:trombones?|trumpets?|tubas?|euphoniums?|french horns?|violins?|violas?|cellos?|double bass|pianos?|fortepianos?|organs?|harpsichords?|guitars?|harps?|flutes?|oboes?|clarinets?|bassoons?|saxophones?|marimbas?|brass|woodwinds?)\b/i,
+  ],
+  [
     'practitioner',
-    /(?:^|\bis\s+|\bas\s+)an?\s+(?:[\w-]+\s+){0,3}(?:artist|composer|pianist|violinist|violist|cellist|organist|harpsichordist|guitarist|percussionist|trombonist|trumpeter|hornist|bassoonist|oboist|clarinetist|flutist|saxophonist|bassist|conductor|soloist|recitalist|chamber musician|instrumentalist|musician|actor|actress|playwright|poet|novelist|photographer|filmmaker|choreographer|dancer|sculptor|painter|singer|soprano|mezzo-soprano|tenor|baritone|bass-baritone|vocalist|director|designer|performer|printmaker|illustrator|typographer|writer|theatre-maker|theater-maker|producer|curator)\b/i,
+    /(?:(?:^|\bis\s+|\bas\s+)an?\s+(?:[\w-]+\s+){0,3}(?:artist|composer|pianist|violinist|violist|cellist|organist|harpsichordist|guitarist|percussionist|trombonist|trumpeter|hornist|bassoonist|oboist|clarinetist|flutist|saxophonist|bassist|conductor|soloist|recitalist|chamber musician|instrumentalist|musician|actor|actress|playwright|poet|novelist|photographer|filmmaker|choreographer|dancer|sculptor|painter|singer|soprano|mezzo-soprano|tenor|baritone|bass-baritone|vocalist|director|designer|performer|printmaker|illustrator|typographer|writer|theatre-maker|theater-maker|producer|curator)\b|\b(?:founder|co-founder|founding member|artistic director)\s+of\s+(?:the\s+)?[A-Z][^,.]{0,60},\s+an?\s+(?:[\w-]+\s+){0,3}(?:studio|foundry|collective|ensemble|quartet|trio|quintet|band|choir|gallery|press|theat(?:er|re) company|dance company|online school))/i,
   ],
 ];
 
@@ -55,6 +70,11 @@ const ARTWORK_AS_SUBJECT =
 // The revoicer writes "This researcher" in place of a person's name, so the phrase is the
 // pipeline's own wording and says nothing about what the person does.
 const REVOICED_PERSON_PLACEHOLDER = /\bthis researcher\b/gi;
+
+// A practitioner sharing "his story and research at design conferences" is giving a talk
+// about the practice, so the noun there is not a statement that the person does research.
+const PRACTICE_TALK_RESEARCH =
+  /\b(?:shares?|shared|presents?|presented)\s+(?:his|her|their)\s+(?:(?:story|work|practice|process)\s+and\s+)?research\s+at\s+(?:[\w-]+\s+){0,2}(?:conferences?|festivals?)\b/gi;
 
 const RESEARCH_STATEMENT =
   /\b(?:research(?:es|er|ers)?|scholar(?:ship|ly)?|musicolog\w*|ethnomusicolog\w*|theorist|music theory|cognition|cognitive|neuroscien\w*|psycholog\w*|empirical|digital humanities|computational|historian|history of|studies how|studies the|investigates how|examines how|analy(?:s|z)\w*|dissertation|ph\.?d\.? (?:candidate|student)|peer-reviewed|(?:published |appears? |appeared )?in (?:the )?journals?|journals? (?:such as|including)|journal of|monographs?|case study|university press)\b/i;
@@ -96,7 +116,10 @@ export function statesResearchApartFromArtwork(value: unknown): boolean {
   if (!text) return false;
   if (RESEARCH_VOICE_OPENING.test(text)) return true;
   return RESEARCH_STATEMENT.test(
-    text.replace(REVOICED_PERSON_PLACEHOLDER, ' ').replace(ARTWORK_AS_SUBJECT, ' '),
+    text
+      .replace(REVOICED_PERSON_PLACEHOLDER, ' ')
+      .replace(PRACTICE_TALK_RESEARCH, ' ')
+      .replace(ARTWORK_AS_SUBJECT, ' '),
   );
 }
 

@@ -148,7 +148,7 @@ The instrument for reading served state and cross-environment drift: `yarn --cwd
 Prefer it to a throwaway script.
 
 **Creative practice.**
-A served faculty row whose own body describes exhibitions, performances, compositions, productions or creative writing rather than research, in an arts department or school.
+A served faculty row whose own body describes exhibitions, performances, compositions, productions, creative writing, design practice or an instrument's practice rather than research, in an arts department or school.
 It is served and labelled "Creative practice" on the browse card and the detail page, never withheld, and never described as a lab, a research group or an opening.
 The served `creativePractice` flag is derived at serve time and written to no field.
 Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 2026-10-03 holds the decision.

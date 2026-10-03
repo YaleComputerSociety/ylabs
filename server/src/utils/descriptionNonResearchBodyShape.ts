@@ -1,5 +1,8 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { creativePracticeEvidence } from './creativePracticeDescription';
+import {
+  creativePracticeEvidence,
+  type CreativePracticeEvidence,
+} from './creativePracticeDescription';
 
 export type NonResearchBodyShape = 'role-biography' | 'third-party-page' | 'instruction-offering';
 
@@ -37,6 +40,16 @@ const ADMINISTRATIVE_ROLE =
 const TEACHING_ROLE =
   /\b(?:teach(?:es|ing|er)?|taught|instructor|lector|lecturer|curricul\w*|courses?|classes|classroom|pedagog\w*)\b/gi;
 
+// Organ, brass and brand identity have ordinary meanings outside the arts, so an instrument
+// or design word alone does not show creative practice in a biography read in any department.
+const AMBIGUOUS_OUTSIDE_THE_ARTS: ReadonlySet<CreativePracticeEvidence> = new Set([
+  'design',
+  'instrument',
+]);
+
+const statesCreativePracticeOutsideTheArts = (text: string): boolean =>
+  creativePracticeEvidence(text).some((kind) => !AMBIGUOUS_OUTSIDE_THE_ARTS.has(kind));
+
 const MIN_ADMINISTRATIVE_ROLE_MENTIONS = 2;
 const MIN_TEACHING_ROLE_MENTIONS = 3;
 
@@ -50,7 +63,7 @@ const MIN_TEACHING_ROLE_MENTIONS = 3;
 export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
   const text = textValue(value);
   if (!text || anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
-  if (FACULTY_RANK.test(text) || creativePracticeEvidence(text).length > 0) return false;
+  if (FACULTY_RANK.test(text) || statesCreativePracticeOutsideTheArts(text)) return false;
   return (
     (text.match(ADMINISTRATIVE_ROLE) ?? []).length >= MIN_ADMINISTRATIVE_ROLE_MENTIONS ||
     (text.match(TEACHING_ROLE) ?? []).length >= MIN_TEACHING_ROLE_MENTIONS
@@ -105,6 +118,42 @@ export function isInstructionOfferingText(value: unknown): boolean {
   const text = textValue(value);
   if (!text || anySentenceStates(text, STATES_RESEARCH)) return false;
   return (text.match(INSTRUCTION_OFFERING) ?? []).length >= MIN_INSTRUCTION_OFFERING_MENTIONS;
+}
+
+const PRACTICE_SETTING =
+  /\b(?:private practice|clinical practice|(?:surgical|clinical|psychotherapy|legal|law) practice (?:at|in|for|focused)|(?:sees|treats|cares for|caring for|works? with) (?:patients|clients)|has practiced as|board[- ]certified|attending (?:physician|psychiatrist|surgeon|pathologist)|clinical (?:lead|director) (?:at|of|for)|nurse practitioner|(?:her|his|their) clinical (?:interests?|work|care) (?:are|is|include|focus))\b/gi;
+
+const PRACTICE_AT_NAMED_PLACE = /\b[Pp]ractices? (?:at|in) (?:the )?[A-Z]/g;
+
+const PRACTICE_DETAIL =
+  /\b(?:clinical interests?|diagnosis and (?:management|treatment)|(?:the )?treatment of (?:patients|mood|anxiety|children|adults|adolescents)|patient care|clinical care|clients?|counsel(?:s|ed|ing)? clients|represent(?:s|ed)? (?:clients|companies)|medical staff|practice locations?)\b/gi;
+
+const MIN_PRACTICE_MENTIONS = 2;
+
+// Case-insensitive on purpose, unlike the role-biography test: a capitalised "Research
+// Fellowship" or "State Incentive Grant" is still a research statement, and reading one
+// keeps a body, which is the cheaper error here.
+const STATES_RESEARCH_BESIDE_PRACTICE =
+  /\b(?:research\w*|investigat\w*|stud(?:y|ies|ied|ying)|trials?|experiment\w*|laborator\w*|scientists?|scien(?:ce|tific)|publish\w*|publications?|papers?|articles?|books?|authored|co-?authored|grants?|funded|nih|examin\w*|explor\w*|analy[sz]\w*|scholar\w*|inquiry|outcomes|evaluat\w*|test(?:s|ed|ing)?|projects?|proof of concept|cohorts?|data|discover\w*|innovat\w*|develop(?:s|ed|ing)? (?:new|novel|methods|models|tools|approaches|interventions|treatments|therapies)|writes|written|teaches|taught|courses?|seminars?)\b/i;
+
+/**
+ * A practitioner's biography that states no research: where a clinician sees patients and
+ * what they treat, or a lawyer's private practice and clients. Practice of this kind is
+ * neither research nor creative practice, so a row carrying only this names no work a
+ * student could join. One mention of where the person practises is required, and any
+ * research, publication or teaching statement keeps the body, because most clinical and
+ * professional faculty describe both. Read on a row's body only: a card is derived from
+ * the body, and a clinical card beside a research body is a card defect rather than a
+ * row with no research.
+ */
+export function isPracticeBiographyWithoutResearch(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text || STATES_RESEARCH_BESIDE_PRACTICE.test(text)) return false;
+  const settings =
+    (text.match(PRACTICE_SETTING) ?? []).length +
+    (text.match(PRACTICE_AT_NAMED_PLACE) ?? []).length;
+  if (settings === 0) return false;
+  return settings + (text.match(PRACTICE_DETAIL) ?? []).length >= MIN_PRACTICE_MENTIONS;
 }
 
 const isLabEntityType = (entityType?: ResearchEntityType): boolean =>

@@ -45,6 +45,15 @@ describe('decideCreativePracticeCard (#4519)', () => {
     }
   });
 
+  it('skips a first sentence carrying a glued profile header (#4551)', () => {
+    const body =
+      'Sam Example Graphic DesignUndergraduate Senior Critic Instagram Sam Example trained as a graphic designer in Rotterdam. After several years in Rotterdam, the designer has drawn typefaces for publishers and museums.';
+
+    expect(decideCreativePracticeCard('Studies graphic design.', body).card).toBe(
+      'After several years in Rotterdam, the designer has drawn typefaces for publishers and museums.',
+    );
+  });
+
   it('never opens the replacement mid-clause after a company abbreviation', () => {
     const body =
       'As a screenwriter he has written for Example Bros. Studios and other companies, and has presented television projects. The writer recently completed a novel and a collection of stories set in the Midwest.';

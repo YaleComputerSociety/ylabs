@@ -83,7 +83,7 @@ Where one person leads both, the 2026-08-25 precedence applies: the `FACULTY_RES
   A permanent warning is what a real coverage gap would have had to be noticed against.
   Declare the surviving `Signal` evidence categories instead, and never add an artifact type without a model, a collection and a materializer behind it.
 - Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
-- A faculty row whose own body describes creative practice (exhibitions, performances, compositions, productions, creative writing) rather than research is served and labelled "Creative practice", never withheld (`server/src/utils/creativePracticeDescription.ts`, `docs/decisions.md` 2026-10-03, #4519).
+- A faculty row whose own body describes creative practice (exhibitions, performances, compositions, productions, creative writing, design practice, an instrument's practice) rather than research is served and labelled "Creative practice", never withheld (`server/src/utils/creativePracticeDescription.ts`, `docs/decisions.md` 2026-10-03, #4519).
   The label is derived at serve time from the served body and the row's arts department or school, and a labelled row's copy never claims a lab, a research group or an opening.
 - A row whose every lead holds only emeritus appointments stays served and is labelled, and claims no way in unless a running research award or a fresh official team roster shows current activity (`server/src/services/emeritusLeadWayIn.ts`, `docs/decisions.md` 2026-10-02, #4431).
   The label and the withhold are derived at serve time on the detail, browse and search payloads alike, never written to a field.
