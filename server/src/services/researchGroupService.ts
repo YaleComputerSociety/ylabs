@@ -109,6 +109,16 @@ import {
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
 } from './researchSearchPagination';
 import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyHeadings';
+import {
+  NOT_EMERITUS_LED,
+  decideEmeritusWayIn,
+  emeritusCurrentActivityEvidence,
+  leadTitlesAreAllEmeritus,
+  servedEmeritusWayInFlags,
+  signalIsWithheldWayIn,
+  titleHoldsOnlyEmeritusAppointments,
+  type EmeritusWayInDecision,
+} from './emeritusLeadWayIn';
 
 /**
  * The page's lead display names, batched for the whole hit set in one roster read
@@ -136,6 +146,11 @@ import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyH
 export interface PublicLeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
   unavailable: boolean;
+  emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
+}
+
+export interface PublicLeadMemberNameReadOptions {
+  withEmeritusWayIn?: boolean;
 }
 
 export const leadGuardedServingInput = <T extends Record<string, any>>(
@@ -151,32 +166,123 @@ export const leadGuardedServingInput = <T extends Record<string, any>>(
 
 export const optionalPublicLeadMemberNames = async (
   entities: Array<Record<string, any>>,
+  options: PublicLeadMemberNameReadOptions = {},
 ): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
+  const emeritusCandidates: EmeritusWayInCandidate[] = [];
+  const now = new Date();
   try {
     const rosterByEntityId = await getResearchEntityRosterByEntityId(
       entities.map((entity) => entity._id),
       { peopleHoldingCanonicalRoles: PUBLIC_LEAD_CANONICAL_ROLES },
     );
-    const now = new Date();
     for (const entity of entities) {
       const entityId = researchGroupDocumentId(entity._id);
       const entries = rosterByEntityId.get(entityId);
       if (!entityId || !entries?.length) continue;
-      const leadNames = publicResearchEntityLeadMemberNames(entity, entries, now);
+      const leadMembers = publicResearchEntityDetailRosterMembers(entity, entries, now).filter(
+        (member) => PUBLIC_LEAD_ROLES.has(member.role),
+      );
+      const leadNames = publicLeadMemberNames(leadMembers);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+      if (options.withEmeritusWayIn) {
+        emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
+      }
     }
   } catch (error) {
     console.error('Optional research lead-name enrichment failed:', sanitizeLogValue(error));
     return { byEntityId: new Map(), unavailable: true };
   }
-  return { byEntityId, unavailable: false };
+  const emeritusWayInByEntityId = options.withEmeritusWayIn
+    ? await resolveEmeritusWayInDecisions(emeritusCandidates, now)
+    : undefined;
+  return {
+    byEntityId,
+    unavailable: false,
+    ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
+  };
 };
 
 const leadMemberNameAliasOptions = (read: PublicLeadMemberNameRead) => ({
   leadMemberNamesByEntityId: read.byEntityId,
   leadMemberNamesUnavailable: read.unavailable,
+  emeritusWayInByEntityId: read.emeritusWayInByEntityId,
 });
+
+interface EmeritusWayInCandidate {
+  entity: Record<string, any>;
+  leadTitles: unknown[];
+  rosterEntries?: ResearchEntityRosterEntry[];
+}
+
+const PUBLIC_TEAM_ROLES: ReadonlySet<string> = new Set([
+  'postdoc',
+  'grad-student',
+  'undergrad',
+  'staff',
+]);
+
+function leadTitlesOf(members: Array<{ user?: any; role: string }>): unknown[] {
+  return members
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+    .map((member) => member.user?.title);
+}
+
+function currentTeamMemberCount(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now: Date,
+): number {
+  return canonicalPublicDetailMembers(entity, rosterEntries, now).filter(
+    (member) =>
+      PUBLIC_TEAM_ROLES.has(member.role) &&
+      isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment),
+  ).length;
+}
+
+// A failed roster read withholds rather than offers, because contact is fail-closed.
+async function resolveEmeritusWayInDecisions(
+  candidates: readonly EmeritusWayInCandidate[],
+  now: Date,
+): Promise<Map<string, Readonly<EmeritusWayInDecision>>> {
+  const emeritusLed = candidates.filter((candidate) =>
+    leadTitlesAreAllEmeritus(candidate.leadTitles),
+  );
+  const decisions = new Map<string, Readonly<EmeritusWayInDecision>>();
+  if (emeritusLed.length === 0) return decisions;
+  try {
+    const needsRoster = emeritusLed
+      .filter((candidate) => !candidate.rosterEntries)
+      .map((candidate) => candidate.entity._id);
+    const rosterByEntityId =
+      needsRoster.length > 0
+        ? await getResearchEntityRosterByEntityId(needsRoster)
+        : new Map<string, ResearchEntityRosterEntry[]>();
+    for (const candidate of emeritusLed) {
+      const key = researchGroupDocumentId(candidate.entity._id);
+      const rosterEntries = candidate.rosterEntries ?? rosterByEntityId.get(key) ?? [];
+      decisions.set(
+        key,
+        decideEmeritusWayIn(candidate.leadTitles, () =>
+          emeritusCurrentActivityEvidence({
+            entity: candidate.entity,
+            currentTeamMemberCount: currentTeamMemberCount(candidate.entity, rosterEntries, now),
+            now,
+          }),
+        ),
+      );
+    }
+  } catch (error) {
+    console.error('Emeritus current-activity read failed:', sanitizeLogValue(error));
+    for (const candidate of emeritusLed) {
+      decisions.set(
+        researchGroupDocumentId(candidate.entity._id),
+        decideEmeritusWayIn(candidate.leadTitles, () => []),
+      );
+    }
+  }
+  return decisions;
+}
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -1330,7 +1436,7 @@ export async function searchResearchGroupsViaMeili(
     const pageEntityIds = pageEntities.map((entity) => entity._id);
     const [planningContextResult, leadMemberNameRead] = await Promise.all([
       optionalPlanningContexts(pageEntityIds),
-      optionalPublicLeadMemberNames(pageEntities),
+      optionalPublicLeadMemberNames(pageEntities, { withEmeritusWayIn: true }),
     ]);
     return addResearchEntitySearchAliases(
       {
@@ -1978,7 +2084,9 @@ export async function searchResearchGroupsViaMeili(
   // path's `_id`.
   const [planningContextResult, leadMemberNameRead] = await Promise.all([
     optionalPlanningContexts(visibleHitIds),
-    optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>),
+    optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>, {
+      withEmeritusWayIn: true,
+    }),
   ]);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
@@ -3316,6 +3424,19 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     dedupedMembersWithRows,
   );
   const leadMemberNames = publicLeadMemberNames(dedupedMembersWithRows);
+  const emeritusWayIn =
+    (
+      await resolveEmeritusWayInDecisions(
+        [
+          {
+            entity: group as Record<string, any>,
+            leadTitles: leadTitlesOf(dedupedMembersWithRows),
+            rosterEntries,
+          },
+        ],
+        new Date(),
+      )
+    ).get(researchGroupDocumentId((group as any)._id)) ?? NOT_EMERITUS_LED;
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity: group as any,
     leadMemberNames,
@@ -3345,15 +3466,18 @@ export async function getResearchGroupDetail(slug: string): Promise<{
           freshnessExpiresAt: row.freshnessExpiresAt,
         }
       : undefined;
+    const leadHoldsOnlyEmeritusAppointments =
+      PUBLIC_LEAD_ROLES.has(member.role) && titleHoldsOnlyEmeritusAppointments(member.user?.title);
     return {
       ...member,
       user: withPublicMemberLeadEmail(
         {
           ...publicMemberUserForResearchDetail(member.user),
           publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
+          ...(leadHoldsOnlyEmeritusAppointments ? { emeritus: true } : {}),
         },
         member.role,
-        member.user?.email,
+        emeritusWayIn.wayInWithheld ? undefined : member.user?.email,
       ),
       ...(rosterEvidence ? { rosterEvidence } : {}),
     };
@@ -3386,6 +3510,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   ]);
   const publicAccessSignals = (accessSignals as any[])
     .filter((signal) => !foreignContactSignalIds.has(String(signal._id)))
+    .filter((signal) => !signalIsWithheldWayIn(signal, emeritusWayIn))
     .map((signal) => publicAccessSignalForResearchDetail(signal, group));
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
@@ -3401,7 +3526,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       group: {
         ...publicGroupForResponse,
         ...leadIdentity,
-        planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
+        ...servedEmeritusWayInFlags(emeritusWayIn),
+        planningContext: emeritusWayIn.wayInWithheld
+          ? undefined
+          : planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
       },
       members,
       roster,
