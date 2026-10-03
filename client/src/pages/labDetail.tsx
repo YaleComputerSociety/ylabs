@@ -400,6 +400,7 @@ const formatPastAdvisees = (group: any): string | null => {
 };
 
 const emeritusResearchLabel = (group: any): string => {
+  if (isCreativePracticeEntity(group)) return 'Emeritus faculty';
   if (group.entityType === 'LAB') return 'Emeritus lab';
   if (group.entityType === 'FACULTY_RESEARCH_AREA' || group.entityType === 'FACULTY_PROJECT') {
     return 'Emeritus faculty research';
@@ -415,30 +416,35 @@ const EmeritusCurrentActivityNotice = ({
   group: any;
   activityCheckUrl?: string;
   leadCardLinksProfile: boolean;
-}) => (
-  <div className="py-4 first:pt-0 last:pb-0" role="note" aria-label="Current activity">
-    <p className="text-xs font-semibold uppercase tracking-wider text-muted">Current activity</p>
-    <p className="mt-1 text-sm leading-relaxed text-ink">
-      {emeritusResearchLabel(group)}: check the official page for current activity.
-    </p>
-    <p className="mt-1 text-sm leading-relaxed text-muted">
-      {activityCheckUrl || !leadCardLinksProfile
-        ? 'y/labs has no record that this research is active now, so it lists no way to join.'
-        : 'y/labs has no record that this research is active now, so it lists no way to join. The official profile above is the place to check.'}
-    </p>
-    {activityCheckUrl && (
-      <a
-        href={activityCheckUrl}
-        target="_blank"
-        rel={EXTERNAL_LINK_REL}
-        className="yr-focus-ring yr-pressable mt-3 inline-flex min-h-11 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-      >
-        Open the official page
-        <ArrowRightIcon />
-      </a>
-    )}
-  </div>
-);
+}) => {
+  const activityNoRecord = `y/labs has no record that this ${
+    isCreativePracticeEntity(group) ? 'practice' : 'research'
+  } is active now, so it lists no way to join.`;
+  return (
+    <div className="py-4 first:pt-0 last:pb-0" role="note" aria-label="Current activity">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Current activity</p>
+      <p className="mt-1 text-sm leading-relaxed text-ink">
+        {emeritusResearchLabel(group)}: check the official page for current activity.
+      </p>
+      <p className="mt-1 text-sm leading-relaxed text-muted">
+        {activityCheckUrl || !leadCardLinksProfile
+          ? activityNoRecord
+          : `${activityNoRecord} The official profile above is the place to check.`}
+      </p>
+      {activityCheckUrl && (
+        <a
+          href={activityCheckUrl}
+          target="_blank"
+          rel={EXTERNAL_LINK_REL}
+          className="yr-focus-ring yr-pressable mt-3 inline-flex min-h-11 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+        >
+          Open the official page
+          <ArrowRightIcon />
+        </a>
+      )}
+    </div>
+  );
+};
 
 const DecisionSummary = ({
   group,

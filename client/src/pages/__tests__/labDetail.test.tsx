@@ -3235,6 +3235,33 @@ describe('LabDetail for a creative practice profile (#4519)', () => {
     expect(screen.getAllByText('Faculty').length).toBeGreaterThan(0);
   });
 
+  it('names an emeritus-led practice as faculty and practice, never a lab or research', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        websiteUrl: PRACTICE_WEBSITE_URL,
+        sourceUrls: [PRACTICE_WEBSITE_URL],
+        creativePractice: true,
+        emeritusLed: true,
+        wayInWithheld: true,
+      },
+      members: [{ ...practiceLead, user: { ...practiceLead.user, emeritus: true } }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const notice = screen.getByRole('note', { name: 'Current activity' });
+    expect(notice.textContent).toContain(
+      'Emeritus faculty: check the official page for current activity.',
+    );
+    expect(notice.textContent).toContain('y/labs has no record that this practice is active now');
+    expect(notice.textContent).not.toMatch(/Emeritus lab|Emeritus faculty research|this research/);
+  });
+
   it('keeps a director lead and its heading a director on a labelled row', async () => {
     renderLabDetail({
       ...basePayload,
