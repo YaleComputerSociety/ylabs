@@ -20,6 +20,9 @@ import {
   OfficialProfilePiBackfillScraper,
   officialProfileUrlsForEntity,
   preferredOfficialProfileUrl,
+  profileAttestsItsLabWebsiteIsGone,
+  websiteUrlOwnedByAnotherEntity,
+  emptyLabWebsiteSlotObservation,
   rankedOfficialProfileFetchCandidates,
   isEponymousResearchGroupLinkText,
   refusedResearchHomeWebsiteObservation,
@@ -1799,6 +1802,123 @@ describe('officialProfilePiBackfillScraper', () => {
 
     expect(fetchedUrls[0]).toBe(departmentUrl);
     expect(fetchedUrls).toContain(mirrorUrl);
+  });
+
+  describe('who owns a website for the ownership refusal', () => {
+    const findOneReturning = (owner: unknown) => {
+      const filters: any[] = [];
+      vi.spyOn(ResearchEntity, 'findOne').mockImplementation(((filter: any) => {
+        filters.push(filter);
+        return { select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(owner) };
+      }) as any);
+      return filters;
+    };
+    const row = { _id: '0123456789abcdef01234567', websiteUrl: 'https://fixturelab.example.org/' };
+
+    it('counts only a student-visible holder when the row already serves the link', async () => {
+      const filters = findOneReturning(null);
+      await expect(
+        websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', row),
+      ).resolves.toBe(false);
+      expect(filters[0].studentVisibilityTier).toEqual({ $in: ['student_ready'] });
+      expect(filters[0]._id).toEqual({ $ne: row._id });
+    });
+
+    it('keeps any live holder blocking adoption onto a row without the link', async () => {
+      const filters = findOneReturning({ _id: '76543210fedcba9876543210' });
+      await expect(
+        websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', {
+          _id: row._id,
+          websiteUrl: '',
+        }),
+      ).resolves.toBe(true);
+      expect(filters[0].studentVisibilityTier).toBeUndefined();
+    });
+  });
+
+  describe('attesting that a re-read profile no longer links the stored website', () => {
+    const profileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+    const storedWebsite = 'https://marlowfixturelab.example.org/';
+    const entity = {
+      _id: '0123456789abcdef01234567',
+      slug: 'ysm-faculty-quinn-marlowfixture',
+      websiteUrl: storedWebsite,
+      fieldProvenance: {
+        websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: profileUrl },
+      },
+    };
+    const page = (body: string) =>
+      `<html><body><main><h1>Quinn Marlowfixture</h1>${body}</main></body></html>`;
+
+    it('attests when the same profile carries no lab slot and no stored link', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p>Professor of medicine.</p>'),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(true);
+    });
+
+    it('does not attest while the page still links the stored website anywhere', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page(`<footer><a href="${storedWebsite}">Our lab</a></footer>`),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest while the page still carries a lab-website slot', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page(
+            '<article><a href="https://other.example.org/"><span>View Lab Website</span></a></article>',
+          ),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<a class="cta" href="https://moved.example.org/">Marlowfixture Group</a>'),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest from a different profile than the one the website came from', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p>Professor of chemistry.</p>'),
+          'https://chem.yale.edu/profile/quinn-marlowfixture/',
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest for a website another lane supplied', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(page('<p>Professor of medicine.</p>'), profileUrl, {
+          ...entity,
+          fieldProvenance: {
+            websiteUrl: { sourceName: 'dept-faculty-roster', sourceUrl: profileUrl },
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('states the absence on a sourceUrls witness for the profile', () => {
+      expect(emptyLabWebsiteSlotObservation(entity, profileUrl)).toMatchObject({
+        entityType: 'researchEntity',
+        entityKey: entity.slug,
+        field: 'sourceUrls',
+        value: [profileUrl],
+        assertsNoValueFor: ['websiteUrl'],
+      });
+    });
   });
 
   describe('a lab-website card that links an affiliated organization', () => {

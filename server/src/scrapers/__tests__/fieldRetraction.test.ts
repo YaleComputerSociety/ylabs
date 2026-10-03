@@ -130,7 +130,6 @@ describe('field-retraction contract declarability', () => {
 
   it('does not treat an undeclared source as retraction capable', () => {
     expect(fieldRetractionContractFor('ysm-atoz-index')).toBeUndefined();
-    expect(fieldRetractionContractFor('official-profile-pi-backfill')).toBeUndefined();
     expect(fieldRetractionContractFor('constructor')).toBeUndefined();
     expect(fieldRetractionContractFor('ysm-faculty-directory')).toBeDefined();
     expect(fieldRetractionContractFor('dept-faculty-roster')).toBeDefined();
@@ -678,7 +677,7 @@ describe('sources that cannot attest an absence (#3261)', () => {
    * must have no contract at all rather than a permissive one.
    */
   it('names them, and refuses to give them a contract', () => {
-    for (const source of ['ysm-atoz-index', 'official-profile-pi-backfill']) {
+    for (const source of ['ysm-atoz-index']) {
       expect(sourceCannotAttestAbsence(source)).toBe(true);
       expect(fieldRetractionContractFor(source)).toBeUndefined();
     }
@@ -689,6 +688,7 @@ describe('sources that cannot attest an absence (#3261)', () => {
       'ysm-faculty-directory',
       'dept-faculty-roster',
       'yse-faculty-directory',
+      'official-profile-pi-backfill',
     ]) {
       expect(sourceCannotAttestAbsence(source)).toBe(false);
       expect(fieldRetractionContractFor(source)).toBeDefined();

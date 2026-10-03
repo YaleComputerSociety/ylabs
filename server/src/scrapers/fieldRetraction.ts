@@ -220,6 +220,12 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
     notes:
       'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only when it withdrew the lab because the linked site is dead on a stored or probed verdict, so the websiteUrl it asserted before it knew stops being live (#3452). A refused link and an empty lab slot state nothing.',
   },
+  'official-profile-pi-backfill': {
+    witnessFields: ['sourceUrls'],
+    retractableFields: ['websiteUrl'],
+    notes:
+      'Re-reads the profiles behind the websites it set and states assertsNoValueFor: [websiteUrl] only when it re-read the same profile the stored website was observed from, that page carries no lab-website slot of any kind, and the stored link appears nowhere among its links. Every refusal of a link the page still carries states nothing, and a read of a different profile never claims (#4544).',
+  },
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
@@ -234,8 +240,8 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
  * than an omission (#3261).
  *
  * #3135's plan listed `ysm-atoz-index` and `official-profile-pi-backfill` as the next
- * two contracts to declare. Reading both emit paths end to end, neither can state a
- * positive absence, and a contract they cannot honour is worse than no contract: the
+ * two contracts to declare. Reading both emit paths end to end, neither could state a
+ * positive absence, and a contract a source cannot honour is worse than no contract: the
  * lane would then read their silence as a claim, which is precisely what #2647
  * measured going wrong when 2 of 4 planned retractions turned out to be refusals of
  * links the page still carried.
@@ -246,19 +252,11 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
  * `ysmLabDelistingReconciler` already owns that. A contract here would count one
  * delisting twice under two mechanisms.
  *
- * `official-profile-pi-backfill` mints from a discovered URL:
- * `entityResearchHomeToObservations` and `entityLeadDirectWebsiteToObservations` both
- * take the URL as their premise. Nothing in it reaches the state "I read this person's
- * official profile and it carried no research-home link", which is the only state that
- * could attest emptiness. It reads profile pages, so that state is reachable in
- * principle, and adding it is the `labSlotIsEmpty` work from #3153: a parse-time
- * empty-slot signal kept distinct from every refusal path. Until that exists there is
- * nothing for a contract to witness.
+ * `official-profile-pi-backfill` was listed here until #4544 gave it the parse-time
+ * empty-slot signal #3153 asked for, `profileAttestsItsLabWebsiteIsGone`, which is kept
+ * distinct from every refusal path, so it now carries a contract above.
  */
-const SOURCES_THAT_CANNOT_ATTEST_ABSENCE: readonly string[] = [
-  'ysm-atoz-index',
-  'official-profile-pi-backfill',
-];
+const SOURCES_THAT_CANNOT_ATTEST_ABSENCE: readonly string[] = ['ysm-atoz-index'];
 
 export function sourceCannotAttestAbsence(sourceName: string): boolean {
   return SOURCES_THAT_CANNOT_ATTEST_ABSENCE.includes(sourceName);
