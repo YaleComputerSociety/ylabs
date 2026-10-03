@@ -1353,6 +1353,159 @@ await step('a successful programs load keeps its layout when the data arrives', 
   }
 });
 
+const LOADED_CONTENT_SHIFT_BUDGET = 0.01;
+const RESEARCH_PROGRAMS_HANDOFF_QUERY = 'summer research for freshmen';
+const RESEARCH_PROGRAMS_HANDOFF_LINK = /^Search programs and fellowships for/;
+const SYNTHETIC_PROFILE_SLUG = syntheticLayoutEntity(0).slug;
+
+const contentShiftOnceReleased = async (
+  syntheticPage,
+  { holdRoute, respond, url, loading, loaded },
+) => {
+  let release;
+  const released = new Promise((resolve) => {
+    release = resolve;
+  });
+  await syntheticPage.route(holdRoute, async (route) => {
+    await released;
+    await respond(route);
+  });
+  await syntheticPage.addInitScript(() => {
+    window.__contentShifts = [];
+    const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.hadRecentInput) continue;
+        const movesOnlyFooter = entry.sources.every((source) =>
+          elementOf(source.node)?.closest?.('footer'),
+        );
+        if (movesOnlyFooter) continue;
+        window.__contentShifts.push({
+          startTime: entry.startTime,
+          value: entry.value,
+          sources: entry.sources.map((source) => {
+            const element = elementOf(source.node);
+            return element
+              ? `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 60)}`
+              : 'unknown';
+          }),
+        });
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
+  try {
+    await syntheticPage.goto(`${baseUrl}${url}`, { waitUntil: 'domcontentloaded' });
+    await loading().first().waitFor({ state: 'visible', timeout: 20000 });
+    const releasedAt = await syntheticPage.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return performance.now();
+    });
+    const loadingBox = await loading().first().boundingBox();
+    release();
+    await loaded().first().waitFor({ state: 'visible', timeout: 20000 });
+    await syntheticPage.waitForTimeout(1000);
+    const shifts = await syntheticPage.evaluate(
+      (since) => window.__contentShifts.filter((shift) => shift.startTime >= since),
+      releasedAt,
+    );
+    const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+    const largest = [...shifts].sort((a, b) => b.value - a.value)[0];
+    return { total, largest, loadingBox };
+  } finally {
+    release();
+  }
+};
+
+const syntheticResearchSearch = (route) =>
+  route.fulfill({
+    json: {
+      researchEntities: Array.from({ length: 6 }, (_, index) => syntheticLayoutEntity(index)),
+      estimatedTotalHits: 6,
+      page: 1,
+      pageSize: 24,
+      facetDistribution: {},
+    },
+  });
+
+await step('the research programs handoff keeps results in place and a 44px link', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      const { total, largest } = await contentShiftOnceReleased(syntheticPage, {
+        holdRoute: '**/api/research/search**',
+        respond: syntheticResearchSearch,
+        url: `/research?q=${encodeURIComponent(RESEARCH_PROGRAMS_HANDOFF_QUERY)}`,
+        loading: () => syntheticPage.getByText('Loading research', { exact: true }),
+        loaded: () => syntheticPage.getByRole('link', { name: RESEARCH_PROGRAMS_HANDOFF_LINK }),
+      });
+      const link = syntheticPage.getByRole('link', { name: RESEARCH_PROGRAMS_HANDOFF_LINK });
+      const linkBox = await link.boundingBox();
+      const href = await link.getAttribute('href');
+      record('research programs handoff layout shift', {
+        width: viewport.width,
+        contentLayoutShift: Number(total.toFixed(4)),
+        linkHeight: Math.round(linkBox?.height ?? 0),
+        largestShiftSources: largest?.sources ?? [],
+      });
+      assert(
+        total < LOADED_CONTENT_SHIFT_BUDGET,
+        `Research results at ${viewport.width}px shifted by ${total.toFixed(3)} when the programs handoff appeared (budget ${LOADED_CONTENT_SHIFT_BUDGET}); largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
+      assert(
+        (linkBox?.height ?? 0) >= 44,
+        `The programs handoff link at ${viewport.width}px is a ${Math.round(linkBox?.height ?? 0)}px target, not 44px.`,
+      );
+      assert(
+        href ===
+          `/programs?q=${encodeURIComponent(RESEARCH_PROGRAMS_HANDOFF_QUERY).replace(/%20/g, '+')}`,
+        `The programs handoff link at ${viewport.width}px points at ${href}, not the same search on /programs.`,
+      );
+    });
+  }
+});
+
+await step('a research profile keeps its layout when the profile arrives', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.route(
+        `**/api/research/${SYNTHETIC_PROFILE_SLUG}/reports/mine**`,
+        (route) => route.fulfill({ json: { reports: [] } }),
+      );
+      const { total, largest, loadingBox } = await contentShiftOnceReleased(syntheticPage, {
+        holdRoute: `**/api/research/${SYNTHETIC_PROFILE_SLUG}`,
+        respond: (route) =>
+          route.fulfill({ json: { researchEntity: syntheticLayoutEntity(0), members: [] } }),
+        url: `/research/${SYNTHETIC_PROFILE_SLUG}`,
+        loading: () => syntheticPage.getByRole('status', { name: 'Loading research profile' }),
+        loaded: () => syntheticPage.getByRole('heading', { level: 1, name: 'Layout Fixture 0' }),
+      });
+      record('research profile load layout shift', {
+        width: viewport.width,
+        contentLayoutShift: Number(total.toFixed(4)),
+        loadingHeight: Math.round(loadingBox?.height ?? 0),
+        largestShiftSources: largest?.sources ?? [],
+      });
+      assert(
+        (loadingBox?.height ?? 0) >= viewport.height / 2,
+        `The research profile loading state at ${viewport.width}px is ${Math.round(loadingBox?.height ?? 0)}px tall, under half the viewport, so it does not hold the profile's shape.`,
+      );
+      assert(
+        total < LOADED_CONTENT_SHIFT_BUDGET,
+        `A research profile at ${viewport.width}px shifted by ${total.toFixed(3)} when it arrived (budget ${LOADED_CONTENT_SHIFT_BUDGET}); largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
+    });
+  }
+});
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',

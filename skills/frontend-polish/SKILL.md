@@ -79,6 +79,11 @@ A tab strip inside a fixed-width popover wraps instead, because a scrolled strip
 A summary row's shape is fixed before data arrives, never derived from it: the `/programs` status tiles once added a tile per non-empty optional section, so a loaded board grew a row at 375 and 768px and widened every column at 1440px (#4356).
 They are now the four timing tiles at every load state, and the other sections keep their counts in their own headers.
 The student-journey smoke holds the first programs search until the loading tiles paint, then fails when the page shifts by 0.01 or more once the data arrives at 375, 768, or 1440px.
+- A block that appears above results only once they land reserves its slot while they load.
+The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
+- A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
+`ResearchProfileSkeleton` exports the profile's page, grid and column classes, and `labDetail.tsx` uses the same constants, because a reused container that changes width scored 0.093 at 1440px (#4268).
+The student-journey smoke holds the research search and the profile request until their loading states paint, then fails at a content shift of 0.01 or more, a handoff link under 44px, or a profile loading state under half the viewport.
 - A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
 Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.
 Clear state that belongs to the previous selection in the same handler that changes it, and reset the page or offset in the same state update as the filter change, never in a later effect.
