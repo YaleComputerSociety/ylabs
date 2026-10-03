@@ -136,6 +136,11 @@ const STUDENT_YEAR_OF_STUDY_ALIASES: ReadonlyArray<{ spoken: readonly string[]; 
     { spoken: ['sophomores'], sourced: 'sophomore' },
   ];
 
+export const PROGRAM_QUERY_ALIAS_PHRASES: readonly string[] = [
+  ...PROGRAM_TOPIC_TAXONOMY.flatMap((topic) => [topic.subject, ...topic.aliases]),
+  ...STUDENT_YEAR_OF_STUDY_ALIASES.flatMap(({ spoken, sourced }) => [...spoken, sourced]),
+];
+
 export const yearOfStudyAliasesForQuery = (query: unknown): string[] => {
   const text = normalizedText([query]);
   return STUDENT_YEAR_OF_STUDY_ALIASES.filter(({ spoken }) =>

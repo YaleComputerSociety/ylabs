@@ -3,11 +3,16 @@
  */
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
-import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
+import {
+  FellowshipQuickFilter,
+  ProgramSearchQueryCorrection,
+} from '../reducers/fellowshipSearchReducer';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
+  queryCorrection: ProgramSearchQueryCorrection | null;
+  searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
   selectedProgramCategory: string[];
@@ -66,6 +71,8 @@ export interface FellowshipSearchContextType {
 export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
+  queryCorrection: null,
+  searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],
   selectedProgramKind: [],

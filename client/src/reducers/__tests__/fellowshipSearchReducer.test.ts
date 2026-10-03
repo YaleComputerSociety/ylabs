@@ -283,3 +283,46 @@ describe('fellowshipSearchReducer', () => {
     expect(failed.fellowships).toHaveLength(1);
   });
 });
+
+describe('fellowshipSearchReducer spelling correction (#4537)', () => {
+  const correction = { originalQuery: 'sophmore', correctedQuery: 'sophomore' };
+
+  it('keeps the first page correction while more pages append', () => {
+    const first = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: {
+        fellowships: [],
+        total: 0,
+        pageSize: 20,
+        append: false,
+        queryCorrection: correction,
+      },
+    });
+    const appended = fellowshipSearchReducer(first, {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [], total: 0, pageSize: 20, append: true },
+    });
+
+    expect(first.queryCorrection).toEqual(correction);
+    expect(appended.queryCorrection).toEqual(correction);
+  });
+
+  it('searches the typed spelling until the student edits the query', () => {
+    const typed = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_TYPED_SPELLING',
+      payload: 'sophmore',
+    });
+    const unchanged = fellowshipSearchReducer(typed, {
+      type: 'SET_QUERY_STRING',
+      payload: 'sophmore',
+    });
+    const edited = fellowshipSearchReducer(typed, {
+      type: 'SET_QUERY_STRING',
+      payload: 'sophmore grant',
+    });
+
+    expect(typed).toMatchObject({ queryString: 'sophmore', exactSpelling: true });
+    expect(unchanged.exactSpelling).toBe(true);
+    expect(edited.exactSpelling).toBe(false);
+  });
+});

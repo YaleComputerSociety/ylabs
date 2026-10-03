@@ -1,6 +1,9 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
+import { escapeRegex } from '../utils/regex';
+import { foldLatinDiacritics } from '../utils/latinDiacritics';
+import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -860,6 +863,46 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
+const PROGRAM_WORD_PREFIX_FIELDS = [
+  'title',
+  'summary',
+  'description',
+  'eligibility',
+  'competitionType',
+  'applicationInformation',
+  'additionalInformation',
+  'purpose',
+  'studentFacingCategory',
+];
+const PROGRAM_WORD_PREFIX_MIN_LENGTH = 2;
+const PROGRAM_WORD_PREFIX_STOP_WORDS = new Set([
+  'an',
+  'and',
+  'for',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+]);
+
+// MongoDB `$text` matches whole stemmed words only, so a student typing into the live search
+// box sees nothing until the word is finished: `Com` matched no program while 87 carry a word
+// starting with it. Every typed word must start some word in the program. See #4537.
+export const programQueryWordPrefixClauses = (query: string): Record<string, unknown>[] =>
+  [...new Set(foldLatinDiacritics(query.toLowerCase()).match(/[a-z0-9]+/g) ?? [])]
+    .filter(
+      (token) =>
+        token.length >= PROGRAM_WORD_PREFIX_MIN_LENGTH &&
+        !PROGRAM_WORD_PREFIX_STOP_WORDS.has(token),
+    )
+    .map((token) => ({
+      $or: PROGRAM_WORD_PREFIX_FIELDS.map((field) => ({
+        [field]: { $regex: `(?:^|[^a-z0-9])${escapeRegex(token)}`, $options: 'i' },
+      })),
+    }));
+
 export const searchFellowships = async (params: {
   query?: string;
   page?: number;
@@ -884,6 +927,7 @@ export const searchFellowships = async (params: {
   includeNonPublic?: boolean;
   includeOperatorReview?: boolean;
   includeSuppressed?: boolean;
+  correctSpelling?: boolean;
 }) => {
   const {
     query = '',
@@ -909,8 +953,13 @@ export const searchFellowships = async (params: {
     includeNonPublic = false,
     includeOperatorReview = false,
     includeSuppressed = false,
+    correctSpelling = true,
   } = params;
-  const safeQuery = boundedSearchQuery(query);
+  const typedQuery = boundedSearchQuery(query);
+  const spelling = correctSpelling
+    ? await correctProgramSearchQuerySpelling(typedQuery)
+    : { query: typedQuery, corrections: [] };
+  const safeQuery = spelling.query;
   const safeYearOfStudy = boundedSearchFilterValues(yearOfStudy);
   const safeTermOfAward = boundedSearchFilterValues(termOfAward);
   const safePurpose = boundedSearchFilterValues(purpose);
@@ -1013,36 +1062,79 @@ export const searchFellowships = async (params: {
     filter.yaleCollegeOnly = yaleCollegeOnly;
   }
 
-  const sortOptions: any = {};
-  if (safeQuery) {
-    sortOptions.score = { $meta: 'textScore' };
-  }
-  sortOptions[publicFellowshipSortField(sortBy, includeNonPublic)] =
-    publicFellowshipSortOrder(sortOrder);
-  sortOptions._id = 1;
-
+  const sortField = publicFellowshipSortField(sortBy, includeNonPublic);
+  const fieldSortOptions: Record<string, any> = {
+    [sortField]: publicFellowshipSortOrder(sortOrder),
+    _id: 1,
+  };
   const skip = (page - 1) * pageSize;
 
-  let fellowshipsQuery = Fellowship.find(filter);
-
-  if (safeQuery) {
-    fellowshipsQuery = fellowshipsQuery.select({ score: { $meta: 'textScore' } });
-  }
-
-  const [fellowships, total] = await Promise.all([
-    fellowshipsQuery.sort(sortOptions).skip(skip).limit(pageSize).lean(),
-    Fellowship.countDocuments(filter),
-  ]);
-
-  return {
-    fellowships: (includeNonPublic
+  const servePrograms = (fellowships: any[]) =>
+    (includeNonPublic
       ? fellowships
       : fellowships.map((fellowship) => publicFellowshipForStudent(fellowship))
-    ).map((fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) })),
-    total,
+    ).map((fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) }));
+  const queryCorrection =
+    spelling.corrections.length > 0
+      ? { originalQuery: typedQuery, correctedQuery: safeQuery }
+      : undefined;
+
+  if (!safeQuery) {
+    const [fellowships, total] = await Promise.all([
+      Fellowship.find(filter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
+      Fellowship.countDocuments(filter),
+    ]);
+    return {
+      fellowships: servePrograms(fellowships),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  const { $text: _textClause, ...filterWithoutText } = filter;
+  const prefixClauses = programQueryWordPrefixClauses(safeQuery);
+  const [textMatches, prefixMatches] = await Promise.all([
+    Fellowship.find(filter, { _id: 1, score: { $meta: 'textScore' } })
+      .sort({ score: { $meta: 'textScore' }, ...fieldSortOptions })
+      .lean(),
+    prefixClauses.length > 0
+      ? Fellowship.find(
+          { ...filterWithoutText, $and: [...(filterWithoutText.$and ?? []), ...prefixClauses] },
+          { _id: 1 },
+        )
+          .sort(fieldSortOptions)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+  const scoreById = new Map<string, number>(
+    (textMatches as any[]).map((match) => [String(match._id), match.score]),
+  );
+  const orderedIds = [
+    ...new Set([...(textMatches as any[]), ...(prefixMatches as any[])].map((m) => String(m._id))),
+  ];
+  const pageIds = orderedIds.slice(skip, skip + pageSize);
+  const pageDocuments = pageIds.length
+    ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
+    : [];
+  const documentById = new Map(pageDocuments.map((document) => [String(document._id), document]));
+  const fellowships = pageIds
+    .map((id) => documentById.get(id))
+    .filter(Boolean)
+    .map((document) =>
+      scoreById.has(String(document._id))
+        ? { ...document, score: scoreById.get(String(document._id)) }
+        : document,
+    );
+
+  return {
+    fellowships: servePrograms(fellowships),
+    total: orderedIds.length,
     page,
     pageSize,
-    totalPages: Math.ceil(total / pageSize),
+    totalPages: Math.ceil(orderedIds.length / pageSize),
+    ...(queryCorrection ? { queryCorrection } : {}),
   };
 };
 

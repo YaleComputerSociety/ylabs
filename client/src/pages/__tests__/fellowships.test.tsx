@@ -203,6 +203,8 @@ const renderPage = (
   const value: FellowshipSearchContextType = {
     queryString: '',
     setQueryString: vi.fn(),
+    queryCorrection: null,
+    searchTypedSpelling: vi.fn(),
     selectedProgramCategory: [],
     setSelectedProgramCategory: vi.fn(),
     selectedProgramKind: [],
@@ -307,6 +309,8 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
               value={{
                 queryString: '',
                 setQueryString: vi.fn(),
+                queryCorrection: null,
+                searchTypedSpelling: vi.fn(),
                 selectedProgramCategory: [],
                 setSelectedProgramCategory: vi.fn(),
                 selectedProgramKind: [],

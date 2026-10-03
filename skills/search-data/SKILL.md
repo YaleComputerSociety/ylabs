@@ -558,7 +558,7 @@ The blast radius is confined to queries containing a catalog phrase: `machine le
 ### A misspelled query word is corrected against the corpus vocabulary (#4536)
 
 `searchResearchGroupsViaMeili` rewrites a misspelled word to the corpus word it was meant to be before `normalizeResearchSearchQuery` runs, so the aliases, the synonyms, the keyword leg and the query embedding all see the corrected word.
-The correction lives in `server/src/services/searchQuerySpellingCorrection.ts`, which takes a vocabulary and a set of protected words and knows nothing about research, so the program surface can reuse it (#4537).
+The correction lives in `server/src/services/searchQuerySpellingCorrection.ts`, which takes a vocabulary and a set of protected words and knows nothing about research; program search reuses it (#4537, below).
 
 The vocabulary is the index itself: `researchSearchSpellingVocabulary.ts` pages through every unarchived document with the search-only key and counts, per word, how many served (`publicStudentVisibilityTiers`) documents carry it, so a correction never lands on a word only hidden rows carry.
 Name words are collected from every unarchived document, served or not, so the name guard stays a superset.
@@ -594,6 +594,31 @@ No correctly spelled control query and none of 150 sampled name words was rewrit
 It is not perfect, and the notice exists for the failures.
 Over 1,190 held-out single-edit typos of corpus words the rule recovered 93% (1,105) and corrected 3.9% to a different real word, against 1,107 before a carried word became unrewritable; four-letter words recovered only 58%, because a short typo is often one edit from several words (`ocde` became `ocd`).
 `minWordSizeForTypos.oneTypo: 4` was measured as the alternative and rejected: four-letter typo overlap rose only from 0.25 to 2.15 of 10, and correctly spelled short queries drifted.
+
+### Program search corrects misspellings and matches unfinished words (#4537)
+
+Program search (`searchFellowships` in `server/src/services/fellowshipService.ts`) stays on MongoDB `$text` rather than moving to Meilisearch.
+The visible catalog is about 181 rows, so a second index would add a reindex step to every Beta and Production promotion for little gain.
+Measured through the route on Development, a query serving the same rows before and after took the same time (`research` 220ms then 207ms, `study abroad` 201ms then 205ms, averages of five); `Com` rose from 65ms to 249ms because it now serves 112 rows instead of none.
+
+Two things were missing, and both showed up in the queries students typed in Production.
+`$text` matches whole stemmed words, so a misspelling (`sophmore`) and a word still being typed into the live search box (`Com`, `cogn`, `quant`) both returned nothing.
+
+- **Spelling.** The query runs through `correctProgramSearchQuerySpelling` (`programSearchSpellingVocabulary.ts`) first, with a vocabulary built from served programs and cached for ten minutes.
+  Besides the research rules, a word is never rewritten when the research corpus carries it in three or more rows (`econ` must not become `icon`), or when it starts a longer word in either corpus, because the search box searches as the student types and an unfinished word is not a typo (`fres` is `freshman`, not `fees`).
+- **Prefixes.** Alongside `$text`, a second query requires every typed word of two or more letters, stop words aside, to start a word in one of the searchable fields (`programQueryWordPrefixClauses`).
+  The two are merged by id: `$text` matches first in their existing relevance-then-sort order, then prefix-only matches in sort order, and the total is the size of the union, so paging walks one stable list.
+
+The response carries `queryCorrection` exactly as research search does, the page shows "Showing results for X. Search instead for Y" under the search box (`client/src/components/shared/SearchSpellingNotice.tsx`, shared with `/research`), and choosing the typed spelling sends `correctSpelling=false` until the student edits the query.
+
+Measured on Development through `GET /api/programs/search`, before to after:
+
+- Of the 20 zero- or low-result queries students typed in Production, the misspelling returned 0 and then 35, and the unfinished words went from 0 to between 2 and 112 (`Com` to 112).
+- Over 14 common misspellings of program words, the result set shared 0.08 of the correctly spelled query's rows before and 1.00 after.
+- None of 15 correctly spelled control queries was rewritten, and none lost a row it served before.
+- The program journey cases (`programs-*`, `fellowships-*`) pass, 37 of 37 invariants, including the stable text-query total and the every-row-once walk.
+
+Some zero-result queries remain zero because no program covers the subject (`neurology`, `Machine`), which is coverage rather than search.
 
 ## Data shape rules
 

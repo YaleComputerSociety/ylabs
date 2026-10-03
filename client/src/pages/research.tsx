@@ -6,7 +6,7 @@ import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
-import ResearchSearchSpellingNotice from '../components/research/ResearchSearchSpellingNotice';
+import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
@@ -1954,7 +1954,7 @@ const Research = () => {
                       )}
                     </p>
                     {queryCorrection && !searchLoading && (
-                      <ResearchSearchSpellingNotice
+                      <SearchSpellingNotice
                         originalQuery={queryCorrection.originalQuery}
                         onSearchOriginal={searchOriginalSpelling}
                       />
