@@ -171,6 +171,18 @@ describe('analytics routes', () => {
     expect(res.body).toEqual({ benchmarks: [] });
   });
 
+  it('answers 500 and never reaches the lane benchmark panel when the admin-grant lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.hasActiveAdminGrant.mockRejectedValue(new Error('admin grant lookup failed'));
+    mocks.getLaneBenchmarkDashboard.mockResolvedValue({ benchmarks: [] });
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
   it('exposes the search-query analytics endpoint used by the analytics dashboard', () => {
     expect(routeByPath('/search-queries')).toBeTruthy();
   });

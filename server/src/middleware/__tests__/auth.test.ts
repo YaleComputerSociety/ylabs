@@ -71,6 +71,19 @@ describe('isAdmin', () => {
     expect(res.body).toEqual({ error: 'Admin privileges required' });
   });
 
+  it('forwards a failed admin-grant lookup to the error handler instead of authorizing', async () => {
+    const lookupFailure = new Error('admin grant lookup failed');
+    mockedHasActiveAdminGrant.mockRejectedValue(lookupFailure);
+
+    const { res, next } = await invokeIsAdmin({ netId: 'abc123' });
+
+    expect(mockedHasActiveAdminGrant).toHaveBeenCalledWith('abc123');
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(lookupFailure);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeUndefined();
+  });
+
   it('rejects malformed admin principal shapes before grant lookup', async () => {
     mockedHasActiveAdminGrant.mockResolvedValue(true);
 
