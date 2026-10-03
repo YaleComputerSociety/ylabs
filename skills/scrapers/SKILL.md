@@ -204,6 +204,8 @@ A failure that reads as success or as a legitimate verdict is worse than a crash
 - A scraper that knows its coverage is incomplete returns `partialFailures` on its `ScraperResult`.
   The orchestrator records each one in `run.errors` and marks the run `partial`, which `runReport` warns on, `sourceHealthService` rates `warn`, and `scraperSweepArtifactError` fails as a non-`success` status.
   Before this, only the barren-streak guard wrote `run.errors`, so `partial` was unreachable.
+- A scraper that withheld every write because its window was incomplete also returns `failedClosed: true`, so the orchestrator ends the run `failure` rather than `partial` and the source earns no crawl stamp (#4026).
+  The NSF and DOE OSTI grant lanes follow this rule.
 - A pager that fails before its first page has read nothing and throws, so the run is `failure`; one that fails later reports `partialFailures`.
   `yale-directory` (a Yalies 401 or network error) and `nih-reporter` (a RePORTER fetch error) follow this rule.
 - A lookup failure in a lane-shared dependency propagates rather than degrading to a verdict.
