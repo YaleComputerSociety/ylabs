@@ -14,6 +14,10 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+vi.mock('../centerConfigKeyResolution', () => ({
+  resolveCenterConfigKey: vi.fn(async () => ({ kind: 'live' })),
+}));
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {

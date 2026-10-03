@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../centerConfigKeyResolution', () => ({
+  resolveCenterConfigKey: vi.fn(async () => ({ kind: 'live' })),
+}));
 import {
   buildCenterRosterHealthSnapshot,
   centerRosterReadAdmissibility,
