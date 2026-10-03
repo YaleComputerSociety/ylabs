@@ -52,6 +52,12 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
+import {
+  isOwnDepartmentUndergraduateResearchProgramme,
+  joinPageUrlRefusal,
+  type JoinPageEntity,
+  type JoinPageUrlRefusal,
+} from '../undergradJoinPageAdmission';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
   personProfileSourceNamesADifferentPerson,
@@ -114,7 +120,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'roster-only-undergrad-count-v1';
+const OBSERVATION_DERIVATION_VERSION = 'roster-section-and-join-route-v2';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -160,6 +166,7 @@ export interface LLMExtraction {
 export interface PromptSourcePage {
   url: string;
   text: string;
+  rosterText?: string;
 }
 
 export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
@@ -219,6 +226,25 @@ export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
  * prompt. Strips `<script>`, `<style>`, `<noscript>`, collapses whitespace,
  * and truncates to MAX_PROMPT_CHARS so we stay well below model context.
  */
+const PAGE_CHROME_SELECTOR =
+  'script, style, noscript, svg, iframe, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs';
+
+/**
+ * The page's text without its navigation, header and footer. A site menu lists "Alumni" or
+ * "Past members" beside every other section, so a roster read against the whole page sat
+ * under that menu link and looked historical (#4430).
+ */
+export function htmlToRosterText(html: string): string {
+  if (!html) return '';
+  try {
+    const $ = cheerio.load(html);
+    $(PAGE_CHROME_SELECTOR).remove();
+    return (plainTextContent($('body').toArray()) || '').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
 export function htmlToPromptText(html: string): string {
   if (!html) return '';
   let $: cheerio.CheerioAPI;
@@ -707,6 +733,215 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
   return !isHistoricalUndergradEvidence(quote) && !namesNonYaleInstitution(quote);
 }
 
+const HISTORICAL_ROSTER_SECTION_MARKER =
+  /\b(?:(?:lab|group|team)\s+)?alumn(?:i|ae|us|a)\b|\b(?:former|past|previous)\s+(?:[\w-]+\s+){0,2}?(?:members?|students?|undergrad(?:uate)?s?|researchers?|trainees?|interns?|people|fellows?|associates?|post-?docs?)\b|\b(?:former|past|previous)\s*:|\bwhere\s+are\s+they\s+now\b/gi;
+
+const CURRENT_ROSTER_SECTION_MARKER =
+  /\bcurrent\b(?!\s*:?\s*(?:position|role|affiliation|job|employer|title|institution|address|location)\b)(?:\s+(?:(?:lab|group|team)\s+)?(?:members?|students?|undergrad(?:uate)?s?|researchers?|trainees?|team))?|\b(?:lab|group|team)\s+members\b|\b(?:our|the|meet\s+the)\s+team\b|\bmembers\b|\bpeople\b|\bprincipal\s+investigators?\b/gi;
+
+// Site builders glue adjacent blocks without a space ("Example UniversityAlumniCasey"), so
+// a heading would not stand on a word boundary; both sides are split the same way.
+const rosterText = (text: string): string =>
+  normalizeQuoteText(text).replace(/([a-z])([A-Z])/g, '$1 $2');
+
+interface RosterSectionMarker {
+  start: number;
+  end: number;
+  historical: boolean;
+}
+
+function rosterSectionMarkers(text: string): RosterSectionMarker[] {
+  const historical = Array.from(text.matchAll(HISTORICAL_ROSTER_SECTION_MARKER), (match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    historical: true,
+  }));
+  const current = Array.from(text.matchAll(CURRENT_ROSTER_SECTION_MARKER), (match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    historical: false,
+  })).filter((marker) =>
+    historical.every((span) => marker.end <= span.start || marker.start >= span.end),
+  );
+  return [...historical, ...current].sort((left, right) => left.start - right.start);
+}
+
+/**
+ * Whether a roster line the model counted sits only under an alumni or former-members
+ * heading (#4430). A lab page lists alumni as bare names below that heading, so the line
+ * carries no marker of its own and `isHistoricalUndergradEvidence` cannot see it; one
+ * served row counted seven undergraduates who were all listed under "Alumni". The line is
+ * judged by the nearest section marker before each place it appears, and is historical
+ * only when every appearance is, because a site that renders its roster twice (a tab
+ * strip, then the panel) puts the first copy after the tab labels.
+ */
+export function rosterSnippetSitsUnderAHistoricalHeading(
+  snippet: string | undefined,
+  pages: readonly PromptSourcePage[],
+): boolean {
+  const needle = rosterText(snippet || '');
+  if (!needle) return false;
+  let appearances = 0;
+  for (const page of pages) {
+    const withoutChrome = [page.rosterText || '', redactDirectContactInfo(page.rosterText || '')]
+      .map(rosterText)
+      .filter((text) => text.includes(needle));
+    const texts = new Set(
+      withoutChrome.length > 0
+        ? withoutChrome
+        : [rosterText(page.text), rosterText(redactDirectContactInfo(page.text))],
+    );
+    for (const text of texts) {
+      const markers = rosterSectionMarkers(text);
+      for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+        appearances += 1;
+        const nearest = markers.filter((marker) => marker.start < at + needle.length).pop();
+        if (!nearest?.historical) return false;
+      }
+    }
+  }
+  return appearances > 0;
+}
+
+const RECRUITING_SENTENCE = new RegExp(
+  [
+    'looking\\s+for',
+    'on\\s+the\\s+lookout\\s+for',
+    'seek(?:s|ing)?\\s+(?:a|an|new|motivated|talented|highly|undergrad\\w*|students?|post-?docs?|candidates?|applicants?|graduate)',
+    'recruit(?:s|ing)?',
+    'hiring',
+    'accepting',
+    'welcom(?:es|ing)',
+    'are\\s+welcome',
+    'welcome\\s+(?:to|applications|inquiries|students|undergrad\\w*|motivated|new|all)',
+    'invit(?:e|es|ing)',
+    'apply\\s+(?:to|for|by|online|here|now|through|via)',
+    'applications?\\s+(?:are|will|should|must|from|for|to|deadline|form|process|materials)',
+    'applicants?',
+    'openings?',
+    'positions?\\s+(?:are|is)\\s+(?:available|open)',
+    '(?<!(?:before|after|since)\\s)join(?:ing)?\\s+(?:us|our|the)',
+    'interested\\s+in\\s+(?:joining|working|becoming|doing|research)',
+    'get\\s+involved',
+    'reach\\s+out',
+    'prospective\\s+(?:students?|members?|applicants?|undergrad\\w*|graduate|ph\\.?d|post-?docs?|trainees?|lab\\s+members?)',
+    'please\\s+(?:write|e-?mail|contact|send)',
+    '(?:write|e-?mail|send)\\s+(?:to\\s+)?me',
+  ]
+    .map((cue) => `\\b${cue}\\b`)
+    .join('|'),
+  'i',
+);
+
+const NON_UNDERGRADUATE_AUDIENCE =
+  /\b(?:ph\.?\s?d\.?|doctoral|graduate\s+students?|grad\s+students?|post-?docs?|post-?doctora(?:l|tes?)|post-?graduates?|post-?bac\w*|staff|technicians?|(?:research|visiting)\s+scientists?|patients?|participants?|volunteers?|parents|families|residents|fellows|medical\s+students?|master'?s)\b/i;
+
+const UNDERGRADUATE_OR_OPEN_AUDIENCE =
+  /\b(?:undergrad\w*|yale\s+college|college\s+students?|high\s+school|(?:all|every)\s+levels?|anyone|everyone|trainees?)\b/i;
+
+const QUALIFIED_STUDENT_AUDIENCE =
+  /\b(?:graduate|grad|ph\.?\s?d\.?|doctoral|medical|master'?s|md|rotation|rotating|visiting)\s*$/i;
+
+function namesAnUnqualifiedStudentAudience(sentence: string): boolean {
+  return Array.from(sentence.matchAll(/\bstudents?\b/gi)).some(
+    (match) => !QUALIFIED_STUDENT_AUDIENCE.test(sentence.slice(0, match.index ?? 0)),
+  );
+}
+
+const recruitingSentences = (text: string | undefined): string[] =>
+  normalizeQuoteText(text || '')
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => RECRUITING_SENTENCE.test(sentence));
+
+/**
+ * Whether a join page recruits only audiences other than undergraduates (#4430). One
+ * served signal was a lab "Join our Team" page "on the lookout for motivated
+ * postgraduates, graduate students, post-doctorates and visiting scientists". Only
+ * recruiting sentences are read, so navigation chrome naming patients or staff is not
+ * an audience, and a page that mentions undergraduates anywhere is never refused.
+ */
+export function joinPageRecruitsOnlyNonUndergraduates(text: string | undefined): boolean {
+  const normalized = normalizeQuoteText(text || '');
+  if (!normalized || /\bundergrad|\byale\s+college\b/i.test(normalized)) return false;
+  const recruiting = recruitingSentences(normalized);
+  if (
+    recruiting.some(
+      (sentence) =>
+        UNDERGRADUATE_OR_OPEN_AUDIENCE.test(sentence) ||
+        namesAnUnqualifiedStudentAudience(sentence),
+    )
+  ) {
+    return false;
+  }
+  return recruiting.some((sentence) => NON_UNDERGRADUATE_AUDIENCE.test(sentence));
+}
+
+export type LaneJoinPageRefusal =
+  | JoinPageUrlRefusal
+  | 'join-page-not-read'
+  | 'join-page-outside-the-entity-scope'
+  | 'join-page-invites-no-one'
+  | 'join-page-recruits-only-non-undergraduates';
+
+const SHARED_INSTITUTIONAL_HOST_LABEL = /(?:lab|labs|group|project)/i;
+
+// A school or center host publishes many entities in sibling sections, so a page outside
+// the row's section belongs to another entity there; a lab's own host does not, and a
+// lab site whose home is `/about` still owns its `/contact` page.
+function isSharedInstitutionalHost(url: string): boolean {
+  try {
+    const labels = new URL(url).hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .split('.');
+    return (
+      labels.length === 3 &&
+      labels[1] === 'yale' &&
+      labels[2] === 'edu' &&
+      !SHARED_INSTITUTIONAL_HOST_LABEL.test(labels[0])
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why the join page the model named is not an undergraduate route for this row (#4430).
+ * The page must be one the lane read, which `run` ensures by fetching a named page the
+ * crawl skipped, so a URL that does not resolve is refused: three served signals cited
+ * such a URL, and each answered 404. On a shared school or center host the page must sit
+ * in the row's own section, the scope `pagesWithinEntityScope` applies to quotes, and it
+ * must invite someone: a roster page offered as the join page lists members and recruits
+ * no one.
+ */
+export function laneJoinPageRefusal(
+  joinPageUrl: string | null | undefined,
+  sourcePages: readonly PromptSourcePage[],
+  entity?: JoinPageEntity,
+): LaneJoinPageRefusal | null {
+  const urlRefusal = joinPageUrlRefusal(joinPageUrl, entity);
+  if (urlRefusal) return urlRefusal;
+  const identity = pageUrlIdentity(String(joinPageUrl));
+  const page = sourcePages.find((candidate) => pageUrlIdentity(candidate.url) === identity);
+  if (!page) return 'join-page-not-read';
+  if (
+    sourcePages[0] &&
+    isSharedInstitutionalHost(sourcePages[0].url) &&
+    !pagesWithinEntityScope(sourcePages).includes(page) &&
+    !(
+      isOwnDepartmentUndergraduateResearchProgramme(page.url, entity) &&
+      /\bundergrad|\byale\s+college\b/i.test(page.text)
+    )
+  ) {
+    return 'join-page-outside-the-entity-scope';
+  }
+  if (recruitingSentences(page.text).length === 0) return 'join-page-invites-no-one';
+  if (joinPageRecruitsOnlyNonUndergraduates(page.text)) {
+    return 'join-page-recruits-only-non-undergraduates';
+  }
+  return null;
+}
+
 /**
  * Fail-closed recency + institution gate for `currentUndergradCount`. The raw
  * LLM integer is never trusted on its own because the roster it counts mixes
@@ -746,6 +981,9 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *     and passes the same recency/institution gate as currentUndergradCount, so
  *     a historical or non-Yale snippet never gets displayed as current evidence.
  *     Confidence 0.5.
+ *   - joinPageUrl: emitted on every read like currentUndergradCount, empty when the read
+ *     found no admissible join page, so a re-read replaces a join page an earlier read
+ *     named (#4430); withheld under the same incomplete-read rule.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
  */
 export function extractionToObservations(
@@ -759,6 +997,8 @@ export function extractionToObservations(
     sourceTexts?: string[];
     sourcePages?: PromptSourcePage[];
     entityIdentity?: ResearchEntityIdentity;
+    entityShape?: JoinPageEntity;
+    joinPages?: PromptSourcePage[];
     readIsComplete?: boolean;
   } = {},
 ): ObservationInput[] {
@@ -811,7 +1051,9 @@ export function extractionToObservations(
     ...extraction,
     evidenceQuote: evidenceQuote?.text ?? '',
     currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
-      (quote) => pageContainingQuote(quote, pages) !== null,
+      (quote) =>
+        pageContainingQuote(quote, pages) !== null &&
+        !rosterSnippetSitsUnderAHistoricalHeading(quote, pages),
     ),
   });
   if (currentUndergradCount > 0 || sourceContext.readIsComplete !== false) {
@@ -837,11 +1079,20 @@ export function extractionToObservations(
     });
   }
 
-  if (extraction.joinPageUrl) {
+  const admissibleJoinPageUrl =
+    extraction.joinPageUrl &&
+    !laneJoinPageRefusal(
+      extraction.joinPageUrl,
+      [...(sourceContext.sourcePages ?? []), ...(sourceContext.joinPages ?? [])],
+      sourceContext.entityShape,
+    )
+      ? extraction.joinPageUrl
+      : '';
+  if (admissibleJoinPageUrl || sourceContext.readIsComplete !== false) {
     out.push({
       ...base,
       field: 'joinPageUrl',
-      value: extraction.joinPageUrl,
+      value: admissibleJoinPageUrl,
       confidenceOverride: 0.5,
     });
   }
@@ -1021,6 +1272,9 @@ export interface CandidateLab extends ResearchEntityIdentity {
   websiteUrl: string;
   archived?: boolean;
   manuallyLockedFields?: string[];
+  entityType?: string;
+  kind?: string;
+  storedWebsiteUrl?: string;
 }
 
 function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
@@ -1045,6 +1299,9 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     websiteUrl: usableWebsiteUrlFromDoc(doc),
     archived: !!doc.archived,
     manuallyLockedFields: doc.manuallyLockedFields || [],
+    entityType: doc.entityType,
+    kind: doc.kind,
+    storedWebsiteUrl: typeof doc.websiteUrl === 'string' ? doc.websiteUrl : undefined,
     displayName: doc.displayName,
     school: doc.school,
     schools: doc.schools,
@@ -1224,6 +1481,8 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
     sourceUrls: 1,
     archived: 1,
     manuallyLockedFields: 1,
+    entityType: 1,
+    kind: 1,
     // Read only so `personProfileSourceMatchesEntity` can tell this entity's own
     // person from a namesake at another Yale school before a crawled page's prose
     // becomes this row's description (#2570).
@@ -1273,6 +1532,22 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
     this.env = deps.env ?? process.env;
+  }
+
+  // The model can name a join page it only saw in navigation text; reading that page is
+  // what lets the join arms judge it, and a page that does not resolve is not a route.
+  private async readNamedJoinPage(
+    joinPageUrl: string | null | undefined,
+    readPages: readonly PromptSourcePage[],
+  ): Promise<{ page?: PromptSourcePage; metric?: ScraperFetchMetric } | null> {
+    if (!joinPageUrl || !/^https?:\/\//i.test(joinPageUrl)) return null;
+    const identity = pageUrlIdentity(joinPageUrl);
+    if (readPages.some((page) => pageUrlIdentity(page.url) === identity)) return null;
+    const measured = await measureRenderedFetch(joinPageUrl, 'http', () =>
+      this.fetchPage(joinPageUrl),
+    );
+    const text = measured.result ? htmlToPromptText(measured.result.html) : '';
+    return { metric: measured.metric, page: text ? { url: joinPageUrl, text } : undefined };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1390,7 +1665,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           }
           const text = htmlToPromptText(fetched.html);
           if (!text) continue;
-          subPages.push({ url: fetched.url, text });
+          subPages.push({ url: fetched.url, text, rosterText: htmlToRosterText(fetched.html) });
         }
         const [primarySubPage, ...additionalSubPages] = subPages;
 
@@ -1502,8 +1777,13 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           }
         }
 
-        const sourcePages = [{ url: homePage.url, text: homeText }, ...subPages];
+        const sourcePages = [
+          { url: homePage.url, text: homeText, rosterText: htmlToRosterText(homePage.html) },
+          ...subPages,
+        ];
         quotesNotOnPage += quoteFieldsNotOnPage(extraction, sourcePages).length;
+        const joinPage = await this.readNamedJoinPage(extraction.joinPageUrl, sourcePages);
+        if (joinPage?.metric) fetchAttempts.push(joinPage.metric);
         let observations = extractionToObservations(
           lab.slug,
           sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
@@ -1518,7 +1798,14 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             ),
             sourceTexts: [homeText, ...subPages.map((page) => page.text)],
             sourcePages,
+            joinPages: joinPage?.page ? [joinPage.page] : [],
             entityIdentity: lab,
+            entityShape: {
+              entityType: lab.entityType,
+              kind: lab.kind,
+              websiteUrl: lab.storedWebsiteUrl,
+              departments: lab.departments,
+            },
             readIsComplete: !linkedSubPageUnread,
           },
         );

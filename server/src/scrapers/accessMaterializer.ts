@@ -7,6 +7,7 @@
 import mongoose from 'mongoose';
 import { attributedArchiveSet } from '../models/entityArchival';
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
+import { collapseLatestWins } from './observationStore';
 import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
@@ -25,6 +26,8 @@ import {
   isPlausibleUndergradEvidenceQuote,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
 } from './undergradEvidenceQuoteValidation';
+import { joinPageUrlRefusal, type JoinPageEntity } from './undergradJoinPageAdmission';
+import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import {
   CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
   RESEARCH_ENTITY_CONTACT_FIELDS,
@@ -405,6 +408,7 @@ function filterArtifactsByValidatedClaims(
 export function deriveAccessArtifactsFromObservations(
   researchEntityId: string,
   observations: AccessObservation[],
+  entity?: JoinPageEntity,
 ): DerivedAccessArtifacts {
   const byField = new Map<string, AccessObservation[]>();
   for (const obs of observations) {
@@ -535,8 +539,13 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  const joinPageObservations = (byField.get('joinPageUrl') || []).filter((obs) =>
-    firstUrlValue(obs.value),
+  // Collapsed before admission, so a lane's newer read that found no admissible join page
+  // (an empty value) replaces the page an older read named instead of standing beside it.
+  const joinPageObservations = collapseLatestWins(
+    byField.get('joinPageUrl') || [],
+    'researchEntity',
+  ).filter(
+    (obs) => firstUrlValue(obs.value) && !joinPageUrlRefusal(firstUrlValue(obs.value), entity),
   );
   if (joinPageObservations.length > 0 && positiveAccessEvidence.length > 0) {
     const score = maxConfidence(joinPageObservations);
@@ -743,7 +752,17 @@ export async function deriveAccessArtifactsForResearchGroup(
       ].filter((clause) => Object.keys(clause).length > 0),
     }).lean()) as unknown as AccessObservation[]);
 
-  const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
+  const entity = observations.some((obs) => obs.field === 'joinPageUrl')
+    ? ((await ResearchEntity.findOne(
+        { _id: researchEntityObjectId },
+        { entityType: 1, kind: 1, websiteUrl: 1, departments: 1 },
+      ).lean()) as JoinPageEntity | null)
+    : null;
+  const artifacts = deriveAccessArtifactsFromObservations(
+    researchEntityId,
+    observations,
+    entity ?? undefined,
+  );
 
   return { researchEntityId, artifacts, observations };
 }
@@ -934,4 +953,93 @@ export async function foreignContactFieldSignalIds(
     if (!statedByRow) foreign.add(idText(signal._id));
   }
   return foreign;
+}
+
+/**
+ * The signal types whose stored copies are re-derived at read time. Each is minted only by
+ * this materializer, from the fields below, so a type the row's live evidence no longer
+ * derives is a claim nothing backs any more (#4430): a retired lane's count, a count a
+ * later read replaced with zero, or a join page an admission rule now refuses. Measured
+ * on Development, 223 of 528 served join-page signals and 90 of 246 served
+ * current-undergraduate signals had no live evidence on their row that derived them.
+ */
+export const RE_DERIVED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
+  'APPLICATION_FORM_EXISTS',
+  'CURRENT_UNDERGRADS',
+];
+
+const RE_DERIVED_ACCESS_SIGNAL_FIELDS = [
+  'joinPageUrl',
+  'undergradAccessEvidence',
+  'currentUndergradCount',
+];
+
+interface ReDerivedSignalLike {
+  _id?: unknown;
+  researchEntityId?: unknown;
+  type?: unknown;
+}
+
+export interface AccessEvidenceRow extends JoinPageEntity {
+  _id?: unknown;
+  slug?: unknown;
+}
+
+const isReDerivedAccessSignalType = (type: unknown): boolean =>
+  RE_DERIVED_ACCESS_SIGNAL_TYPES.includes(type as AccessSignalType);
+
+// Upserted and never archived, like the contact signal above, so a stored signal this
+// materializer would no longer derive is withheld at serve time and not counted by the
+// gate; the stored row stays as history. A merged-in row's evidence still counts, because
+// the dedupe merge carries its signals onto the survivor.
+export async function underivedAccessSignalIds(
+  signals: readonly ReDerivedSignalLike[],
+  rows: readonly AccessEvidenceRow[],
+): Promise<Set<string>> {
+  const rowsById = new Map(rows.map((row) => [idText(row._id), row]));
+  const judged = signals.filter(
+    (signal) =>
+      isReDerivedAccessSignalType(signal.type) && rowsById.has(idText(signal.researchEntityId)),
+  );
+  if (judged.length === 0) return new Set();
+  const rowIds = Array.from(new Set(judged.map((signal) => idText(signal.researchEntityId))));
+  const mergedInBySurvivor = await listResearchEntityMergedInRowsBySurvivor(rowIds);
+  const evidenceRowsById = new Map<string, ContactEvidenceRow[]>(
+    rowIds.map((rowId) => [
+      rowId,
+      [rowsById.get(rowId) as ContactEvidenceRow, ...(mergedInBySurvivor.get(rowId) || [])],
+    ]),
+  );
+  const evidenceRows = Array.from(evidenceRowsById.values()).flat();
+  const objectIds = evidenceRows
+    .map((row) => toAccessMaterializerObjectId(row._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const slugs = evidenceRows.map((row) => idText(row.slug)).filter(Boolean);
+  const liveObservations = (await Observation.find({
+    entityType: { $in: researchEntityObservationSubjects },
+    superseded: false,
+    field: { $in: RE_DERIVED_ACCESS_SIGNAL_FIELDS },
+    $or: [{ entityId: { $in: objectIds } }, { entityKey: { $in: slugs } }],
+  }).lean()) as unknown as AccessObservation[];
+
+  const derivedTypesByRow = new Map<string, Set<AccessSignalType>>();
+  for (const rowId of rowIds) {
+    const keyedRows = evidenceRowsById.get(rowId) || [];
+    const rowObservations = liveObservations.filter((observation) =>
+      keyedRows.some((row) => observationIsKeyedToRow(observation, row)),
+    );
+    const derived = deriveAccessArtifactsFromObservations(
+      rowId,
+      rowObservations,
+      rowsById.get(rowId),
+    );
+    derivedTypesByRow.set(rowId, new Set(derived.accessSignals.map((signal) => signal.type)));
+  }
+
+  const underived = new Set<string>();
+  for (const signal of judged) {
+    const derivedTypes = derivedTypesByRow.get(idText(signal.researchEntityId));
+    if (!derivedTypes?.has(signal.type as AccessSignalType)) underived.add(idText(signal._id));
+  }
+  return underived;
 }

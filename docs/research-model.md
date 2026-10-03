@@ -476,6 +476,10 @@ Lab-microsite LLM evidence is now shaped as observations first.
 It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`.
 It no longer emits the `acceptingUndergrads` companion boolean.
 `accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, and `NOT_CURRENTLY_AVAILABLE` signals from those evidence observations.
+A `joinPageUrl` backs `APPLICATION_FORM_EXISTS` only when `joinPageUrlRefusal` in `server/src/scrapers/undergradJoinPageAdmission.ts` admits it: not a study-recruitment page, not a path that names only a graduate, postdoctoral or admissions audience, not a bare site root, and not a department or center programme page unless it sits under the row's own website or is its own department's undergraduate research or research-assistant programme (#4430).
+That exception is an owner decision: a page such as a department's undergraduate research-assistant programme stays a way in on that department's faculty rows, matched by the row's `departments` against the host the department roster reads for that one department, so a center's training page on a shared medical-campus host stays refused on every row but the center's own.
+The microsite lane also reads the join page the model names, fetching it when its crawl skipped it, and refuses one that does not resolve, one in another entity's section of a shared school or center host, one that recruits no one, and one that recruits only non-undergraduates.
+It emits `joinPageUrl` on every complete read, empty when no page is admissible, and the field is latest-wins, so a re-read replaces the page an earlier read named.
 
 Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.

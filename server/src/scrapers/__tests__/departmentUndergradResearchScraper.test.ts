@@ -500,6 +500,27 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.joinPageUrl).toBe('https://fixture.yale.edu/fellowships/applications');
   });
 
+  it('skips a graduate-admissions application link and takes the undergraduate one (#4430)', () => {
+    const html = `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <a href="https://fixture.yale.edu/graduate/admissions/apply">Graduate Admissions Application</a>
+        <a href="https://fixture.yale.edu/apply-now">Apply to the PhD program</a>
+        <a href="https://fixture.yale.edu/scholars/applications">Undergraduate application</a>
+      </main>
+    `;
+    const [record] = parseStructuredOpportunityPage(html, {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'Fixture Scholars',
+    });
+    expect(record.joinPageUrl).toBe('https://fixture.yale.edu/scholars/applications');
+  });
+
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
     const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'history',

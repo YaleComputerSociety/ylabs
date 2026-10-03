@@ -65,6 +65,8 @@ import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import {
   foreignContactFieldSignalIds,
   officialNonGrantSourceUrl,
+  RE_DERIVED_ACCESS_SIGNAL_TYPES,
+  underivedAccessSignalIds,
 } from '../scrapers/accessMaterializer';
 import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from '../scrapers/rowKeyedContactEvidence';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
@@ -2026,6 +2028,17 @@ async function planResearchEntityGateUpdates(
       .lean(),
     entities as any[],
   );
+  const underivedSignalIds = await underivedAccessSignalIds(
+    await Signal.find({
+      researchEntityId: { $in: entityIds },
+      type: { $in: [...RE_DERIVED_ACCESS_SIGNAL_TYPES] },
+      archived: false,
+    })
+      .select('_id researchEntityId type')
+      .lean(),
+    entities as any[],
+  );
+  const withheldAccessSignalIds = [...foreignContactSignalIds, ...underivedSignalIds];
 
   const [
     rosterByEntityId,
@@ -2041,7 +2054,7 @@ async function planResearchEntityGateUpdates(
           type: { $in: [...accessSignalTypes] },
           archived: false,
           _id: {
-            $nin: [...foreignContactSignalIds].map((id) => new mongoose.Types.ObjectId(id)),
+            $nin: withheldAccessSignalIds.map((id) => new mongoose.Types.ObjectId(id)),
           },
           'source.url': { $regex: '^https?://', $options: 'i' },
           derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },

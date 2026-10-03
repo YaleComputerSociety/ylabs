@@ -39,6 +39,7 @@ import {
   resolveOrgUnitSlugForDepartmentName,
 } from '../orgUnitSignalMaterializer';
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
+import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -572,8 +573,11 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
       url: absoluteUrl($(node).attr('href'), pageUrl),
     }))
     .filter((link): link is { text: string; url: string } => Boolean(link.url));
-  return links.find((link) =>
-    /apply|application|\bforms?\b|qualtrics|survey/i.test(`${link.text} ${link.url}`),
+  return links.find(
+    (link) =>
+      /apply|application|\bforms?\b|qualtrics|survey/i.test(`${link.text} ${link.url}`) &&
+      !joinPageUrlRefusal(link.url) &&
+      !joinPageAnchorTextRefusal(link.text),
   )?.url;
 }
 

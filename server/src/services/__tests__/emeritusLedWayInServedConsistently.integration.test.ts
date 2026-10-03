@@ -105,17 +105,66 @@ const seedRow = async (
       source: { name: 'fixture-faculty', url: siteUrl },
     });
   }
+  const evidence = (field: string, value: unknown) => ({
+    _id: new mongoose.Types.ObjectId(),
+    entityType: 'researchEntity',
+    entityKey: slug,
+    field,
+    value,
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'lab-microsite-undergrad-llm',
+    sourceUrl: siteUrl,
+    confidence: 0.5,
+    observedAt: RECENT,
+    superseded: false,
+  });
+  // #4430 serves these two types only while the row's own evidence still derives them, so a
+  // fixture that seeds the signal must seed the observation it derives from.
+  const joinPage = evidence('joinPageUrl', `${siteUrl}join`);
+  const undergradCount = evidence(
+    'currentUndergradCount',
+    typeof extraFields.currentUndergradCount === 'number' ? extraFields.currentUndergradCount : 2,
+  );
+  await db.collection('observations').insertMany([
+    evidence('undergradAccessEvidence', {
+      openToUndergrads: 'yes',
+      evidenceQuote: 'Undergraduates are welcome to apply.',
+    }),
+    joinPage,
+    undergradCount,
+  ]);
+  const derivedSource: Record<
+    string,
+    { derivationKey: string; excerpt: string; evidenceId: unknown }
+  > = {
+    APPLICATION_FORM_EXISTS: {
+      derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
+      excerpt: 'A join, opportunities, or application page was found.',
+      evidenceId: joinPage._id,
+    },
+    CURRENT_UNDERGRADS: {
+      derivationKey: 'signal:CURRENT_UNDERGRADS',
+      excerpt: `${undergradCount.value} current undergraduate(s) listed`,
+      evidenceId: undergradCount._id,
+    },
+  };
   const signalTypes = [...WAY_IN_TYPES, 'PAST_UNDERGRADS', ...extraSignalTypes];
   await db.collection('signals').insertMany(
-    signalTypes.map((type) => ({
-      _id: new mongoose.Types.ObjectId(),
-      researchEntityId: entityId,
-      type,
-      archived: false,
-      confidence: 'HIGH',
-      observedAt: RECENT,
-      source: { url: `${siteUrl}${type.toLowerCase()}/`, excerpt: `Fixture ${type} excerpt.` },
-    })),
+    signalTypes.map((type) => {
+      const derived = derivedSource[type];
+      return {
+        _id: new mongoose.Types.ObjectId(),
+        researchEntityId: entityId,
+        type,
+        ...(derived ? { derivationKey: derived.derivationKey } : {}),
+        archived: false,
+        confidence: 'HIGH',
+        observedAt: RECENT,
+        source: derived
+          ? { url: siteUrl, excerpt: derived.excerpt, evidenceIds: [derived.evidenceId] }
+          : { url: `${siteUrl}${type.toLowerCase()}/`, excerpt: `Fixture ${type} excerpt.` },
+      };
+    }),
   );
 };
 

@@ -467,6 +467,121 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
+  describe('join pages that are not an undergraduate route (#4430)', () => {
+    const positiveAccess = obs({
+      field: 'undergradAccessEvidence',
+      value: {
+        openToUndergrads: 'yes',
+        evidenceSource: 'explicit_text',
+        evidenceQuote: 'We invite undergraduates to apply.',
+      },
+      sourceName: 'lab-microsite-undergrad-llm',
+      confidence: 0.5,
+    });
+    const joinPage = (value: string) =>
+      obs({
+        field: 'joinPageUrl',
+        value,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      });
+    const derivedTypes = (
+      observations: AccessObservation[],
+      entity?: Parameters<typeof deriveAccessArtifactsFromObservations>[2],
+    ) =>
+      deriveAccessArtifactsFromObservations(
+        '64f000000000000000000001',
+        observations,
+        entity,
+      ).accessSignals.map((signal) => signal.type);
+
+    it('does not derive an application route from a study-recruitment page', () => {
+      expect(
+        derivedTypes([positiveAccess, joinPage('https://lab.example.edu/participate/')]),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it('does not derive an application route from a graduate-admissions or PhD page', () => {
+      expect(
+        derivedTypes([positiveAccess, joinPage('https://lab.example.edu/graduate/admissions/')]),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
+      expect(
+        derivedTypes([
+          positiveAccess,
+          joinPage('https://lab.example.edu/phd-opportunities-in-our-lab'),
+        ]),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it("does not derive a person row's route from a center's training page", () => {
+      const training = joinPage(
+        'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/',
+      );
+      expect(
+        derivedTypes([positiveAccess, training], {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+        }),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
+      expect(
+        derivedTypes([positiveAccess, training], {
+          entityType: 'CENTER',
+          kind: 'center',
+          websiteUrl: 'https://medicine.yale.edu/cancer/',
+        }),
+      ).toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it("derives a person row's route from its own department's undergraduate research page", () => {
+      const psychologyPage = joinPage(
+        'https://psychology.yale.edu/undergraduate/research-opportunities',
+      );
+      const faculty = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+      expect(
+        derivedTypes([positiveAccess, psychologyPage], { ...faculty, departments: ['Psychology'] }),
+      ).toContain('APPLICATION_FORM_EXISTS');
+      expect(
+        derivedTypes([positiveAccess, psychologyPage], { ...faculty, departments: ['Philosophy'] }),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it('still derives the route when another source names an admissible join page', () => {
+      expect(
+        derivedTypes([
+          positiveAccess,
+          joinPage('https://lab.example.edu/participate/'),
+          obs({
+            _id: 'obs-department-join',
+            field: 'joinPageUrl',
+            value: 'https://lab.example.edu/join',
+            sourceName: 'department-undergrad-research',
+          }),
+        ]),
+      ).toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it("reads a lane's newer empty join page as replacing the page an older read named", () => {
+      const older = obs({
+        _id: 'obs-older-join',
+        field: 'joinPageUrl',
+        value: 'https://lab.example.edu/join',
+        sourceName: 'lab-microsite-undergrad-llm',
+        observedAt: new Date('2026-05-01T00:00:00.000Z'),
+      });
+      const newerEmpty = obs({
+        _id: 'obs-newer-join',
+        field: 'joinPageUrl',
+        value: '',
+        sourceName: 'lab-microsite-undergrad-llm',
+        observedAt: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      expect(derivedTypes([positiveAccess, older, newerEmpty])).not.toContain(
+        'APPLICATION_FORM_EXISTS',
+      );
+      expect(derivedTypes([positiveAccess, older])).toContain('APPLICATION_FORM_EXISTS');
+    });
+  });
+
   it('does not derive official application artifacts from a bare join page without undergraduate access evidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
