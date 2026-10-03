@@ -560,7 +560,9 @@ The blast radius is confined to queries containing a catalog phrase: `machine le
 `searchResearchGroupsViaMeili` rewrites a misspelled word to the corpus word it was meant to be before `normalizeResearchSearchQuery` runs, so the aliases, the synonyms, the keyword leg and the query embedding all see the corrected word.
 The correction lives in `server/src/services/searchQuerySpellingCorrection.ts`, which takes a vocabulary and a set of protected words and knows nothing about research, so the program surface can reuse it (#4537).
 
-The vocabulary is the index itself: `researchSearchSpellingVocabulary.ts` pages through every unarchived document with the search-only key and counts, per word, how many documents carry it.
+The vocabulary is the index itself: `researchSearchSpellingVocabulary.ts` pages through every unarchived document with the search-only key and counts, per word, how many served (`publicStudentVisibilityTiers`) documents carry it, so a correction never lands on a word only hidden rows carry.
+Name words are collected from every unarchived document, served or not, so the name guard stays a superset.
+Words are folded with the same `foldLatinDiacritics` (`server/src/utils/latinDiacritics.ts`) the search tokenizer uses, so a name with a letter NFKD cannot decompose is protected when typed in plain letters.
 The server loads it after it starts listening and every six hours; a request reads only the loaded snapshot and never waits for it, so a request before the first load searches the words as typed.
 A script that calls the service directly must call `warmResearchSearchSpellingVocabulary()` first or it measures search without correction; `research-search:relevance` and `journey:eval` do.
 
@@ -568,13 +570,14 @@ A word is corrected only when all of these hold:
 
 - It is not a protected query word: a stop word, an alias or synonym key, or a `disableOnWords` entry, because the alias layer already owns `orgo` and a correction would take it away.
 - It does not appear in a name field (`name`, `displayName`, `leadProfessorNames`, `professorNames`), however rarely, because a rare surname is exactly the shape of a typo and rewriting it hides the person searched for.
-- It appears in fewer than three documents, and the replacement appears in at least three, or in twenty times as many documents when the typed word itself appears.
+- It appears in no served document, and the replacement appears in at least three; a word the corpus carries even once is never rewritten, because a rare correctly spelled topic word would lose the only rows that match it.
 - The replacement is within one edit for a word of four to eight letters and two edits for nine or more, counting a swapped pair of letters as one edit; the nearer candidate wins, then the more frequent, then the alphabetically first.
 
 The response carries `queryCorrection: { originalQuery, correctedQuery }`, the result summary names the corrected query, and the page offers "Search instead for" the typed spelling, which re-runs the search with `correctSpelling: false`.
 The recorded search keeps the typed query and marks `spellingCorrected` in its metadata, so analytics still sees what the student typed.
 
-Measured on Development, 4,486 indexed documents, `--top-k 10`, before to after, settings fingerprint unchanged:
+Measured on Development, 4,486 indexed documents, `--top-k 10`, before to after, settings fingerprint unchanged.
+These figures predate the served-only counts and the rule that a word the corpus carries is never rewritten, and have not been re-measured since:
 
 | Metric | Before | After |
 | ------ | ------ | ----- |

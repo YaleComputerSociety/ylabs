@@ -1,3 +1,4 @@
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { getMeiliSearchIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -40,9 +41,12 @@ let currentVocabulary: SearchSpellingVocabulary | null = null;
 let inFlightWarm: Promise<SearchSpellingVocabulary | null> | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+const SERVED_TIERS = new Set<unknown>(publicStudentVisibilityTiers);
+
 const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDocument => ({
   nameText: RESEARCH_SEARCH_SPELLING_NAME_FIELDS.map((field) => hit[field]),
   bodyText: RESEARCH_SEARCH_SPELLING_BODY_FIELDS.map((field) => hit[field]),
+  served: SERVED_TIERS.has(hit.studentVisibilityTier),
 });
 
 export const loadResearchSearchSpellingVocabulary = async (
@@ -59,6 +63,7 @@ export const loadResearchSearchSpellingVocabulary = async (
       attributesToRetrieve: [
         ...RESEARCH_SEARCH_SPELLING_NAME_FIELDS,
         ...RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
+        'studentVisibilityTier',
       ],
     });
     documents.push(...page.hits.map(toVocabularyDocument));

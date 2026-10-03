@@ -3435,5 +3435,15 @@ describe('Research spelling correction notice', () => {
     await waitFor(() => {
       expect(document.body.textContent).not.toContain('Spelling corrected');
     });
+
+    fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: 'imunology', sortBy: 'name', correctSpelling: false }),
+      );
+    });
+    expect(document.body.textContent).not.toContain('Spelling corrected');
   });
 });

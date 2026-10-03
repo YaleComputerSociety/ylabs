@@ -947,6 +947,10 @@ const Research = () => {
     ...(department ? { departments: [department] } : {}),
   });
 
+  const activeSearchKeepsTypedSpelling = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.exactSpelling === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     scrollViewportToTop();
@@ -1429,6 +1433,7 @@ const Research = () => {
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
       preserveResults: true,
+      exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1469,6 +1474,7 @@ const Research = () => {
       preserveResults: true,
       preserveDraftQuery: true,
       syncUrl: false,
+      exactSpelling: activeSearchRequest.options?.exactSpelling === true,
     });
   };
   const reloadDefaultResearchHomes = () => {

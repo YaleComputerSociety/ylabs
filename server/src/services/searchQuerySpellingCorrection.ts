@@ -1,6 +1,9 @@
+import { foldLatinDiacritics } from '../utils/latinDiacritics';
+
 export interface SearchVocabularyDocument {
   nameText: readonly unknown[];
   bodyText: readonly unknown[];
+  served: boolean;
 }
 
 export interface SearchSpellingVocabulary {
@@ -20,18 +23,12 @@ export interface CorrectedSearchQuery {
   corrections: SearchQueryCorrection[];
 }
 
-export const SPELLING_KNOWN_WORD_MIN_DOCUMENTS = 3;
 export const SPELLING_CANDIDATE_MIN_DOCUMENTS = 3;
-export const SPELLING_RARE_WORD_FREQUENCY_RATIO = 20;
 
 const WORD_PATTERN = /[\p{L}\p{M}]+/gu;
 const ASCII_WORD = /^[a-z]+$/;
 
-const foldWord = (word: string): string =>
-  word
-    .normalize('NFKD')
-    .replace(/\p{M}+/gu, '')
-    .toLowerCase();
+const foldWord = (word: string): string => foldLatinDiacritics(word.toLowerCase());
 
 const termsOf = (values: readonly unknown[]): string[] => {
   const terms: string[] = [];
@@ -52,9 +49,12 @@ export const buildSearchSpellingVocabulary = (
 ): SearchSpellingVocabulary => {
   const documentFrequency = new Map<string, number>();
   const nameTerms = new Set<string>();
+  let documentCount = 0;
   for (const document of documents) {
     const names = termsOf(document.nameText);
     for (const term of names) nameTerms.add(term);
+    if (!document.served) continue;
+    documentCount += 1;
     for (const term of new Set([...names, ...termsOf(document.bodyText)])) {
       documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
     }
@@ -66,7 +66,7 @@ export const buildSearchSpellingVocabulary = (
     bucket.push([term, frequency]);
     candidatesByLength.set(term.length, bucket);
   }
-  return { documentCount: documents.length, documentFrequency, nameTerms, candidatesByLength };
+  return { documentCount, documentFrequency, nameTerms, candidatesByLength };
 };
 
 export const allowedSpellingEdits = (wordLength: number): number => {
@@ -113,19 +113,13 @@ const correctWord = (
   if (!ASCII_WORD.test(word) || protectedTerms.has(word) || vocabulary.nameTerms.has(word)) {
     return null;
   }
-  const ownFrequency = vocabulary.documentFrequency.get(word) ?? 0;
-  if (ownFrequency >= SPELLING_KNOWN_WORD_MIN_DOCUMENTS) return null;
+  if (vocabulary.documentFrequency.has(word)) return null;
   const maxEdits = allowedSpellingEdits(word.length);
   if (maxEdits === 0) return null;
-  const minimumCandidateFrequency =
-    ownFrequency > 0
-      ? ownFrequency * SPELLING_RARE_WORD_FREQUENCY_RATIO
-      : SPELLING_CANDIDATE_MIN_DOCUMENTS;
 
   let best: { term: string; frequency: number; distance: number } | null = null;
   for (let length = word.length - maxEdits; length <= word.length + maxEdits; length += 1) {
     for (const [term, frequency] of vocabulary.candidatesByLength.get(length) ?? []) {
-      if (frequency < minimumCandidateFrequency || term === word) continue;
       const distance = boundedEditDistance(word, term, maxEdits);
       if (distance > maxEdits) continue;
       if (

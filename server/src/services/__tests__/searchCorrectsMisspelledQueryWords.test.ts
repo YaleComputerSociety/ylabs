@@ -26,6 +26,7 @@ const vocabulary = buildSearchSpellingVocabulary(
   Array.from({ length: 20 }, () => ({
     nameText: ['Example Lab'],
     bodyText: ['immunology and organic chemistry, ergo'],
+    served: true,
   })),
 );
 

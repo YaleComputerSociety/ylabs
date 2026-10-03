@@ -6,8 +6,10 @@ import {
   type SearchVocabularyDocument,
 } from '../searchQuerySpellingCorrection';
 
-const repeat = (count: number, document: SearchVocabularyDocument): SearchVocabularyDocument[] =>
-  Array.from({ length: count }, () => document);
+const repeat = (
+  count: number,
+  document: Omit<SearchVocabularyDocument, 'served'>,
+): SearchVocabularyDocument[] => Array.from({ length: count }, () => ({ ...document, served: true }));
 
 const vocabulary = buildSearchSpellingVocabulary([
   ...repeat(40, { nameText: ['Example Lab'], bodyText: ['neuroscience of sleep and memory'] }),
@@ -16,8 +18,10 @@ const vocabulary = buildSearchSpellingVocabulary([
   ...repeat(30, { nameText: [], bodyText: ['brain imaging'] }),
   ...repeat(10, { nameText: [], bodyText: ['pain research'] }),
   ...repeat(4, { nameText: [], bodyText: ['paid summer position'] }),
-  { nameText: [['Zorvath Quellin']], bodyText: ['studies of zorvath patterns'] },
-  { nameText: [], bodyText: ['a single neurosceince typo in prose'] },
+  ...repeat(1, { nameText: [['Zorvath Quellin']], bodyText: ['studies of zorvath patterns'] }),
+  ...repeat(1, { nameText: [], bodyText: ['a single neurosceince typo in prose'] }),
+  ...repeat(1, { nameText: [['Vexmał Orrin']], bodyText: [] }),
+  ...repeat(5, { nameText: [], bodyText: ['vexmail'] }),
 ]);
 
 const correct = (query: string, protectedTerms?: ReadonlySet<string>) =>
@@ -51,8 +55,8 @@ describe('correctSearchQuerySpelling', () => {
     });
   });
 
-  it('corrects a word the corpus holds only as its own rare typo', () => {
-    expect(correct('neurosceince').query).toBe('neuroscience');
+  it('never rewrites a word the corpus carries, even in a single row', () => {
+    expect(correct('neurosceince')).toEqual({ query: 'neurosceince', corrections: [] });
   });
 
   it('never rewrites a word the corpus holds in enough rows to be a real word', () => {
@@ -62,6 +66,25 @@ describe('correctSearchQuerySpelling', () => {
   it('never rewrites a word that appears in a name, however rare', () => {
     expect(correct('quellin').corrections).toEqual([]);
     expect(correct('zorvath').corrections).toEqual([]);
+  });
+
+  it('protects a name word whose letter has no decomposed form, typed in plain letters', () => {
+    expect(correct('vexmal').corrections).toEqual([]);
+  });
+
+  it('builds counts only from served rows but protects names from every row', () => {
+    const mixed = buildSearchSpellingVocabulary([
+      ...Array.from({ length: 10 }, () => ({
+        nameText: [],
+        bodyText: ['hidden topic krestology'],
+        served: false,
+      })),
+      { nameText: ['Brindle Lab'], bodyText: [], served: false },
+      ...repeat(5, { nameText: [], bodyText: ['brindles'] }),
+    ]);
+    expect(mixed.documentCount).toBe(5);
+    expect(correctSearchQuerySpelling('krestolgy', mixed).corrections).toEqual([]);
+    expect(correctSearchQuerySpelling('brindle', mixed).corrections).toEqual([]);
   });
 
   it('never rewrites a protected query term', () => {

@@ -121,6 +121,7 @@ import {
   type CorrectedSearchQuery,
 } from './searchQuerySpellingCorrection';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
+import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
   maxReachableResearchSearchPage,
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
@@ -756,25 +757,6 @@ const boundedResearchSearchQuery = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
 };
-
-const UNDECOMPOSABLE_LATIN_LETTERS: Record<string, string> = {
-  ı: 'i',
-  ø: 'o',
-  ł: 'l',
-  đ: 'd',
-  ð: 'd',
-  ħ: 'h',
-  ß: 'ss',
-  æ: 'ae',
-  œ: 'oe',
-  þ: 'th',
-};
-
-const foldLatinDiacritics = (value: string): string =>
-  value
-    .normalize('NFKD')
-    .replace(/\p{M}+/gu, '')
-    .replace(/[ıøłđðħßæœþ]/g, (letter) => UNDECOMPOSABLE_LATIN_LETTERS[letter]);
 
 const tokenizeStudentResearchQuery = (query: string): string[] =>
   foldLatinDiacritics(query.toLowerCase())
