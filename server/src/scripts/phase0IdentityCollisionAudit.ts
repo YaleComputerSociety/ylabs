@@ -13,10 +13,10 @@ import {
 } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isPrimaryProductionDatabaseName } from '../../../scripts/databaseNames.mjs';
 import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
-  operatorEnvironmentForDatabaseName,
 } from './operatorDatabaseEnvironment';
 import {
   buildPhase0IdentityCollisionAuditReport,
@@ -211,10 +211,7 @@ export function assertPhase0IdentityCollisionAuditTargetAllowed(
 }
 
 function targetsPrimaryProductionDatabase(env: NodeJS.ProcessEnv): boolean {
-  return (
-    operatorEnvironmentForDatabaseName(databaseNameFromMongoUrl(env.MONGODBURL || '')) ===
-    'production'
-  );
+  return isPrimaryProductionDatabaseName(databaseNameFromMongoUrl(env.MONGODBURL || ''));
 }
 
 export function assertHardenedIdentityCollisionProfile(
