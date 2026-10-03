@@ -4025,8 +4025,7 @@ function entryToResearchEntityObservationsUnscreened(
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
   const profileCitationUrl = officialProfileCitationUrl(entry);
   const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
-  const admittedOnlyByStatedLabName =
-    !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  const admittedOnlyByStatedLabName = !isExplicitLab && dept.emitPersonalResearchEntities === false;
   if (admittedOnlyByStatedLabName && !statedLabName) return [];
   const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
