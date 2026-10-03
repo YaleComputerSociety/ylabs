@@ -29,6 +29,12 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'syncDevelopmentToBeta.ts': PROMOTION_DATABASE_CHECK,
   'runScraperSweep.ts':
     'forwards --apply to the stage commands it spawns, each behind its own guard, after validateScraperSweepEnvironment refuses any database but Development',
+  'promoteBeta.ts':
+    'forwards --apply only to beta:refresh-from-development, which refuses any pair but Development to Beta, after a typed confirmation',
+  'promoteProduction.ts':
+    'forwards --apply only to production:promote-beta-copy, which refuses any pair but Beta to Prod, after the operator types the target name',
+  'promoteRemotePhase.ts':
+    'runs on the Render operator service only after remotePhaseEnvironmentProblems matches SCRAPER_ENV and the index prefix to the target, then forwards --apply to commands that run their own guard',
   'weeklyDevelopmentSweep.ts':
     'forwards --apply only to observations:prune-dead, which runs its own guard, after weeklySweepEnvironmentProblems refuses any database but Development',
 };

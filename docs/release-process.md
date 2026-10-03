@@ -191,6 +191,7 @@ Moving the `main` branch deploys code; it does not move a single document.
 
 Run the steps in this order.
 The order is not cosmetic and two of the orderings are the opposite of what seems natural.
+`yarn promote:production` runs steps 1 to 5 in this order and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
 
 1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else. The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
 2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
