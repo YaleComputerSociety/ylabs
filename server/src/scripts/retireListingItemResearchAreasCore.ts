@@ -11,11 +11,7 @@
  */
 
 export type ListingItemAreaVerdict =
-  | 'unfetchable'
-  | 'unchanged'
-  | 'page-drift'
-  | 'narrowed'
-  | 'emptied';
+  'unfetchable' | 'unchanged' | 'page-drift' | 'narrowed' | 'emptied';
 
 export interface ListingItemAreaProbe {
   entityId: string;

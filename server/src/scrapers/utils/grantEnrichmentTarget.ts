@@ -1,16 +1,10 @@
 import type { CanonicalResearchHomeResolution } from '../canonicalResearchHomeResolver';
 
 export type GrantPersonResolution =
-  | { status: 'matched'; userId: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 export type GrantAttachRefusal =
-  | 'unresolved'
-  | 'ambiguousPerson'
-  | 'noExistingRow'
-  | 'ineligibleRow'
-  | 'ambiguousRow';
+  'unresolved' | 'ambiguousPerson' | 'noExistingRow' | 'ineligibleRow' | 'ambiguousRow';
 
 export type GrantEnrichmentTarget =
   | { status: 'enrich'; researcherId: string; slug: string }

@@ -5,9 +5,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
 export type SourceHealthReviewArtifactReason =
-  | 'latest_failure'
-  | 'materialization_errors'
-  | 'materialization_conflicts';
+  'latest_failure' | 'materialization_errors' | 'materialization_conflicts';
 
 export interface SourceHealthSourceInput {
   _id?: unknown;

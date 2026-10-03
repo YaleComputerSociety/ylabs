@@ -97,6 +97,7 @@ The server calls `config()` from about 230 modules, so every `dotenv.config(...)
 Prettier is held at its exact `3.8.3` pin.
 Prettier 3.9 rewrites the layout of multi-line union types, which reformats about 80 files that no dependency change touches.
 Land that as a formatting-only change of its own once the other #4038 upgrades are in, so the churn does not collide with them.
+That landed on 2026-10-03 as its own formatting-only change; `docs/dependency-decisions.md` records it.
 
 ## 2026-10-02: A Fund's Upcoming Deadline Is Served Even When Its Database Record Lists A Passed One (#4382)
 

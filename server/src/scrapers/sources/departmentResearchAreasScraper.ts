@@ -487,9 +487,7 @@ export function buildDeptAreaMatchIndex(candidates: DeptAreaCandidateEntity[]): 
 }
 
 export type DeptHomeResolution =
-  | { status: 'matched'; entityId: string }
-  | { status: 'ambiguous' }
-  | { status: 'unmatched' };
+  { status: 'matched'; entityId: string } | { status: 'ambiguous' } | { status: 'unmatched' };
 
 /**
  * Resolve a listed faculty member to a single existing research home. A profile

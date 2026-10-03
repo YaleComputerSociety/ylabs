@@ -900,10 +900,7 @@ export async function applyCenterRosterRetirementPlan(
 }
 
 export type CenterRosterRetirementOutcome =
-  | 'invalid-run-id'
-  | 'no-center-roster-read'
-  | 'planned'
-  | 'reconciled';
+  'invalid-run-id' | 'no-center-roster-read' | 'planned' | 'reconciled';
 
 export interface CenterRosterRetirementCenterResult {
   entityKey: string;

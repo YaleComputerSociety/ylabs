@@ -176,9 +176,7 @@ async function main(): Promise<void> {
       let scanned = 0;
       await mapWithConcurrency(slugs, concurrency, async (slug, index) => {
         const entity = (await getResearchGroupDetail(slug))?.researchEntity as
-          | Record<string, unknown>
-          | undefined
-          | null;
+          Record<string, unknown> | undefined | null;
         if (!entity) {
           servesNoPage += 1;
         } else {

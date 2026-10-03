@@ -5,17 +5,10 @@ import type { ObservationReferenceSpec } from '../scrapers/observationRetention'
 export type OrphanReferenceActivity = 'active' | 'archived';
 
 export type OrphanReferenceRecovery =
-  | 'deterministic_relink'
-  | 'rematerialize_access'
-  | 'review_required'
-  | 'record_archived_loss';
+  'deterministic_relink' | 'rematerialize_access' | 'review_required' | 'record_archived_loss';
 
 export type OrphanReferenceDecision =
-  | 'relink'
-  | 'rematerialize'
-  | 'archive_owner'
-  | 'record_loss'
-  | 'defer_review';
+  'relink' | 'rematerialize' | 'archive_owner' | 'record_loss' | 'defer_review';
 
 export interface OrphanReferenceOccurrence {
   ownerCollection: string;

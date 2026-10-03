@@ -1177,24 +1177,20 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
 
 describe('CentersInstitutesScraper.run', () => {
   it('orchestrates extractors across canned configs and emits group + member obs', async () => {
-    const cowlesExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          {
-            name: 'Jane Doe',
-            title: 'Director and Sterling Professor of Economics',
-            profileUrl: 'https://egc.yale.edu/people/jane-doe',
-            role: 'director',
-          },
-          { name: 'Bob Smith', title: 'Professor', role: 'core-faculty' },
-        ],
-      }),
-    );
-    const wuTsaiExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [{ name: 'Ian Abraham', title: 'Faculty Member, Engineering' }],
-      }),
-    );
+    const cowlesExt = vi.fn((): ExtractorResult => ({
+      members: [
+        {
+          name: 'Jane Doe',
+          title: 'Director and Sterling Professor of Economics',
+          profileUrl: 'https://egc.yale.edu/people/jane-doe',
+          role: 'director',
+        },
+        { name: 'Bob Smith', title: 'Professor', role: 'core-faculty' },
+      ],
+    }));
+    const wuTsaiExt = vi.fn((): ExtractorResult => ({
+      members: [{ name: 'Ian Abraham', title: 'Faculty Member, Engineering' }],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'cowles',
@@ -1437,17 +1433,15 @@ describe('CentersInstitutesScraper.run', () => {
     const staticExt = vi.fn((): ExtractorResult => {
       throw new Error('should not use the static extractor for rendered pages');
     });
-    const renderedExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          {
-            name: 'Ada Lovelace',
-            profileUrl: 'https://gated.invalid/people/ada/',
-            role: 'director',
-          },
-        ],
-      }),
-    );
+    const renderedExt = vi.fn((): ExtractorResult => ({
+      members: [
+        {
+          name: 'Ada Lovelace',
+          profileUrl: 'https://gated.invalid/people/ada/',
+          role: 'director',
+        },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'gated',
@@ -1564,23 +1558,21 @@ describe('CentersInstitutesScraper.run', () => {
   });
 
   it('emits child-center ResearchGroup observations from a meta-index extractor', async () => {
-    const metaExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [],
-        childCenters: [
-          {
-            name: 'Schmidt Program',
-            url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
-            kind: 'program',
-          },
-          {
-            name: 'Blue Center',
-            url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
-            kind: 'center',
-          },
-        ],
-      }),
-    );
+    const metaExt = vi.fn((): ExtractorResult => ({
+      members: [],
+      childCenters: [
+        {
+          name: 'Schmidt Program',
+          url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
+          kind: 'program',
+        },
+        {
+          name: 'Blue Center',
+          url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
+          kind: 'center',
+        },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'jackson-centers',
@@ -1612,14 +1604,12 @@ describe('CentersInstitutesScraper.run', () => {
   });
 
   it('stops paginating a repeat-page roster after two consecutive pages that add no new members', async () => {
-    const repeatExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          { name: 'Jane Doe', role: 'core-faculty' },
-          { name: 'Bob Smith', role: 'core-faculty' },
-        ],
-      }),
-    );
+    const repeatExt = vi.fn((): ExtractorResult => ({
+      members: [
+        { name: 'Jane Doe', role: 'core-faculty' },
+        { name: 'Bob Smith', role: 'core-faculty' },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'repeat-council',

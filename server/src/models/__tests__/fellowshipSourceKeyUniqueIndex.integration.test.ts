@@ -37,8 +37,7 @@ async function buildDeclaredSourceKeyIndex(): Promise<void> {
 async function liveSourceKeyIndex(): Promise<Record<string, unknown> | undefined> {
   const indexes = await mongoose.connection.db!.collection('fellowships').indexes();
   return indexes.find((index) => index.name === 'sourceKey_1') as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 }
 
 describe('the declared fellowship sourceKey unique index can actually be built (#3081)', () => {

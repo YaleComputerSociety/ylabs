@@ -132,16 +132,14 @@ export async function runArchiveDetachmentBypassingLeadEdges(
         role: String(detached.role),
       },
       twinPersonIds: twins.map((t) => idOf(t._id)),
-      entityLeadEdges: entityLeadEdges.map(
-        (edge): LeadEdgeLike => ({
-          edgeId: idOf(edge._id),
-          personId: idOf(edge.personId),
-          entityId,
-          role: String(edge.role),
-          archived: edge.archived === true,
-          reviewStatus: edge.reviewStatus ?? null,
-        }),
-      ),
+      entityLeadEdges: entityLeadEdges.map((edge): LeadEdgeLike => ({
+        edgeId: idOf(edge._id),
+        personId: idOf(edge.personId),
+        entityId,
+        role: String(edge.role),
+        archived: edge.archived === true,
+        reviewStatus: edge.reviewStatus ?? null,
+      })),
     });
     if (plan.verdict !== 'archive_bypassing_edge') continue;
 

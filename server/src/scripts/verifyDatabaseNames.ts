@@ -29,8 +29,7 @@ const SERVING_DATABASE_NAMES = {
 type ServingEnvironment = keyof typeof SERVING_DATABASE_NAMES;
 
 export type VerifyDatabaseNamesRequest =
-  | { kind: 'pair'; pair: DatabaseCopyPair }
-  | { kind: 'serving'; environment: ServingEnvironment };
+  { kind: 'pair'; pair: DatabaseCopyPair } | { kind: 'serving'; environment: ServingEnvironment };
 
 export function parseVerifyDatabaseNamesArgs(argv: string[]): VerifyDatabaseNamesRequest {
   const [flag, value, ...rest] = argv;

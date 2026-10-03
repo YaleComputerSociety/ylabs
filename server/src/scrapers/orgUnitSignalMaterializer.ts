@@ -35,8 +35,7 @@ export interface OrgUnitCourseCreditRouteAbsenceValue {
 }
 
 export type OrgUnitCourseCreditRouteObservationValue =
-  | OrgUnitCourseCreditRouteValue
-  | OrgUnitCourseCreditRouteAbsenceValue;
+  OrgUnitCourseCreditRouteValue | OrgUnitCourseCreditRouteAbsenceValue;
 
 export function isOrgUnitCourseCreditRouteAbsence(
   value: unknown,

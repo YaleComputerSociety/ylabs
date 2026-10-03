@@ -3,13 +3,7 @@ import { type FellowshipCycleCategory } from './fellowshipCycle';
 import { isDepartmentResearchGuidance, programRoleOf } from './programJourney';
 
 export type ProgramBoardSection =
-  | 'closingSoon'
-  | 'open'
-  | 'openingSoon'
-  | 'nextCycle'
-  | 'guidance'
-  | 'noDates'
-  | 'archive';
+  'closingSoon' | 'open' | 'openingSoon' | 'nextCycle' | 'guidance' | 'noDates' | 'archive';
 
 export const PROGRAM_BOARD_SECTIONS: ProgramBoardSection[] = [
   'closingSoon',

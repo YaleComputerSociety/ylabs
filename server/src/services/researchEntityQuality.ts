@@ -5,10 +5,7 @@ import {
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 
 export type ResearchEntityDescriptionState =
-  | 'source_backed'
-  | 'profile_synthesis'
-  | 'thin'
-  | 'missing';
+  'source_backed' | 'profile_synthesis' | 'thin' | 'missing';
 
 export type ResearchEntityLeadState = 'lead_attached' | 'lead_weak' | 'lead_missing';
 

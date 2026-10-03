@@ -325,8 +325,7 @@ export interface RematerializeWithheldFieldChange {
 }
 
 export type RematerializeReportedChange =
-  | RematerializeFieldChange
-  | RematerializeWithheldFieldChange;
+  RematerializeFieldChange | RematerializeWithheldFieldChange;
 
 export function isWithheldChange(
   change: RematerializeReportedChange,

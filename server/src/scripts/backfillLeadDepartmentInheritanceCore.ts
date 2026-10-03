@@ -62,10 +62,7 @@ export function summarizeLeadDepartmentInheritance(
 }
 
 export type LeadPiProvenanceRebackVerdict =
-  | 'reproduced'
-  | 'not-reproducible'
-  | 'value-diverged'
-  | 'already-observed';
+  'reproduced' | 'not-reproducible' | 'value-diverged' | 'already-observed';
 
 export interface LeadPiProvenanceRebackPlan {
   field: 'school' | 'departments';

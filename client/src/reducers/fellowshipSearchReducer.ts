@@ -79,8 +79,7 @@ export type FellowshipSearchAction =
   | {
       type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER';
       payload:
-        | StudentVisibilityTier[]
-        | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
+        StudentVisibilityTier[] | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
     }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }

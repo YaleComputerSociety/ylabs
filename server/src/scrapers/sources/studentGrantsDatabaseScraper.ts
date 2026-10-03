@@ -179,11 +179,7 @@ const FACET_FIELDS: Array<{ field: FundFacetField; label: RegExp }> = [
 ];
 
 type FundFacetField =
-  | 'yearOfStudy'
-  | 'termOfAward'
-  | 'purpose'
-  | 'globalRegions'
-  | 'citizenshipStatus';
+  'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus';
 
 function fundDetailElement($: cheerio.CheerioAPI, id: string): cheerio.Cheerio<any> {
   return $(`${FUND_DETAIL_ID_PREFIX}${id}`).first();

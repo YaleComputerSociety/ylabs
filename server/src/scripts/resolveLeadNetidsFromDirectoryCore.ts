@@ -29,9 +29,7 @@ export type LeadNetidRefusal =
   | 'duplicate-netid-in-batch';
 
 export type LeadNetidEvidenceTier =
-  | 'email-and-matching-netid-key'
-  | 'email-and-restated-email-key'
-  | 'email-and-slug-key';
+  'email-and-matching-netid-key' | 'email-and-restated-email-key' | 'email-and-slug-key';
 
 export interface LeadNetidPlan {
   researcherId: string;

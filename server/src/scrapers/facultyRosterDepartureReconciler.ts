@@ -59,11 +59,7 @@ export interface DepartmentRosterHealthSnapshot {
 }
 
 export type RosterHealthReadProvenance =
-  | 'fetched'
-  | 'reused-within-sweep'
-  | 'cache-permitted'
-  | 'not-read'
-  | 'unrecorded';
+  'fetched' | 'reused-within-sweep' | 'cache-permitted' | 'not-read' | 'unrecorded';
 
 /**
  * Why a roster-health snapshot may or may not govern departures, as one named verdict.
@@ -86,11 +82,7 @@ export type RosterHealthReadProvenance =
  * (#2542): silence is not a claim, and a failed read is silence.
  */
 export type RosterHealthAdmissibility =
-  | 'read-discovered-people'
-  | 'read-discovered-nobody'
-  | 'incomplete'
-  | 'not-read'
-  | 'unrecorded';
+  'read-discovered-people' | 'read-discovered-nobody' | 'incomplete' | 'not-read' | 'unrecorded';
 
 export function rosterHealthAdmissibility(
   snapshot: DepartmentRosterHealthSnapshot,
@@ -198,11 +190,7 @@ export interface EntityDepartureState {
 export type RunPresenceSignal = 'present' | 'absent' | 'inconclusive';
 
 export type FacultyRosterDepartureAction =
-  | 'noop'
-  | 'refresh_present'
-  | 'record_first_absence'
-  | 'suppress_departed'
-  | 'clear_departed';
+  'noop' | 'refresh_present' | 'record_first_absence' | 'suppress_departed' | 'clear_departed';
 
 export interface FacultyRosterDepartureDecision {
   action: FacultyRosterDepartureAction;

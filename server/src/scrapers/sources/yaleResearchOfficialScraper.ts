@@ -21,13 +21,7 @@ const MAX_PAGES_PER_DIRECTORY = 20;
 export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities';
 export type YaleResearchSourceCategory = 'centers-institutes' | 'core-facility';
 export type YaleResearchKind =
-  | 'center'
-  | 'institute'
-  | 'lab'
-  | 'program'
-  | 'initiative'
-  | 'group'
-  | 'core_facility';
+  'center' | 'institute' | 'lab' | 'program' | 'initiative' | 'group' | 'core_facility';
 
 export interface YaleResearchOfficialEntity {
   name: string;

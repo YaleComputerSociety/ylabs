@@ -267,10 +267,7 @@ export function isSynthesisCandidate(entity: SynthesisCandidateFields): boolean 
 }
 
 export type SynthesisRejectReason =
-  | 'empty-output'
-  | 'ungrounded'
-  | 'low-quality'
-  | 'not-lab-focused';
+  'empty-output' | 'ungrounded' | 'low-quality' | 'not-lab-focused';
 
 export interface SynthesisAcceptance {
   accepted: boolean;

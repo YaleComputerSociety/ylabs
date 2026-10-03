@@ -27,11 +27,7 @@ export interface LaneBenchmarkRunDto {
  * was not frozen after all, which is an instrument fault and never a lane regression (#3591).
  */
 export type LaneBenchmarkChange =
-  | 'first-run'
-  | 'unchanged'
-  | 'code-changed'
-  | 'input-leak'
-  | 'unattributed';
+  'first-run' | 'unchanged' | 'code-changed' | 'input-leak' | 'unattributed';
 
 export interface LaneBenchmarkTrendDto {
   benchmarkId: string;

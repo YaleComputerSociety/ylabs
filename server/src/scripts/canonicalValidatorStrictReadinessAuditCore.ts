@@ -25,9 +25,7 @@
 import type { CanonicalMongoValidatorEnforcementState } from './canonicalMongoValidatorRegistry';
 
 export type CanonicalValidatorAppliedState =
-  | 'validator-applied'
-  | 'no-validator-applied'
-  | 'collection-missing';
+  'validator-applied' | 'no-validator-applied' | 'collection-missing';
 
 export const NO_VALIDATOR_APPLIED_LEVEL = 'not-applied' as const;
 

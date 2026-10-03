@@ -104,9 +104,7 @@ export interface ResearchEntityDedupeMergeGroup {
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
-  | 'merge_into_canonical'
-  | 'mark_distinct_homes'
-  | 'defer_review';
+  'merge_into_canonical' | 'mark_distinct_homes' | 'defer_review';
 
 /**
  * A merge that lowers the survivor's tier is an operator decision each time, so it takes

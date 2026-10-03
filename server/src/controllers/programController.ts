@@ -122,8 +122,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     includeSuppressed,
   } = request.query;
   const currentUser = request.user as
-    | { netId?: string; netid?: string; userType?: string }
-    | undefined;
+    { netId?: string; netid?: string; userType?: string } | undefined;
   const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
 
   const result = await searchPrograms({
@@ -165,8 +164,7 @@ export const searchProgramsController = async (request: Request, response: Respo
 export const getProgramById = async (request: Request, response: Response, next: NextFunction) => {
   try {
     const currentUser = request.user as
-      | { netId?: string; netid?: string; userType?: string }
-      | undefined;
+      { netId?: string; netid?: string; userType?: string } | undefined;
     const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
     const program = await readProgram(request.params.id, {
       includeNonPublic: hasAdminAuthority,

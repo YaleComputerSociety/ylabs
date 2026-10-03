@@ -4,6 +4,13 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-03: Prettier moves to 3.9 as a formatting-only change (#4038)
+
+`prettier` moves from its exact `3.8.3` pin to an exact `3.9.9` pin, and `yarn format` is rerun over the globs `format:check` enforces.
+The diff is layout only, almost all of it 3.9 collapsing a multi-line union type onto one line when it fits; no token, import, or behaviour changes, and both type-checks and lint are unchanged.
+It landed after every other #4038 step so the reformat could not conflict with an upgrade branch, as `docs/decisions.md` planned under #4367.
+The pin stays exact, so a formatter release never reformats files inside an unrelated change.
+
 ## 2026-10-03: The `http-cache-semantics` advisory is accepted until a patched release exists (#4452)
 
 GHSA-ch52-4w7c-c8xp (npm 1240991) is a high advisory against every `http-cache-semantics` release through 4.2.0, the latest, so there is no version to move to.

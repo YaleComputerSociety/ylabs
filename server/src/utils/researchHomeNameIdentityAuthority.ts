@@ -340,9 +340,7 @@ export function namesAnOrganizationalResearchHome(value: unknown): boolean {
  * be decided from the name that is already in doubt (#2884).
  */
 export type ResearchEntityTypeNameContradiction =
-  | 'lab_named_as_a_topic'
-  | 'faculty_research_area_named_as_an_organization'
-  | '';
+  'lab_named_as_a_topic' | 'faculty_research_area_named_as_an_organization' | '';
 
 export function researchEntityTypeNameContradiction(entity: {
   entityType?: unknown;

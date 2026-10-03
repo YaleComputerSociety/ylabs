@@ -41,12 +41,7 @@ export interface ExtractedOfficialRosterMember {
 }
 
 export type OfficialRosterRole =
-  | 'postdoc'
-  | 'grad-student'
-  | 'undergrad'
-  | 'staff'
-  | 'core-faculty'
-  | 'affiliate';
+  'postdoc' | 'grad-student' | 'undergrad' | 'staff' | 'core-faculty' | 'affiliate';
 
 export interface ExtractedOfficialRoster {
   state: 'current' | 'partial' | 'empty' | 'withheld' | 'stale';

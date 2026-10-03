@@ -35,11 +35,7 @@ export interface RosterConfigSummary {
  * through `--probe-configs`.
  */
 export type CatalogMatchReason =
-  | 'covered-elsewhere'
-  | 'sole-config-on-host'
-  | 'host-root'
-  | 'path'
-  | 'name';
+  'covered-elsewhere' | 'sole-config-on-host' | 'host-root' | 'path' | 'name';
 
 export interface CoveredCatalogDepartment extends CatalogDepartment {
   matchedBy: CatalogMatchReason;

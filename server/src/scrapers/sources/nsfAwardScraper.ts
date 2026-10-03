@@ -275,9 +275,7 @@ export async function findUserForPi(
 }
 
 export type NsfPiUserResolution =
-  | { status: 'matched'; userId: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 export async function resolveUserForPi(
   pi: { firstName?: string; lastName?: string },

@@ -143,9 +143,7 @@ export interface MaterializationConflictReviewSample {
 }
 
 export type MaterializationConflictReviewQueue =
-  | 'priority_review'
-  | 'context_review'
-  | 'metadata_review';
+  'priority_review' | 'context_review' | 'metadata_review';
 
 export interface MaterializationConflictReview {
   required: boolean;

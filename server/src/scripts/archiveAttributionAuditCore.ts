@@ -8,10 +8,7 @@
  * because `archivedEntityUpdate` now refuses a write that does not name its lane.
  */
 export type ArchiveAttributionState =
-  | 'attributed'
-  | 'inferable_merge'
-  | 'inferable_suppression'
-  | 'unattributable';
+  'attributed' | 'inferable_merge' | 'inferable_suppression' | 'unattributable';
 
 export interface ArchivedRowAttributionInput {
   entityType?: unknown;

@@ -6,11 +6,7 @@ export interface InferredPiLagEntity {
 }
 
 export type InferredPiLagDisposition =
-  | 'materialized-lead'
-  | 'already-linked'
-  | 'still-unresolved'
-  | 'resolvable-pi'
-  | 'unresolvable-pi';
+  'materialized-lead' | 'already-linked' | 'still-unresolved' | 'resolvable-pi' | 'unresolvable-pi';
 
 export interface InferredPiLagRow {
   entityId: string;
