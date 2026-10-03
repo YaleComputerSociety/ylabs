@@ -281,6 +281,23 @@ The app does not expose its deployed commit: `GET /api/config` returns only a co
 Verifying the commit over HTTP would mean adding an authenticated route and a shared secret to both Render and GitHub Actions, and the Render deploy log already records which commit is live.
 So read the deployed commit from the Render dashboard, and treat the smoke as behavioural verification.
 
+The research search check fails rather than warns on anything short of a working index (#4147).
+The empty-query search must answer 200, must not say `degraded: true`, and must return at least one row, and the slug it yields must open the detail route.
+A degraded answer is retried once after a few seconds, so one transient companion-query failure does not fail a promotion, while an empty index fails at once.
+The check records only the status, the `degraded` flag and the row count, never payload content, because the Actions log is public.
+
+## Monitoring production
+
+`GET /api/ready` is the route an external monitor polls (#4142).
+It runs a MongoDB `ping` and a Meilisearch `health()` call in parallel, each bounded at two seconds, and answers `{ "mongo": <boolean>, "search": <boolean> }` with 200 when both are true and 503 otherwise.
+It is never cached, and it carries no version, host, commit, error text or timing, so it is safe to leave public.
+`/health` and `/` are the wrong targets, because the SPA shell answers 200 from disk through a full API outage, and `/api/config` is cached for five minutes and never touches Meilisearch.
+A one-minute cadence from one monitor stays far inside both the per-session limiter and the per-address first-contact ceiling in `server/src/middleware/rateLimiters.ts`.
+
+The monitor lives outside GitHub Actions, because `scripts/security-preflight.test.mjs` forbids a standing schedule against production.
+The maintainer owns it: an external HTTP monitor against `https://yalelabs.io/api/ready` at a one-minute cadence, alerting the maintainer on a non-2xx answer for two consecutive checks.
+Record the monitor's provider here when it is created.
+
 ## Rolling back
 
 To roll back, prefer the Render dashboard rollback to the previous deploy.

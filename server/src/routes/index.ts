@@ -9,6 +9,7 @@ import AnalyticsRoutes from './analytics';
 import ConfigRoutes from './config';
 import AdminRoutes from './admin';
 import ResearchGroupsRoutes from './researchGroups';
+import ReadinessRoutes from './ready';
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/research', ResearchGroupsRoutes);
 router.use('/analytics', AnalyticsRoutes);
 router.use('/config', ConfigRoutes);
 router.use('/admin', AdminRoutes);
+router.use('/ready', ReadinessRoutes);
 
 export default router;

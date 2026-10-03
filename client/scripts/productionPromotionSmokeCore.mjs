@@ -218,3 +218,31 @@ export const containsInternalLabels = (value, options = {}) => {
     return haystack.includes(label);
   });
 };
+
+export const RESEARCH_SEARCH_DEGRADED_RETRY_DELAY_MS = 3_000;
+
+const researchSearchRows = (json) => [
+  ...(Array.isArray(json?.researchEntities) ? json.researchEntities : []),
+  ...(Array.isArray(json?.hits) ? json.hits : []),
+];
+
+export const evaluateResearchSearchResponse = (statusCode, json) => {
+  const degraded = json?.degraded === true;
+  const rowCount = researchSearchRows(json).length;
+  const healthy = statusCode === 200 && !degraded && rowCount > 0;
+  return {
+    status: healthy ? 'pass' : 'fail',
+    details: { statusCode, degraded, rowCount },
+  };
+};
+
+export const shouldRetryResearchSearch = (evaluation) =>
+  evaluation.status === 'fail' &&
+  evaluation.details.statusCode === 200 &&
+  evaluation.details.degraded &&
+  evaluation.details.rowCount > 0;
+
+export const discoverResearchSlug = (json) =>
+  researchSearchRows(json)
+    .map((entity) => entity?.slug || entity?.data?.slug)
+    .find(Boolean);

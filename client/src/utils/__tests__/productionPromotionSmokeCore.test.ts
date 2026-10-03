@@ -3,6 +3,9 @@ import {
   buildSecurityHeaderChecks,
   containsInternalLabels,
   createSmokeReport,
+  discoverResearchSlug,
+  evaluateResearchSearchResponse,
+  shouldRetryResearchSearch,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -201,5 +204,56 @@ describe('production promotion smoke core', () => {
         status: 'fail',
       }),
     ]);
+  });
+});
+
+describe('production promotion smoke research search health', () => {
+  const healthyBody = {
+    researchEntities: [{ slug: 'synthetic-lab-a' }, { slug: 'synthetic-lab-b' }],
+    estimatedTotalHits: 2,
+    degraded: false,
+  };
+
+  it('passes a 200 response that is not degraded and carries rows', () => {
+    const evaluation = evaluateResearchSearchResponse(200, healthyBody);
+
+    expect(evaluation).toStrictEqual({
+      status: 'pass',
+      details: { statusCode: 200, degraded: false, rowCount: 2 },
+    });
+    expect(discoverResearchSlug(healthyBody)).toBe('synthetic-lab-a');
+  });
+
+  it('fails a 200 response that reports itself degraded, and retries it once', () => {
+    const evaluation = evaluateResearchSearchResponse(200, { ...healthyBody, degraded: true });
+
+    expect(evaluation.status).toBe('fail');
+    expect(evaluation.details).toStrictEqual({ statusCode: 200, degraded: true, rowCount: 2 });
+    expect(shouldRetryResearchSearch(evaluation)).toBe(true);
+  });
+
+  it('fails a 200 response from an empty index without a retry, and discovers no slug', () => {
+    const emptyBody = { researchEntities: [], estimatedTotalHits: 0, degraded: false };
+    const evaluation = evaluateResearchSearchResponse(200, emptyBody);
+
+    expect(evaluation.status).toBe('fail');
+    expect(evaluation.details.rowCount).toBe(0);
+    expect(shouldRetryResearchSearch(evaluation)).toBe(false);
+    expect(discoverResearchSlug(emptyBody)).toBeUndefined();
+  });
+
+  it('fails a non-200 response and an unparseable body', () => {
+    expect(evaluateResearchSearchResponse(503, healthyBody).status).toBe('fail');
+    expect(evaluateResearchSearchResponse(200, null)).toStrictEqual({
+      status: 'fail',
+      details: { statusCode: 200, degraded: false, rowCount: 0 },
+    });
+  });
+
+  it('reports only the status, the degraded flag and the row count, never payload content', () => {
+    const { details } = evaluateResearchSearchResponse(200, healthyBody);
+
+    expect(Object.keys(details).sort()).toStrictEqual(['degraded', 'rowCount', 'statusCode']);
+    expect(JSON.stringify(details)).not.toContain('synthetic-lab');
   });
 });
