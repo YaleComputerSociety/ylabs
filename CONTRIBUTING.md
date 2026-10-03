@@ -21,7 +21,7 @@ Follow [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md#local-development-setup).
 Two things are worth knowing before you start, because both have cost people an afternoon:
 
 - `server/.env` needs `MONGODBURL`, the database the process talks to. Without it the server throws `MONGODBURL is required` on boot. The `DEVELOPMENT_`, `BETA_`, and `PRODUCTION_` prefixed URLs are for cross-environment copies only and no request path reads them.
-- Ask a maintainer for Development MongoDB credentials. There is no local-only data path, so you cannot get a populated app without them.
+- You do not need credentials to start. `yarn local:setup` then `yarn dev:server:local` runs the app against a local MongoDB seeded with synthetic rows, which is enough for serve-time work. Ask a maintainer for Development MongoDB credentials when you need the real corpus.
 
 Sanity check that you are actually up:
 

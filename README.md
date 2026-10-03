@@ -24,7 +24,8 @@ corepack enable
 bash scripts/install-all.sh
 ```
 
-Create `server/.env` and `client/.env` - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
+With no credentials, `yarn local:setup` starts a local MongoDB and Meilisearch, seeds them with synthetic rows, and `yarn dev:server:local` serves them; see the [Developer Guide](DEVELOPER_GUIDE.md#3-configure-environment).
+For the real corpus, create `server/.env` and `client/.env` with Development credentials from a maintainer - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
 Then start and seed the local search index, which needs Docker:
 
 ```bash

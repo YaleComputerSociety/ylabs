@@ -133,7 +133,8 @@ A worker thread or a scheduled script would also have moved the work, but each n
 The environment is discovered from the connected database name via `operatorEnvironmentForDatabaseName`, not from a flag, so a row can never be labelled with an environment it did not come from.
 A database the mapping cannot place records nothing.
 
-On by default in a deployed runtime, because a measurement nobody remembers to take is the problem this exists to solve.
+On by default in every runtime except `NODE_ENV=test`, because a measurement nobody remembers to take is the problem this exists to solve.
+That includes a laptop: a local server booted against Development records a Development snapshot when the newest one is stale, measured by whatever branch is checked out, while one booted on the local data path (`yarn dev:server:local`) records nothing, because the mapping cannot place `ylabs_local`.
 Off under `NODE_ENV=test` so suites never write, and disableable with `CORPUS_SNAPSHOT_DISABLED=true`.
 
 There is deliberately no GitHub Actions workflow and no database secret.

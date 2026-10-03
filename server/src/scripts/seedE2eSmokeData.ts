@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { resolveMongoDatabaseName, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { operatorEnvironmentForDatabaseName } from './operatorDatabaseEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config({ quiet: true });
@@ -205,11 +206,38 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
   };
 }
 
-export function assertSeedTargetIsNotProduction(mongoUrl: string | undefined): void {
+const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function mongoHostname(mongoUrl: string): string | undefined {
+  try {
+    return new URL(mongoUrl).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+export function assertSmokeSeedTarget(
+  mongoUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!mongoUrl) throw new Error('MONGODBURL is required to seed E2E smoke data.');
   const dbLabel = summarizeMongoUrl(mongoUrl);
-  if (/\/(prod|production)$/i.test(dbLabel)) {
+  const databaseName = resolveMongoDatabaseName(mongoUrl);
+  if (!databaseName) {
     throw new Error(
-      `Refusing to seed E2E smoke data into a production-looking database (${dbLabel}).`,
+      `Refusing to seed E2E smoke data without an explicit database name (${dbLabel}).`,
+    );
+  }
+  const environment = operatorEnvironmentForDatabaseName(databaseName);
+  if (environment && environment !== 'test') {
+    throw new Error(
+      `Refusing to seed E2E smoke data into the ${environment} operator database (${dbLabel}). Seed a local database such as ylabs_local with yarn local:seed.`,
+    );
+  }
+  const hostname = mongoHostname(mongoUrl);
+  if (!(hostname && LOCAL_MONGO_HOSTS.has(hostname)) && env.ALLOW_REMOTE_E2E_SEED !== 'true') {
+    throw new Error(
+      `Refusing to seed E2E smoke data into a non-local MongoDB host (${dbLabel}). Set ALLOW_REMOTE_E2E_SEED=true only for a disposable remote database.`,
     );
   }
 }
@@ -265,7 +293,7 @@ export async function seedE2eSmokeData(): Promise<{
 }
 
 async function main(): Promise<void> {
-  assertSeedTargetIsNotProduction(process.env.MONGODBURL);
+  assertSmokeSeedTarget(process.env.MONGODBURL);
   await initializeConnections();
   const result = await seedE2eSmokeData();
   console.log(

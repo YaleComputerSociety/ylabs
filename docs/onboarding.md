@@ -73,8 +73,9 @@ Then log in at `http://localhost:4000/api/dev-login` and confirm `/research` ret
 Install the `gh` identifier guard with `scripts/install-gh-identifier-guard.sh` and confirm `command -v gh` prints `~/.local/bin/gh`.
 The installer exits non-zero when another `gh` is earlier on `PATH`, because then nothing scans what you post.
 
-You need Development MongoDB credentials from a maintainer.
-There is no local-only data path, so an empty app is not a setup you can debug your way out of.
+Without Development MongoDB credentials, start on the local data path instead: `yarn local:setup`, then `yarn dev:server:local` and `yarn dev:client`.
+It runs against a local MongoDB seeded with synthetic rows, so `/research` shows synthetic cards rather than real ones, which is enough for a first serve-time change.
+Ask a maintainer for Development credentials when you need the real corpus.
 
 ## Day 2: read the product before the code
 

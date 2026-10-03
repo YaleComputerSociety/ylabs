@@ -98,4 +98,4 @@ yarn build
 Known caveat: client `tsc --noEmit` is not a clean CI gate unless the current task explicitly addresses that cleanup.
 
 The `E2E Smoke` CI job exercises the running browse -> search -> detail -> save journey against an ephemeral non-prod stack.
-To reproduce locally, point `MONGODBURL`/`MEILISEARCH_HOST` at a local Development stack, run `yarn e2e:seed-smoke` and `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`, start the API, then run `yarn e2e:smoke`.
+To reproduce locally, run `yarn local:setup` (local MongoDB and Meilisearch, seeded with the smoke rows), start the API with `yarn dev:server:local` and the client, then run `yarn e2e:smoke`.
