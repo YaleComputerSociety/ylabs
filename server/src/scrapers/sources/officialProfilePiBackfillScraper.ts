@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -2406,13 +2407,15 @@ export async function fetchHtml(
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    maxRedirects: 5,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      maxRedirects: 5,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;

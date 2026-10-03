@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -482,13 +483,15 @@ async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 10_000,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 

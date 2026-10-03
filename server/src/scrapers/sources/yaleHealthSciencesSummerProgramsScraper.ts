@@ -19,6 +19,7 @@
  * fetched or cited as a source.
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -433,16 +434,18 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 30000,
-    headers: {
-      'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
-      Accept: 'text/html,application/xhtml+xml',
-    },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE, cacheKey, html);
   return html;

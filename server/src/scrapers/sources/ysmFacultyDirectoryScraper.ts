@@ -35,6 +35,7 @@
  * already does for YSE.
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
@@ -536,13 +537,15 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, cacheKey, html);
   return html;
@@ -709,7 +712,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
         `${supportStaffSkipped} research-support staff skipped, ` +
-        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on one retry`,
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
     };
   }
 }

@@ -881,7 +881,7 @@ describe('YsmFacultyDirectoryScraper.run refused-profile retry (#3599)', () => {
     expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
     expect(logs.at(-1)).toContain('of 3 profiles scanned');
     expect(logs.at(-1)).toContain('1 refused on the first pass, 1 recovered on the retry, 0 lost');
-    expect(result.notes).toContain('1 profiles refused then 1 recovered on one retry');
+    expect(result.notes).toContain('1 profiles refused then 1 recovered on a second pass');
   });
 
   it('emits what a clean walk emits once the refused profile recovers', async () => {
