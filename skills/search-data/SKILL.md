@@ -568,7 +568,7 @@ A script that calls the service directly must call `warmResearchSearchSpellingVo
 
 A word is corrected only when all of these hold:
 
-- It is not a protected query word: a stop word, an alias or synonym key, or a `disableOnWords` entry, because the alias layer already owns `orgo` and a correction would take it away.
+- It is not a protected query word: a stop word, a question-frame or institution-context word, an alias or synonym key, or a `disableOnWords` entry (`SPELLING_PROTECTED_QUERY_TERMS` in `researchGroupService.ts`), because the alias layer already owns `orgo` and a correction would take it away.
 - It does not appear in a name field (`name`, `displayName`, `leadProfessorNames`, `professorNames`), however rarely, because a rare surname is exactly the shape of a typo and rewriting it hides the person searched for.
 - It appears in no served document, and the replacement appears in at least three; a word the corpus carries even once is never rewritten, because a rare correctly spelled topic word would lose the only rows that match it.
 - The replacement is within one edit for a word of four to eight letters and two edits for nine or more, counting a swapped pair of letters as one edit; the nearer candidate wins, then the more frequent, then the alphabetically first.

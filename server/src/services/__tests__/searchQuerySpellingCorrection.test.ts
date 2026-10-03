@@ -9,7 +9,8 @@ import {
 const repeat = (
   count: number,
   document: Omit<SearchVocabularyDocument, 'served'>,
-): SearchVocabularyDocument[] => Array.from({ length: count }, () => ({ ...document, served: true }));
+): SearchVocabularyDocument[] =>
+  Array.from({ length: count }, () => ({ ...document, served: true }));
 
 const vocabulary = buildSearchSpellingVocabulary([
   ...repeat(40, { nameText: ['Example Lab'], bodyText: ['neuroscience of sleep and memory'] }),
