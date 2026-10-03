@@ -1038,7 +1038,7 @@ A faculty research profile is never `CONTRADICTED`, because its lead is its subj
 A two-letter surname confirms when written next to its given name, and an initial-only given name confirms as the initial with its period next to the surname, because refusing both left a correct PI unconfirmable.
 Nothing reads `leadVerification`, by decision: `docs/decisions.md` (2026-10-01) records the precision and the condition for a first reader.
 
-The lane reads the served `websiteUrl` and falls back to the legacy `website` only when no `websiteUrl` is stored, judges only lead edges that are not `HISTORICAL`, and records the URL a redirect landed on as `checkedUrl`, with the requested URL kept as `requestedUrl` (#4027).
+The lane reads the served `websiteUrl` and falls back to the legacy `website` only when no `websiteUrl` is stored, judges only lead edges that are not `HISTORICAL`, and records the URL a redirect landed on as `checkedUrl`, keeping the requested URL as `requestedUrl` only when a redirect actually moved it (#4027).
 
 Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes against Yale hosts with no 429s.
 
