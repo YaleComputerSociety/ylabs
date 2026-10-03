@@ -84,6 +84,13 @@ Add a new served topic guard as a stage of `decideServedResearchAreas`, never at
 `__tests__/journeyEvalCases.test.ts` runs the case itself over synthetic rows, so it fails if the case stops using the decision: a drop of only place names read from a MeSH-indexed profile and a drop of a prose-length chip are attributed, while a drop no guard explains, or a place-name drop from any other source, still fails the invariant.
 Measured on Development on 2026-09-30 at `--window=100`, 2 of 100 cards served fewer topics than they stored and both were attributed, so the invariant passes (#4075).
 
+## The creative practice label is attributed, not counted
+
+The `creative-practice-label-attribution` case reads the stored row behind every card in the window and calls `decideServedResearchEntityCreativePractice` in `server/src/services/researchEntityDto.ts` on the same served source the browse route builds, so the served `creativePractice` flag is held to the one decision that owns it (#4519).
+A card that serves the label where the decision does not, or drops it where the decision makes it, fails the invariant; a disagreement while the corpus moved is inconclusive, on the same one-directional reasoning as the topic case.
+The share of cards labelled is a rate and never gates.
+Change the label inside `decideCreativePractice` in `server/src/utils/creativePracticeDescription.ts`, never at one surface, or this case reports the surfaces as disagreeing.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

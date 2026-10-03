@@ -97,6 +97,7 @@ export interface LabRelatedResearchEntitySummary {
   entityType?: string;
   departments: string[];
   blurb?: string;
+  creativePractice?: boolean;
 }
 
 export interface LabRelationshipCollectionMeta {

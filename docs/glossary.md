@@ -147,6 +147,12 @@ The detail DTO is an allowlist builder, so a new field is absent until it is add
 The instrument for reading served state and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
 Prefer it to a throwaway script.
 
+**Creative practice.**
+A served faculty row whose own body describes exhibitions, performances, compositions, productions or creative writing rather than research, in an arts department or school.
+It is served and labelled "Creative practice" on the browse card and the detail page, never withheld, and never described as a lab, a research group or an opening.
+The served `creativePractice` flag is derived at serve time and written to no field.
+Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 2026-10-03 holds the decision.
+
 **Department research guidance.**
 A department's own page on how an undergraduate gets into research there, served on `/programs` with no application affordance and the action "Read the department's guidance".
 Stored as `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, earned only by the page's own title (`sourcePageTitle`) on a record that states no application cycle, and admitted by the programs gate with the reason `department_research_guidance`.

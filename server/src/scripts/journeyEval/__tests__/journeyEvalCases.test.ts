@@ -155,3 +155,98 @@ describe('topic-drop-attribution case', () => {
     });
   });
 });
+
+describe('creative-practice-label-attribution case (#4519)', () => {
+  const practiceRow = {
+    slug: 'synthetic-practice',
+    name: 'Synthetic Performer Faculty Research',
+    departments: ['Music'],
+    school: 'School of Music',
+    fullDescription:
+      'A violinist who has performed with orchestras across Europe, she appears in recital each season and has premiered concertos by living composers.',
+    lastObservedAt: observedAt,
+  };
+  const researchRow = {
+    slug: 'synthetic-theory',
+    name: 'Synthetic Theorist Faculty Research',
+    departments: ['Music'],
+    school: 'School of Music',
+    fullDescription:
+      'Her research examines how listeners perceive meter in orchestral music, combining corpus analysis with rhythm cognition experiments.',
+    lastObservedAt: observedAt,
+  };
+
+  const labelContext = (
+    servedFlags: Record<string, boolean>,
+    corpus: { before: CorpusFingerprint; after: CorpusFingerprint } = {
+      before: steadyCorpus,
+      after: steadyCorpus,
+    },
+  ): JourneyEvalContext => {
+    const stored = new Map<string, Record<string, unknown>>([
+      [practiceRow.slug, practiceRow],
+      [researchRow.slug, researchRow],
+    ]);
+    let fingerprintReads = 0;
+    return {
+      browse: async () => ({
+        researchEntities: [practiceRow, researchRow].map((row) => ({
+          slug: row.slug,
+          lastObservedAt: observedAt,
+          ...(servedFlags[row.slug] ? { creativePractice: true } : {}),
+        })),
+      }),
+      readStoredRows: async (keys) =>
+        new Map(keys.flatMap((key) => (stored.has(key) ? [[key, stored.get(key)!]] : []))),
+      readCorpusFingerprint: async () => (fingerprintReads++ === 0 ? corpus.before : corpus.after),
+      readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
+      topicQueryJudgements: null,
+      window: 2,
+      facetValuesChecked: 0,
+      pagesChecked: 1,
+    };
+  };
+
+  const labelCase = journeyCases.find(
+    (candidate) => candidate.id === 'creative-practice-label-attribution',
+  )!;
+
+  it('passes when every card serves the label exactly where the decision does', async () => {
+    const outcome = await labelCase.run(labelContext({ [practiceRow.slug]: true }));
+
+    expect(outcome.invariants[0]).toMatchObject({
+      id: 'creative-practice-label-is-the-decision',
+      status: 'pass',
+      detail: { comparable: 2, labelled: 1, disagreeing: 0 },
+    });
+    expect(outcome.rates[0]).toMatchObject({ numerator: 1, denominator: 2 });
+  });
+
+  it('fails when a card serves a label the decision does not make', async () => {
+    const outcome = await labelCase.run(
+      labelContext({ [practiceRow.slug]: true, [researchRow.slug]: true }),
+    );
+
+    expect(outcome.invariants[0]).toMatchObject({ status: 'fail', detail: { disagreeing: 1 } });
+  });
+
+  it('fails when a card drops a label the decision makes', async () => {
+    const outcome = await labelCase.run(labelContext({}));
+
+    expect(outcome.invariants[0]).toMatchObject({ status: 'fail', detail: { disagreeing: 1 } });
+  });
+
+  it('is inconclusive rather than failing when the corpus moved during the read', async () => {
+    const outcome = await labelCase.run(
+      labelContext(
+        {},
+        {
+          before: steadyCorpus,
+          after: { rowCount: 3, latestUpdatedAt: '2026-09-30T12:05:00.000Z' },
+        },
+      ),
+    );
+
+    expect(outcome.invariants[0].status).toBe('inconclusive');
+  });
+});

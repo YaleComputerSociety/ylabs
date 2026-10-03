@@ -5,6 +5,35 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-03: Arts-Practice Faculty Rows Are Served And Labelled Creative Practice (#4519)
+
+Owner decision: a faculty row whose own evidence describes creative practice rather than research is served, not withheld, and it is labelled "Creative practice" instead of research.
+Students interested in art need a way in to the people who make it, and a directory that drops every performer, composer, playwright and studio artist leaves them none.
+The defect #4388 measured was never the field itself: it was a performance or exhibition biography presented under "Research summary", a "Faculty Research" pill and a "Principal Investigator" heading, which tells a student there is a research group to join when the page describes a career in practice.
+So the fix is an honest label, not a withhold.
+
+It is a serve-time derivation in `server/src/utils/creativePracticeDescription.ts`, computed once in the public DTO from the row's served body, so the detail page, browse and search read the same answer, and no field is written or locked.
+
+**The predicate.**
+A row is creative practice when three things hold.
+Its department (Music, Art, Architecture, Film and Media Studies, Theater, Dance, and Performance Studies, English Language and Literature) or its school (the music, art, drama and architecture schools, the Institute of Sacred Music) places it in an arts context.
+Its served body, or its card when no body serves, states at least two kinds of practice evidence among exhibitions, performances, compositions, productions, creative writing and a practitioner noun ("is a violinist", "as a playwright").
+And that text states no research: a research, scholarship, musicology, theory, cognition, history-of, analysis, dissertation, journal or university-press statement keeps the row research, and so does a synthesized body that opens in the research voice ("Studies ...", "Examines ...").
+An artwork in subject position ("work that examines memory") is an artist statement rather than a research claim, and the revoicer's "This researcher" placeholder is the pipeline's own wording, so neither counts.
+Arts research that states a research question, such as music cognition, digital humanities, musicology or film history, therefore stays research.
+
+**What a labelled row serves.**
+The kind pill and the browse card read "Creative practice", the summary is headed "Practice summary" and "What this creative practice covers", the website action reads "Visit website", and the lead is "Faculty" rather than "Principal Investigator".
+Nothing on the row claims a lab, a research group or an opening the page does not state.
+A card in the research voice ("Studies chamber music.", or a sentence claiming the person studies something) contradicts the label beside it and is usually a chip summary the practice body never states, so `decideCreativePracticeCard` in `server/src/services/creativePracticeCard.ts` replaces it with the body's own first practice sentence, and withholds it when the body offers none, on the #2911 reasoning that a blank card line costs less than a false one.
+
+**Measured on Development, 2026-10-03, through `getResearchGroupDetail` and the browse route over all 3,470 served rows.**
+33 rows are labelled, and browse and detail agree on all 3,470.
+Every labelled row was read: none states research, 30 are practice biographies of the row's own person (performers, composers, conductors, directors, stage managers, playwrights, poets, filmmakers and studio artists), and 3 serve another organization's page text (an architecture exhibition's event page, and one call for artists on two rows), which is a body defect the next change withholds rather than a mislabel.
+Of the 32 rows #4388 would newly serve, 8 are labelled and all 8 are practice biographies.
+On the 33 served rows, 18 cards are unchanged, 14 research-voice cards are replaced by a practice sentence from the row's own body (among them three chip summaries naming topics no practice body states, and one card describing a different person's medical research), and 1 is withheld.
+The predicate errs toward research: a performer who also wrote a university-press book, a one-sentence body with a single kind of evidence, and an artist statement that calls itself research all stay research, because a practice label on a research row is the costlier error.
+
 ## 2026-10-02: A Merged Survivor's Evidence Reads Go Through One Identity, And A Lane's Newest Read Wins Across Its Keys (#4418)
 
 The materializer evidence reads that reach the keys and ids of rows merged into the one being resolved now share one identity, `scrapers/mergedRowEvidenceIdentity.ts`: the merged survivor read and its award union, the topic evidence read, and the never-backed provenance check and relink.

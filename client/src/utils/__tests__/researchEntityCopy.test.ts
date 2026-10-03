@@ -17,6 +17,8 @@ import {
   sanitizeResearchEntityCopy,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
+  summarySectionLabel,
+  leadRoleLabelForEntity,
 } from '../researchEntityCopy';
 import { researchEntityTypes } from '../../types/researchGroup';
 
@@ -31,6 +33,29 @@ describe('researchEntityCopy', () => {
     expect(isFacultyResearchEntity(entity)).toBe(true);
     expect(entityKindLabel(entity)).toBe('Faculty Research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
+  });
+
+  it('labels creative practice without claiming research or a lab (#4519)', () => {
+    for (const entityType of ['FACULTY_RESEARCH_AREA', 'LAB']) {
+      const entity = {
+        name: 'Example Practice Lab',
+        kind: entityType === 'LAB' ? 'lab' : 'individual',
+        entityType,
+        creativePractice: true,
+      };
+
+      expect(entityKindLabel(entity)).toBe('Creative practice');
+      expect(researchWebsiteLabel(entity)).toBe('website');
+      expect(researchWebsiteCtaLabel(entity)).toBe('Visit website');
+      expect(researchStructureLabel(entity)).toBe('creative practice profile');
+      expect(decisionHeadingLabel(entity)).toBe('What this creative practice covers');
+      expect(approachHeadingLabel(entity)).toBe('Ways to approach this creative practice');
+      expect(summarySectionLabel(entity)).toBe('Practice summary');
+      expect(leadRoleLabelForEntity(entity)).toBe('Faculty');
+    }
+    const research = { name: 'Example Lab', kind: 'lab', entityType: 'LAB' };
+    expect(summarySectionLabel(research)).toBe('Research summary');
+    expect(leadRoleLabelForEntity(research)).toBeUndefined();
   });
 
   it('uses faculty research labels for FACULTY_RESEARCH entities despite stale lab kind', () => {

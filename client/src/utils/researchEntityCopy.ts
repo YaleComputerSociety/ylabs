@@ -29,7 +29,13 @@ export type ResearchEntityCopyInput = {
   name?: string | null;
   kind?: string | null;
   entityType?: string | null;
+  creativePractice?: boolean | null;
 };
+
+export const CREATIVE_PRACTICE_KIND_LABEL = 'Creative practice';
+
+export const isCreativePracticeEntity = (entity?: ResearchEntityCopyInput | null): boolean =>
+  entity?.creativePractice === true;
 
 const effectiveEntityKind = (entity?: ResearchEntityCopyInput | null): string =>
   ENTITY_TYPE_TO_KIND[entity?.entityType || ''] || entity?.kind || '';
@@ -90,6 +96,7 @@ export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): st
 };
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return CREATIVE_PRACTICE_KIND_LABEL;
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
@@ -125,28 +132,49 @@ export const isKnownResearchEntityType = (value?: string | null): boolean =>
 export const researchEntityTypeFilterLabel = (entityType: string): string =>
   RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
 
-export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;
+export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return 'website';
+  return isFacultyResearchEntity(entity)
+    ? 'research website'
+    : `${researchHomeLabel(entity)} website`;
+};
 
-export const researchWebsiteCtaLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity)
+export const researchWebsiteCtaLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return 'Visit website';
+  return isFacultyResearchEntity(entity)
     ? 'Visit research website'
     : `Visit ${researchWebsiteLabel(entity)}`;
+};
 
-export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'faculty research profile' : researchHomeLabel(entity);
+export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return 'creative practice profile';
+  return isFacultyResearchEntity(entity) ? 'faculty research profile' : researchHomeLabel(entity);
+};
 
-export const decisionHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity)
-    ? 'What this faculty research covers'
-    : researchStructureLabel(entity) === 'lab'
-      ? 'What this lab studies'
-      : `What this ${researchStructureLabel(entity)} focuses on`;
+export const profileKickerLabel = (entity?: ResearchEntityCopyInput | null): string =>
+  isCreativePracticeEntity(entity) ? 'Creative practice profile' : 'Research profile';
 
-export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity)
+export const summarySectionLabel = (entity?: ResearchEntityCopyInput | null): string =>
+  isCreativePracticeEntity(entity) ? 'Practice summary' : 'Research summary';
+
+export const decisionHeadingLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return 'What this creative practice covers';
+  if (isFacultyResearchEntity(entity)) return 'What this faculty research covers';
+  return researchStructureLabel(entity) === 'lab'
+    ? 'What this lab studies'
+    : `What this ${researchStructureLabel(entity)} focuses on`;
+};
+
+export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): string => {
+  if (isCreativePracticeEntity(entity)) return 'Ways to approach this creative practice';
+  return isFacultyResearchEntity(entity)
     ? 'Ways to approach this research profile'
     : `Ways to approach this ${researchStructureLabel(entity)}`;
+};
+
+export const leadRoleLabelForEntity = (
+  entity?: ResearchEntityCopyInput | null,
+): string | undefined => (isCreativePracticeEntity(entity) ? 'Faculty' : undefined);
 
 const facultyResearchLabelBase = (entity: ResearchEntityCopyInput): string =>
   String(entity.displayName || entity.name || '')

@@ -3188,3 +3188,63 @@ describe('LabDetail for research led by emeritus faculty (#4431)', () => {
     expect(screen.queryByText('Emeritus')).toBeNull();
   });
 });
+
+describe('LabDetail for a creative practice profile (#4519)', () => {
+  const PRACTICE_WEBSITE_URL = 'https://practice.example.test/';
+  const practiceLead = {
+    role: 'pi' as const,
+    user: {
+      netid: 'fixture.practice',
+      fname: 'Sloane',
+      lname: 'Fixturewood',
+      displayName: 'Sloane Fixturewood',
+      title: 'Professor in the Practice of Violin',
+      primary_department: 'Music',
+      profileUrls: { official: 'https://music.example.test/people/fixture-practice' },
+    },
+  };
+
+  it('labels the practice and drops every research and lab claim from its summary', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        websiteUrl: PRACTICE_WEBSITE_URL,
+        sourceUrls: [PRACTICE_WEBSITE_URL],
+        creativePractice: true,
+      },
+      members: [practiceLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Creative practice').length).toBeGreaterThan(0);
+    expect(screen.getByText('Practice summary')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'What this creative practice covers' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Visit website' }).getAttribute('href')).toBe(
+      PRACTICE_WEBSITE_URL,
+    );
+    expect(screen.queryByText('Research summary')).toBeNull();
+    expect(screen.queryByText('What this lab studies')).toBeNull();
+    expect(screen.queryByText(/Principal Investigator/)).toBeNull();
+    expect(screen.getAllByText('Faculty').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the research wording on a row the server did not label', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, kind: 'lab', entityType: 'LAB' },
+      members: [practiceLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Creative practice')).toBeNull();
+    expect(screen.getByText('Research summary')).toBeTruthy();
+  });
+});

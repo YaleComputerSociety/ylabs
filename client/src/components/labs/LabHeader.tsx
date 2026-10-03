@@ -16,6 +16,7 @@ import {
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
+  profileKickerLabel,
   researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
@@ -76,7 +77,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="yr-kicker mb-2">Research profile</p>
+          <p className="yr-kicker mb-2">{profileKickerLabel(group)}</p>
           <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl sm:leading-10">
             <SlashBreakableText text={researchEntityTitle(group)} />
           </h1>

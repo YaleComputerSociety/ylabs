@@ -10,6 +10,7 @@ import ConfigContext, {
   defaultConfigContext,
   type ResearchAreaConfig,
 } from '../../../contexts/ConfigContext';
+import { expectNoAxeViolations } from '../../../testUtils/axe';
 
 const CANONICAL_AREAS: ResearchAreaConfig[] = [
   { name: 'Systems Neuroscience', field: 'Life Sciences', colorKey: 'blue', isDefault: false },
@@ -110,6 +111,42 @@ describe('ResearchHomeCard', () => {
     );
 
     expect(screen.queryByText('Led by emeritus faculty')).toBeNull();
+  });
+
+  it('labels a creative practice card and never calls its lead a principal investigator (#4519)', async () => {
+    const home = researchHome();
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                creativePractice: true,
+                contactName: 'Fixture Performer',
+                contactRole: 'Principal Investigator',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Creative practice')).toBeTruthy();
+    expect(container.textContent).toContain('Faculty: Fixture Performer');
+    expect(container.textContent).not.toContain('Principal Investigator');
+    await expectNoAxeViolations(container);
+  });
+
+  it('carries no creative practice label for an ordinary card', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Creative practice')).toBeNull();
   });
 
   it('frames profile results as research instead of clusters', () => {

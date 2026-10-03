@@ -59,11 +59,13 @@ import { formatTitleCaseLabel, formatTopicChipLabel } from '../utils/displayText
 import {
   decisionHeadingLabel,
   entityKindLabel,
-  isFacultyResearchEntity,
+  isCreativePracticeEntity,
+  leadRoleLabelForEntity,
   relationshipTypeLabel,
   researchEntityTitle,
   researchWebsiteCtaLabel,
   sanitizeResearchEntityCopy,
+  summarySectionLabel,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepartmentLabel';
@@ -460,7 +462,6 @@ const DecisionSummary = ({
   const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
   const methods = detailMethods(group);
-  const usesFacultyResearchWording = isFacultyResearchEntity(group);
   const description = sanitizeResearchEntityCopy(detailDescription(group), group);
   useEffect(() => {
     if (description) return;
@@ -546,14 +547,10 @@ const DecisionSummary = ({
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
-          <SectionHeading>Research summary</SectionHeading>
+          <SectionHeading>{summarySectionLabel(group)}</SectionHeading>
           {description ? (
             <>
-              <h2 className="text-lg font-semibold text-ink">
-                {usesFacultyResearchWording
-                  ? 'What this faculty research covers'
-                  : decisionHeadingLabel(group)}
-              </h2>
+              <h2 className="text-lg font-semibold text-ink">{decisionHeadingLabel(group)}</h2>
               <LongText
                 text={description}
                 className="mt-2 max-w-[68ch] text-base leading-relaxed text-ink"
@@ -623,13 +620,16 @@ const DecisionSummary = ({
           )}
           {principalInvestigator && (
             <div className="py-4 first:pt-0 last:pb-0">
-              <SectionHeading>{leadSectionHeading([principalInvestigator])}</SectionHeading>
+              <SectionHeading>
+                {leadRoleLabelForEntity(group) ?? leadSectionHeading([principalInvestigator])}
+              </SectionHeading>
               <div>
                 <LabMembersList
                   members={[principalInvestigator]}
                   singleColumn
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={() => leadCardProfileUrl}
+                  leadRoleLabel={leadRoleLabelForEntity(group)}
                 />
               </div>
             </div>
@@ -742,9 +742,11 @@ const DecisionSummary = ({
 const SourcesSection = ({
   sources,
   primaryProfileUrl,
+  describesCreativePractice = false,
 }: {
   sources: ResearchDetailSource[];
   primaryProfileUrl?: string;
+  describesCreativePractice?: boolean;
 }) => {
   if (sources.length === 0) return null;
   /**
@@ -763,7 +765,9 @@ const SourcesSection = ({
         <p className="text-sm text-muted">
           {hasActionContext
             ? 'These official pages support the profile details and action evidence shown above.'
-            : 'These official pages support the research profile details shown above.'}
+            : describesCreativePractice
+              ? 'These official pages support the profile details shown above.'
+              : 'These official pages support the research profile details shown above.'}
         </p>
       </div>
       <div className="divide-y divide-line">
@@ -1171,7 +1175,9 @@ const LabDetail = () => {
 
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
-              <SectionHeading>{leadSectionHeading(principalInvestigators)}</SectionHeading>
+              <SectionHeading>
+                {leadRoleLabelForEntity(group) ?? leadSectionHeading(principalInvestigators)}
+              </SectionHeading>
               {leadIdentityUnderReview ? (
                 <div
                   className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -1188,6 +1194,7 @@ const LabDetail = () => {
                   members={principalInvestigators}
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
+                  leadRoleLabel={leadRoleLabelForEntity(group)}
                 />
               )}
             </section>
@@ -1219,6 +1226,7 @@ const LabDetail = () => {
               <SectionHeading>Sources</SectionHeading>
               <SourcesSection
                 sources={sources}
+                describesCreativePractice={isCreativePracticeEntity(group)}
                 primaryProfileUrl={
                   decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
                 }

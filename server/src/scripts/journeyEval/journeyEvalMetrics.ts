@@ -225,6 +225,62 @@ export function checkTopicDropAttribution(
   return buildInvariant(id, title, tally.unexplained === 0, { ...tally });
 }
 
+export interface CreativePracticeLabelObservation {
+  served: boolean;
+  decided: boolean;
+  servedVersionMatchesStored: boolean;
+}
+
+export interface CreativePracticeLabelTally {
+  comparable: number;
+  labelled: number;
+  disagreeing: number;
+  skippedStaleIndex: number;
+}
+
+export function tallyCreativePracticeLabels(
+  observations: readonly CreativePracticeLabelObservation[],
+): CreativePracticeLabelTally {
+  const comparable = observations.filter((observation) => observation.servedVersionMatchesStored);
+  return {
+    comparable: comparable.length,
+    labelled: comparable.filter((observation) => observation.served).length,
+    disagreeing: comparable.filter((observation) => observation.served !== observation.decided)
+      .length,
+    skippedStaleIndex: observations.length - comparable.length,
+  };
+}
+
+export function checkCreativePracticeLabelAttribution(
+  tally: CreativePracticeLabelTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'creative-practice-label-is-the-decision';
+  const title =
+    'Every browse card serves the creative practice label exactly when the served-copy decision does';
+
+  if (tally.comparable === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled row could be compared, so zero disagreements would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.disagreeing > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the sample was compared, so a card may disagree only because it and the stored row describe different versions',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.disagreeing === 0, { ...tally });
+}
+
 export type SurvivorWebsiteAttribution =
   | 'locked'
   | 'survivor-evidence'

@@ -150,6 +150,7 @@ export interface ResearchGroup {
   leadProfessorPublicKey?: string;
   emeritusLed?: boolean;
   wayInWithheld?: boolean;
+  creativePractice?: boolean;
   studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 
