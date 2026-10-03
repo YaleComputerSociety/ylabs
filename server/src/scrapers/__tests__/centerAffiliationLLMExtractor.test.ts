@@ -9,6 +9,7 @@ import {
   normalizeCenterAffiliationObjectId,
   type CandidateCenter,
 } from '../sources/centerAffiliationLLMExtractor';
+import { centerRosterReadAdmissibility } from '../centerRosterRetirement';
 import type { ScraperContext, ObservationInput } from '../types';
 
 function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
@@ -111,6 +112,7 @@ describe('CenterAffiliationLLMExtractor.run', () => {
       fetchPage,
       callLLM,
       centerFinder,
+      liveClaimFinder: async () => [],
       apiKey: 'test-key',
     });
     const { ctx, emitted } = makeContext();
@@ -119,8 +121,81 @@ describe('CenterAffiliationLLMExtractor.run', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1);
     expect(callLLM).toHaveBeenCalledTimes(1);
     expect(result.entitiesObserved).toBe(1);
-    expect(emitted.every((o) => o.entityType === 'researchEntityRelationship')).toBe(true);
-    expect(emitted.find((o) => o.field === 'sourceEntityKey')!.value).toBe(center.slug);
+    const relationships = emitted.filter((o) => o.entityType === 'researchEntityRelationship');
+    expect(relationships.find((o) => o.field === 'sourceEntityKey')!.value).toBe(center.slug);
+    const snapshots = emitted.filter((o) => o.entityType === 'centerRosterHealth');
+    expect(snapshots).toHaveLength(1);
+    expect(centerRosterReadAdmissibility(snapshots[0].value as any)).toBe('read-listed-members');
+  });
+
+  const runOnce = async (
+    html: string,
+    llm: () => Promise<{ affiliatedPeople: Array<{ name: string }> }>,
+    liveClaims: Array<{ relationshipKey: string; targetEntityKey: string }> = [],
+  ) => {
+    const scraper = new CenterAffiliationLLMExtractor({
+      fetchPage: async () => ({ url: center.websiteUrl as string, html }),
+      callLLM: llm,
+      centerFinder: async () => [center],
+      liveClaimFinder: async () => liveClaims,
+      apiKey: 'test-key',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+    const snapshot = emitted.find((o) => o.entityType === 'centerRosterHealth');
+    return { result, emitted, snapshot };
+  };
+
+  it('records a truncated page as a read that cannot retire anything', async () => {
+    const { snapshot } = await runOnce(
+      `<html><body>Jane Doe directs the center. ${'filler text '.repeat(4000)}</body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }] }),
+    );
+    expect(centerRosterReadAdmissibility(snapshot!.value as any)).toBe('incomplete');
+  });
+
+  it('records no read at all when the model call fails', async () => {
+    const { emitted, result } = await runOnce(
+      `<html><body>${'Jane Doe directs the center. '.repeat(20)}</body></html>`,
+      async () => {
+        throw new Error('model unavailable');
+      },
+    );
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('1 model failure(s)');
+  });
+
+  it('drops a returned name the page does not state and reports the drop', async () => {
+    const { emitted, result } = await runOnce(
+      `<html><body>${'Jane Doe directs the center. '.repeat(20)}</body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }, { name: 'Robin Absent' }] }),
+    );
+    const targets = emitted
+      .filter((o) => o.field === 'targetEntityKey')
+      .map((o) => o.value as string);
+    expect(targets).toEqual(['faculty-research-area-jane-doe']);
+    expect(result.notes).toContain('1 name(s) dropped as absent from the page');
+  });
+
+  it('lists a live claim the page still names although the model omitted it', async () => {
+    const stillNamed = {
+      relationshipKey: `${center.slug}:faculty-research-area-bob-smith:MEMBER_RESEARCH_AREA`,
+      targetEntityKey: 'faculty-research-area-bob-smith',
+    };
+    const goneFromPage = {
+      relationshipKey: `${center.slug}:faculty-research-area-pat-gone:MEMBER_RESEARCH_AREA`,
+      targetEntityKey: 'faculty-research-area-pat-gone',
+    };
+    const { snapshot } = await runOnce(
+      `<html><body>${'Jane Doe directs the center with Smith, Bob. '.repeat(20)}</body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }] }),
+      [stillNamed, goneFromPage],
+    );
+    const listed = ((snapshot!.value as any).members as Array<{ relationshipKey: string }>).map(
+      (member) => member.relationshipKey,
+    );
+    expect(listed).toContain(stillNamed.relationshipKey);
+    expect(listed).not.toContain(goneFromPage.relationshipKey);
   });
 
   it('skips cleanly when the LLM names no one', async () => {
@@ -134,12 +209,16 @@ describe('CenterAffiliationLLMExtractor.run', () => {
       fetchPage,
       callLLM,
       centerFinder,
+      liveClaimFinder: async () => [],
       apiKey: 'test-key',
     });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
     expect(result.entitiesObserved).toBe(0);
-    expect(emitted).toEqual([]);
+    expect(emitted.filter((o) => o.entityType !== 'centerRosterHealth')).toEqual([]);
+    expect(emitted.map((o) => centerRosterReadAdmissibility(o.value as any))).toEqual([
+      'read-listed-nobody',
+    ]);
   });
 
   it('processes candidates beyond the default cap in exhaustive mode', async () => {

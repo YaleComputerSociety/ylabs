@@ -1,6 +1,6 @@
 import { slugify } from '../scrapers/utils/scraperHelpers';
 
-const FACULTY_RESEARCH_AREA_SLUG_PREFIX = 'faculty-research-area-';
+export const FACULTY_RESEARCH_AREA_SLUG_PREFIX = 'faculty-research-area-';
 
 export function isAreaShellSlug(slug: string | undefined): boolean {
   return (slug || '').toLowerCase().startsWith(FACULTY_RESEARCH_AREA_SLUG_PREFIX);
