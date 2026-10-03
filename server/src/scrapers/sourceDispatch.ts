@@ -54,6 +54,9 @@ export const RETIRED_SOURCE_NAMES: string[] = [
   'official-profile-enrichment',
   'research-entity-cache-backfill',
   'yale-directory-csv',
+  // USAspending publishes no principal-investigator field, so the lane could never attach
+  // an award to a research row and wrote 0 observations in every run it made.
+  'federal-award-usaspending',
   ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 

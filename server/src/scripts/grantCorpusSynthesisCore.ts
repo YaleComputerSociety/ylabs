@@ -16,7 +16,6 @@ export const GRANT_SOURCE_NAMES = new Set([
   'nsf-award-search',
   'neh-funded-projects',
   'doe-osti',
-  'federal-award-usaspending',
 ]);
 
 export const DEFAULT_GRANT_CORPUS_SYNTHESIS_LIMIT = 25;

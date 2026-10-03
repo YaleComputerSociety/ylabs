@@ -35,7 +35,6 @@ const GRANT_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
   'nih-reporter',
   'nsf-award-search',
   'doe-osti',
-  'federal-award-search',
   'neh-grants',
 ]);
 

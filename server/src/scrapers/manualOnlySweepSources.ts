@@ -2,8 +2,6 @@
 const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
   'undergrad-fellowships-recipients':
     'backward-looking recipients source with no clean public feed; run from curated input',
-  'federal-award-usaspending':
-    'USAspending publishes no principal-investigator field, so the lane acquires nothing by construction and would trip the barren-streak guard on every sweep (#3542, #3547)',
   'undergrad-research-posting':
     'no official public page publishes postings in the shape the lane reads, so its page list is empty and it would trip the barren-streak guard on every sweep (#3550, #3553); return it to the sweep when a replacement page is configured (#3551)',
   'lab-microsite-undergrad-llm':

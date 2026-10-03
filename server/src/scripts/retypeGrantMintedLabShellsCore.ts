@@ -23,7 +23,6 @@ export const GRANT_LANE_SOURCE_NAMES = [
   'nih-reporter',
   'nsf-award-search',
   'doe-osti',
-  'federal-award-search',
   'neh-grants',
 ] as const;
 const LAB_NAME_SUFFIX_RE = /\s+(?:Lab|Laboratory)$/i;

@@ -422,15 +422,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Humanities/social-science funding analogue of the NIH/NSF lanes; enriches entity context but is not undergraduate-access evidence alone.',
   },
-  'federal-award-usaspending': {
-    priority: 6,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['FUNDING_ACTIVITY'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'DOE/NASA/DoD Yale awards from USAspending.gov, covering physical-science and mission-agency PIs the NSF/NIH fallbacks miss. USAspending exposes no structured PI field, so a PI is only harvested when the award description embeds one inline and resolves to a single existing Yale User; awards with no extractable/resolvable PI, or whose PI has no existing research row, are skipped (fail-closed, never minting a row, #3145), and the run notes count each reason. Emits additive grant activity (recentGrants, recentGrantCount, fundingAgencies, lastObservedAt) only; not undergraduate-access evidence alone.',
-  },
   'doe-osti': {
     priority: 6,
     tier: 'THIRD_PARTY_ENRICHMENT',
@@ -447,7 +438,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['TOPICS', 'METHODS', 'FUNDING_ACTIVITY'],
     defaultConfidence: 'LOW',
     notes:
-      'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/USASpending/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
+      'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
   },
   'fra-profile-research-synthesis': {
     priority: 7,

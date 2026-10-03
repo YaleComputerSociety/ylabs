@@ -67,7 +67,7 @@ The client cannot import the server constant, so the two vocabularies are pinned
 ## Two traps
 
 **`copi` is not `co-pi`.**
-The embedded grant record on `ResearchEntity` declares `role` with `enum: ['pi', 'copi']`, written by `server/src/scrapers/sources/federalAwardScraper.ts`.
+The embedded grant record on `ResearchEntity` declares `role` with `enum: ['pi', 'copi']`, which the NIH, NSF and NEH grant lanes type as `'pi' | 'copi'`.
 `canonicalRoleForLegacy('copi')` is undefined, so a value from that record silently matches nothing in either the canonical or the served dialect.
 Do not fold it into the role vocabularies without first deciding what a grant record's role means, which is a narrower claim than a membership role.
 

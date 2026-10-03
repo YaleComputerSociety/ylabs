@@ -335,7 +335,7 @@ const SOURCES: SourceSeed[] = [
     name: 'grant-corpus-synthesis-llm',
     displayName: 'Grant-corpus research synthesis LLM',
     description:
-      'Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/USASpending/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.',
+      'Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.',
     baseUrl: '',
     defaultWeight: 0.45,
     cadence: 'weekly',
@@ -407,15 +407,6 @@ const SOURCES: SourceSeed[] = [
     description:
       'Pulls Yale-awardee NEH funded projects from NEH Award Search and enriches an existing research row for a resolved Project Director; humanities/social-science analogue of the NIH/NSF grant lanes. Never mints a row.',
     baseUrl: 'https://awardsearch.neh.gov/',
-    defaultWeight: 0.9,
-    cadence: 'weekly',
-  },
-  {
-    name: 'federal-award-usaspending',
-    displayName: 'USAspending federal awards (DOE/NASA/DoD)',
-    description:
-      'Pulls DOE, NASA, and DoD Yale awards from USAspending.gov to enrich physical-science and mission-agency research homes the NSF/NIH fallbacks miss. USAspending carries no structured PI field, so a PI is harvested only when the award description embeds one inline and resolves to a single existing Yale User with an existing research row; otherwise the award is skipped (fail-closed) and the run notes say why. Emits additive grant activity only and never mints a row.',
-    baseUrl: 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },
