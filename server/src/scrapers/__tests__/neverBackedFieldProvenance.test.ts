@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { describe, expect, it, vi } from 'vitest';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../../models/fieldProvenanceBacking';
 import {
@@ -37,8 +38,23 @@ describe('planNeverBackedFieldProvenanceRetirement', () => {
     const { sourceObservedField, result } = plan({ school: lane });
     await result;
     expect(sourceObservedField).toHaveBeenCalledWith({
-      entityKey: 'synthetic-row',
-      entityId: 'synthetic-id',
+      entityKeys: ['synthetic-row'],
+      entityIds: ['synthetic-id'],
+      field: 'school',
+      sourceName: 'synthetic-retired-repair',
+    });
+  });
+
+  it('asks about every merged-in row too, because a lane that read a merged-in key backs the value', async () => {
+    const mergedInId = new mongoose.Types.ObjectId();
+    const { sourceObservedField, result } = plan(
+      { school: lane },
+      { mergedInRows: [{ _id: mergedInId, slug: 'synthetic-merged-row' }] },
+    );
+    await result;
+    expect(sourceObservedField).toHaveBeenCalledWith({
+      entityKeys: ['synthetic-row', 'synthetic-merged-row'],
+      entityIds: ['synthetic-id', mergedInId.toHexString()],
       field: 'school',
       sourceName: 'synthetic-retired-repair',
     });
@@ -132,8 +148,8 @@ describe('planUnrecordedProvenanceObservationRelink (#3788)', () => {
       'confidence',
     ]);
     expect(liveObservations).toHaveBeenCalledWith({
-      entityKey: 'synthetic-row',
-      entityId: 'synthetic-id',
+      entityKeys: ['synthetic-row'],
+      entityIds: ['synthetic-id'],
       field: 'departments',
       sourceName: 'synthetic-inheriting-lane',
     });

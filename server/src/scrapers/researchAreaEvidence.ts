@@ -1,10 +1,15 @@
-import mongoose from 'mongoose';
 import { Observation, type ObservedEntityType } from '../models/observation';
 import {
   listResearchEntityMergedInRowsBySurvivor,
   type MergedInResearchEntityRow,
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  mergedRowEvidenceIdentity,
+  mergedRowEvidenceQueryClauses,
+  observationBelongsToMergedRow,
+  type MergedRowEvidenceIdentity,
+} from './mergedRowEvidenceIdentity';
 import {
   admissibleResearchAreas,
   getResearchAreaCanonicalizer,
@@ -24,10 +29,7 @@ export interface ResearchAreaEvidenceRow {
 
 export type ResearchAreaAdmission = (areas: unknown) => boolean;
 
-export interface ResearchAreaEvidenceIdentity {
-  entityIds: ReadonlySet<string>;
-  entityKeys: ReadonlySet<string>;
-}
+export type ResearchAreaEvidenceIdentity = MergedRowEvidenceIdentity;
 
 export interface ResearchAreaEvidenceObservation {
   sourceUrl?: unknown;
@@ -39,19 +41,11 @@ export interface ResearchAreaEvidenceObservation {
   rollback?: { rolledBackAt?: unknown } | null;
 }
 
-const slugText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
 export function researchAreaEvidenceIdentity(
   row: ResearchAreaEvidenceRow,
   mergedIn: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>> = [],
 ): ResearchAreaEvidenceIdentity {
-  const members = [row, ...mergedIn];
-  return {
-    entityIds: new Set(
-      members.map((member) => serializedDocumentId(member._id) || '').filter(Boolean),
-    ),
-    entityKeys: new Set(members.map((member) => slugText(member.slug)).filter(Boolean)),
-  };
+  return mergedRowEvidenceIdentity(row, mergedIn);
 }
 
 export function researchAreasAreManuallyLocked(row: ResearchAreaEvidenceRow): boolean {
@@ -88,12 +82,7 @@ export function observationBelongsToIdentity(
   observation: ResearchAreaEvidenceObservation,
   identity: ResearchAreaEvidenceIdentity,
 ): boolean {
-  const entityId = serializedDocumentId(observation.entityId);
-  // An observation anchored to an id belongs to that id alone, so a shared or re-minted slug
-  // cannot borrow another row's evidence (#1131).
-  if (entityId) return identity.entityIds.has(entityId);
-  const entityKey = slugText(observation.entityKey);
-  return entityKey.length > 0 && identity.entityKeys.has(entityKey);
+  return observationBelongsToMergedRow(identity, observation);
 }
 
 export function hasLiveResearchAreaEvidence(
@@ -113,17 +102,14 @@ export function hasLiveResearchAreaEvidence(
 async function loadLiveResearchAreaObservations(
   identities: ReadonlyArray<ResearchAreaEvidenceIdentity>,
 ): Promise<ResearchAreaEvidenceObservation[]> {
-  const entityIds = [...new Set(identities.flatMap((identity) => [...identity.entityIds]))]
-    .filter((id) => mongoose.isValidObjectId(id))
-    .map((id) => new mongoose.Types.ObjectId(id));
-  const entityKeys = [...new Set(identities.flatMap((identity) => [...identity.entityKeys]))];
-  if (entityIds.length === 0 && entityKeys.length === 0) return [];
+  const clauses = mergedRowEvidenceQueryClauses(identities);
+  if (clauses.length === 0) return [];
   return (await Observation.find({
     entityType: RESEARCH_ENTITY_TYPE,
     field: RESEARCH_AREAS_FIELD,
     superseded: { $ne: true },
     'rollback.rolledBackAt': { $exists: false },
-    $or: [{ entityId: { $in: entityIds } }, { entityId: null, entityKey: { $in: entityKeys } }],
+    $or: clauses,
   })
     .select('entityId entityKey field value superseded rollback sourceUrl')
     .lean()) as ResearchAreaEvidenceObservation[];

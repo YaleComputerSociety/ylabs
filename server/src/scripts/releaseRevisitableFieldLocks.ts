@@ -36,6 +36,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { lockedNeverBackedProvenanceFields } from '../scrapers/neverBackedFieldProvenance';
+import { listResearchEntityMergedInRows } from '../services/researchEntityCanonicalTombstone';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldLockRelease } from '../utils/researchEntityFieldLocks';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -192,7 +193,11 @@ export async function runReleaseRevisitableFieldLocks(
     try {
       if (!slug) throw new Error('row has no slug to materialize by');
       const neverBackedFields = options.releaseNeverBacked
-        ? await lockedNeverBackedProvenanceFields({ stored: row })
+        ? await lockedNeverBackedProvenanceFields({
+            stored: row,
+            mergedInRows:
+              row.archived === true ? [] : await listResearchEntityMergedInRows(String(row._id)),
+          })
         : [];
       const rowDecisions = await resolveFieldLockReleases(
         row,

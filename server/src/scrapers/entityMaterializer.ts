@@ -91,6 +91,7 @@ import {
   resolveFieldRanked,
   ResolverObservation,
   ResolvedField,
+  sourceRanksOnlyAsFieldFallback,
 } from './confidenceResolver';
 import {
   MaterializationChunkPrefetch,
@@ -188,6 +189,13 @@ import {
   planUnrecordedProvenanceObservationRelink,
 } from './neverBackedFieldProvenance';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
+import {
+  evidenceMemberOf,
+  mergedInEntityKeysAndIds,
+  mergedInMemberOf,
+  mergedRowEvidenceIdentity,
+  observationBelongsToMergedRow,
+} from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -4975,12 +4983,10 @@ export async function mergedSurvivorEvidence(
   if (mergedInRows.length === 0) return unmerged;
 
   const survivorSlug = textValue(survivor.slug);
-  const loserSlugById = new Map(mergedInRows.map((row) => [String(row._id), textValue(row.slug)]));
-  const loserSlugs = new Set([...loserSlugById.values()].filter(Boolean));
-  const allowedEntityIds = new Set([String(survivorId), ...loserSlugById.keys()]);
+  const identity = mergedRowEvidenceIdentity({ _id: survivorId, slug: survivorSlug }, mergedInRows);
 
   const alreadyIncluded = new Set(loadedObservations.map((observation) => String(observation._id)));
-  const candidateKeys = [survivorSlug, ...loserSlugs].filter(Boolean);
+  const candidateKeys = [...identity.entityKeys];
   const candidateIds = mergedInRows.map((row) => row._id);
   const candidates =
     routedObservationsForKeysAndIds(entityType, candidateKeys, candidateIds, prefetch) ??
@@ -4992,20 +4998,11 @@ export async function mergedSurvivorEvidence(
   const added = candidates.filter(
     (observation: any) =>
       !alreadyIncluded.has(String(observation._id)) &&
-      (!observation.entityId || allowedEntityIds.has(String(observation.entityId))),
+      observationBelongsToMergedRow(identity, observation),
   );
   const { kept } = partitionObservationsByInvalidatedRun(added, await invalidatedScrapeRunIds());
 
-  const loserOrigin = (observation: any): { slug: string } | undefined => {
-    const entityId = observation.entityId ? String(observation.entityId) : '';
-    if (entityId && loserSlugById.has(entityId)) return { slug: loserSlugById.get(entityId) || '' };
-    if (entityId === String(survivorId)) return undefined;
-    const entityKey = textValue(observation.entityKey);
-    if (entityKey && entityKey !== survivorSlug && loserSlugs.has(entityKey)) {
-      return { slug: entityKey };
-    }
-    return undefined;
-  };
+  const loserOrigin = (observation: any) => mergedInMemberOf(identity, observation);
   const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
   // A locked type or a refused value means an operator, not the lane, decided who
   // this row is, so the lane has no claim on the website either.
@@ -5046,7 +5043,12 @@ export async function mergedSurvivorEvidence(
     observation.field === 'departments' && !namesADepartment(observation.value);
   const survivorHeldFields = new Set(
     entryPointIndependentOrder
-      .filter((observation: any) => !loserOrigin(observation) && !holdsNoDepartment(observation))
+      .filter(
+        (observation: any) =>
+          !loserOrigin(observation) &&
+          !holdsNoDepartment(observation) &&
+          !sourceRanksOnlyAsFieldFallback(String(observation.field || ''), observation.sourceName),
+      )
       .map((observation: any) => String(observation.field || '')),
   );
   const storedSurvivor =
@@ -5095,7 +5097,10 @@ export async function mergedSurvivorEvidence(
       backingLoserSlugByField.set(field, backingLoserSlug);
       continue;
     }
-    if (storedFieldHasValue(value, storedProvenance[field] !== undefined)) {
+    if (
+      storedFieldHasValue(value, storedProvenance[field] !== undefined) &&
+      !sourceRanksOnlyAsFieldFallback(field, objectRecord(storedProvenance[field]).sourceName)
+    ) {
       survivorHeldFields.add(field);
     }
   }
@@ -5155,7 +5160,7 @@ export async function mergedSurvivorEvidence(
   );
   return {
     observations,
-    mergedInKeys: [...loserSlugById.keys(), ...loserSlugs],
+    mergedInKeys: mergedInEntityKeysAndIds(identity),
     mergedInRows: mergedInRows.map((row) => ({ _id: row._id, slug: row.slug })),
     evidenceObservations: [...loadedObservations, ...kept],
     survivorLaneOwnsWebsite: survivorOwnsItsWebsite,
@@ -5848,6 +5853,7 @@ export interface ProjectFromLogInput {
   droppedLoserWebsiteValues?: readonly unknown[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
+  mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
@@ -7533,6 +7539,7 @@ export async function projectFromLog(
         ...projectedWrites,
         lockedFields: manuallyLockedFields,
         scopedFields,
+        mergedInRows: input.mergedInRows,
       })
     : [];
   const retiredUnset = Object.fromEntries(
@@ -7546,6 +7553,7 @@ export async function projectFromLog(
         unset: { ...projectedWrites.unset, ...retiredUnset },
         lockedFields: manuallyLockedFields,
         scopedFields,
+        mergedInRows: input.mergedInRows,
       })
     : {};
   if (!input.provenanceOnly) {
@@ -8102,6 +8110,7 @@ export async function materializeEntity(
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];
   }
 
+  const rowEvidenceIdentity = mergedRowEvidenceIdentity(entityDoc ?? {}, mergedInRows);
   const undergradEvidenceQuoteWithdrawnBy = isResearchEntityObservationType(entityType)
     ? sourcesWithdrawingUndergradEvidenceQuote(obs, entityDoc)
     : new Set<string>();
@@ -8146,6 +8155,8 @@ export async function materializeEntity(
       fellowshipAbsentByField,
     ),
     entityType,
+    (observation: any) =>
+      evidenceMemberOf(rowEvidenceIdentity, observation) ?? rowEvidenceIdentity.rowMember,
   );
 
   // #3500 bars a shared page at ingest, so no lane stores a new one. It cannot reach
@@ -8334,6 +8345,7 @@ export async function materializeEntity(
     droppedLoserWebsiteValues,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     loserRosterReads,
+    mergedInRows,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,

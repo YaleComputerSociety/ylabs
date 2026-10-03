@@ -5,6 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-02: A Merged Survivor's Evidence Reads Go Through One Identity, And A Lane's Newest Read Wins Across Its Keys (#4418)
+
+Every materializer evidence read now says whether it reaches the keys and ids of rows merged into the one being resolved, through `scrapers/mergedRowEvidenceIdentity.ts`, and a guard test fails on a new read that does not say.
+Two reads did not: the never-backed provenance check and the provenance relink asked only the row's own key and id, so a lane that observed a field only under a merged-in key read as never having observed it.
+Two field rules inside the merged read were also wrong, measured on Development after #4413 and #4425.
+
+- **A fallback-only lane does not hold a field against a merged-in row.** A merged-in row may fill only a field the survivor does not hold (#3581), and a survivor whose only own `researchAreas` came from the graduate-track roster lane held the field, so the merged-in row's profile list never reached the resolver that #4413 taught to rank it first.
+- **An award list unions across lanes, not across one lane's reads on different keys.** Every other latest-wins field already took the newest same-lane read whichever key it was filed under; the grant lists unioned instead (#3221), so a pre-#4425 NIH read on a merged-in key re-added each award once per fiscal year beside the survivor's corrected read.
+  The union now stops at the row the newest read was filed under.
+  This is a resolution rule, not a retirement: the merged-in key's observation stays live and is history, and a survivor-key read still never retires it.
+
+A whole-corpus dry run on Development on 2026-10-02, against the same projection on the commit before, planned changes on 20 rows' `researchAreas`, every one from the graduate-track list to the row's own list, and on 83 rows' `recentGrants`.
+76 of the 83 drop a fiscal-year repeat of an award, 70 of them `student_ready`, and 7 drop National Science Foundation awards that had already ended, which the served list withholds anyway (#4009).
+One of those 7 keeps a repeat because its newest NIH read itself predates #4425, which a re-run of that lane fixes.
+The never-backed provenance and relink change planned no change on any row.
+
 ## 2026-10-02: The Tailwind 4 Upgrade Renders Exactly What Tailwind 3 Rendered (#4386)
 
 The client moved from `tailwindcss` 3 to 4 (part of #4038), and the upgrade was held to no visual change, measured by before and after Playwright screenshots and computed-style diffs of the student and operator surfaces.

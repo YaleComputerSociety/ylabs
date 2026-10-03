@@ -269,6 +269,13 @@ function isProgrammeRosterGroup(group: { sources: Set<string> }): boolean {
   return true;
 }
 
+export function sourceRanksOnlyAsFieldFallback(field: string, sourceName: unknown): boolean {
+  return (
+    PROGRAMME_ROSTER_DEMOTION_FIELDS.has(field) &&
+    PROGRAMME_ROSTER_RESEARCH_AREA_SOURCES.has(String(sourceName ?? ''))
+  );
+}
+
 function demoteProgrammeRosterGroups(
   field: string,
   groups: Array<{ sources: Set<string>; demoted?: boolean }>,
