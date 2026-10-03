@@ -1318,7 +1318,7 @@ It now reads every home with no current lead and every home with a current lead 
 Each read that names a director emits a `centerRosterHealth` snapshot naming that one person and role.
 A read that names the supplied director re-emits the `inferredDirector*` observations, which refreshes the edge's `rosterProvenance.observedAt`.
 A read that names someone else is held: it emits only the snapshot, and the new director's observations are emitted only when the lane's previous snapshot for the home named the same person and role.
-`centerDirectorRetirement.ts` then ends, as `HISTORICAL`, this lane's lead edge once two admitted reads after it was last observed name a different director, using the same `absentReadRunIds` rule as the roster retirement.
+`centerDirectorRetirement.ts` then ends, as `HISTORICAL`, this lane's lead edge once the two latest admitted reads after it was last observed agree on the same different director, using the same `absentReadRunIds` rule as the roster retirement.
 A read that names nobody emits no snapshot, so an unreadable leadership page never ends an edge.
 The hold exists because two identical passes over the 46 supplied homes on Development named a different director for 3 of them.
 

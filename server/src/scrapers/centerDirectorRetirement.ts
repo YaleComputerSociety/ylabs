@@ -42,10 +42,25 @@ export interface CenterDirectorRetirementPlan {
   unjudgedEdges: number;
 }
 
+function latestTwoReadsAgree(
+  reads: readonly CenterDirectorRead[],
+  absentRunIds: readonly string[],
+): boolean {
+  const absentRuns = new Set(absentRunIds);
+  const [latest, previous] = reads
+    .filter((read) => absentRuns.has(read.scrapeRunId))
+    .sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())
+    .filter(
+      (read, index, sorted) =>
+        sorted.findIndex((other) => other.scrapeRunId === read.scrapeRunId) === index,
+    );
+  return Boolean(latest && previous && sameNamedDirector(latest.director, previous.director));
+}
+
 /**
- * Ends this lane's lead edge once two admitted reads after it was last observed name a
- * different director. A read that named nobody is not admitted, so an unreadable leadership
- * page never ends an edge.
+ * Ends this lane's lead edge once the two latest admitted reads after it was last observed
+ * agree on a different director. A read that named nobody is not admitted, so an unreadable
+ * leadership page never ends an edge.
  */
 export function planCenterDirectorRetirement(input: {
   reads: readonly CenterDirectorRead[];
@@ -64,8 +79,12 @@ export function planCenterDirectorRetirement(input: {
     const absent = absentReadRunIds({ observedAt: edge.observedAt }, input.reads, (read) =>
       sameNamedDirector(read.director, edge.director),
     );
-    if (absent.length >= CENTER_ROSTER_MIN_ABSENT_READS) plan.retiredEdgeIds.push(edge.edgeId);
-    else if (absent.length > 0) plan.edgesAwaitingSecondRead += 1;
+    if (
+      absent.length >= CENTER_ROSTER_MIN_ABSENT_READS &&
+      latestTwoReadsAgree(input.reads, absent)
+    ) {
+      plan.retiredEdgeIds.push(edge.edgeId);
+    } else if (absent.length > 0) plan.edgesAwaitingSecondRead += 1;
   }
   return plan;
 }

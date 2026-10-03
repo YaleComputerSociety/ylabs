@@ -40,6 +40,7 @@ const CENTER_SLUG = 'center-fixture-director-reread';
 const CENTER_URL = 'https://fixture-director.example.edu/';
 const FIRST = 'Ada Fixture';
 const SECOND = 'Bob Successor';
+const THIRD = 'Cy Contender';
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -150,6 +151,7 @@ describe(
       await Researcher.create([
         { displayName: FIRST, profile: { title: 'Professor of Synthetic Studies' } },
         { displayName: SECOND, profile: { title: 'Professor of Synthetic Studies' } },
+        { displayName: THIRD, profile: { title: 'Professor of Synthetic Studies' } },
       ]);
     });
 
@@ -186,6 +188,15 @@ describe(
       await readCenter(SECOND);
       await readCenter(FIRST);
       await readCenter(SECOND);
+
+      expect(await currentLeadNames()).toEqual([FIRST]);
+      expect((await leadEdges()).filter((edge) => edge.state === 'HISTORICAL')).toHaveLength(0);
+    });
+
+    it('keeps the supplied edge when two later reads name different successors', async () => {
+      await readCenter(FIRST);
+      await readCenter(SECOND);
+      await readCenter(THIRD);
 
       expect(await currentLeadNames()).toEqual([FIRST]);
       expect((await leadEdges()).filter((edge) => edge.state === 'HISTORICAL')).toHaveLength(0);
