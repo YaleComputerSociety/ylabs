@@ -32,6 +32,7 @@ import {
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { applyResearchEntityDedupeMergeGroup } from './dedupeResearchEntitiesByPi';
+import { GRANT_CORPUS_SYNTHESIS_SOURCE_NAME, GRANT_SOURCE_NAMES } from './grantCorpusSynthesisCore';
 import {
   GRANT_SHELL_PORT_SLUG_RE,
   isGrantShellSlug,
@@ -63,6 +64,7 @@ interface Options {
   dryRun: boolean;
   confirmed: boolean;
   maxPorts: number;
+  maxArchives?: number;
   output?: string;
 }
 
@@ -94,6 +96,7 @@ export interface GrantShellPortDelta {
   grantOnlyIndexDeleteFailures: number;
   grantOnlyEnrichedIntoExistingRow: number;
   grantOnlyEnrichmentDeferred: number;
+  grantOnlyDeferredByCap: number;
 }
 
 type GrantOnlyArchivalDelta = Pick<
@@ -106,14 +109,36 @@ type GrantOnlyArchivalDelta = Pick<
   | 'grantOnlyIndexDeleteFailures'
   | 'grantOnlyEnrichedIntoExistingRow'
   | 'grantOnlyEnrichmentDeferred'
+  | 'grantOnlyDeferredByCap'
 >;
+
+export const GRANT_OR_ORCID_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
+  ...GRANT_SOURCE_NAMES,
+  GRANT_CORPUS_SYNTHESIS_SOURCE_NAME,
+]);
+
+/**
+ * Whether one observation is evidence from somewhere other than a grant or ORCID record.
+ * A grant lane's observation never is, whatever it cites. Any other lane's observation is,
+ * unless it cites a grant or ORCID record: one recorded without a URL came from a page the
+ * archive cannot see, and an unseen page is not proof that the row is grant-only (#4247).
+ */
+export function observationCorroboratesBeyondGrants(observation: {
+  sourceName?: unknown;
+  sourceUrl?: unknown;
+}): boolean {
+  if (GRANT_OR_ORCID_LANE_SOURCE_NAMES.has(idText(observation.sourceName))) return false;
+  const sourceUrl = idText(observation.sourceUrl).trim();
+  if (!/^https?:\/\//i.test(sourceUrl)) return true;
+  return !isGrantOrOrcidSourceUrl(sourceUrl);
+}
 
 /**
  * The gate's grant-only test reads the row's cited URLs, but a lane can read an official
  * profile page without citing it: on Development 10 of 44 rows that cited only grant
  * records had observations fetched from a Yale profile page. So a row is grant-only here
- * only when every observation on it, and on every row tombstoned into it, was fetched from
- * a grant or ORCID record too.
+ * only when every observation on it, and on every row tombstoned into it, came from a
+ * grant or ORCID record too.
  */
 async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise<boolean> {
   const tombstoned = (await ResearchEntity.find({ canonicalGroupId: doc._id })
@@ -121,15 +146,14 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
     .lean()) as unknown as Array<Record<string, any>>;
   const keys = [doc.slug, ...tombstoned.map((row) => row.slug)].map(idText).filter(Boolean);
   const ids = [doc._id, ...tombstoned.map((row) => row._id)];
-  const sourceUrls = (await Observation.distinct('sourceUrl', {
+  const observations = (await Observation.find({
     entityType: 'researchEntity',
     superseded: { $ne: true },
     $or: [{ entityKey: { $in: keys } }, { entityId: { $in: ids } }],
-  })) as unknown[];
-  return sourceUrls.some((url) => {
-    const value = idText(url);
-    return /^https?:\/\//i.test(value) && !isGrantOrOrcidSourceUrl(value);
-  });
+  })
+    .select('sourceName sourceUrl')
+    .lean()) as Array<{ sourceName?: unknown; sourceUrl?: unknown }>;
+  return observations.some(observationCorroboratesBeyondGrants);
 }
 
 /**
@@ -219,7 +243,10 @@ async function grantOnlyRowIds(docs: Array<Record<string, any>>): Promise<Set<st
   return ids;
 }
 
-async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalDelta> {
+async function archiveGrantOnlyRows(
+  dryRun: boolean,
+  maxActions: number,
+): Promise<GrantOnlyArchivalDelta> {
   const survivorIds = await ResearchEntity.distinct('canonicalGroupId', {
     archived: true,
     archivedReason: GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
@@ -247,9 +274,11 @@ async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalD
     ),
   );
   const archiveIds = new Set(plan.archiveIds);
-  const toArchive = candidates.filter((doc) => archiveIds.has(idText(doc._id)));
+  const plannedArchives = candidates.filter((doc) => archiveIds.has(idText(doc._id)));
+  const enrichmentsToApply = plan.enrichIntoExistingRow.slice(0, maxActions);
+  const toArchive = plannedArchives.slice(0, maxActions - enrichmentsToApply.length);
   const delta: GrantOnlyArchivalDelta = {
-    grantOnlyPlannedArchives: toArchive.length,
+    grantOnlyPlannedArchives: plannedArchives.length,
     grantOnlyKeptForOperatorIntent: plan.keptForOperatorIntentIds.length,
     grantOnlyArchived: 0,
     grantOnlyServedBefore: toArchive.filter(
@@ -259,15 +288,20 @@ async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalD
     grantOnlyIndexDeleteFailures: 0,
     grantOnlyEnrichedIntoExistingRow: 0,
     grantOnlyEnrichmentDeferred: 0,
+    grantOnlyDeferredByCap:
+      plan.enrichIntoExistingRow.length +
+      plannedArchives.length -
+      enrichmentsToApply.length -
+      toArchive.length,
   };
   if (dryRun) {
-    delta.grantOnlyEnrichedIntoExistingRow = plan.enrichIntoExistingRow.length;
+    delta.grantOnlyEnrichedIntoExistingRow = enrichmentsToApply.length;
     return delta;
   }
 
   // Enrich first: a grant-only row whose lead already has a research page is merged into
   // it, so its grants land there instead of being archived out of reach (#3992).
-  for (const { id, enrichmentTargetId } of plan.enrichIntoExistingRow) {
+  for (const { id, enrichmentTargetId } of enrichmentsToApply) {
     const row = candidates.find((doc) => idText(doc._id) === id);
     const target = await ResearchEntity.findById(enrichmentTargetId).lean();
     if (!row || !target) continue;
@@ -317,6 +351,13 @@ export function parsePortGrantShellArgs(argv: string[]): Options {
         throw new Error(`${SCRIPT_NAME} --max-ports must be a non-negative integer`);
       }
       options.maxPorts = value;
+    } else if (arg === '--max-archives' || arg.startsWith('--max-archives=')) {
+      const raw = arg === '--max-archives' ? argv[(i += 1)] : arg.slice('--max-archives='.length);
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value < 0) {
+        throw new Error(`${SCRIPT_NAME} --max-archives must be a non-negative integer`);
+      }
+      options.maxArchives = value;
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[(i += 1)]);
     } else if (arg.startsWith('--output=')) {
@@ -588,7 +629,10 @@ export async function runGrantShellPort(options: Options): Promise<{
   delta: GrantShellPortDelta;
   outcome: GrantShellPortOutcome;
 }> {
-  const grantOnlyDelta = await archiveGrantOnlyRows(options.dryRun);
+  const grantOnlyDelta = await archiveGrantOnlyRows(
+    options.dryRun,
+    options.maxArchives ?? options.maxPorts,
+  );
   const shellDocs = (await ResearchEntity.find({
     slug: GRANT_SHELL_PORT_SLUG_RE,
     archived: { $ne: true },

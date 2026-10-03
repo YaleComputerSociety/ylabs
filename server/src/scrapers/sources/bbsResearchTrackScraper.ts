@@ -637,17 +637,22 @@ function buildTrackRosterHealthObservation(input: {
    * than absent, and `bbsTrackReadBlocksRetirementOf` is what keeps it from retiring anybody.
    */
   claimEntityKeyByProfileSlug: ReadonlyMap<string, string>;
+  citedProfileUrlByProfileSlug: ReadonlyMap<string, string>;
   cacheAllowed: boolean;
   readAt: Date;
 }): ObservationInput {
-  const members: CenterRosterReadMember[] = input.faculty.map((ref) => {
-    const claimEntityKey = input.claimEntityKeyByProfileSlug.get(ref.profileSlug);
-    return {
-      memberKey: ref.profileSlug,
-      role: BBS_TRACK_PI_ROLE,
-      ...(claimEntityKey ? { claimEntityKey } : {}),
-    };
-  });
+  const members: Array<CenterRosterReadMember & { citedProfileUrl?: string }> = input.faculty.map(
+    (ref) => {
+      const claimEntityKey = input.claimEntityKeyByProfileSlug.get(ref.profileSlug);
+      const citedProfileUrl = input.citedProfileUrlByProfileSlug.get(ref.profileSlug);
+      return {
+        memberKey: ref.profileSlug,
+        role: BBS_TRACK_PI_ROLE,
+        ...(claimEntityKey ? { claimEntityKey } : {}),
+        ...(citedProfileUrl ? { citedProfileUrl } : {}),
+      };
+    },
+  );
   const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
   return {
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
@@ -966,6 +971,7 @@ export class BbsResearchTrackScraper implements IScraper {
     // Filled as the graft resolves each PI, so the snapshots below can name the row each listed PI
     // claims on. A listed PI absent from this map did not resolve to a row this run.
     const claimEntityKeyByProfileSlug = new Map<string, string>();
+    const citedProfileUrlByProfileSlug = new Map<string, string>();
     let observationCount = 0;
     let grafted = 0;
     let noExistingRow = 0;
@@ -977,6 +983,7 @@ export class BbsResearchTrackScraper implements IScraper {
 
     for (const pi of targets) {
       const links = linksBySlug.get(pi.profileSlug) ?? EMPTY_PROFILE_LINKS;
+      citedProfileUrlByProfileSlug.set(pi.profileSlug, links.canonicalProfileUrl || pi.profileUrl);
 
       const resolution = resolveBbsResearchHome(
         links,
@@ -1022,6 +1029,7 @@ export class BbsResearchTrackScraper implements IScraper {
         faculty: read.faculty,
         fetched: read.fetched,
         claimEntityKeyByProfileSlug,
+        citedProfileUrlByProfileSlug,
         cacheAllowed: ctx.options.useCache,
         readAt,
       }),
