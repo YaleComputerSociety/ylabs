@@ -6,6 +6,7 @@ import {
   buildRate,
   checkConstantReportedTotal,
   checkNoRepeatedRowsAcrossPages,
+  checkQueryVariantServesTheBaseline,
   checkTitleSortOrdering,
   resolvePagesToWalk,
   type CorpusFingerprint,
@@ -645,5 +646,45 @@ export const PROGRAMS_SURFACE: ProgramSurface = {
   offersEveryFilterOption: true,
 };
 
-export const programJourneyCases: readonly ProgramJourneyCase[] =
-  programSurfaceCases(PROGRAMS_SURFACE);
+const STUDENT_YEAR_QUERY_PAIRS = [
+  { baselineQuery: 'first-year', variantQuery: 'freshmen' },
+  { baselineQuery: 'first-year', variantQuery: 'freshman' },
+];
+
+const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
+  id: 'programs-student-year-words-reach-sourced-year',
+  title: "A student's word for their year reaches the programs the source files under it",
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      (await walkProgramBrowseLikeTheClient(context, { query })).rows.map(rowKey).filter(Boolean);
+    const pairs = [];
+    for (const pair of STUDENT_YEAR_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'programs-student-year-word-serves-the-sourced-year',
+          'Searching programs for freshmen serves every row searching for first-year serves',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+          'coversBaselineRows',
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+export const programJourneyCases: readonly ProgramJourneyCase[] = [
+  ...programSurfaceCases(PROGRAMS_SURFACE),
+  studentYearWordsReachSourcedYear,
+];

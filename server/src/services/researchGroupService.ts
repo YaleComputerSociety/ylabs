@@ -37,10 +37,12 @@ import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
 import {
   isResearchEntitySearchEmbedderConfigured,
+  MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
+import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
@@ -556,7 +558,12 @@ export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 // `_rankingScoreDetails` is response metadata rather than a document attribute,
 // so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
 // (verified against the running index, not assumed). See #3185.
-const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = ['id', 'departments', 'researchAreas'];
+const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
+  'id',
+  'departments',
+  'researchAreas',
+  MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -669,10 +676,23 @@ const completesWorkingStylePhrase = (tokens: string[], index: number): boolean =
   return false;
 };
 
+// Every served row is at Yale, so "yale" carries no topic signal, yet under the
+// all-words keyword strategy it admitted only rows whose text happens to say "Yale"
+// and buried the on-topic labs (#4368). "university" names a real topic on its own
+// (higher education, university governance), so it is filler only after "yale".
+const INSTITUTION_CONTEXT_TOKEN = 'yale';
+const INSTITUTION_CONTEXT_SUFFIXES = new Set(['university']);
+
+const isInstitutionContext = (tokens: string[], index: number): boolean =>
+  tokens[index] === INSTITUTION_CONTEXT_TOKEN ||
+  (INSTITUTION_CONTEXT_SUFFIXES.has(tokens[index]) &&
+    tokens[index - 1] === INSTITUTION_CONTEXT_TOKEN);
+
 const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
   const token = tokens[index];
   if (completesWorkingStylePhrase(tokens, index)) return false;
   if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
+  if (isInstitutionContext(tokens, index)) return true;
   return (
     QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
     QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
@@ -1247,6 +1267,28 @@ export const keywordLegTopHitIsNameMatch = (
     Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
   );
   return !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute));
+};
+
+const hitMatchRestsOnMeshDescriptor = (hit: any, queryWordKeys: readonly string[]): boolean => {
+  const descriptorOnlyTerms = hit?.[MESH_DESCRIPTOR_ONLY_TERMS_FIELD];
+  if (!Array.isArray(descriptorOnlyTerms) || descriptorOnlyTerms.length === 0) return false;
+  return queryWordKeys.some((key) => descriptorOnlyTerms.includes(key));
+};
+
+export const rankOwnEvidenceAboveMeshDescriptorMatches = <T>(
+  keywordLegHits: T[],
+  normalizedQuery: Pick<NormalizedResearchSearchQuery, 'tokens' | 'isAliasExpanded'>,
+): T[] => {
+  if (normalizedQuery.isAliasExpanded || normalizedQuery.tokens.length === 0) {
+    return keywordLegHits;
+  }
+  const queryWordKeys = normalizedQuery.tokens.flatMap(meshDescriptorWordKeys);
+  const ownEvidence: T[] = [];
+  const descriptorOnly: T[] = [];
+  for (const hit of keywordLegHits) {
+    (hitMatchRestsOnMeshDescriptor(hit, queryWordKeys) ? descriptorOnly : ownEvidence).push(hit);
+  }
+  return descriptorOnly.length === 0 ? keywordLegHits : [...ownEvidence, ...descriptorOnly];
 };
 
 /**
@@ -2020,8 +2062,12 @@ export async function searchResearchGroupsViaMeili(
     keywordLegTopHitIsNameMatch([keywordLegTopHit.hit], normalizedQuery.tokens);
   const orderCandidatePool = (
     poolHits: any[],
-    keywordLegHits: any[],
+    matchedKeywordLegHits: any[],
   ): { hits: any[]; dropped: number } => {
+    const keywordLegHits = rankOwnEvidenceAboveMeshDescriptorMatches(
+      matchedKeywordLegHits,
+      normalizedQuery,
+    );
     if (!fuseRankings) {
       const { hits: keywordOrdered, dropped } = dropCoincidentalTypoOnlyHits(
         orderCandidatesByKeywordLeg(poolHits, keywordLegHits),

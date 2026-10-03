@@ -86,6 +86,8 @@ Every filter is reversible, and the reversal has to be as reachable as the appli
 - **No dead ends.**
 Every surface, including an empty result set and an error, offers a next step.
 `ResearchZeroResultRecovery` is this principle implemented; treat it as the pattern rather than the exception.
+A question about getting in ("research for freshmen", "paid summer research") is answered by `/programs`, not by the research corpus, so `/research` links the same query there (`ResearchProgramsHandoff`, #4369): on every empty search, and above results when `queryCarriesProgramsIntent` matches.
+It is a link rather than a redirect, so a real research query that happens to say "summer" is never taken away from the student, and it carries no program data, so it cannot become the removed #1509 module again.
 
 A caution specific to this product.
 That component tells the student "This is a data coverage gap, not proof that the department has no undergraduate research."

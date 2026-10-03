@@ -36,6 +36,7 @@ import {
   PROGRAM_TOPIC_TAXONOMY,
   resolveTopicSubjects,
   topicAliasesForSubjects,
+  yearOfStudyAliasesForQuery,
   topicRegexForSubjects,
 } from './programTopicService';
 
@@ -949,7 +950,11 @@ export const searchFellowships = async (params: {
   const querySubjects = resolveTopicSubjects([safeQuery]);
   const queryTopicAliases = topicAliasesForSubjects(querySubjects);
   if (safeQuery) {
-    const searchTerms = [safeQuery, ...queryTopicAliases].filter(Boolean);
+    const searchTerms = [
+      safeQuery,
+      ...queryTopicAliases,
+      ...yearOfStudyAliasesForQuery(safeQuery),
+    ].filter(Boolean);
     filter.$text = { $search: searchTerms.join(' ') };
   }
   if (safeSubjects.length > 0) {

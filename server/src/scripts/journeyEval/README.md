@@ -222,6 +222,8 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   `programServedFieldAttribution.test.ts` serves synthetic rows through the real path and fails when a decided field differs from its decision or a difference goes unexplained, so a guard added with a fixture there is caught in CI rather than on the next run.
   The guard counts and the share of stored values withheld are reported, never gated.
 
+`programs` also runs `programs-student-year-words-reach-sourced-year`, which is not a surface case: it asserts that a query for `freshmen` or `freshman` serves every row a query for `first-year` serves.
+
 The programs corpus is small enough that three cases walk all of it, so their rates are over the whole served surface rather than the top of a ranking, and `--window` changes only the cold-browse rates.
 A stored row whose `updatedAt` is later than the walk's start describes a different version than the one served, so it is counted as `skippedStaleIndex` and left out, and the corpus fingerprint over the program collection makes a failure inconclusive when the collection moved during the case, on the same one-directional reasoning as the research cases.
 

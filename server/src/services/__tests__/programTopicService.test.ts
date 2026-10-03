@@ -3,6 +3,7 @@ import {
   inferProgramSubjects,
   resolveTopicSubjects,
   topicRegexForSubjects,
+  yearOfStudyAliasesForQuery,
 } from '../programTopicService';
 
 describe('programTopicService', () => {
@@ -29,5 +30,22 @@ describe('programTopicService', () => {
       }),
     ).toEqual(['Artificial Intelligence', 'Health and Medicine']);
     expect(inferProgramSubjects({ title: 'General Research Award' })).toEqual([]);
+  });
+});
+
+describe('yearOfStudyAliasesForQuery', () => {
+  it("maps a student's word for their year onto the year the sources publish", () => {
+    expect(yearOfStudyAliasesForQuery('research for freshmen with no experience')).toEqual([
+      'first-year',
+    ]);
+    expect(yearOfStudyAliasesForQuery('Freshman')).toEqual(['first-year']);
+    expect(yearOfStudyAliasesForQuery('summer research in my first year')).toEqual(['first-year']);
+    expect(yearOfStudyAliasesForQuery('programs for sophomores')).toEqual(['sophomore']);
+  });
+
+  it('adds nothing to a query that names no year', () => {
+    expect(yearOfStudyAliasesForQuery('neuroscience')).toEqual([]);
+    expect(yearOfStudyAliasesForQuery('paid summer research')).toEqual([]);
+    expect(yearOfStudyAliasesForQuery('')).toEqual([]);
   });
 });

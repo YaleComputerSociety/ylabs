@@ -8,6 +8,8 @@ import ResearchFilterDisclosure from '../components/research/ResearchFilterDiscl
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
+import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
+import { queryCarriesProgramsIntent } from '../utils/researchProgramsHandoff';
 import ResearchSortDropdown, {
   ResearchSortField,
 } from '../components/research/ResearchSortDropdown';
@@ -972,6 +974,8 @@ const Research = () => {
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const programsHandoffQuery =
+    departmentSearch || submittedQuery === FILTERED_RESULT_QUERY_LABEL ? '' : submittedQuery.trim();
 
   useEffect(() => {
     const observedSearchParams = searchParams.toString();
@@ -1933,6 +1937,14 @@ const Research = () => {
                   </div>
                 )}
 
+                {programsHandoffQuery &&
+                  activeClusters.length > 0 &&
+                  queryCarriesProgramsIntent(programsHandoffQuery) && (
+                    <div className="mt-4 yr-muted-surface rounded-card p-4">
+                      <ResearchProgramsHandoff query={programsHandoffQuery} />
+                    </div>
+                  )}
+
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>
                   {searchLoading && activeClusters.length === 0 ? (
@@ -1987,6 +1999,7 @@ const Research = () => {
                       relaxedQuery={relaxedQuerySuggestion}
                       onRelaxQuery={retryRelaxedQuery}
                       onBrowseAll={browseAllResearchHomes}
+                      programsHandoffQuery={programsHandoffQuery}
                     />
                   )}
                 </section>

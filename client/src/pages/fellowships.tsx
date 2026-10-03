@@ -5,6 +5,7 @@
 import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { showWarningDialog } from '../utils/warningDialog';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { PROGRAMS_QUERY_PARAM } from '../utils/researchProgramsHandoff';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -412,9 +413,22 @@ const Fellowships = () => {
     adminEditItem: adminEditFellowship,
   } = state;
 
+  const [handedOffQuery] = useState(() => searchParams.get(PROGRAMS_QUERY_PARAM) ?? '');
   useEffect(() => {
-    setQueryString('');
-  }, [setQueryString]);
+    setQueryString(handedOffQuery);
+  }, [handedOffQuery, setQueryString]);
+
+  const urlCarriesHandedOffQuery = searchParams.has(PROGRAMS_QUERY_PARAM);
+  useEffect(() => {
+    if (!urlCarriesHandedOffQuery) return;
+    setSearchParams(
+      (params) => {
+        params.delete(PROGRAMS_QUERY_PARAM);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [urlCarriesHandedOffQuery, setSearchParams]);
 
   useEffect(() => {
     if (!isModalOpen) restartUndoWindow();
