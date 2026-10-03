@@ -76,7 +76,10 @@ import {
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
-import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
+import {
+  extractOfficialResearchDescription,
+  visibleDescriptionTextWithLineBreaks,
+} from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
   sanitizeResearchEntityDescription,
@@ -3390,7 +3393,7 @@ export function profileEnrichmentFromHtml(
   const declaredName = personNameFromProfileHtml($);
   const statedLabName = declaredName
     ? labNameStatedForPerson({
-        text: [bio, officialProse?.fullDescription].filter(Boolean).join('\n'),
+        text: visibleDescriptionTextWithLineBreaks(html),
         personName: declaredName,
         pageUrl: canonicalUrl,
       })

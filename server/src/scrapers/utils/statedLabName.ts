@@ -7,13 +7,14 @@ import {
 } from '../../utils/researchHomeNameIdentityAuthority';
 
 const NAME_WORD = String.raw`[A-Z][\p{L}\p{N}'’&.-]*`;
+const WORD_GAP = String.raw`[^\S\n]+`;
 const NAME_CONNECTOR = String.raw`(?:of|and|for|in|on|&)`;
-const NAME_CONTINUES = String.raw`[^\S\n]+(?:(?:of|and|for|&)\s+)?[A-Z]`;
-const SUBJECT = String.raw`((?:(?:Dr|Prof|Professor)\.?\s+)?${NAME_WORD}(?:\s+${NAME_WORD}){0,3})`;
+const NAME_CONTINUES = String.raw`${WORD_GAP}(?:(?:of|and|for|&)\s+)?[A-Z]`;
+const SUBJECT = String.raw`((?:(?:Dr|Prof|Professor)\.?${WORD_GAP})?${NAME_WORD}(?:${WORD_GAP}${NAME_WORD}){0,3})`;
 const LEADERSHIP_VERB = String.raw`(?:directs|leads|heads|founded\s+and\s+(?:directs|leads)|is\s+the\s+(?:founding\s+)?(?:director|head|principal\s+investigator)\s+of)`;
-const LAB_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+(?:Lab|Laboratory))(?![\p{L}\p{N}])(${NAME_CONTINUES})?`;
+const LAB_NAME = String.raw`(${NAME_WORD}(?:${WORD_GAP}(?:${NAME_CONNECTOR}${WORD_GAP})?${NAME_WORD}){0,5}?${WORD_GAP}(?:Lab|Laboratory))(?![\p{L}\p{N}])(${NAME_CONTINUES})?`;
 const HEAD_FIRST_LAB_NAME = String.raw`((?:Lab|Laboratory|Group)\s+(?:of|for)\s+[A-Z])`;
-const OTHER_RESEARCH_HOME_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+Group)(?![\p{L}\p{N}])`;
+const OTHER_RESEARCH_HOME_NAME = String.raw`(${NAME_WORD}(?:${WORD_GAP}(?:${NAME_CONNECTOR}${WORD_GAP})?${NAME_WORD}){0,5}?${WORD_GAP}Group)(?![\p{L}\p{N}])`;
 const NAME_PHRASE_ENDS_RE =
   /(?:\s*(?:[,.;:!?()\]"”\n—–]|$)|\s+(?:at|in|on|with|that|which|where|whose|who|to|is|was|has|have|and|an?|the|since|from|focus\w*|stud\w*|investigat\w*|examin\w*|explor\w*|uses?|using|seeks?|aims?)\b)/uy;
 const NON_RESEARCH_LAB_RE = /\b(?:teaching|instructional)\b/i;

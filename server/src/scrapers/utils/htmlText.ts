@@ -79,18 +79,20 @@ function pushInDocumentOrder<Marker>(
   for (let index = nodes.length - 1; index >= 0; index -= 1) pending.push(nodes[index]);
 }
 
-function nodeTextWithBlockSeparators(root: AnyNode): string {
+function nodeTextWithBlockSeparators(root: AnyNode, blockSeparator = ' '): string {
   const parts: string[] = [];
+  const keepsLineBreaks = blockSeparator === '\n';
   const pending: Array<AnyNode | typeof CLOSING_BLOCK_SEPARATOR> = [root];
   while (pending.length > 0) {
     const next = pending.pop();
     if (next === CLOSING_BLOCK_SEPARATOR) {
-      parts.push(' ');
+      parts.push(blockSeparator);
       continue;
     }
     const node = next as WalkableNode;
     if (node.type === 'text') {
-      parts.push(node.data || '');
+      const data = node.data || '';
+      parts.push(keepsLineBreaks ? data.replace(/\s+/g, ' ') : data);
       continue;
     }
     if (node.type === 'comment' || node.type === 'directive' || node.type === 'cdata') continue;
@@ -99,7 +101,7 @@ function nodeTextWithBlockSeparators(root: AnyNode): string {
     if (NON_TEXT_TAGS.has(tagName)) continue;
 
     if (BLOCK_LEVEL_TAGS.has(tagName)) {
-      parts.push(' ');
+      parts.push(blockSeparator);
       pending.push(CLOSING_BLOCK_SEPARATOR);
     }
     pushInDocumentOrder(pending, node.children);
@@ -140,6 +142,20 @@ export function plainTextContent(nodes: AnyNode | readonly AnyNode[] | undefined
 export function extractElementTextWithBlockSeparators(el: AnyNode | undefined | null): string {
   if (!el) return '';
   return collapseWhitespace(nodeTextWithBlockSeparators(el));
+}
+
+/**
+ * Like `extractElementTextWithBlockSeparators`, but a block-level boundary becomes
+ * a line break, so a reader can tell where one block ends and the next begins.
+ * Whitespace inside a text node, including a newline in the HTML source, stays a
+ * space.
+ */
+export function extractElementTextWithLineBreaks(el: AnyNode | undefined | null): string {
+  if (!el) return '';
+  return nodeTextWithBlockSeparators(el, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
 }
 
 /**
