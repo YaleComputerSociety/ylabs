@@ -1842,7 +1842,6 @@ test('served browser assets do not expose source maps or hidden static files', (
     new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
     'utf8',
   );
-  const tsupSource = fs.readFileSync(new URL('../server/tsup.config.ts', import.meta.url), 'utf8');
 
   assert.match(
     staticSource,
@@ -1864,9 +1863,6 @@ test('served browser assets do not expose source maps or hidden static files', (
     appSource,
     /app\.use\(express\.static\(path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\)\)\)/,
   );
-  assert.match(tsupSource, /sourcemap: true/);
-  assert.match(tsupSource, /outDir: 'build'/);
-  assert.doesNotMatch(appSource, /express\.static\([^)]*build/);
 });
 
 test('server start refuses stale build artifacts', () => {

@@ -163,10 +163,24 @@ export type DegradedSignal =
   | 'corpus_snapshot_failed'
   | 'gate_refresh_failed';
 
+const DEGRADED_SIGNAL_REPORT_WINDOW_MS = 60_000;
+const lastReportedAt = new Map<DegradedSignal, number>();
+
+const reportedWithinWindow = (signal: DegradedSignal, now: number): boolean => {
+  const previous = lastReportedAt.get(signal);
+  return previous !== undefined && now - previous < DEGRADED_SIGNAL_REPORT_WINDOW_MS;
+};
+
 export const captureServerWarning = (signal: DegradedSignal) => {
   if (!initializeErrorTracking()) {
     return;
   }
+
+  const now = Date.now();
+  if (reportedWithinWindow(signal, now)) {
+    return;
+  }
+  lastReportedAt.set(signal, now);
 
   Sentry.captureMessage(signal, {
     level: 'warning',

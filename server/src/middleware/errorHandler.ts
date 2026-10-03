@@ -40,10 +40,6 @@ const publicClientErrorMessage = (status: number): string => {
   return 'Request failed';
 };
 
-/**
- * Global error handler middleware
- * This should be added LAST in your middleware chain
- */
 export const serverErrorLogLine = (req: Request, message: string): string => {
   const rndrId = platformRequestId(req);
   return JSON.stringify({
@@ -55,6 +51,10 @@ export const serverErrorLogLine = (req: Request, message: string): string => {
   });
 };
 
+/**
+ * Global error handler middleware
+ * This should be added LAST in your middleware chain
+ */
 export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
   const sanitizedError = sanitizeErrorForLog(error);
   console.error(serverErrorLogLine(req, sanitizedError.message));

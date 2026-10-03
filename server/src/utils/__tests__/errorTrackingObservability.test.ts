@@ -44,8 +44,13 @@ const requestWith = (headers: Record<string, string>): Request =>
 const capturedExceptionContext = () =>
   vi.mocked(Sentry.captureException).mock.calls[0]?.[1] as { tags: Record<string, string> };
 
+const DEGRADED_SIGNAL_REPORT_WINDOW_MS = 60_000;
+
+vi.useFakeTimers({ toFake: ['Date'] });
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.setSystemTime(Date.now() + 10 * DEGRADED_SIGNAL_REPORT_WINDOW_MS);
   process.env.SENTRY_DSN = 'https://public@example.com/1';
 });
 
@@ -100,6 +105,22 @@ describe('degraded-service warnings', () => {
       });
     },
   );
+
+  it('sends one event per signal per window however often the signal repeats', () => {
+    for (let request = 0; request < 50; request += 1) {
+      captureServerWarning('mongo_topology_lost');
+    }
+    captureServerWarning('embedding_breaker_open');
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(Date.now() + DEGRADED_SIGNAL_REPORT_WINDOW_MS - 1);
+    captureServerWarning('mongo_topology_lost');
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(Date.now() + 1);
+    captureServerWarning('mongo_topology_lost');
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(3);
+  });
 
   it('sends nothing when no DSN is configured', () => {
     delete process.env.SENTRY_DSN;

@@ -196,6 +196,7 @@ It never logs the concrete path, the query string, a header other than that id, 
 A dependency that fails gracefully is reported as a `warning` rather than an error, through `captureServerWarning` with a closed `DegradedSignal` name (#4145).
 The four signals are `mongo_topology_lost` (a request answered `503` after the topology was lost), `embedding_breaker_open` (the query-embedding breaker opened), `corpus_snapshot_failed` (the corpus-snapshot scheduler's measurement threw), and `gate_refresh_failed` (a gate-refresh cycle exited non-zero or could not spawn).
 A warning carries only the signal name as its message, a fingerprint equal to that name, and a `signal` tag, so one incident groups into one issue rather than one per request, and it passes through the same `scrubServerEvent` as every other event.
+Each server process sends at most one event per signal per minute, so a signal that repeats on every request during an outage cannot exhaust the event quota and push real errors out.
 The existing console lines stay, because the platform log is where a reader looks first.
 
 The client reports no user, sets every `dataCollection` category off in `client/src/utils/errorTracking.ts` except the `User-Agent` request header, and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
