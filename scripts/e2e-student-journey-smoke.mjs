@@ -812,22 +812,27 @@ await step('a lazy route keeps the footer below the fold while it loads', async 
     for (const route of ['/about', '/programs']) {
       await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
         await syntheticPage.addInitScript(() => {
-          window.__footerShift = 0;
           window.__pageShift = 0;
-          window.__footerTops = [];
+          window.__footerSourcedShifts = [];
+          window.__footerSamples = [];
           const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+          const isFooterSource = (source) => Boolean(elementOf(source.node)?.closest?.('footer'));
           new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
               if (entry.hadRecentInput) continue;
               window.__pageShift += entry.value;
-              if (entry.sources.some((source) => elementOf(source.node)?.closest?.('footer'))) {
-                window.__footerShift += entry.value;
+              if (entry.sources.some(isFooterSource)) {
+                window.__footerSourcedShifts.push({
+                  startTime: entry.startTime,
+                  value: entry.value,
+                });
               }
             }
           }).observe({ type: 'layout-shift', buffered: true });
-          const sampleFooter = () => {
+          const sampleFooter = (time) => {
             const footer = document.querySelector('footer');
-            if (footer) window.__footerTops.push(footer.getBoundingClientRect().top);
+            if (footer)
+              window.__footerSamples.push({ time, top: footer.getBoundingClientRect().top });
             requestAnimationFrame(sampleFooter);
           };
           requestAnimationFrame(sampleFooter);
@@ -835,12 +840,25 @@ await step('a lazy route keeps the footer below the fold while it loads', async 
         await syntheticPage.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' });
         await syntheticPage.waitForTimeout(2500);
         const { footerShift, pageShift, footerSamples, highestFooterTop } =
-          await syntheticPage.evaluate(() => ({
-            footerShift: window.__footerShift,
-            pageShift: window.__pageShift,
-            footerSamples: window.__footerTops.length,
-            highestFooterTop: Math.min(...window.__footerTops),
-          }));
+          await syntheticPage.evaluate(() => {
+            const samples = window.__footerSamples;
+            // Chrome reports an on-screen previousRect for the footer wordmark's transformed slash
+            // while the footer is still below the fold, so visibility comes from the sampled footer.
+            const footerOnScreenAround = ({ startTime }) => {
+              const shiftFrame = samples.findLastIndex((sample) => sample.time <= startTime);
+              return samples
+                .slice(Math.max(0, shiftFrame - 1), shiftFrame + 2)
+                .some((sample) => sample.top < window.innerHeight);
+            };
+            return {
+              footerShift: window.__footerSourcedShifts
+                .filter(footerOnScreenAround)
+                .reduce((sum, shift) => sum + shift.value, 0),
+              pageShift: window.__pageShift,
+              footerSamples: samples.length,
+              highestFooterTop: Math.min(...samples.map((sample) => sample.top)),
+            };
+          });
         assert(
           footerSamples > 0,
           `No footer rendered on ${route} at ${viewport.width}px, so its position could not be measured.`,
