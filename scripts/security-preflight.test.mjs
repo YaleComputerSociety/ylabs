@@ -187,6 +187,17 @@ const deniedIdentifierSpans = (source, deniedDigests) => {
   return offsets;
 };
 
+test('the denied-identifier matcher reports a multi-token value only as a whole run of tokens', () => {
+  const deniedDigests = new Set([
+    '32393c67da8ea854db76ef5aec157bc6c12d07786d0993edaba4f3bb2003a3a3',
+  ]);
+  const prefix = 'Curator: ';
+  const source = `${prefix}Example Q. Placeholder, see ExampleQ Placeholders.`;
+
+  assert.deepEqual(deniedIdentifierSpans(source, deniedDigests), [prefix.length]);
+  assert.deepEqual(deniedIdentifierSpans('Example Q. Placeholders', deniedDigests), []);
+});
+
 test('test fixtures do not contain known real Yale identifiers', () => {
   const deniedDigests = new Set([
     '0be956b84d239431818d981d565833751eadfc8243c528738702bbd01645276a',
