@@ -184,7 +184,10 @@ describe('BBS retires a claim the listing restates for a PI it could not resolve
 
   it('retires a stale claim citing the canonical profile and counts one no read can key', async () => {
     const staleRow = await ResearchEntity.create({ slug: 'synthetic-stale-lab', name: 'Stale' });
-    const unkeyedRow = await ResearchEntity.create({ slug: 'synthetic-unkeyed-lab', name: 'Other' });
+    const unkeyedRow = await ResearchEntity.create({
+      slug: 'synthetic-unkeyed-lab',
+      name: 'Other',
+    });
     const stale = await seedClaim({
       entityId: staleRow._id as mongoose.Types.ObjectId,
       profileSlug: 'synthetic-canonical-pi',
@@ -225,7 +228,10 @@ describe('BBS retires a claim the listing restates for a PI it could not resolve
     });
     const supportedSlugs = ['synthetic-supported-pi-one', 'synthetic-supported-pi-two'];
     for (const profileSlug of supportedSlugs) {
-      const supportedRow = await ResearchEntity.create({ slug: `${profileSlug}-lab`, name: 'Kept' });
+      const supportedRow = await ResearchEntity.create({
+        slug: `${profileSlug}-lab`,
+        name: 'Kept',
+      });
       await seedClaim({
         entityId: supportedRow._id as mongoose.Types.ObjectId,
         profileSlug,

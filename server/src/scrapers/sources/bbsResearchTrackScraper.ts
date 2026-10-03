@@ -641,8 +641,8 @@ function buildTrackRosterHealthObservation(input: {
   cacheAllowed: boolean;
   readAt: Date;
 }): ObservationInput {
-  const members: Array<CenterRosterReadMember & { citedProfileUrl?: string }> =
-    input.faculty.map((ref) => {
+  const members: Array<CenterRosterReadMember & { citedProfileUrl?: string }> = input.faculty.map(
+    (ref) => {
       const claimEntityKey = input.claimEntityKeyByProfileSlug.get(ref.profileSlug);
       const citedProfileUrl = input.citedProfileUrlByProfileSlug.get(ref.profileSlug);
       return {
@@ -651,7 +651,8 @@ function buildTrackRosterHealthObservation(input: {
         ...(claimEntityKey ? { claimEntityKey } : {}),
         ...(citedProfileUrl ? { citedProfileUrl } : {}),
       };
-    });
+    },
+  );
   const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
   return {
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,

@@ -590,10 +590,7 @@ export async function reconcileBbsTrackRetirementsFromRun(
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
   const { claims, orphanedClaims } = await loadBbsTrackClaims();
   const { movedObservationIds, restatedObservationIds, claimsUnkeyedForRestatement } =
-    await planRunResolvedClaims(
-    runObjectId,
-    claims,
-  );
+    await planRunResolvedClaims(runObjectId, claims);
   if (
     reads.length === 0 &&
     movedObservationIds.length === 0 &&

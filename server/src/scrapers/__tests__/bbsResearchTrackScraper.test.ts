@@ -959,9 +959,10 @@ describe('per-track roster-health snapshot', () => {
     expect([...reads[0].claimEntityKeys]).toEqual(['111111111111111111111111']);
 
     const citedUrls = Object.fromEntries(
-      ((value.members ?? []) as Array<{ memberKey: string; citedProfileUrl?: string }>).map(
-        (m) => [m.memberKey, m.citedProfileUrl],
-      ),
+      ((value.members ?? []) as Array<{ memberKey: string; citedProfileUrl?: string }>).map((m) => [
+        m.memberKey,
+        m.citedProfileUrl,
+      ]),
     );
     const graft = emitted.find(
       (observation) =>
