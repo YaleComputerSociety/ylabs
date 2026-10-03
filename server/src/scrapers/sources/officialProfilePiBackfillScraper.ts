@@ -29,6 +29,7 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
 import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
 import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
+import { websiteIdentity } from '../survivorOwnedWebsiteClear';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   canonicalLegacyResearchHomeUrl,
@@ -1128,10 +1129,10 @@ export function profileTextStatesLeadershipOf(text: string, organizationName: st
   if (name.split(' ').length < 2) return false;
   const normalizedText = organizationNameForLeadershipMatch(text);
   const leadership =
-    '(?<!deputy )(?:co director|associate director|founding director|director|directs|directed|leads|founded|founder|head|chief|principal investigator)';
-  return new RegExp(
-    `\\b${leadership}(?: of| for| at| the| yale| and)* ${name.replace(/ /g, ' ')}\\b`,
-  ).test(normalizedText);
+    '(?<!(?:deputy|assistant)(?: co| associate)? )(?:co director|associate director|founding director|director|directs|directed|leads|founded|founder|head|chief|principal investigator)';
+  return new RegExp(`\\b${leadership}(?: of| for| at| the| yale| and)* ${name}\\b`).test(
+    normalizedText,
+  );
 }
 
 export function textEvidencesNamedLeadership(text: string, names: string[]): boolean {
@@ -1597,9 +1598,22 @@ const LINK_WITHDRAWING_HOME_REFUSALS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The withdrawal a refusal triggers reaches every older website this lane asserted on the
+ * row, including one its lead-direct mode read from another slot, so a refusal is stated
+ * only when the row is serving the refused link itself.
+ */
+function rowStoresWebsite(entity: Record<string, any>, url: string): boolean {
+  const refused = websiteIdentity(url);
+  return (
+    Boolean(refused) &&
+    [entity.websiteUrl, entity.website].some((stored) => websiteIdentity(stored) === refused)
+  );
+}
+
+/**
  * A refusal is a judgement about a link the page still carries, not an absence, so it is
- * stated as evidence: resolve then withdraws this lane's own older `websiteUrl` for the
- * row, and another lane's value still counts (#3926).
+ * stated as evidence: resolve then withdraws this lane's own older `websiteUrl` and
+ * `website` for the row, and another lane's value still counts (#3926).
  */
 export function refusedResearchHomeWebsiteObservation(
   entity: Record<string, any>,
@@ -3744,7 +3758,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                   : profileLinkedHomeRefusal(entity, home, identity.displayName);
             if (homeRefusal) {
               homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
-              if (home && LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal)) {
+              if (
+                home &&
+                LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal) &&
+                rowStoresWebsite(entity, home.url)
+              ) {
                 observations.push(refusedResearchHomeWebsiteObservation(entity, home, profileUrl));
               }
             } else if (identity && home) {

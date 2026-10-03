@@ -147,6 +147,34 @@ describe('a ysm read that refuses its lab link withdraws the lane own earlier we
     expect(await storedWebsiteUrl()).toBeFalsy();
   }, 120000);
 
+  it('drops the lane own earlier website alongside its websiteUrl', async () => {
+    const [first] = await readProfile({
+      refused: false,
+      observedAt: new Date('2026-08-20T00:00:00Z'),
+    });
+    await appendObservations(
+      [{ ...first, field: 'website', value: LAB_URL, observedAt: first.observedAt }],
+      {
+        scrapeRunId: new mongoose.Types.ObjectId().toString(),
+        sourceId: new mongoose.Types.ObjectId().toString(),
+        sourceName: LANE,
+        sourceWeight: 0.8,
+        dryRun: false,
+      },
+    );
+    await resolve();
+    const adopted = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
+    expect(adopted?.website).toBe(LAB_URL);
+
+    await readProfile({ refused: true, observedAt: new Date('2026-09-20T00:00:00Z') });
+    await resolve();
+    const withdrawn = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
+      Record<string, any>
+    >();
+    expect(withdrawn?.websiteUrl).toBeFalsy();
+    expect(withdrawn?.website).toBeFalsy();
+  }, 120000);
+
   it('keeps the link when another lane still asserts it', async () => {
     await readProfile({ refused: false, observedAt: new Date('2026-08-20T00:00:00Z') });
     await rivalAssertsLab();

@@ -1805,7 +1805,9 @@ Explicit `View Lab Website` links on official Yale profiles are a stronger resea
 
 A lab-website card is the slot faculty fill with either their own lab or an organization they are affiliated with, so `official-profile-pi-backfill` asks the shared `classifyHarvestedResearchHomeName` authority which it is (#4509).
 A card the authority calls `AFFILIATED_ORGANIZATION` is admitted only when the profile text states the person leads it, as a title (`Director of the X Unit at ...`, `Director, Center for X and Y`, with `&` and `and` treated alike) or as a verb (`directs the X`); membership and deputy titles do not count.
-When the lane refuses a card for that reason, or because another row already owns the link, it emits `refusedWebsiteUrl` for the link, so resolve withdraws the lane's own older `websiteUrl` instead of leaving it live behind a silent refusal (#3926).
+When the lane refuses a card for that reason, or because another row already owns the link, and the row is serving that link, it emits `refusedWebsiteUrl` for the link, so resolve withdraws the lane's own older `websiteUrl` and `website` instead of leaving them live behind a silent refusal (#3926).
+The refusal is limited to a row serving the refused link because the withdrawal reaches every older website the lane asserted on the row, including one its lead-direct mode read from the lead's own website slot.
+An untargeted run selects only rows with no website, so it never re-reads a row already serving an affiliated organization; the repair is a targeted run, `--only profile-research-home-backfill,<keys>`, over the rows where this lane's own `websiteUrl` observation is the stored value.
 
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.

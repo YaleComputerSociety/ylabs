@@ -1890,6 +1890,77 @@ describe('officialProfilePiBackfillScraper', () => {
       ).toBe(false);
     });
 
+    it('does not read a qualified deputy or assistant title as leadership', () => {
+      for (const title of [
+        'Deputy Co-Director of the Fixture Unit',
+        'Deputy Associate Director of the Fixture Unit',
+        'Assistant Director of the Fixture Unit',
+        'Assistant Co-Director of the Fixture Unit',
+      ]) {
+        expect(profileTextStatesLeadershipOf(`Quinn is ${title}.`, 'Fixture Unit')).toBe(false);
+      }
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Associate Director of the Fixture Unit.',
+          'Fixture Unit',
+        ),
+      ).toBe(true);
+    });
+
+    it('emits the refusal from a run only for a row that serves the refused link', async () => {
+      vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        lean: vi.fn().mockResolvedValue(null),
+      } as any);
+      const officeUrl = 'https://medicine.yale.edu/fixture-excellence/';
+      const html = `
+        <html><head>
+          <link rel="canonical" href="${profileUrl}" />
+          <script type="application/ld+json" data-schema="ProfilePage">
+            {"@type": "ProfilePage", "mainEntity": {"@type": "Person",
+              "name": "Quinn Marlowfixture", "email": "quinn.marlowfixture@yale.edu",
+              "jobTitle": "Professor"}}
+          </script>
+        </head>${cardProfileHtml(
+          'Office of Fixture Excellence',
+          officeUrl,
+          'Quinn Marlowfixture is a professor of medicine.',
+        ).replace(/<\/?html>/g, '')}</html>`;
+      const row = (slug: string, websiteUrl: string) => ({
+        _id: `entity-${slug}`,
+        name: 'Quinn Marlowfixture Research',
+        slug,
+        websiteUrl,
+        sourceUrls: [profileUrl],
+        leadUserProfileUrls: [profileUrl],
+        leadUsers: [
+          { fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.marlowfixture@yale.edu' },
+        ],
+      });
+      const emitted: ObservationInput[] = [];
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => html),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => []),
+        vi.fn(async () => [
+          row('serves-the-office', officeUrl),
+          row('serves-its-own-lab', 'https://marlowfixturelab.example.org/'),
+        ]),
+      );
+
+      const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+      expect(result.notes).toContain('affiliated-organization-without-leadership=2');
+      expect(emitted).toEqual([
+        expect.objectContaining({
+          entityKey: 'serves-the-office',
+          field: 'refusedWebsiteUrl',
+          value: officeUrl,
+        }),
+      ]);
+    });
+
     it('states the refusal as a refusedWebsiteUrl observation for the link', () => {
       const [home] = extractOfficialProfileResearchHomes(
         cardProfileHtml(
