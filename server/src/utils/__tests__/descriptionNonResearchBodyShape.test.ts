@@ -28,6 +28,14 @@ describe('nonResearchBodyShape (#4528)', () => {
     expect(nonResearchBodyShape(careerOfficeBiography)).toBe('role-biography');
   });
 
+  it('does not read an instrument or design word with an ordinary meaning as practice (#4551)', () => {
+    expect(
+      nonResearchBodyShape(
+        `${careerOfficeBiography} The office also supports the organ transplant program and the brand identity of the center.`,
+      ),
+    ).toBe('role-biography');
+  });
+
   it('reads a teaching-only biography as a role biography', () => {
     expect(nonResearchBodyShape(lectorBiography)).toBe('role-biography');
   });

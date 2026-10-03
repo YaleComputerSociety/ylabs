@@ -21,6 +21,14 @@ describe('isPracticeBiographyWithoutResearch (#4551)', () => {
     expect(isPracticeBiographyWithoutResearch(lawPracticeBiography)).toBe(true);
   });
 
+  it('reads a practice setting that opens a sentence', () => {
+    expect(
+      isPracticeBiographyWithoutResearch(
+        'Private practice in an example city focuses on the treatment of anxiety in adolescents. Board-certified in child and adolescent psychiatry.',
+      ),
+    ).toBe(true);
+  });
+
   it('keeps a practice biography that also states research, publication or teaching', () => {
     for (const text of [
       `${clinicalPracticeBiography} Her research evaluates brief interventions for adolescent anxiety.`,

@@ -1,10 +1,10 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { creativePracticeEvidence } from './creativePracticeDescription';
+import {
+  creativePracticeEvidence,
+  type CreativePracticeEvidence,
+} from './creativePracticeDescription';
 
-export type NonResearchBodyShape =
-  | 'role-biography'
-  | 'third-party-page'
-  | 'instruction-offering';
+export type NonResearchBodyShape = 'role-biography' | 'third-party-page' | 'instruction-offering';
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -40,6 +40,16 @@ const ADMINISTRATIVE_ROLE =
 const TEACHING_ROLE =
   /\b(?:teach(?:es|ing|er)?|taught|instructor|lector|lecturer|curricul\w*|courses?|classes|classroom|pedagog\w*)\b/gi;
 
+// Organ, brass and brand identity have ordinary meanings outside the arts, so an instrument
+// or design word alone does not show creative practice in a biography read in any department.
+const AMBIGUOUS_OUTSIDE_THE_ARTS: ReadonlySet<CreativePracticeEvidence> = new Set([
+  'design',
+  'instrument',
+]);
+
+const statesCreativePracticeOutsideTheArts = (text: string): boolean =>
+  creativePracticeEvidence(text).some((kind) => !AMBIGUOUS_OUTSIDE_THE_ARTS.has(kind));
+
 const MIN_ADMINISTRATIVE_ROLE_MENTIONS = 2;
 const MIN_TEACHING_ROLE_MENTIONS = 3;
 
@@ -53,7 +63,7 @@ const MIN_TEACHING_ROLE_MENTIONS = 3;
 export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
   const text = textValue(value);
   if (!text || anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
-  if (FACULTY_RANK.test(text) || creativePracticeEvidence(text).length > 0) return false;
+  if (FACULTY_RANK.test(text) || statesCreativePracticeOutsideTheArts(text)) return false;
   return (
     (text.match(ADMINISTRATIVE_ROLE) ?? []).length >= MIN_ADMINISTRATIVE_ROLE_MENTIONS ||
     (text.match(TEACHING_ROLE) ?? []).length >= MIN_TEACHING_ROLE_MENTIONS
@@ -111,7 +121,9 @@ export function isInstructionOfferingText(value: unknown): boolean {
 }
 
 const PRACTICE_SETTING =
-  /\b(?:private practice|clinical practice|(?:surgical|clinical|psychotherapy|legal|law) practice (?:at|in|for|focused)|(?:sees|treats|cares for|caring for|works? with) (?:patients|clients)|has practiced as|practices? (?:at|in) (?:the )?[A-Z]|board[- ]certified|attending (?:physician|psychiatrist|surgeon|pathologist)|clinical (?:lead|director) (?:at|of|for)|nurse practitioner|(?:her|his|their) clinical (?:interests?|work|care) (?:are|is|include|focus))\b/g;
+  /\b(?:private practice|clinical practice|(?:surgical|clinical|psychotherapy|legal|law) practice (?:at|in|for|focused)|(?:sees|treats|cares for|caring for|works? with) (?:patients|clients)|has practiced as|board[- ]certified|attending (?:physician|psychiatrist|surgeon|pathologist)|clinical (?:lead|director) (?:at|of|for)|nurse practitioner|(?:her|his|their) clinical (?:interests?|work|care) (?:are|is|include|focus))\b/gi;
+
+const PRACTICE_AT_NAMED_PLACE = /\b[Pp]ractices? (?:at|in) (?:the )?[A-Z]/g;
 
 const PRACTICE_DETAIL =
   /\b(?:clinical interests?|diagnosis and (?:management|treatment)|(?:the )?treatment of (?:patients|mood|anxiety|children|adults|adolescents)|patient care|clinical care|clients?|counsel(?:s|ed|ing)? clients|represent(?:s|ed)? (?:clients|companies)|medical staff|practice locations?)\b/gi;
@@ -137,9 +149,11 @@ const STATES_RESEARCH_BESIDE_PRACTICE =
 export function isPracticeBiographyWithoutResearch(value: unknown): boolean {
   const text = textValue(value);
   if (!text || STATES_RESEARCH_BESIDE_PRACTICE.test(text)) return false;
-  const settings = text.match(PRACTICE_SETTING) ?? [];
-  if (settings.length === 0) return false;
-  return settings.length + (text.match(PRACTICE_DETAIL) ?? []).length >= MIN_PRACTICE_MENTIONS;
+  const settings =
+    (text.match(PRACTICE_SETTING) ?? []).length +
+    (text.match(PRACTICE_AT_NAMED_PLACE) ?? []).length;
+  if (settings === 0) return false;
+  return settings + (text.match(PRACTICE_DETAIL) ?? []).length >= MIN_PRACTICE_MENTIONS;
 }
 
 const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
