@@ -119,6 +119,17 @@ describe('the microsite lane emits the page-stated lab name on every description
     expect(valueOf('name')).toBeUndefined();
   });
 
+  it("withholds the person's own name a personal homepage states", async () => {
+    const personName = 'Ada Quill';
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(personName).replace(LAB_NAME, personName),
+      extraction: extraction({ name: personName }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+    expect(valueOf('displayName')).toBeUndefined();
+  });
+
   it('withholds an umbrella organization title', async () => {
     const umbrella = 'Yale Center for Fixture Studies';
     const { valueOf } = await runLane({
