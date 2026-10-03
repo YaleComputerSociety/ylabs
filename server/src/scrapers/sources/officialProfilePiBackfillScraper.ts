@@ -449,7 +449,6 @@ export function rankedOfficialProfileFetchCandidates(
     leadOfficialProfiles.has(normalizeOfficialProfileUrl(url));
   const ranked = rankPersonProfileUrls(uniqueStrings(candidates).filter(Boolean), {
     schools: [entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])],
-    provenanceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [],
   });
   return [
     ...ranked.filter(isLeadOfficialProfile),
@@ -482,6 +481,7 @@ function userIdentityMatchEntity(
     websiteUrl: user.websiteUrl,
     profileUrls: user.profileUrls,
     leadProfileUrls,
+    leadOfficialProfileUrls: uniqueStrings([user.profileUrls?.official]),
   };
 }
 
