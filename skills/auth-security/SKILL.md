@@ -141,10 +141,11 @@ A failed insert logs `console.error` naming the action and target type, and an e
 ## Admin search analytics are aggregates only
 
 Decided 2026-10-03 (#4159): an admin sees search-query counts and trends, never who searched for what.
-No search-query report or row (`topSearchQueries`, the search-quality and search-query reports, and the action-needed query lists) may contain an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
-The overview's `mostActiveUsers` names students by netid alongside `topSearchQueries`, which is allowed because nothing joins the two: each lists its own aggregate and neither carries the other's key.
-A shown query row's `lastSearchedAt` is truncated to its UTC day, because an exact time would match one `search` event's timestamp in the drilldown and name its searcher.
-The per-user drilldown (`GET /api/analytics/users/:netid`) still lists a student's events, but a `search`, `research_search` or `research_filter_change` event carries only its type and time: no `searchQuery`, `searchDepartments` or `metadata`.
+No search-query row or list may carry an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
+This covers `topSearchQueries` (whose entries carry only `query` and `count`), the search-quality and search-query reports, and the action-needed query lists.
+The overview's `mostActiveUsers` list is user activity rather than search data: it carries no query and links to none.
+The per-user drilldown (`GET /api/analytics/users/:netid`) lists a student's events but leaves every `search`, `research_search` and `research_filter_change` event out of that list; the summary still reports the student's search count.
+A shown query row's `lastSearchedAt` is truncated to its UTC day, so no row can be matched to the moment one student searched.
 A query string, or a filter-only search's filter summary, is shown only once `MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY` (3) distinct students searched it.
 Below that it is folded into `suppressedQueries`, which counts the hidden query groups and their searches and zero-result searches, so the hidden demand stays visible as a number.
 Three is the smallest threshold at which a shown query cannot be read as one student's search, either directly or by a student who knows the other searcher was themself.

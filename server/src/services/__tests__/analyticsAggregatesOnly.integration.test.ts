@@ -43,6 +43,12 @@ const profileOpen = (netid: string, offset: number) => ({
   timestamp: minutesAfterBase(offset),
 });
 
+const searchFamilyEventTypes: string[] = [
+  AnalyticsEventType.SEARCH,
+  AnalyticsEventType.RESEARCH_SEARCH,
+  AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+];
+
 const sharedQuery = 'shared synthetic topic';
 const pairQuery = 'pair synthetic topic';
 const soloQuery = 'solo synthetic topic';
@@ -151,10 +157,22 @@ describe('admin search analytics are aggregates only', () => {
   });
 
   it("never lets an admin browse one student's searches", async () => {
+    await AnalyticsEvent.collection.insertMany(
+      [AnalyticsEventType.RESEARCH_SEARCH, AnalyticsEventType.RESEARCH_FILTER_CHANGE].map(
+        (eventType, index) => ({
+          ...search('synth01', 120 + index, sharedQuery, 1),
+          eventType,
+        }),
+      ),
+    );
     const drilldown = await getUserAnalyticsDrilldown('synth01');
     const serialized = JSON.stringify(drilldown);
 
-    expect(drilldown?.events.filter((event) => event.eventType === 'search')).toHaveLength(2);
+    expect(drilldown?.user.searches).toBe(2);
+    expect(drilldown?.events.length).toBeGreaterThan(0);
+    expect(
+      drilldown?.events.filter((event) => searchFamilyEventTypes.includes(event.eventType)),
+    ).toEqual([]);
     expect(serialized).not.toContain(sharedQuery);
     expect(serialized).not.toContain(pairQuery);
     expect(serialized).not.toContain('Synthetic Department');
@@ -180,6 +198,9 @@ describe('admin search analytics are aggregates only', () => {
       payloads.searchQueries.suppressedQueries,
     );
     expect(payloads.topSearchQueries).toEqual([{ query: sharedQuery, count: 3 }]);
+    for (const entry of payloads.topSearchQueries) {
+      expect(Object.keys(entry).sort()).toEqual(['count', 'query']);
+    }
     expect(payloads.actions.highSearchLowResults.map((row) => row.query)).toEqual([sharedQuery]);
   });
 
@@ -222,27 +243,14 @@ describe('admin search analytics are aggregates only', () => {
     expect(quality.avgResultsPerSearch).toBeCloseTo((10 + 101 * 50) / 108, 10);
   });
 
-  it('dates a shown query row to its day, so it cannot be matched to one search event', async () => {
+  it('dates a shown query row to its UTC day, with no time of day', async () => {
     const { queries } = await getSearchQueryAnalytics();
-    const drilldownSearchTimes = new Set(
-      (
-        await Promise.all(students.map((netid) => getUserAnalyticsDrilldown(netid)))
-      ).flatMap((drilldown) =>
-        (drilldown?.events ?? [])
-          .filter((event) => event.eventType === 'search')
-          .map((event) => new Date(event.timestamp).getTime()),
-      ),
-    );
     const lastSharedSearch = minutesAfterBase(0);
-    const lastSharedSearchDay = Date.UTC(
-      lastSharedSearch.getUTCFullYear(),
-      lastSharedSearch.getUTCMonth(),
-      lastSharedSearch.getUTCDate(),
-    );
 
     expect(queries).toHaveLength(1);
-    const lastSearchedAt = new Date(queries[0].lastSearchedAt!).getTime();
-    expect(lastSearchedAt).toBe(lastSharedSearchDay);
-    expect(drilldownSearchTimes.has(lastSearchedAt)).toBe(false);
+    const lastSearchedAt = new Date(queries[0].lastSearchedAt!);
+    expect(lastSearchedAt.toISOString()).toBe(
+      `${lastSharedSearch.toISOString().slice(0, 10)}T00:00:00.000Z`,
+    );
   });
 });

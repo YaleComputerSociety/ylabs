@@ -118,11 +118,11 @@ const sanitizeAnalyticsMetadata = (value: unknown, depth = 0): unknown => {
   return undefined;
 };
 
-const SEARCH_CONTENT_EVENT_TYPES = new Set<AnalyticsEventType>([
+const SEARCH_FAMILY_EVENT_TYPES = [
   AnalyticsEventType.SEARCH,
   AnalyticsEventType.RESEARCH_SEARCH,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
-]);
+];
 
 export const MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY = 3;
 
@@ -159,9 +159,7 @@ const suppressedQueryGroupSummaryStages = [
 const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   const eventType = sanitizeAnalyticsEventType(event?.eventType) || AnalyticsEventType.VISITOR;
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
-  const metadata = SEARCH_CONTENT_EVENT_TYPES.has(eventType)
-    ? undefined
-    : sanitizeAnalyticsMetadata(event?.metadata);
+  const metadata = sanitizeAnalyticsMetadata(event?.metadata);
 
   return {
     id: normalizeAnalyticsStoredObjectIdString(event?._id) || '',
@@ -809,6 +807,7 @@ export const getUserAnalyticsDrilldown = async (
 
   const events = await AnalyticsEvent.find({
     netid: { $regex: `^${escapeRegex(normalizedNetid)}$`, $options: 'i' },
+    eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES },
   })
     .sort({ timestamp: -1 })
     .limit(limit)
@@ -1089,18 +1088,6 @@ const zeroResultQueryGroupStages = [
   { $match: { zeroResultSearches: { $gt: 0 } } },
 ];
 
-const averageResultsOverSearchesThatReachedTheCorpus = (
-  queries: Pick<SearchQualityQueryAnalytics, 'avgResultCount' | 'searchesThatReachedTheCorpus'>[],
-): number => {
-  const searches = queries.reduce((sum, query) => sum + query.searchesThatReachedTheCorpus, 0);
-  if (searches === 0) return 0;
-  const results = queries.reduce(
-    (sum, query) => sum + query.avgResultCount * query.searchesThatReachedTheCorpus,
-    0,
-  );
-  return results / searches;
-};
-
 const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
@@ -1227,6 +1214,7 @@ const computeSearchQualityAnalytics = async (
                 $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
+              resultCountTotal: { $sum: resultCountThatReachedTheCorpus },
               engagedSearches: {
                 $sum: {
                   $cond: [
@@ -1266,6 +1254,7 @@ const computeSearchQualityAnalytics = async (
               degradedSearches: 1,
               zeroResultSearches: 1,
               uniqueSearchers: { $size: '$uniqueSearchers' },
+              resultCountTotal: 1,
               engagedSearches: 1,
               returnedButIgnoredSearches: 1,
             },
@@ -1276,10 +1265,6 @@ const computeSearchQualityAnalytics = async (
           { $match: { $expr: queryGroupIsShown } },
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
-        ],
-        averageResultsBasis: [
-          ...queryGroupStages,
-          { $project: { avgResultCount: 1, searchesThatReachedTheCorpus: 1 } },
         ],
         suppressedQueries: [...queryGroupStages, ...suppressedQueryGroupSummaryStages],
         topZeroResultQueries: [
@@ -1311,6 +1296,7 @@ const computeSearchQualityAnalytics = async (
     degradedSearches: 0,
     zeroResultSearches: 0,
     uniqueSearchers: 0,
+    resultCountTotal: 0,
     engagedSearches: 0,
     returnedButIgnoredSearches: 0,
   };
@@ -1331,9 +1317,10 @@ const computeSearchQualityAnalytics = async (
         ? Number((overall.zeroResultSearches / searchesThatReachedTheCorpus).toFixed(4))
         : 0,
     uniqueSearchers: overall.uniqueSearchers,
-    avgResultsPerSearch: averageResultsOverSearchesThatReachedTheCorpus(
-      (result?.averageResultsBasis ?? []) as SearchQualityQueryAnalytics[],
-    ),
+    avgResultsPerSearch:
+      searchesThatReachedTheCorpus > 0
+        ? overall.resultCountTotal / searchesThatReachedTheCorpus
+        : 0,
     minDistinctSearchersToShowQuery: MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
     suppressedQueries: (result?.suppressedQueries?.[0] ??
       EMPTY_SUPPRESSED_QUERY_GROUPS) as SuppressedQueryGroups,
