@@ -5,6 +5,32 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-03: Design And Instrument Practice Are Creative Practice, And A Practice Biography Is Not A Description (#4551)
+
+Three of the rows #4388 would newly serve were wrong for reasons the lead mint does not cause, and each is a serve-time predicate gap.
+
+- **Design practice and an instrument's practice are creative practice evidence.**
+  `creativePracticeDescription.ts` gains a `design` kind (typefaces, type design, typography, lettering, graphic design, book design, brand and visual identities) and an `instrument` kind (a named instrument, brass, woodwinds), and its practitioner arm reads founding or directing a named studio, foundry, collective, ensemble, press, gallery or company.
+  A practitioner presenting "his story and research at design conferences" is giving a talk about the practice, so that phrase is no longer a research statement.
+  The two-kinds rule and every research exemption are unchanged, so a design historian, an acoustics study of the organ and a single design mention stay research.
+- **A practice biography with no research is not a description.**
+  `isPracticeBiographyWithoutResearch` in `descriptionNonResearchBodyShape.ts` reads a body that says where a clinician or a lawyer practises and what they treat or whom they represent, and states no research, publication or teaching, and the quality bar flags it `practice-biography`.
+  Clinical practice is neither research nor creative practice, so a row whose only body is this names nothing a student could join.
+  It is read on the body only, because a clinical card beside a research body is a card defect rather than a row without research, and its research test is case-insensitive so a capitalised "Research Fellowship" or a named grant keeps the body.
+- **A practice card never opens on a glued profile header.**
+  The labelled row's replacement card skips a sentence carrying header chrome the extractor glued onto it ("Graphic DesignUndergraduate Senior Critic Instagram").
+
+**Measured on Development, 2026-10-03.**
+Over every non-archived row's stored body and card, the predicates changed 4 rows: 2 bodies flagged `practice-biography` (both clinical practice biographies stating no research) and 2 rows newly labelled creative practice (both graphic or type designers).
+Through `getResearchGroupDetail` over all 3,464 `student_ready` rows with the old and new code, 2 rows changed and both were read: one clinical practice biography stops serving, and one graphic designer is labelled creative practice with its research-voice chip card replaced by a practice sentence.
+Served rows went from 3,459 to 3,458 and labelled rows from 30 to 31; no other served body, card, name or type changed.
+Of the rows #4388 would newly serve, the performer and the type designer are now labelled creative practice and the clinical practice biography is refused.
+
+The predicates err toward keeping research.
+A clinical biography that also names a centre, a fellowship or any study keeps its body, so a clinician whose body states only "cares for patients" once still serves; that is recorded rather than chased.
+
+This is a serve-time change for the label and a serve-time and stored-data change for the refusal: browse and detail recompute both on deploy, and the stored tier follows when the gate re-runs on Development.
+
 ## 2026-10-03: Role Biographies, Another Organization's Page Text And Education Programs Are Not A Description (#4528)
 
 Three body shapes passed the description quality bar and served as a row's description although none describes the row's research or practice.

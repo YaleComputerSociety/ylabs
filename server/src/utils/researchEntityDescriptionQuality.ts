@@ -19,7 +19,10 @@ import {
   stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
 import { pressFeatureDescriptionShape } from './descriptionPressFeatureShape';
-import { nonResearchBodyShape } from './descriptionNonResearchBodyShape';
+import {
+  isPracticeBiographyWithoutResearch,
+  nonResearchBodyShape,
+} from './descriptionNonResearchBodyShape';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -63,6 +66,7 @@ export type DescriptionQualityFlag =
   | 'role-biography'
   | 'third-party-page'
   | 'instruction-offering'
+  | 'practice-biography'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -1509,6 +1513,9 @@ function computeFullDescriptionQuality(
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
   const nonResearchShape = text ? nonResearchBodyShape(text, entityType) : null;
   if (nonResearchShape) flags.push(nonResearchShape);
+  if (!nonResearchShape && text && isPracticeBiographyWithoutResearch(text)) {
+    flags.push('practice-biography');
+  }
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
