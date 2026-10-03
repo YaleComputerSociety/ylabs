@@ -77,7 +77,7 @@ describe('materializer writes cannot disagree with the schema enums', () => {
       kind: 'center',
       entityType: RETIRED_ENTITY_TYPE,
       studentVisibilityTier: 'operator_review',
-      archived: true,
+      archived: false,
       manuallyLockedFields: [],
     });
     await seedObservation('name', 'Enum Drift Center Renamed');
@@ -100,7 +100,7 @@ describe('materializer writes cannot disagree with the schema enums', () => {
       kind: 'center',
       entityType: RETIRED_ENTITY_TYPE,
       studentVisibilityTier: 'operator_review',
-      archived: true,
+      archived: false,
       manuallyLockedFields: [],
     });
     await seedObservation('name', 'Enum Drift Center Renamed');

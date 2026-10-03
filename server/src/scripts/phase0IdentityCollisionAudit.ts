@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
+  operatorEnvironmentForDatabaseName,
 } from './operatorDatabaseEnvironment';
 import {
   buildPhase0IdentityCollisionAuditReport,
@@ -209,18 +210,25 @@ export function assertPhase0IdentityCollisionAuditTargetAllowed(
   }
 }
 
+function targetsPrimaryProductionDatabase(env: NodeJS.ProcessEnv): boolean {
+  return (
+    operatorEnvironmentForDatabaseName(databaseNameFromMongoUrl(env.MONGODBURL || '')) ===
+    'production'
+  );
+}
+
 export function assertHardenedIdentityCollisionProfile(
   environment: Phase0IdentityCollisionAuditArgs['environment'],
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (environment === 'development') {
-    if (databaseNameFromMongoUrl(env.MONGODBURL || '').toLowerCase() === 'production') {
+    if (targetsPrimaryProductionDatabase(env)) {
       throw new Error('Development identity-collision audits must never target Production.');
     }
     return;
   }
   if (env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET === 'true') {
-    if (databaseNameFromMongoUrl(env.MONGODBURL || '').toLowerCase() === 'production') {
+    if (targetsPrimaryProductionDatabase(env)) {
       throw new Error('Identity-collision audits must never target Production.');
     }
     return;

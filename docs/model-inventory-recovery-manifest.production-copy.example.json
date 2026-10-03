@@ -40,7 +40,7 @@
   },
   "restoreVerification": {
     "sourceEnvironment": "production",
-    "sourceDatabaseName": "Production",
+    "sourceDatabaseName": "Prod",
     "targetDatabaseName": "ProductionCopy",
     "completedAt": "<ISO-8601-restore-completion>",
     "verifiedBy": "<independent-restore-reviewer>"

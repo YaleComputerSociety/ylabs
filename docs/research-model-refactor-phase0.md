@@ -89,7 +89,8 @@ Each search file must contain exactly `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`,
 Use the same high-entropy salt in Development, Beta, and ProductionCopy so ordered pseudonymous results remain comparable.
 Provision a separate Atlas user with the `read` role scoped only to the named database.
 The launcher requires a remote `mongodb+srv` Atlas URL with credentials and the exact `Beta` or `ProductionCopy` database name.
-It rejects local hosts, placeholders, insecure connection options, database mismatches, and the primary `Production` database before the inventory process can connect.
+It rejects local hosts, placeholders, insecure connection options, database mismatches, and the primary production database, `Prod` (or the legacy name `Production`), before the inventory process can connect.
+The guard reads the serving database names from `scripts/databaseNames.mjs`, which a server test pins to the names `yarn --cwd server database:verify-names` checks.
 Protected search launchers additionally require an HTTPS remote Meilisearch host, a non-placeholder API key, and the exact `beta` or dedicated ProductionCopy index prefix.
 The Meilisearch key must be read-only and allow search plus index, settings, stats, and task inspection for only the dedicated evidence index.
 
@@ -196,7 +197,7 @@ The Phase 0 identity-collision audit is a separate read-only evidence command.
 It does not run repair, merge, migration, promotion, or deletion code.
 It reads active compatibility `users` through a native MongoDB snapshot session configured with `secondaryPreferred`, `retryWrites=false`, a pool of two connections, a five-second query ceiling, and the `ylabs-phase0:identity-collision-audit` query comment.
 If the target cannot provide snapshot read concern, the command fails instead of combining identities from different database states.
-The command accepts only Development, Beta, or ProductionCopy and rejects the primary Production database before reading.
+The command accepts only Development, Beta, or ProductionCopy and rejects the primary production database, `Prod` (or the legacy name `Production`), before reading.
 
 The report covers the governed current identity keys `netid`, `email`, `orcid`, `openAlexId`, and `googleScholarId`.
 A same-name-only group is a normalized-name group whose members are not already joined by any of those strong identity keys.
@@ -405,7 +406,7 @@ Record the inventory JSON alongside the export so the pre-change state is audita
 The machine-readable contract is [`model-inventory-recovery-manifest.schema.json`](./model-inventory-recovery-manifest.schema.json).
 Start from the tracked [`Beta example`](./model-inventory-recovery-manifest.beta.example.json) or [`ProductionCopy example`](./model-inventory-recovery-manifest.production-copy.example.json), copy it to a new mode-`0600` path under the system temp directory, and replace every placeholder.
 It binds the exact inventory bytes to the source commit, credential-free target, capture window, Atlas recovery artifact, retention expiry, rollback owner and procedure, protected object versions, and independent review.
-ProductionCopy evidence additionally binds the completed `Production` to `ProductionCopy` restore and requires the immutable-restored-copy capture posture.
+ProductionCopy evidence additionally binds the completed `Prod` to `ProductionCopy` restore and requires the immutable-restored-copy capture posture.
 
 The schema cannot itself prove that an Atlas user has only the declared role or that an external object store is immutable.
 The manifest therefore requires separate pre-capture attestations from two different operators for the Atlas current-user read-only role and protected object-version immutability, including each verifier, verification time, and protected evidence reference.

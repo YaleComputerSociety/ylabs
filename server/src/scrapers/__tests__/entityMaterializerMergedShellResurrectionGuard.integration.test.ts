@@ -49,7 +49,7 @@ describe('materializeEntity does not resurrect a merged FRA shell', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'signals']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -99,22 +99,61 @@ describe('materializeEntity does not resurrect a merged FRA shell', () => {
     expect(doc?.name).toBe('Jane Roe Research');
   });
 
-  it('still materializes an archived shell that was not merged into a canonical', async () => {
+  it('writes nothing onto an archived row that carries no merge tombstone', async () => {
+    const archivedAt = new Date('2026-08-01T00:00:00Z');
     await ResearchEntity.create({
       slug: 'faculty-research-area-departed-scholar',
       name: 'Departed Scholar Research',
       kind: 'individual',
       archived: true,
+      archivedAt,
     });
+    const before = await ResearchEntity.findOne({
+      slug: 'faculty-research-area-departed-scholar',
+    }).lean<Record<string, unknown>>();
     await seedNameObservation(
       'faculty-research-area-departed-scholar',
-      'Departed Scholar Research',
+      'Departed Scholar Research Renamed',
     );
 
     const result = await materializeEntity('researchEntity', {
       entityKey: 'faculty-research-area-departed-scholar',
     });
 
-    expect(result.skipped).not.toBe('merged-into-canonical');
+    expect(result.skipped).toBe('archived-research-entity');
+    expect(result.fieldsWritten).toBe(0);
+    expect(result.created).toBe(false);
+    expect(meiliMocks.syncEntity).not.toHaveBeenCalled();
+
+    const after = await ResearchEntity.findOne({
+      slug: 'faculty-research-area-departed-scholar',
+    }).lean<Record<string, unknown>>();
+    expect(after).toEqual(before);
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    expect(await db.collection('role_assignments').countDocuments({})).toBe(0);
+    expect(await db.collection('signals').countDocuments({})).toBe(0);
+  });
+
+  it('skips an archived untombstoned row in a dry run as well', async () => {
+    await ResearchEntity.create({
+      slug: 'faculty-research-area-retired-scholar',
+      name: 'Retired Scholar Research',
+      kind: 'individual',
+      archived: true,
+    });
+    await seedNameObservation(
+      'faculty-research-area-retired-scholar',
+      'Retired Scholar Research Renamed',
+    );
+
+    const result = await materializeEntity(
+      'researchEntity',
+      { entityKey: 'faculty-research-area-retired-scholar' },
+      { dryRun: true },
+    );
+
+    expect(result.skipped).toBe('archived-research-entity');
+    expect(result.plannedSet).toBeUndefined();
   });
 });

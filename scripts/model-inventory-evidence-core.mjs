@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { SERVING_DATABASE_NAMES } from './databaseNames.mjs';
 
 export const MODEL_INVENTORY_RECOVERY_MANIFEST_VERSION = 1;
 
@@ -311,11 +312,11 @@ export function validateModelInventoryRecoveryManifest(manifestValue, inventoryB
     );
     if (
       restore.sourceEnvironment !== 'production' ||
-      restore.sourceDatabaseName !== 'Production' ||
+      restore.sourceDatabaseName !== SERVING_DATABASE_NAMES.production ||
       restore.targetDatabaseName !== 'ProductionCopy'
     ) {
       throw new Error(
-        'ProductionCopy restore verification must bind Production to ProductionCopy.',
+        `ProductionCopy restore verification must bind ${SERVING_DATABASE_NAMES.production} to ProductionCopy.`,
       );
     }
     const restoreCompleted = timestampValue(
