@@ -6,6 +6,7 @@
  * constructor, so run() is exercised deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { GRANT_WINDOW_PAGE_ATTEMPTS } from '../utils/grantWindowPageFetch';
 import {
   DoeOstiGrantScraper,
   buildResearchEntityObservations,
@@ -324,6 +325,7 @@ describe('DoeOstiGrantScraper.run', () => {
       piResolver: matchResolver({}),
       researchHomeResolver: async () => canonical('unused-row'),
       now: () => FIXED_NOW,
+      sleep: async () => undefined,
     });
     const { ctx, emitted } = ctxWith();
 
@@ -332,6 +334,55 @@ describe('DoeOstiGrantScraper.run', () => {
     expect(emitted).toHaveLength(0);
     expect(result.observationCount).toBe(0);
     expect(result.notes).toMatch(/failed closed/i);
+  });
+
+  it('fails closed with no writes when a page after the first stays unreadable (#4026)', async () => {
+    const fullPage = Array.from({ length: 100 }, (_v, i) => ({
+      ...AVERY_REPORT,
+      osti_id: `full-${i}`,
+    }));
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce(fullPage)
+      .mockRejectedValue(new Error('ECONNRESET'));
+    const scraper = new DoeOstiGrantScraper({
+      fetchPage,
+      piResolver: matchResolver({ 'Jordan Avery': 'user-avery' }),
+      researchHomeResolver: async () => canonical('example-plasma-lab'),
+      now: () => FIXED_NOW,
+      sleep: async () => undefined,
+    });
+    const { ctx, emitted } = ctxWith();
+
+    const result = await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(1 + GRANT_WINDOW_PAGE_ATTEMPTS);
+    expect(fetchPage.mock.calls.slice(1).every((call) => call[0] === 2)).toBe(true);
+    expect(emitted).toHaveLength(0);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toMatch(/window incomplete: page 2 unreadable/);
+    expect(result.notes).toMatch(/100 in-window record\(s\) across 1 page\(s\)/);
+    expect(result.partialFailures).toEqual([result.notes]);
+  });
+
+  it('recovers a transiently failed page by retrying it', async () => {
+    const fetchPage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce([AVERY_REPORT]);
+    const scraper = new DoeOstiGrantScraper({
+      fetchPage,
+      piResolver: matchResolver({ 'Jordan Avery': 'user-avery' }),
+      researchHomeResolver: async () => canonical('example-plasma-lab'),
+      now: () => FIXED_NOW,
+      sleep: async () => undefined,
+    });
+    const { ctx, emitted } = ctxWith();
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(result.partialFailures).toBeUndefined();
   });
 
   it('honors --limit by capping the number of PIs processed', async () => {

@@ -33,7 +33,6 @@
  * (caps total awards processed across all pages).
  */
 import axios from 'axios';
-import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
   resolveCanonicalResearchHomeForResearcher,
@@ -47,6 +46,7 @@ import {
   grantAttachSummary,
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
+import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
@@ -394,6 +394,7 @@ export interface NsfAwardScraperDeps {
   /** Override the lookback start date (default: today minus 5 years). */
   dateStart?: string;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 function defaultDateStart(): string {
@@ -430,31 +431,60 @@ export class NsfAwardScraper implements IScraper {
     const awards: NsfAward[] = [];
     let offset = 0;
     let totalCount: number | undefined;
+    let pagesRead = 0;
+    let windowEnded = false;
+    let failedPage: { offset: number; error: string } | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
-      let payload: { awards: NsfAward[]; totalCount?: number };
-      try {
-        payload = await fetcher(offset, dateStart, ctx.options.useCache, this.name);
-      } catch (err: unknown) {
-        const msg = sanitizeLogValue(err);
-        ctx.log(`fetch failed at offset ${offset}: ${msg} — aborting pagination`);
+      const outcome = await fetchGrantWindowPage(
+        () => fetcher(offset, dateStart, ctx.options.useCache, this.name),
+        { label: `NSF page at offset ${offset}`, sleep: this.deps.sleep, log: ctx.log },
+      );
+      if (outcome.status === 'failed') {
+        failedPage = { offset, error: outcome.error };
         break;
       }
+      const payload = outcome.value;
+      pagesRead++;
       if (totalCount === undefined && payload.totalCount !== undefined) {
         totalCount = payload.totalCount;
         ctx.log(`NSF reports totalCount=${totalCount} for Yale University`);
       }
-      if (payload.awards.length === 0) break;
+      if (payload.awards.length === 0) {
+        windowEnded = true;
+        break;
+      }
       for (const a of payload.awards) {
         if (awards.length >= limit) break;
         awards.push(a);
       }
       if (awards.length >= limit) break;
-      if (payload.awards.length < PAGE_SIZE) break;
+      if (payload.awards.length < PAGE_SIZE) {
+        windowEnded = true;
+        break;
+      }
       offset += PAGE_SIZE;
     }
-    ctx.log(
-      `Fetched ${awards.length} awards across ${Math.ceil(awards.length / PAGE_SIZE)} page(s)`,
-    );
+    ctx.log(`Fetched ${awards.length} awards across ${pagesRead} page(s)`);
+
+    const windowCounts =
+      `fetched ${awards.length} of ` +
+      (totalCount !== undefined ? `${totalCount} reported` : 'an unreported total') +
+      ` across ${pagesRead} page(s)`;
+    const limitReached = awards.length >= limit;
+    const incompleteReason = failedPage
+      ? `page at offset ${failedPage.offset} unreadable after retries (${failedPage.error})`
+      : limitReached
+        ? undefined
+        : !windowEnded
+          ? `page cap of ${MAX_PAGES} reached before the window ended`
+          : totalCount !== undefined && awards.length < totalCount
+            ? 'fewer awards served than NSF reports'
+            : undefined;
+    if (incompleteReason) {
+      const notes = `NSF award window incomplete: ${incompleteReason}; ${windowCounts}; failed closed with no writes rather than undercount grants`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes, partialFailures: [notes] };
+    }
 
     // 2. Group by PI.
     const groups = groupAwardsByPi(awards);
@@ -475,10 +505,7 @@ export class NsfAwardScraper implements IScraper {
       totalObs += observations.length;
     }
 
-    const notes =
-      `Yale NSF awards: ${awards.length}` +
-      (totalCount !== undefined ? ` (NSF totalCount=${totalCount})` : '') +
-      `; PIs: ${groups.length}; ${grantAttachSummary(attach)}`;
+    const notes = `Yale NSF awards: ${windowCounts}; PIs: ${groups.length}; ${grantAttachSummary(attach)}`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {

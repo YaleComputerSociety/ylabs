@@ -290,6 +290,10 @@ The orchestrator holds the accumulator outside its `try`, so a crash cannot take
 A returned `metrics` object wins key by key, because the return value is the lane's final word, and a key only reported mid-run survives beside it.
 A run that measured nothing stores no `metrics` at all rather than an empty object.
 
+A lane's returned `notes` string is stored on the run record as `scrape_runs.notes` on every terminal write that has a return value, including a run the yield guard fails (#3893).
+It passes through `sanitizeLogValue` and is capped at 4,000 characters with a visible ` [notes-truncated]` marker (`scrapers/scrapeRunNotes.ts`), and a lane that returns no notes stores no key.
+A lane that throws returns no notes, so a crash leaves only its `metrics`; put anything that must survive a throw in `reportMetrics` instead.
+
 `reportMetrics` is optional on `ScraperContext` only because several dozen test fixtures build a context by hand; the orchestrator always supplies it and `orchestrator.test.ts` pins that, so call it as `ctx.reportMetrics?.(...)`.
 
 What this does not change: **the barren-streak guard does not need metrics and is not silent without them.**

@@ -7,6 +7,7 @@
  * emission) deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { GRANT_WINDOW_PAGE_ATTEMPTS } from '../utils/grantWindowPageFetch';
 import mongoose from 'mongoose';
 import {
   NsfAwardScraper,
@@ -455,29 +456,79 @@ describe('NsfAwardScraper.run', () => {
     expect(fetchPage).not.toHaveBeenCalled();
   });
 
-  it('aborts pagination cleanly on a network error mid-stream', async () => {
-    const page1 = Array.from({ length: 25 }, (_v, i) => ({
+  const fullPage = (prefix: string) =>
+    Array.from({ length: 25 }, (_v, i) => ({
       ...YAN_AWARD,
-      id: `e-${i}`,
-      piFirstName: 'E' + i,
+      id: `${prefix}-${i}`,
+      piFirstName: prefix + i,
       piLastName: 'Last' + i,
     }));
+  const noSleep = vi.fn(async () => undefined);
+
+  it('fails closed with no writes when a page stays unreadable mid-window (#4026)', async () => {
     const fetchPage = vi
       .fn()
-      .mockResolvedValueOnce({ awards: page1, totalCount: 100 })
-      .mockRejectedValueOnce(new Error('ECONNRESET'));
+      .mockResolvedValueOnce({ awards: fullPage('a'), totalCount: 60 })
+      .mockResolvedValueOnce({ awards: fullPage('b'), totalCount: 60 })
+      .mockRejectedValue(new Error('ECONNRESET'));
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
       resolveResearcherId: matchedEveryone,
       researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
+      sleep: noSleep,
     });
-    const { ctx, emitted, logs } = buildContext();
+    const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(25);
-    expect(emitted.length).toBeGreaterThan(0);
-    expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
+    expect(fetchPage).toHaveBeenCalledTimes(2 + GRANT_WINDOW_PAGE_ATTEMPTS);
+    expect(fetchPage.mock.calls.slice(2).every((call) => call[0] === 50)).toBe(true);
+    expect(emitted).toHaveLength(0);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toMatch(/window incomplete/);
+    expect(result.notes).toMatch(/fetched 50 of 60 reported/);
+    expect(result.notes).toMatch(/failed closed with no writes/);
+    expect(result.partialFailures).toEqual([result.notes]);
+  });
+
+  it('recovers a transiently failed page by retrying it', async () => {
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce({ awards: fullPage('a'), totalCount: 26 })
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce({ awards: [GRANT_AWARD], totalCount: 26 });
+
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(26);
+    expect(result.partialFailures).toBeUndefined();
+    expect(result.notes).toMatch(/fetched 26 of 26 reported/);
+  });
+
+  it('fails closed when NSF serves fewer awards than it reports', async () => {
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD], totalCount: 40 });
+
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/fewer awards served than NSF reports/);
+    expect(result.notes).toMatch(/fetched 1 of 40 reported/);
   });
 });
