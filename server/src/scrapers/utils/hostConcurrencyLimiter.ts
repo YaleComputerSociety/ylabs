@@ -13,18 +13,55 @@ export interface HostThrottle {
   minIntervalMs: number;
 }
 
-export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostThrottle>> = {
-  'medicine.yale.edu': { concurrency: 2, minIntervalMs: 400 },
-  'ysph.yale.edu': { concurrency: 2, minIntervalMs: 400 },
+export interface HostRetryBudget {
+  maxRetries: number;
+  maxBackoffMs: number;
+  maxTotalBackoffMs: number;
+}
+
+export interface HostPoliteness extends HostThrottle {
+  retryBudget?: HostRetryBudget;
+}
+
+// These hosts refuse 30-50% of single requests at random (measured 2026-10-03), so a page
+// fails every attempt with probability p^(maxRetries + 1): 0.5^4 = 6% under the default
+// three retries, 0.5^9 = 0.2% under eight. The waits stay inside the slot throttle, and
+// maxTotalBackoffMs bounds one page even when every refusal names a long Retry-After.
+export const REFUSAL_THROTTLED_HOST_RETRY_BUDGET: HostRetryBudget = {
+  maxRetries: 8,
+  maxBackoffMs: 15_000,
+  maxTotalBackoffMs: 90_000,
 };
+
+export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> = {
+  'medicine.yale.edu': {
+    concurrency: 2,
+    minIntervalMs: 400,
+    retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
+  },
+  'ysph.yale.edu': {
+    concurrency: 2,
+    minIntervalMs: 400,
+    retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
+  },
+};
+
+function hostPoliteness(host: string | undefined): HostPoliteness | undefined {
+  const key = host?.toLowerCase();
+  return key && Object.hasOwn(HOST_THROTTLE_OVERRIDES, key)
+    ? HOST_THROTTLE_OVERRIDES[key]
+    : undefined;
+}
+
+export function resolveHostRetryBudget(host: string | undefined): HostRetryBudget | undefined {
+  return hostPoliteness(host)?.retryBudget;
+}
 
 export function resolveHostThrottle(
   host: string | undefined,
   defaults: HostThrottle,
 ): HostThrottle {
-  const key = host?.toLowerCase();
-  const override =
-    key && Object.hasOwn(HOST_THROTTLE_OVERRIDES, key) ? HOST_THROTTLE_OVERRIDES[key] : undefined;
+  const override = hostPoliteness(host);
   if (!override) return defaults;
   return {
     concurrency: Math.min(defaults.concurrency, override.concurrency),
