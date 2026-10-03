@@ -34,6 +34,7 @@ import {
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameFromPersonName,
+  servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
@@ -461,10 +462,15 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   // indexed title cannot drift from the served one on a row whose stored name the
   // repair has not reached yet (#2373/#2507).
   for (const field of ['name', 'displayName'] as const) {
-    const derived = personScopedResearchEntityNameFromPersonName({
+    const entity = { entityType: out.entityType, kind: out.kind };
+    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
+      ...entity,
       candidateName: out[field],
-      entityType: out.entityType,
-      kind: out.kind,
+    });
+    if (withoutFurniture) out[field] = withoutFurniture;
+    const derived = personScopedResearchEntityNameFromPersonName({
+      ...entity,
+      candidateName: out[field],
     });
     if (derived) out[field] = derived;
   }
