@@ -5,8 +5,14 @@ on:
     branches:
       - main
       - beta
-  # Post-merge signal on the commit that actually lands on beta, since the beta
-  # ruleset does not require branches to be up to date (#3913). Not a merge gate.
+  # The beta merge queue gates on this run against the exact squash commit that
+  # lands (#4512); without it the required context never reports on a queued
+  # group and every merge stalls.
+  merge_group:
+    types:
+      - checks_requested
+  # Post-merge safety net for anything that reaches beta outside the queue
+  # (#3913). Not a merge gate.
   push:
     branches:
       - beta
