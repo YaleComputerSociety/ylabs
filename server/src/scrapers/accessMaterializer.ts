@@ -755,7 +755,7 @@ export async function deriveAccessArtifactsForResearchGroup(
   const entity = observations.some((obs) => obs.field === 'joinPageUrl')
     ? ((await ResearchEntity.findOne(
         { _id: researchEntityObjectId },
-        { entityType: 1, kind: 1, websiteUrl: 1 },
+        { entityType: 1, kind: 1, websiteUrl: 1, departments: 1 },
       ).lean()) as JoinPageEntity | null)
     : null;
   const artifacts = deriveAccessArtifactsFromObservations(

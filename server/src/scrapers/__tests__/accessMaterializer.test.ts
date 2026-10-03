@@ -524,8 +524,25 @@ describe('deriveAccessArtifactsFromObservations', () => {
         }),
       ).not.toContain('APPLICATION_FORM_EXISTS');
       expect(
-        derivedTypes([positiveAccess, training], { entityType: 'CENTER', kind: 'center' }),
+        derivedTypes([positiveAccess, training], {
+          entityType: 'CENTER',
+          kind: 'center',
+          websiteUrl: 'https://medicine.yale.edu/cancer/',
+        }),
       ).toContain('APPLICATION_FORM_EXISTS');
+    });
+
+    it("derives a person row's route from its own department's undergraduate research page", () => {
+      const psychologyPage = joinPage(
+        'https://psychology.yale.edu/undergraduate/research-opportunities',
+      );
+      const faculty = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+      expect(
+        derivedTypes([positiveAccess, psychologyPage], { ...faculty, departments: ['Psychology'] }),
+      ).toContain('APPLICATION_FORM_EXISTS');
+      expect(
+        derivedTypes([positiveAccess, psychologyPage], { ...faculty, departments: ['Philosophy'] }),
+      ).not.toContain('APPLICATION_FORM_EXISTS');
     });
 
     it('still derives the route when another source names an admissible join page', () => {

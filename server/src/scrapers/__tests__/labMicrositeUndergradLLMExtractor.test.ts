@@ -2870,7 +2870,7 @@ describe('join pages that are not an undergraduate route (#4430)', () => {
       text: 'Training Opportunities. Internship for college undergraduates. Learn more and how to apply.',
     };
     expect(laneJoinPageRefusal(training.url, [profile, training], facultyRow)).toBe(
-      'programme-page-offered-as-a-person-route',
+      'programme-page-of-another-entity',
     );
   });
 
@@ -2978,5 +2978,35 @@ describe('join pages whose path does not decide their audience (#4430)', () => {
       text: 'Join the Lab. The lab is accepting volunteer research assistants for the fall. We recruit students from Yale as well as surrounding universities.',
     };
     expect(laneJoinPageRefusal(volunteer.url, [home, volunteer])).toBeNull();
+  });
+});
+
+describe("a department's own undergraduate research programme as a join page (#4430)", () => {
+  const profile = {
+    url: 'https://economics.yale.edu/people/example-person',
+    text: 'Example Person. Professor of Economics.',
+  };
+  const programme = {
+    url: 'https://economics.yale.edu/undergraduate/employment-opportunities',
+    text: 'Employment Opportunities. Research assistantships give undergraduates at Yale an opportunity to work as a research assistant for a professor. Applications are due in the fall.',
+  };
+  const faculty = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+
+  it("keeps the department's page for that department's faculty row", () => {
+    expect(
+      laneJoinPageRefusal(programme.url, [profile, programme], {
+        ...faculty,
+        departments: ['Economics'],
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses it for a faculty row of another department', () => {
+    expect(
+      laneJoinPageRefusal(programme.url, [profile, programme], {
+        ...faculty,
+        departments: ['Global Affairs'],
+      }),
+    ).toBe('join-page-outside-the-entity-scope');
   });
 });

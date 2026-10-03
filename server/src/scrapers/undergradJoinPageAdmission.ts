@@ -1,16 +1,21 @@
 import {
-  isProgrammePageCitedByPerson,
+  isDepartmentProgrammePageUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import { orgUnitMatchKey } from './orgUnitCanonicalization';
+import { DEFAULT_DEPT_CONFIGS } from './sources/departmentRosterScraper';
 
-export type JoinPageEntity = ResearchEntityHostOwnerIdentity & { websiteUrl?: unknown };
+export type JoinPageEntity = ResearchEntityHostOwnerIdentity & {
+  websiteUrl?: unknown;
+  departments?: unknown;
+};
 
 export type JoinPageUrlRefusal =
   | 'not-an-http-url'
   | 'participant-recruitment-route'
   | 'non-undergraduate-audience-route'
   | 'site-root-is-not-a-join-page'
-  | 'programme-page-offered-as-a-person-route';
+  | 'programme-page-of-another-entity';
 
 type AudienceRefusal = 'participant-recruitment-route' | 'non-undergraduate-audience-route';
 
@@ -111,6 +116,73 @@ function isUnderEntityWebsite(url: URL, websiteUrl: unknown): boolean {
   return url.pathname === prefix || url.pathname.startsWith(`${prefix}/`);
 }
 
+const UNDERGRADUATE_RESEARCH_PROGRAMME_TOKENS = new Set([
+  'research',
+  'opportunity',
+  'opportunities',
+  'employment',
+  'assistant',
+  'assistants',
+  'assistantship',
+  'assistantships',
+  'ra',
+]);
+
+const hostKey = (hostname: string): string => hostname.toLowerCase().replace(/^www\./, '');
+
+let departmentByDedicatedHost: Map<string, string> | undefined;
+
+// A host the department roster lane reads for exactly one department belongs to that
+// department; a host it reads for several (a school or medical campus) names none.
+function dedicatedDepartmentHosts(): Map<string, string> {
+  if (departmentByDedicatedHost) return departmentByDedicatedHost;
+  const departmentsByHost = new Map<string, Set<string>>();
+  for (const config of DEFAULT_DEPT_CONFIGS) {
+    try {
+      const host = hostKey(new URL(config.url).hostname);
+      const key = orgUnitMatchKey(config.deptName);
+      if (key) departmentsByHost.set(host, new Set([...(departmentsByHost.get(host) || []), key]));
+    } catch {
+      continue;
+    }
+  }
+  departmentByDedicatedHost = new Map(
+    Array.from(departmentsByHost)
+      .filter(([, keys]) => keys.size === 1)
+      .map(([host, keys]) => [host, [...keys][0]]),
+  );
+  return departmentByDedicatedHost;
+}
+
+const entityDepartmentKeys = (entity?: JoinPageEntity): Set<string> =>
+  new Set(
+    (Array.isArray(entity?.departments) ? entity.departments : [])
+      .map((department) => orgUnitMatchKey(department))
+      .filter(Boolean),
+  );
+
+/**
+ * A department's own undergraduate research or research-assistant programme page, offered
+ * on a row of that same department (#4430). The owner keeps it as a way in for the
+ * department's faculty: the economics research-assistant page names the route by which an
+ * undergraduate works for one of them. The page must name undergraduates and research or
+ * research-assistant work in its path, and sit on a host the department roster reads for
+ * that one department, so a center's training page on a shared medical-campus host, and a
+ * graduate or postdoctoral page, stay refused.
+ */
+export function isOwnDepartmentUndergraduateResearchProgramme(
+  value: unknown,
+  entity?: JoinPageEntity,
+): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const tokens = phraseTokens(decodedPath(url));
+  if (!tokens.some(isUndergraduateToken)) return false;
+  if (!tokens.some((token) => UNDERGRADUATE_RESEARCH_PROGRAMME_TOKENS.has(token))) return false;
+  const department = dedicatedDepartmentHosts().get(hostKey(url.hostname));
+  return Boolean(department) && entityDepartmentKeys(entity).has(department as string);
+}
+
 const isBareSiteRoot = (url: URL): boolean =>
   url.pathname.replace(/\/+$/, '').length === 0 && url.search.replace(/^\?/, '').length === 0;
 
@@ -119,10 +191,10 @@ const isBareSiteRoot = (url: URL): boolean =>
  * It reads the URL alone, so the access materializer applies it to stored evidence on every
  * resolve instead of waiting for the next scrape. Each arm is a class measured on served
  * signals: a study-recruitment page, a page whose path names a graduate, postdoctoral or
- * admissions audience and no undergraduate one, a bare site root, and a
- * department or center programme page offered as one person's route, which is the page the
- * detail route already refuses to cite for that row: a cancer center's training page
- * reached from faculty profiles' navigation backed 242 served signals.
+ * admissions audience and no undergraduate one, a bare site root, and a department or center
+ * programme page that is neither under the row's own website nor its own department's
+ * undergraduate research programme: a cancer center's training page reached from faculty
+ * profiles' navigation backed 242 served signals.
  */
 export function joinPageUrlRefusal(
   value: unknown,
@@ -134,10 +206,11 @@ export function joinPageUrlRefusal(
   if (audience) return audience;
   if (isBareSiteRoot(url)) return 'site-root-is-not-a-join-page';
   if (
-    isProgrammePageCitedByPerson(url.toString(), entity) &&
-    !isUnderEntityWebsite(url, entity?.websiteUrl)
+    isDepartmentProgrammePageUrl(url.toString()) &&
+    !isUnderEntityWebsite(url, entity?.websiteUrl) &&
+    !isOwnDepartmentUndergraduateResearchProgramme(url.toString(), entity)
   ) {
-    return 'programme-page-offered-as-a-person-route';
+    return 'programme-page-of-another-entity';
   }
   return null;
 }

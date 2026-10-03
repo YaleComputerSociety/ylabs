@@ -216,3 +216,104 @@ describe('an access signal the row evidence no longer derives is not served (#44
     expect(derived[0]?.gateInput?.accessSignalCount).toBe(3);
   });
 });
+
+describe("a department's own undergraduate research page on its faculty rows (#4430)", () => {
+  let replSet: MongoMemoryReplSet;
+  const FACULTY_SLUG = 'example-psychology-categories-lab';
+  const PROGRAMME = 'https://psychology.yale.edu/undergraduate/research-opportunities';
+  const TRAINING =
+    'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    for (const name of ['research_entities', 'signals', 'observations']) {
+      await mongoose.connection.db!.collection(name).deleteMany({});
+    }
+  });
+
+  const seedFaculty = async (departments: string[], joinPageUrl: string) => {
+    const db = mongoose.connection.db!;
+    const entityId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertOne({
+      _id: entityId,
+      slug: FACULTY_SLUG,
+      name: 'Example Access Survivor Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      schemaVersion: 1,
+      archived: false,
+      departments,
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityReasons: ['source_backed_description'],
+      fullDescription:
+        'The lab studies how example tissues repair after injury, combining imaging, genetics and computational modelling of cell behaviour.',
+      websiteUrl: WEBSITE,
+      sourceUrls: [WEBSITE],
+    });
+    const at = new Date('2026-09-01T00:00:00Z');
+    const base = {
+      entityType: 'researchEntity',
+      entityKey: FACULTY_SLUG,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-undergrad-llm',
+      sourceUrl: joinPageUrl,
+      confidence: 0.5,
+      observedAt: at,
+      superseded: false,
+    };
+    const joinId = new mongoose.Types.ObjectId();
+    await db.collection('observations').insertMany([
+      {
+        ...base,
+        _id: new mongoose.Types.ObjectId(),
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'yes', evidenceQuote: 'Undergraduates join research labs.' },
+      },
+      { ...base, _id: joinId, field: 'joinPageUrl', value: joinPageUrl },
+    ]);
+    await db.collection('signals').insertOne({
+      researchEntityId: entityId,
+      type: 'APPLICATION_FORM_EXISTS',
+      derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
+      archived: false,
+      confidence: 'MEDIUM',
+      observedAt: at,
+      source: { url: joinPageUrl, excerpt: JOIN_EXCERPT, evidenceIds: [joinId] },
+    });
+  };
+
+  const servedJoin = async () => {
+    const detail = await getResearchGroupDetail(FACULTY_SLUG);
+    expect(detail).not.toBeNull();
+    return (detail?.accessSignals ?? []).find(
+      (signal: any) => signal.signalType === 'APPLICATION_FORM_EXISTS',
+    );
+  };
+
+  it("serves the department's page, with its link, on that department's person row", async () => {
+    await seedFaculty(['Psychology'], PROGRAMME);
+
+    expect((await servedJoin())?.sourceUrl).toBe(PROGRAMME);
+  });
+
+  it('withholds it on a person row of another department', async () => {
+    await seedFaculty(['Philosophy'], PROGRAMME);
+
+    expect(await servedJoin()).toBeUndefined();
+  });
+
+  it("withholds a center's training page on a person row", async () => {
+    await seedFaculty(['Internal Medicine'], TRAINING);
+
+    expect(await servedJoin()).toBeUndefined();
+  });
+});

@@ -31,6 +31,7 @@ import {
   foreignContactFieldSignalIds,
   underivedAccessSignalIds,
 } from '../scrapers/accessMaterializer';
+import { isOwnDepartmentUndergraduateResearchProgramme } from '../scrapers/undergradJoinPageAdmission';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -3177,8 +3178,17 @@ const servableAccessSignalCitation = (signal: any, entity?: any): string | undef
   servedCitationUrl(
     'instruction',
     entity?.sourceLinkHealth,
-    publicResearchDetailSourceUrl(signal.source?.url, entity),
+    isOwnDepartmentProgrammeJoinCitation(signal, entity)
+      ? publicHttpUrl(signal.source?.url)
+      : publicResearchDetailSourceUrl(signal.source?.url, entity),
   );
+
+// The owner keeps a department's own undergraduate research or RA programme page as a way
+// in on that department's faculty rows (#4430), so its join-page link is served there even
+// though the programme page is refused as the person's own citation elsewhere.
+const isOwnDepartmentProgrammeJoinCitation = (signal: any, entity?: any): boolean =>
+  signal?.type === 'APPLICATION_FORM_EXISTS' &&
+  isOwnDepartmentUndergraduateResearchProgramme(signal.source?.url, entity);
 
 // Kept as a single object literal because `security-preflight` pins this serializer's
 // shape with a literal `=> ({ ... })` pattern, and a block body reads to that gate as the

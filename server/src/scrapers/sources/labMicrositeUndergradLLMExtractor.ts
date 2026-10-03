@@ -53,6 +53,7 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import {
+  isOwnDepartmentUndergraduateResearchProgramme,
   joinPageUrlRefusal,
   type JoinPageEntity,
   type JoinPageUrlRefusal,
@@ -926,7 +927,11 @@ export function laneJoinPageRefusal(
   if (
     sourcePages[0] &&
     isSharedInstitutionalHost(sourcePages[0].url) &&
-    !pagesWithinEntityScope(sourcePages).includes(page)
+    !pagesWithinEntityScope(sourcePages).includes(page) &&
+    !(
+      isOwnDepartmentUndergraduateResearchProgramme(page.url, entity) &&
+      /\bundergrad|\byale\s+college\b/i.test(page.text)
+    )
   ) {
     return 'join-page-outside-the-entity-scope';
   }
@@ -1799,6 +1804,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
               entityType: lab.entityType,
               kind: lab.kind,
               websiteUrl: lab.storedWebsiteUrl,
+              departments: lab.departments,
             },
             readIsComplete: !linkedSubPageUnread,
           },

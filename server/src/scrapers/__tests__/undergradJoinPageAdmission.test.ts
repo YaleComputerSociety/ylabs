@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
+import {
+  isOwnDepartmentUndergraduateResearchProgramme,
+  joinPageAnchorTextRefusal,
+  joinPageUrlRefusal,
+} from '../undergradJoinPageAdmission';
 
 const facultyRow = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
 const centerRow = { entityType: 'CENTER', kind: 'center' };
@@ -64,16 +68,22 @@ describe('joinPageUrlRefusal (#4430)', () => {
         'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/',
         facultyRow,
       ),
-    ).toBe('programme-page-offered-as-a-person-route');
+    ).toBe('programme-page-of-another-entity');
   });
 
-  it('keeps the same programme page for an organizational row', () => {
+  it('keeps the programme page for the center that publishes it and refuses it for any other row', () => {
+    const training =
+      'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
     expect(
-      joinPageUrlRefusal(
-        'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/',
-        centerRow,
-      ),
+      joinPageUrlRefusal(training, {
+        ...centerRow,
+        websiteUrl: 'https://medicine.yale.edu/cancer/',
+      }),
     ).toBeNull();
+    expect(joinPageUrlRefusal(training, centerRow)).toBe('programme-page-of-another-entity');
+    expect(
+      joinPageUrlRefusal(training, { entityType: 'CORE_FACILITY', kind: 'core_facility' }),
+    ).toBe('programme-page-of-another-entity');
   });
 
   it("keeps a programme-shaped page that sits under the row's own website", () => {
@@ -111,5 +121,70 @@ describe('joinPageAnchorTextRefusal (#4430)', () => {
     );
     expect(joinPageAnchorTextRefusal('Undergraduate research application')).toBeNull();
     expect(joinPageAnchorTextRefusal('Apply here')).toBeNull();
+  });
+});
+
+describe("a department's own undergraduate research programme (#4430)", () => {
+  const economicsFaculty = { ...facultyRow, departments: ['Economics'] };
+  const psychologyFaculty = { ...facultyRow, departments: ['Department of Psychology'] };
+
+  it("keeps the department's undergraduate research or RA page on that department's faculty rows", () => {
+    expect(
+      isOwnDepartmentUndergraduateResearchProgramme(
+        'https://economics.yale.edu/undergraduate/employment-opportunities',
+        economicsFaculty,
+      ),
+    ).toBe(true);
+    expect(
+      joinPageUrlRefusal(
+        'https://psychology.yale.edu/undergraduate/research-opportunities',
+        psychologyFaculty,
+      ),
+    ).toBeNull();
+  });
+
+  it("still refuses the same programme page on another department's faculty row", () => {
+    expect(
+      joinPageUrlRefusal('https://psychology.yale.edu/undergraduate/research-opportunities', {
+        ...facultyRow,
+        departments: ['Philosophy'],
+      }),
+    ).toBe('programme-page-of-another-entity');
+    expect(
+      joinPageUrlRefusal(
+        'https://psychology.yale.edu/undergraduate/research-opportunities',
+        facultyRow,
+      ),
+    ).toBe('programme-page-of-another-entity');
+  });
+
+  it("still refuses a center's training page on a shared medical-campus host", () => {
+    expect(
+      joinPageUrlRefusal(
+        'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/',
+        { ...facultyRow, departments: ['Internal Medicine', 'Yale Cancer Center'] },
+      ),
+    ).toBe('programme-page-of-another-entity');
+    expect(
+      isOwnDepartmentUndergraduateResearchProgramme(
+        'https://medicine.yale.edu/internal-medicine/undergraduate/research-opportunities/',
+        { ...facultyRow, departments: ['Internal Medicine'] },
+      ),
+    ).toBe(false);
+  });
+
+  it('does not admit a graduate or postdoctoral page, or a page that names no research', () => {
+    expect(
+      joinPageUrlRefusal(
+        'https://psychology.yale.edu/graduate/research-opportunities',
+        psychologyFaculty,
+      ),
+    ).toBe('non-undergraduate-audience-route');
+    expect(
+      isOwnDepartmentUndergraduateResearchProgramme(
+        'https://psychology.yale.edu/undergraduate/senior-essay',
+        psychologyFaculty,
+      ),
+    ).toBe(false);
   });
 });
