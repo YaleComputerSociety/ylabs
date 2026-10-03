@@ -75,10 +75,6 @@ export interface HostSlotLimiter {
   acquire(host: string): Promise<HostSlotRelease>;
 }
 
-export const grantWithoutWaiting: HostSlotLimiter = {
-  acquire: async () => () => {},
-};
-
 export class ChainedHostSlotLimiter implements HostSlotLimiter {
   constructor(private readonly limiters: readonly HostSlotLimiter[]) {}
 

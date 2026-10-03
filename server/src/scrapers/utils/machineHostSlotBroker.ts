@@ -23,6 +23,7 @@ const CONNECT_TIMEOUT_MS = 1_000;
 const JOIN_RETRY_MS = 50;
 const PING_INTERVAL_MS = 2_000;
 const LOCK_GRACE_MS = 5_000;
+const TAKEOVER_GRACE_MS = 10 * JOIN_RETRY_MS;
 
 export interface MachineHostSlotPaths {
   socketPath: string;
@@ -166,10 +167,28 @@ interface PendingAcquire {
   timer?: NodeJS.Timeout;
 }
 
+interface AdoptingSlotLimiter extends HostSlotLimiter {
+  adopt(host: string): HostSlotRelease;
+}
+
+// A new broker starts from zero, and the other clients of the one it replaces reconnect and
+// re-register their in-flight slots a few join retries later, so it grants nothing new until
+// they have had that long; adopting a held slot is never delayed.
+function grantingAfterTakeoverGrace(limiter: HostConcurrencyLimiter): AdoptingSlotLimiter {
+  const graceOver = sleep(TAKEOVER_GRACE_MS);
+  return {
+    acquire: async (host) => {
+      await graceOver;
+      return limiter.acquire(host);
+    },
+    adopt: (host) => limiter.adopt(host),
+  };
+}
+
 interface Hosted {
   kind: 'host';
   broker: HostSlotBroker;
-  limiter: HostConcurrencyLimiter;
+  limiter: AdoptingSlotLimiter;
   token: string;
 }
 
@@ -303,7 +322,9 @@ export class MachineHostSlotLimiter implements HostSlotLimiter {
       if (lock && isStaleLock(lock)) breakStaleLock(this.paths.lockPath, lock.raw);
       return false;
     }
-    const limiter = new HostConcurrencyLimiter(DEFAULT_PER_HOST_CONCURRENCY);
+    const limiter = grantingAfterTakeoverGrace(
+      new HostConcurrencyLimiter(DEFAULT_PER_HOST_CONCURRENCY),
+    );
     let broker: HostSlotBroker;
     try {
       broker = await HostSlotBroker.listen(this.paths.socketPath, limiter, { detached: true });
@@ -382,8 +403,8 @@ export class MachineHostSlotLimiter implements HostSlotLimiter {
   }
 
   // After a takeover the new broker starts from zero, so every request still in flight is
-  // re-registered before any new slot is granted; otherwise the handover would briefly let
-  // the host see its budget plus everything the old broker had granted.
+  // re-registered; the hosted limiter's takeover grace holds new grants until the other
+  // clients have done the same.
   private reattach(): void {
     const link = this.link;
     if (!link) return;

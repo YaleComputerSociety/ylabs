@@ -326,6 +326,25 @@ describe('machine-wide host slot broker recovery', () => {
     expect(waitingGranted).toBe(false);
   });
 
+  it('grants nothing new on takeover until every surviving client has re-registered', async () => {
+    const broker = limiterIn();
+    await broker.limiter.acquire('takeover.yale.edu');
+    const clients = [limiterIn(), limiterIn()];
+    for (const { limiter } of clients) {
+      await limiter.acquire(OVERRIDDEN_HOST);
+      expect(limiter.role).toBe('client');
+    }
+
+    let grantedAfterTakeover = 0;
+    for (const { limiter } of clients) {
+      void limiter.acquire(OVERRIDDEN_HOST).then(() => (grantedAfterTakeover += 1));
+    }
+    broker.limiter.close();
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(clients.map(({ limiter }) => limiter.role).sort()).toEqual(['client', 'host']);
+    expect(grantedAfterTakeover).toBe(0);
+  });
+
   it('never opens a socket when sharing is switched off or a benchmark replay is active', async () => {
     const off = new MachineHostSlotLimiter({
       paths: machineHostSlotPaths({ SCRAPER_MACHINE_HOST_SLOT_DIR: directory }),
