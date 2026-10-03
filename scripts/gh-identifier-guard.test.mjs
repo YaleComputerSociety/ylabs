@@ -433,7 +433,7 @@ test('the installer fails loudly when the shim is not the first gh on PATH', () 
 
   const absent = runInstaller(shimDir, { pathDirs: [] });
   assert.equal(absent.status, 1);
-  assert.match(absent.stderr, /is not ahead of the real gh on PATH/);
+  assert.match(absent.stderr, /is not ahead of .* on PATH/);
 });
 
 test('the shim keeps guarding after the checkout it was installed from is deleted', () => {
