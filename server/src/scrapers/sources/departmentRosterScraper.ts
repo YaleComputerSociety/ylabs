@@ -4025,15 +4025,18 @@ function entryToResearchEntityObservationsUnscreened(
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
   const profileCitationUrl = officialProfileCitationUrl(entry);
   const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
-  if (!isExplicitLab && !statedLabName && dept.emitPersonalResearchEntities === false) return [];
+  const admittedOnlyByStatedLabName =
+    !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  if (admittedOnlyByStatedLabName && !statedLabName) return [];
+  const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
   const evidence = rosterResearchHomeEvidence(entry);
   const { groundedDescription, topics } = evidence;
-  const labLessCitationUrl = entry.labUrl ? '' : profileCitationUrl;
+  const labLessCitationUrl = labUrl ? '' : profileCitationUrl;
   const hasLabLessResearchEvidence =
     Boolean(labLessCitationUrl) &&
     (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
-  if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
+  if (!labUrl && !hasLabLessResearchEvidence) return [];
 
   const cleanedName = normalizeName(entry.name);
   const slug = rosterResearchEntitySlug(entry, dept);
@@ -4086,12 +4089,12 @@ function entryToResearchEntityObservationsUnscreened(
     ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    ...(entry.labUrl ? [{ ...base, field: 'websiteUrl' as const, value: entry.labUrl }] : []),
+    ...(labUrl ? [{ ...base, field: 'websiteUrl' as const, value: labUrl }] : []),
     {
       ...base,
       field: 'sourceUrls',
-      value: entry.labUrl
-        ? uniqueStrings([profileCitationUrl, sourceUrl, entry.labUrl].filter(Boolean))
+      value: labUrl
+        ? uniqueStrings([profileCitationUrl, sourceUrl, labUrl].filter(Boolean))
         : [labLessCitationUrl],
     },
     {

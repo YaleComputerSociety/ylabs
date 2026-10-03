@@ -283,9 +283,13 @@ describe('a stated lab name the sentence does not end on', () => {
 });
 
 describe('a profile whose only research evidence is the lab it says the person leads', () => {
-  async function mintFromBareProfile(body: string, deptOverrides: Record<string, unknown> = {}) {
+  async function mintFromBareProfile(
+    body: string,
+    deptOverrides: Record<string, unknown> = {},
+    labUrl?: string,
+  ) {
     const entry = await enrichEntryFromOfficialProfile(
-      { name: 'Ada Fixture', profileUrl: PROFILE_URL },
+      { name: 'Ada Fixture', profileUrl: PROFILE_URL, ...(labUrl ? { labUrl } : {}) },
       'dept-faculty-roster',
       false,
       async () => profilePage(body),
@@ -321,6 +325,21 @@ describe('a profile whose only research evidence is the lab it says the person l
     expect(observations.find((observation) => observation.field === 'name')?.value).toBe(
       'Cytoskeleton Dynamics Lab',
     );
+  });
+
+  it('cites only the profile when a personal link is all the row has on such a roster', async () => {
+    const observations = await mintFromBareProfile(
+      `<p>Dr. Fixture directs the Cytoskeleton Dynamics Lab, an interdisciplinary research group.</p>`,
+      { emitPersonalResearchEntities: false },
+      'https://fixture-homepage.example.org/',
+    );
+    const byField = (field: string) =>
+      observations.find((observation) => observation.field === field);
+
+    expect(byField('name')?.value).toBe('Cytoskeleton Dynamics Lab');
+    expect(byField('websiteUrl')).toBeUndefined();
+    expect(byField('sourceUrls')?.value).toEqual([PROFILE_URL]);
+    expect(observations.every((observation) => observation.sourceUrl === PROFILE_URL)).toBe(true);
   });
 
   it('mints nothing when the profile only mentions a lab', async () => {
