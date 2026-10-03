@@ -76,7 +76,7 @@ const App = () => {
                 <main
                   id="main-content"
                   tabIndex={-1}
-                  className="min-h-full flex-shrink-0 flex-grow focus:outline-none"
+                  className="min-h-full flex-shrink-0 flex-grow focus:outline-hidden"
                 >
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <RouteFade>

@@ -5,6 +5,31 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-02: The Tailwind 4 Upgrade Renders Exactly What Tailwind 3 Rendered (#4386)
+
+The client moved from `tailwindcss` 3 to 4 (part of #4038), and the upgrade was held to no visual change, measured by before and after Playwright screenshots and computed-style diffs of the student and operator surfaces.
+A deliberate visual change belongs in its own reviewed PR, not inside a dependency bump.
+
+Decided:
+
+- **Tailwind runs as the `@tailwindcss/vite` plugin, and the theme lives in CSS.**
+`tailwind.config.js`, `postcss.config.js`, and `autoprefixer` are gone; the `--yr-*` aliases are an `@theme inline` block in `client/src/index.css`, so a utility compiles to the token variable itself.
+- **Tailwind 3's generic palette and line heights are restated rather than adopted.**
+`client/src/tailwindPalette.css` pins every generic hue to its Tailwind 3 hex value, and `index.css` pins the `text-*` line heights to Tailwind 3's absolute values.
+Tailwind 4's oklch palette and ratio line heights each shifted rendered pixels on the categorical scales and on any element pairing a `text-*` step with an arbitrary size.
+A `leading-*` class also now outranks a responsive `text-*` step, so the headings and intros that rendered with the step's own line height state it with a matching responsive `leading-*`.
+- **The Tailwind 3 preflight defaults that Tailwind 4 changed are kept in `@layer base`**: the default border and ring colours, the placeholder colour, the button cursor, the form-control font and background, and the search-field appearance.
+The navigation's `!border-b-2` underline never rendered under Tailwind 3, because MUI's `border: 0` reset its style, and Tailwind 4 would have drawn it, so those classes were removed rather than shipped as an unreviewed design change.
+- **Two Tailwind 4 behaviours were kept, because neither changes a desktop render.**
+`hover:` applies only under `(hover: hover)`, so a tap on a touch screen no longer leaves a sticky hover state.
+`space-*` and `divide-*` now space every child but the last with a trailing margin or border, which renders the same on every captured surface; the one filter list whose first child is a visually hidden legend takes an explicit `pt-1` to keep the leading gap it had.
+- **The class scanner does not split a class from an interpolation that touches it**, so `` `row-start-1${...}` `` generates no rule; keep a space before `${`.
+`client/src/__tests__/classScannerGuard.test.ts` fails on any such class.
+- **The browser floor is Tailwind 4's**: Safari 16.4, Chrome 111, and Firefox 128.
+`index.css` already required `color-mix`, so the floor moved by about one Safari minor release.
+
+Reverting any pin is a visual change and is reviewed as one.
+
 ## 2026-10-02: Research Led By Emeritus Faculty Is Labelled And Claims No Way In Without Current Activity (#4431)
 
 Owner decision: a research row led by emeritus faculty stays served and its tier is unchanged.

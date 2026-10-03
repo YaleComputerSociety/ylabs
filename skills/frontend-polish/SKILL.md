@@ -12,6 +12,7 @@ When something clearly looks or feels off, fix it, do not ship around it.
 ## Visual system
 
 - Use a design token for every color, font, border, and shadow. See `client/DESIGN.md`.
+- Tailwind is version 4, configured CSS-first: the token aliases live in the `@theme inline` block of `client/src/index.css`, and there is no `tailwind.config.js`. Add an alias there, never a one-off arbitrary value, and keep a space between a class and a `${...}` interpolation, because the class scanner cannot see a class written against one.
 - Never use Tailwind generic `blue-*` classes or raw hex for brand color. Use `bg-brand` / `text-ink` / `--yr-*`.
 - Reuse a shared primitive from `client/src/components/shared/` before writing new markup.
 

@@ -55,7 +55,9 @@ It should feel like a trustworthy university publication, not a consumer SaaS da
 
 ## 2. Color Palette and Roles
 
-All colors are defined once as CSS variables in `src/index.css` and aliased into Tailwind in `tailwind.config.js`.
+All colors are defined once as CSS variables in `src/index.css` and aliased into Tailwind by the `@theme inline` block at the top of the same file.
+`inline` makes a utility compile to the `--yr-*` variable itself, which is what the guards that compile Tailwind resolve against `:root`.
+Tailwind's generic palette is restated at its Tailwind 3 values in `src/tailwindPalette.css`, so the categorical and state scales below render exactly as they did before Tailwind 4, whose own palette is a different oklch set.
 Use the Tailwind alias in `className`, or the raw variable in MUI `sx` and inline styles.
 
 | Role | Token | Tailwind alias | Value |
@@ -102,7 +104,7 @@ A control's fill equals the surface it sits on, so its border is the only thing 
 `line-strong` measures 1.48:1 on `panel` and 1.34:1 on `panel-muted`, which left an unchecked filter option invisible; `line-control` measures 3.72:1 and 3.37:1, and 3.33:1 on `parchment`, the lowest of the four surfaces.
 Its focus state keeps `focus:border-brand`, which sits 3.28:1 from `line-control`, so the state change is still perceptible.
 A checkbox proxy for a visually hidden input takes `.yr-check-proxy`, which carries the size, radius, and edge, and adds only its checked fill at the call site.
-`src/__tests__/controlEdgeContrastGuard.test.tsx` renders the shared filter controls, compiles their classes through the real Tailwind config and `index.css`, and fails when a rendered control's resolved border measures under 3:1 on any control surface.
+`src/__tests__/controlEdgeContrastGuard.test.tsx` renders the shared filter controls, compiles their classes through the real Tailwind compiler and `index.css`, and fails when a rendered control's resolved border measures under 3:1 on any control surface.
 The same file sweeps every source file and fails on a control drawn with a hairline token or an uncoloured `border`, which is what reaches the operator surfaces the render does not.
 
 ### Categorical, state, and chart-series colors
@@ -168,7 +170,7 @@ The floor is what makes it both correct and enforceable, and `src/__tests__/disp
 - Apply the serif through `.yr-display`, never through a tag selector.
 A tag selector cannot tell a page heading from a metric-tile label; see §0.
 - `.yr-display` deliberately declares no `font-weight`.
-It sits in `@layer components`, so a `font-semibold` utility on the same element wins on source order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
+It sits in `@layer components`, so a `font-semibold` utility on the same element wins on cascade-layer order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
 Set the weight with a utility at the element, and prefer `font-semibold` over `font-bold`: Source Serif 4 at 700 is heavier than this palette wants.
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Text takes one of exactly three neutral steps, and there is no fourth.
@@ -200,9 +202,10 @@ And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300
 Every full-screen overlay, the program and comparison modals, the operator modals, and both mobile filter sheets, takes `bg-scrim`, which is `--yr-scrim`: navy at 50%.
 The MUI navigation drawer and the shared alert dialog cannot take a class on their backdrops, so each sets `backgroundColor: 'var(--yr-scrim)'` on the backdrop slot instead.
 There is one step, because a sheet and a modal both mean "the page behind this is inert", and two opacities would only be told apart side by side.
-Never write the scrim as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
-Every colour alias here is a `var()` with no alpha channel, so Tailwind 3 cannot apply the modifier and emits no rule at all; the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
-`src/__tests__/overlayScrimGuard.test.ts` compiles every background class in `src/` through the real Tailwind config and fails on one that compiles to a translucent black, such as `bg-black/50`, and on any opacity-modified colour class that compiles to nothing, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
+Never write the scrim, or any colour, as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
+Under Tailwind 3 that emitted no rule at all, because every alias is a `var()` with no alpha channel, and the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
+Tailwind 4 does apply it, through `color-mix`, so the same class now renders a colour the palette does not name, and a navy one is a second scrim step; add a token instead.
+`src/__tests__/overlayScrimGuard.test.ts` compiles every background class in `src/` through the real Tailwind compiler and `index.css`, and fails on one that compiles to a translucent black, such as `bg-black/50`, on any opacity modifier over a `--yr-*` token, and on any opacity-modified colour class that compiles to nothing, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
 - The sweep covers the whole tree, so the guard has no path list.
 A path list is honest only while a sweep is in progress; kept afterwards it means the next new file sits quietly outside the rule.
@@ -299,8 +302,8 @@ Removing the press state entirely under reduced motion would leave those users w
 - `src/__tests__/pressedStateGuard.test.ts` enforces all three: the base rule exists, the reduced-motion block drops the transform without dropping the filter, and no link styled as a control lacks `.yr-pressable`.
 Before this, 2 of 135 buttons had a pressed state.
 - Keyboard focus: `.yr-focus-ring` (defined in `src/index.css`) is the canonical focus indicator for interactive controls - a `:focus-visible`-only, brand-tinted outset outline. Use it instead of ad hoc `focus-visible:ring-2 focus-visible:ring-blue-*` clusters.
-- Never pair `.yr-focus-ring` with a `focus:outline-none` or `focus-visible:outline-none` utility.
-`.yr-focus-ring` lives in `@layer components`, Tailwind utilities come after it, and the two selectors have equal specificity, so the utility wins on source order and silently removes the focus ring.
+- Never pair `.yr-focus-ring` with a `focus:outline-hidden`, `focus:outline-none`, or `focus-visible:` equivalent utility.
+`.yr-focus-ring` lives in `@layer components` and Tailwind utilities live in the later `utilities` cascade layer, so the utility wins regardless of specificity and silently removes the focus ring.
 `.yr-focus-ring` already suppresses the resting outline itself.
 - Peer-driven focus: a visually hidden `peer` input whose focus must show on a styled proxy element uses `.yr-focus-ring-peer` on the proxy.
 The proxy never receives focus, so `.yr-focus-ring` cannot fire on it.
@@ -347,7 +350,7 @@ Rules:
 - **An inner element is tighter than the box holding it.**
 That ordering is the rule; the three numbers are only how it is currently expressed.
 A control inside a card reads as sitting in it, and a control as round as its card reads as floating on it.
-- Do not use Tailwind's generic `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, or `rounded-2xl`, and do not use a bare `rounded`.
+- Do not use Tailwind's generic `rounded-xs`, `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`, `rounded-3xl`, or `rounded-4xl`, and do not use a bare `rounded`.
 The sided forms count too: both mobile filter sheets were `rounded-t-md`, a generic radius the guard could not see until it matched `rounded-t-`, so a sheet now takes `rounded-t-overlay`.
 A bare `rounded` is 0.25rem and means "no radius was chosen"; it was at 28 sites in the swept paths.
 `rounded-full` is still correct for a capsule or an avatar, and `.yr-pill` already sets it.
@@ -355,7 +358,7 @@ A bare `rounded` is 0.25rem and means "no radius was chosen"; it was at 28 sites
 The identical card construct, a hairline border over the panel surface, was written with `rounded-md` 37 times and `rounded-lg` 34 times, so one component rendered at two radii essentially at random.
 Separately the operator surfaces put inputs at `rounded-lg`, the container radius, which is the inversion the ordering exists to prevent.
 - Never put a radius utility on a `.yr-pill`, including a bare `rounded`.
-`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on source order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
+`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on cascade-layer order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
 13 elements were doing this and they were two different things, which is why the count mattered more than the symptom.
 - 11 were dense chips carrying `min-h-0 rounded`, overriding both the capsule and the pill's min-height.
 That is a real variant and it meant it, so it is now `.yr-pill-compact`, which states the intent and takes its radius from the control step rather than an arbitrary 4px.
@@ -383,7 +386,7 @@ Elevation is a four-step scale, and the step is chosen by what the surface *is*,
 Rules:
 
 - Reserve elevation for cards, popovers, and modals; flat surfaces are the default.
-- Do not use Tailwind's generic `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`, or `shadow-2xl`.
+- Do not use Tailwind's generic `shadow-2xs`, `shadow-xs`, `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`, or `shadow-2xl`.
 Those are untinted black at low opacity, which reads as grey haze over the warm `canvas` rather than as lift.
 Every step above is tinted with `--yr-navy` so the shadow belongs to this palette.
 - Each step is two layers, a tight contact shadow plus a diffuse one.

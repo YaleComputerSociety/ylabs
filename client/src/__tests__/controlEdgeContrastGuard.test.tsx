@@ -3,17 +3,14 @@ import { join, relative } from 'path';
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import postcss, { type Root, type Rule } from 'postcss';
-import tailwindcss from 'tailwindcss';
-import loadConfig from 'tailwindcss/loadConfig';
+import { type Root, type Rule } from 'postcss';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import CombinedFilterDropdown from '../components/shared/CombinedFilterDropdown';
+import { candidatesIn, compileStylesheet } from '../testUtils/tailwind';
 
-const CLIENT = join(__dirname, '..', '..');
-const SRC = join(CLIENT, 'src');
-const STYLESHEET = join(SRC, 'index.css');
+const SRC = join(__dirname, '..');
 
 const WCAG_NON_TEXT_FLOOR = 3;
 
@@ -32,17 +29,13 @@ const CONTROL_EDGES = [
 
 const COLOR_IN_SHORTHAND = /var\(--[\w-]+\)|#[0-9a-f]{3,8}\b/i;
 
-const compileStylesheetFor = async (markup: string): Promise<Root> => {
-  const config = loadConfig(join(CLIENT, 'tailwind.config.js'));
-  const result = await postcss([
-    tailwindcss({ ...config, content: [{ raw: markup, extension: 'html' }] }),
-  ]).process(readFileSync(STYLESHEET, 'utf8'), { from: STYLESHEET });
-  return result.root;
-};
+const compileStylesheetFor = (markup: string): Promise<Root> =>
+  compileStylesheet(candidatesIn(markup));
 
 const customProperties = (stylesheet: Root): Map<string, string> => {
   const properties = new Map<string, string>();
-  stylesheet.walkRules(':root', (rule) => {
+  stylesheet.walkRules((rule) => {
+    if (!rule.selectors.includes(':root')) return;
     rule.walkDecls(/^--/, (declaration) => {
       properties.set(declaration.prop, declaration.value);
     });
@@ -51,18 +44,28 @@ const customProperties = (stylesheet: Root): Map<string, string> => {
 };
 
 const resolveVariables = (value: string, properties: Map<string, string>): string => {
-  const reference = /var\((--[\w-]+)\)/.exec(value);
+  const reference = /var\((--[\w-]+)(?:,\s*([^()]*))?\)/.exec(value);
   if (!reference) return value.trim();
-  const replacement = properties.get(reference[1]);
+  const replacement = properties.get(reference[1]) ?? reference[2];
   if (replacement === undefined) return value.trim();
   return resolveVariables(value.replace(reference[0], replacement), properties);
 };
 
-const isUnconditional = (rule: Rule): boolean => {
+/**
+ * Cascade layers decide precedence before source order does, so a rule's layer is
+ * ranked rather than read off its position in the stylesheet.
+ */
+const CASCADE_LAYERS = ['theme', 'base', 'components', 'utilities'];
+const UNLAYERED = CASCADE_LAYERS.length;
+
+const cascadeLayerOf = (rule: Rule): number | null => {
+  let layer = UNLAYERED;
   for (let parent = rule.parent; parent && parent.type !== 'root'; parent = parent.parent) {
-    if (parent.type === 'atrule') return false;
+    if (parent.type !== 'atrule') continue;
+    if (parent.name !== 'layer') return null;
+    layer = Math.min(layer, CASCADE_LAYERS.indexOf(parent.params.trim()));
   }
-  return true;
+  return layer < 0 ? null : layer;
 };
 
 const elementMatches = (element: Element, selector: string): boolean => {
@@ -75,12 +78,20 @@ const elementMatches = (element: Element, selector: string): boolean => {
 
 const borderColorOf = (element: Element, stylesheet: Root): string | null => {
   let color: string | null = null;
+  let winningLayer = -1;
   stylesheet.walkRules((rule) => {
-    if (!isUnconditional(rule)) return;
+    const layer = cascadeLayerOf(rule);
+    if (layer === null || layer < winningLayer) return;
     if (!rule.selectors.some((selector) => elementMatches(element, selector))) return;
-    rule.walkDecls(/^border(-color)?$/, (declaration) => {
-      if (declaration.prop === 'border-color') color = declaration.value;
-      else color = COLOR_IN_SHORTHAND.exec(declaration.value)?.[0] ?? color;
+    rule.each((declaration) => {
+      if (declaration.type !== 'decl' || !/^border(-color)?$/.test(declaration.prop)) return;
+      const declared =
+        declaration.prop === 'border-color'
+          ? declaration.value
+          : COLOR_IN_SHORTHAND.exec(declaration.value)?.[0];
+      if (declared === undefined) return;
+      color = declared;
+      winningLayer = layer;
     });
   });
   return color;

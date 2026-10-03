@@ -13,10 +13,10 @@ const LoginError = () => {
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 py-14 text-center sm:px-8 sm:py-20">
         <div className="yr-panel rounded-card p-6">
           <p className="yr-kicker">Yale CAS</p>
-          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-4xl">
+          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-4xl sm:leading-10">
             We couldn't complete sign in
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-soft sm:text-lg">
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-soft sm:text-lg sm:leading-7">
             y/labs did not receive a valid CAS session. Try Yale CAS again, or return to the
             research entry page and start from the surface you were opening.
           </p>

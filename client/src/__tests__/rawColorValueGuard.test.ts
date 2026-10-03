@@ -11,9 +11,10 @@ const HEX = /#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g;
  * `index.css` is where the tokens are defined, so it is the one place a hex value
  * belongs. `muiTheme.ts` is the second, and only because MUI's palette needs
  * literal values it can compute against and cannot read a CSS variable; the
- * mirror assertion below is what keeps it honest.
+ * mirror assertion below is what keeps it honest. `tailwindPalette.css` is the
+ * third: it is Tailwind's own generic palette restated, not a y/labs colour.
  */
-const TOKEN_FILES = new Set(['index.css', 'utils/muiTheme.ts']);
+const TOKEN_FILES = new Set(['index.css', 'utils/muiTheme.ts', 'tailwindPalette.css']);
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {

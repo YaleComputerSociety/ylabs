@@ -5,7 +5,7 @@ interface ResearchSearchDegradedNoticeProps {
 }
 
 const actionClassName =
-  'yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-control border px-3 text-sm font-semibold transition-colors active:translate-y-px';
+  'yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-control border px-3 text-sm font-semibold transition-colors';
 
 const retryClassName = `${actionClassName} border-brand bg-panel text-brand hover:bg-[var(--yr-panel-muted)]`;
 

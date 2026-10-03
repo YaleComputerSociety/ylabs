@@ -4,6 +4,14 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The client moves to Tailwind CSS 4 and drops `autoprefixer` (#4386)
+
+`tailwindcss` is on 4.3 and runs as the `@tailwindcss/vite` plugin, so `postcss.config.js`, `tailwind.config.js`, and `autoprefixer` are removed; Tailwind 4 prefixes through Lightning CSS.
+`postcss` stays as a client devDependency, because the design-token guards parse the compiled stylesheet with it, and its `resolutions` pin stays.
+`@tailwindcss/node` and `@tailwindcss/oxide` are explicit devDependencies rather than transitive ones, because `client/src/testUtils/tailwind.ts` compiles and scans with them directly.
+The client `tsconfig.json` moves to `moduleResolution: "bundler"`, the Vite-recommended setting, because those packages publish their types only through `exports`.
+How the upgrade was held to no visual change is recorded in `docs/decisions.md` under the same issue.
+
 ## 2026-10-02: TypeScript moves to 6.0, and TypeScript 7 is held (#4433)
 
 `typescript` is on 6.0.3 in the root, `client`, and `server` projects, up from 5.9.3.

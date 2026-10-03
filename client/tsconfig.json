@@ -18,8 +18,5 @@
     "jsx": "react-jsx",
     "types": ["node", "react", "react-dom", "vite/client"]
   },
-  "include": [
-    "src", 
-    "postcss.config.mjs"  
-  ]
+  "include": ["src"]
 }

@@ -250,7 +250,7 @@ const CombinedFilterDropdown = ({
               </button>
             )}
 
-            <fieldset className="space-y-1 max-h-[220px] overflow-y-auto">
+            <fieldset className="space-y-1 pt-1 max-h-[220px] overflow-y-auto">
               <legend className="sr-only">{activeTab.label} filters</legend>
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);

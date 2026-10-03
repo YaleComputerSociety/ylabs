@@ -66,8 +66,8 @@ describe('focus ring guard', () => {
       bareInteractiveElements(),
       'An interactive element has a literal className with no yr-focus-ring token, so keyboard ' +
         'focus falls back to the browser default outline. Add yr-focus-ring, or yr-focus-ring-inset ' +
-        'when an ancestor clips overflow. Never pair it with outline-none: Tailwind utilities come ' +
-        'after @layer components at equal specificity and silently delete the ring.',
+        'when an ancestor clips overflow. Never pair it with outline-none or outline-hidden: the ' +
+        'utilities layer outranks @layer components and silently deletes the ring.',
     ).toEqual([]);
   });
 });

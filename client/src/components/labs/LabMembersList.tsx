@@ -124,7 +124,7 @@ const LabMemberCard = ({
           />
         ) : (
           <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-line-brand font-semibold text-brand`}
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
           >
             {initials || fullName.charAt(0).toUpperCase() || '?'}
           </div>
@@ -148,9 +148,7 @@ const LabMemberCard = ({
             {roleLabel}
           </span>
           {user.emeritus && LEAD_ROLES.has(role) && (
-            <span
-              className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full bg-gold-soft px-1.5 py-0.5 font-medium text-[var(--yr-gold-deep)]`}
-            >
+            <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
               Emeritus
             </span>
           )}
