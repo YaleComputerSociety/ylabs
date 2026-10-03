@@ -197,7 +197,7 @@ describe('readSweepHeadSha', () => {
         status: 0,
         stdout: 'def5678\n',
       })),
-    ).toBe('def5678\n');
+    ).toBe('def5678');
   });
 
   it('falls back to the commit an image was built from when there is no git metadata', () => {

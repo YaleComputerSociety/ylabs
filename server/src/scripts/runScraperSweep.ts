@@ -881,7 +881,7 @@ export function readSweepHeadSha(
     spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }),
 ): string | null {
   const result = runGit(repoRoot);
-  if (result.status === 0) return result.stdout;
+  if (result.status === 0) return result.stdout.trim();
   return readCodeSha(env, repoRoot) ?? null;
 }
 
