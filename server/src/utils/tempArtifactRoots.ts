@@ -72,8 +72,7 @@ export interface TempArtifactParentOptions {
 }
 
 export type TempArtifactParentVerdict =
-  | { realParent: string }
-  | { refusal: TempArtifactParentRefusal };
+  { realParent: string } | { refusal: TempArtifactParentRefusal };
 
 export function inspectTempArtifactParent(
   parent: string,

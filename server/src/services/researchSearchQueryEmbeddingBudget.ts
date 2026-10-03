@@ -68,10 +68,7 @@ export const researchSearchQueryEmbeddingBudgetLimits =
   });
 
 export type ResearchSearchQueryEmbeddingSpendDecision =
-  | 'allowed'
-  | 'window-ceiling'
-  | 'client-ceiling'
-  | 'cooling-down';
+  'allowed' | 'window-ceiling' | 'client-ceiling' | 'cooling-down';
 
 // The client map only gains an entry when a call is allowed, so its size can never
 // exceed the window ceiling and the window reset is the whole of its bookkeeping.

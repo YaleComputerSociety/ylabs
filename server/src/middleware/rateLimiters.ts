@@ -247,8 +247,7 @@ export const resetFirstContactVolumeNotices = (): void => {
 
 export const observeFirstContactVolume = (req: Request, _res: Response, next: NextFunction) => {
   const info = (req as any).rateLimit as
-    | { used?: number; limit?: number; resetTime?: Date }
-    | undefined;
+    { used?: number; limit?: number; resetTime?: Date } | undefined;
   if (!isFirstContactRequest(req) || !info || typeof info.used !== 'number') return next();
 
   const limit = typeof info.limit === 'number' && info.limit > 0 ? info.limit : firstContactMax();

@@ -57,10 +57,7 @@ export interface OrgUnitAliasRemovalGap {
 }
 
 export type OrgUnitCatalogGap =
-  | OrgUnitAliasGap
-  | OrgUnitDepartmentGap
-  | OrgUnitRenameGap
-  | OrgUnitAliasRemovalGap;
+  OrgUnitAliasGap | OrgUnitDepartmentGap | OrgUnitRenameGap | OrgUnitAliasRemovalGap;
 
 const ROSTER_CONFIG_SOURCE = 'departmentRosterScraper DEFAULT_DEPT_CONFIGS';
 const OFFICIAL_INDEX_SOURCE = `Yale official department index ${OFFICIAL_DEPARTMENT_INDEX_URL}`;
@@ -114,16 +111,14 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     aliases: ['Divinity'],
     source: `${ROSTER_CONFIG_SOURCE} divinity`,
   },
-  ...OFFICIAL_DEPARTMENT_RENAMES.map(
-    (rename): OrgUnitRenameGap => ({
-      action: 'rename-department',
-      fromName: rename.priorName,
-      toName: rename.officialName,
-      source: rename.linkedUnit
-        ? `${OFFICIAL_INDEX_SOURCE} -> ${rename.linkedUnit}`
-        : OFFICIAL_INDEX_SOURCE,
-    }),
-  ),
+  ...OFFICIAL_DEPARTMENT_RENAMES.map((rename): OrgUnitRenameGap => ({
+    action: 'rename-department',
+    fromName: rename.priorName,
+    toName: rename.officialName,
+    source: rename.linkedUnit
+      ? `${OFFICIAL_INDEX_SOURCE} -> ${rename.linkedUnit}`
+      : OFFICIAL_INDEX_SOURCE,
+  })),
   // The index links "Environment" to environment.yale.edu, the School of the
   // Environment, not to the FAS Environmental Studies programme the alias sits
   // on today. Moving it onto the school lets the school-is-not-a-department rule

@@ -7,11 +7,7 @@ type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppress
 type Risk = 'ok' | 'warn' | 'error';
 type QueueKind = 'blocking' | 'evidence' | 'review';
 type RepairStage =
-  | 'source_description'
-  | 'pi_identity'
-  | 'action_evidence'
-  | 'suppression'
-  | 'review_exception';
+  'source_description' | 'pi_identity' | 'action_evidence' | 'suppression' | 'review_exception';
 
 interface TierCount {
   tier: Tier;

@@ -62,11 +62,7 @@ export interface CardBackfillEntity {
 }
 
 export type CardBackfillAction =
-  | 'short-ok'
-  | 'not-genuine-full'
-  | 'card-derived'
-  | 'card-synthesized'
-  | 'no-card';
+  'short-ok' | 'not-genuine-full' | 'card-derived' | 'card-synthesized' | 'no-card';
 
 export interface CardBackfillRow {
   id: string;

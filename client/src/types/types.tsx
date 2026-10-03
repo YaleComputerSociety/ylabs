@@ -92,10 +92,7 @@ export type Fellowship = {
 };
 
 export type StudentVisibilityTier =
-  | 'student_ready'
-  | 'limited_but_safe'
-  | 'operator_review'
-  | 'suppressed';
+  'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 
 export type FellowshipFilterOptions = {
   programCategory: string[];

@@ -1,11 +1,7 @@
 import { phase0ResearchSearchSettingsFingerprint } from './phase0ResearchSearchBaselineCore';
 
 export type ResearchSearchQueryClass =
-  | 'topic'
-  | 'short-alias'
-  | 'method'
-  | 'semantic-phrase'
-  | 'person-name';
+  'topic' | 'short-alias' | 'method' | 'semantic-phrase' | 'person-name';
 
 export interface ResearchSearchRelevanceCase {
   label: string;
@@ -25,15 +21,10 @@ export interface ResearchSearchRelevanceCase {
 // reported kind would let `real-misspelling` reach `perturbToken` and be reported
 // as an identity skip rather than rejected.
 export type ResearchSearchSyntheticPerturbationKind =
-  | 'transposition'
-  | 'deletion'
-  | 'doubling'
-  | 'substitution'
-  | 'casing';
+  'transposition' | 'deletion' | 'doubling' | 'substitution' | 'casing';
 
 export type ResearchSearchPerturbationKind =
-  | ResearchSearchSyntheticPerturbationKind
-  | 'real-misspelling';
+  ResearchSearchSyntheticPerturbationKind | 'real-misspelling';
 
 export const RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS: readonly ResearchSearchSyntheticPerturbationKind[] =
   ['transposition', 'deletion', 'doubling', 'substitution', 'casing'] as const;

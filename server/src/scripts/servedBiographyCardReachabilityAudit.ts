@@ -245,9 +245,7 @@ async function main(): Promise<void> {
       for (const slug of slugs) {
         scanned += 1;
         const entity = (await getResearchGroupDetail(slug))?.researchEntity as
-          | Record<string, unknown>
-          | undefined
-          | null;
+          Record<string, unknown> | undefined | null;
         if (!entity) {
           servesNoPage += 1;
         } else {

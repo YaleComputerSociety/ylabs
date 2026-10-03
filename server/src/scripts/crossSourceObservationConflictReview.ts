@@ -25,9 +25,7 @@ const APPLY_BLOCKED_REASON =
   'Apply mode is intentionally unavailable until cross-source conflict plans are reviewed and a guarded source-precedence or field-policy path is implemented.';
 
 export type CrossSourceObservationReviewQueue =
-  | 'priority_review'
-  | 'context_review'
-  | 'metadata_review';
+  'priority_review' | 'context_review' | 'metadata_review';
 
 export type CrossSourceObservationReviewCategory =
   | 'identity_or_routing'

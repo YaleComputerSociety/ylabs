@@ -132,13 +132,11 @@ async function main(): Promise<void> {
     .select('entityKey sourceUrl sourceName')
     .lean()) as unknown as Array<Record<string, unknown>>;
   const lanes = laneNamesByCitation(
-    citationDocs.map(
-      (d): LeadEdgeCitation => ({
-        entityKey: String(d.entityKey ?? ''),
-        sourceUrl: String(d.sourceUrl ?? ''),
-        sourceName: String(d.sourceName ?? ''),
-      }),
-    ),
+    citationDocs.map((d): LeadEdgeCitation => ({
+      entityKey: String(d.entityKey ?? ''),
+      sourceUrl: String(d.sourceUrl ?? ''),
+      sourceName: String(d.sourceName ?? ''),
+    })),
   );
 
   const queue = buildLeadEdgeReviewQueue(

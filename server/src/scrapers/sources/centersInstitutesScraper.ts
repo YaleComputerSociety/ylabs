@@ -267,12 +267,10 @@ export function centerEntityKey(config: CenterConfig): string {
 }
 
 export type CenterConfigRouteRefusal =
-  | 'archived-without-survivor'
-  | 'survivor-claimed-by-another-config';
+  'archived-without-survivor' | 'survivor-claimed-by-another-config';
 
 export type CenterConfigRoute =
-  | { config: CenterConfig; redirectedFrom?: string }
-  | { refusal: CenterConfigRouteRefusal };
+  { config: CenterConfig; redirectedFrom?: string } | { refusal: CenterConfigRouteRefusal };
 
 export async function routeCenterConfigsToLiveRows(
   configs: readonly CenterConfig[],

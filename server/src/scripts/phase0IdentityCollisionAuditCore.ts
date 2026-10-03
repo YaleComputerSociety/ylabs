@@ -245,15 +245,13 @@ function collisionClassReview(
   mixedNameIdentityCount: number,
 ): Phase0IdentityCollisionClassReview[] {
   return [
-    ...PHASE0_IDENTITY_FIELDS.map(
-      (field): Phase0IdentityCollisionClassReview => ({
-        collisionClass: COLLISION_CLASS_BY_FIELD[field],
-        count: identityCounts[field],
-        reviewRequired: true,
-        owner: null,
-        disposition: null,
-      }),
-    ),
+    ...PHASE0_IDENTITY_FIELDS.map((field): Phase0IdentityCollisionClassReview => ({
+      collisionClass: COLLISION_CLASS_BY_FIELD[field],
+      count: identityCounts[field],
+      reviewRequired: true,
+      owner: null,
+      disposition: null,
+    })),
     {
       collisionClass: 'same_name_only',
       count: sameNameOnlyCount,
@@ -419,15 +417,13 @@ export function buildPhase0IdentityCollisionAuditReport(input: {
   const allIdentityCollisionGroups = PHASE0_IDENTITY_FIELDS.flatMap((field) =>
     Array.from(identityGroups.get(field)?.entries() || [])
       .filter(([, group]) => group.count > 1)
-      .map(
-        ([identityValue, group]): Phase0IdentityCollisionGroup => ({
-          identityField: field,
-          identityValue,
-          memberCount: group.count,
-          memberDetailsTruncated: group.count > group.members.length,
-          members: group.members.map((member) => reviewMember(member, input.fingerprintSalt)),
-        }),
-      ),
+      .map(([identityValue, group]): Phase0IdentityCollisionGroup => ({
+        identityField: field,
+        identityValue,
+        memberCount: group.count,
+        memberDetailsTruncated: group.count > group.members.length,
+        members: group.members.map((member) => reviewMember(member, input.fingerprintSalt)),
+      })),
   ).sort(compareIdentityGroups);
 
   const nameAmbiguityGroups = Array.from(nameGroups.entries())

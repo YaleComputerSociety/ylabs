@@ -865,9 +865,7 @@ function accountClaimedScope(
 }
 
 export type UnprocessedClaimedRecordReason =
-  | 'absent-or-archived'
-  | 'not-a-candidate'
-  | 'beyond-limit';
+  'absent-or-archived' | 'not-a-candidate' | 'beyond-limit';
 
 export interface ClaimedScopeAccounting {
   requested: number;

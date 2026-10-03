@@ -1,8 +1,5 @@
 export type PressFeatureDescriptionShape =
-  | 'quoted-speech'
-  | 'publication-list'
-  | 'press-blurb'
-  | 'news-announcement';
+  'quoted-speech' | 'publication-list' | 'press-blurb' | 'news-announcement';
 
 const SPEECH_VERB =
   '(?:says|said|explains|explained|adds|added|notes|noted|recalls|recalled|remarks|remarked|observes|observed|tells|told|continues|continued|admits|admitted|jokes|joked|laughs|laughed)';

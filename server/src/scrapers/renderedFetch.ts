@@ -238,8 +238,7 @@ export async function measureRenderedFetch<T, TFetchMode extends string = Scrape
   const fetchMode = (typeof second === 'function' ? first : second) as TFetchMode;
   const fetcher = (typeof second === 'function' ? second : third) as () => Promise<T>;
   const classify = (typeof second === 'function' ? third : undefined) as
-    | ((result: T) => RenderedFetchMetricOverrides)
-    | undefined;
+    ((result: T) => RenderedFetchMetricOverrides) | undefined;
   const startedAt = nowMs();
   const memoryStartBytes = currentMemoryBytes();
 
@@ -392,8 +391,7 @@ export function withBenchmarkRenderedFetcher(live: RenderedFetcher | null): Rend
 
 const frozenRendererEnablement = (): { enabled?: unknown } | undefined =>
   benchmarkFrozenMetadata(RENDERED_FETCH_BENCHMARK_NAMESPACE, RENDERER_ENABLED_KEY) as
-    | { enabled?: unknown }
-    | undefined;
+    { enabled?: unknown } | undefined;
 
 /**
  * Whether the renderer freeze is the record of every render, so the lane's own rendered-page

@@ -193,8 +193,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
   const includeFacets = page === 1 || body.includeFacets === true;
   const filters = parseFilters(body.filters);
   const currentUser = request.user as
-    | { netId?: string; netid?: string; userType?: string }
-    | undefined;
+    { netId?: string; netid?: string; userType?: string } | undefined;
   const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
   const requestedTiers = hasAdminAuthority
     ? parseStudentVisibilityTiers(body.studentVisibilityTier)

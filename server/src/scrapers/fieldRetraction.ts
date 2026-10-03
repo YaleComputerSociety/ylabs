@@ -429,10 +429,7 @@ export interface FieldRetractionEntityState {
 }
 
 export type FieldRetractionVerdict =
-  | 'source-has-not-reread'
-  | 'absence-not-witnessed'
-  | 'awaiting-second-complete-read'
-  | 'retract';
+  'source-has-not-reread' | 'absence-not-witnessed' | 'awaiting-second-complete-read' | 'retract';
 
 /**
  * A read only counts when it is BOTH a different run and strictly later than the

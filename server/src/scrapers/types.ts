@@ -98,12 +98,7 @@ export interface IScraper {
 }
 
 export type ScraperFetchMode =
-  | 'http'
-  | 'rendered'
-  | 'browser'
-  | 'remote-browser'
-  | 'api'
-  | (string & {});
+  'http' | 'rendered' | 'browser' | 'remote-browser' | 'api' | (string & {});
 
 export interface ScraperFetchAttemptMetrics<TFetchMode extends string = ScraperFetchMode> {
   target?: string;

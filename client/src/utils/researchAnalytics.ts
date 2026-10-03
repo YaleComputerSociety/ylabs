@@ -2,11 +2,7 @@ import axios from './axios';
 import { getApiBaseUrl } from './apiBaseUrl';
 
 export type LegacyResearchEventType =
-  | 'research_view'
-  | 'pathway_save'
-  | 'ways_in_click'
-  | 'contact_route_click'
-  | 'source_link_click';
+  'research_view' | 'pathway_save' | 'ways_in_click' | 'contact_route_click' | 'source_link_click';
 
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',
@@ -25,10 +21,7 @@ export type ResearchEventType = LegacyResearchEventType | ResearchJourneyEventTy
 export type ResearchSaveSurface = 'profile' | 'search' | 'saved_plans';
 export type ResearchEntityType = 'profile' | 'listing' | 'fellowship' | 'research_entity';
 export type PlanningContextCategory =
-  | 'open_position'
-  | 'official_application'
-  | 'reviewed_route'
-  | 'qualified_participation';
+  'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
 
 export type ResearchJourneyPayload =
   | {
@@ -44,12 +37,7 @@ export type ResearchJourneyPayload =
   | { source: ResearchProfileOpenSource }
   | {
       sourceCategory:
-        | 'entity_website'
-        | 'faculty_profile'
-        | 'orcid'
-        | 'publication'
-        | 'evidence'
-        | 'other';
+        'entity_website' | 'faculty_profile' | 'orcid' | 'publication' | 'evidence' | 'other';
     }
   | {
       operation: 'apply' | 'remove' | 'clear' | 'panel_open' | 'panel_close';

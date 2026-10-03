@@ -22,9 +22,7 @@ export const PROGRAM_ATTRIBUTED_FIELDS = [
 ] as const;
 
 export type ProgramAttributedField =
-  | 'deadline'
-  | 'isAcceptingApplications'
-  | ProgramReaderDecidedField;
+  'deadline' | 'isAcceptingApplications' | ProgramReaderDecidedField;
 
 const STUDENT_PROJECTION_GUARD = 'publicFellowshipForStudent';
 

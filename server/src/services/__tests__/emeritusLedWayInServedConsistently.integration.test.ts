@@ -179,8 +179,7 @@ const browseCardFor = async (slug: string) => {
   });
   const result = await searchResearchGroupsViaMeili('tissue repair', {}, 1, 24);
   return result.researchEntities.find((entity: any) => entity.slug === slug) as
-    | Record<string, any>
-    | undefined;
+    Record<string, any> | undefined;
 };
 
 const servedFlags = (entity: Record<string, any> | undefined) => ({

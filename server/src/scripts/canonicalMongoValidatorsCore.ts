@@ -76,9 +76,7 @@ export interface CanonicalMongoValidatorRollbackItem {
 }
 
 export type CanonicalValidatorPresenceState =
-  | 'collection-missing'
-  | 'validator-absent'
-  | 'validator-drifted';
+  'collection-missing' | 'validator-absent' | 'validator-drifted';
 
 export interface CanonicalValidatorDriftFinding {
   collectionName: string;

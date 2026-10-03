@@ -1517,11 +1517,7 @@ function descriptionFieldText(chromeFreeRoot: cheerio.Cheerio<any>): string | un
 }
 
 export type NonProgramPageShape =
-  | 'cms-post'
-  | 'news-roundup'
-  | 'program-hub'
-  | 'advising-page'
-  | 'sign-in-wall';
+  'cms-post' | 'news-roundup' | 'program-hub' | 'advising-page' | 'sign-in-wall';
 
 const CMS_POST_CONTENT_TYPES = new Set([
   'narrative',

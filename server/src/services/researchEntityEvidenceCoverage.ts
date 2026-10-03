@@ -17,9 +17,7 @@ export type EvidenceCoverageBlocker =
   | 'missing_action_route';
 
 export type SuggestedSourceType =
-  | 'official-profile-page'
-  | 'official-lab-homepage'
-  | 'department-undergrad-research';
+  'official-profile-page' | 'official-lab-homepage' | 'department-undergrad-research';
 
 export interface EvidenceCoverageInput {
   entity: Record<string, any>;

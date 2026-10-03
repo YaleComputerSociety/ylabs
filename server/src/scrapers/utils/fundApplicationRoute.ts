@@ -22,9 +22,7 @@ export interface FundProseSection {
 }
 
 export type FundApplicationRoute =
-  | { kind: 'fund-page' }
-  | { kind: 'elsewhere'; url: string }
-  | { kind: 'elsewhere-unlinked' };
+  { kind: 'fund-page' } | { kind: 'elsewhere'; url: string } | { kind: 'elsewhere-unlinked' };
 
 export const FUND_PROSE_BLOCK_BREAK = '¶';
 

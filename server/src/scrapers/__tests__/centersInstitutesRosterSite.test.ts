@@ -155,9 +155,9 @@ describe('DEFAULT_CENTER_CONFIGS roster sites', () => {
 
 describe('CentersInstitutesScraper.run roster site guard', () => {
   it('fetches nothing and emits nothing for a roster off the center site, and says why', async () => {
-    const extractor = vi.fn(
-      (): ExtractorResult => ({ members: [{ name: 'Sample Member', title: 'Professor' }] }),
-    );
+    const extractor = vi.fn((): ExtractorResult => ({
+      members: [{ name: 'Sample Member', title: 'Professor' }],
+    }));
     const fetcher = vi.fn(async () => '<html></html>');
     const scraper = new CentersInstitutesScraper(
       [

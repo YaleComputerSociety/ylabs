@@ -144,8 +144,7 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
     const result = await searchResearchGroupsViaMeili('capillary barrier', {}, 1, 24);
     return {
       card: result.researchEntities.find((entity: any) => entity.slug === slug) as
-        | Record<string, any>
-        | undefined,
+        Record<string, any> | undefined,
       degraded: result.degraded,
     };
   };

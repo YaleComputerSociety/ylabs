@@ -4,11 +4,7 @@ export interface DeadLabHomeCandidate {
 }
 
 export type DeadLabHomeVerdict =
-  | 'not-a-ysm-lab-url'
-  | 'in-index'
-  | 'live-not-in-index'
-  | 'address-refused'
-  | 'clear';
+  'not-a-ysm-lab-url' | 'in-index' | 'live-not-in-index' | 'address-refused' | 'clear';
 
 export const SSRF_REFUSED_PROBE = 'ssrf-refused' as const;
 

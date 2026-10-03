@@ -22,11 +22,7 @@ export interface LaneBenchmarkRun {
 }
 
 export type LaneBenchmarkChange =
-  | 'first-run'
-  | 'unchanged'
-  | 'code-changed'
-  | 'input-leak'
-  | 'unattributed';
+  'first-run' | 'unchanged' | 'code-changed' | 'input-leak' | 'unattributed';
 
 export interface LaneBenchmarkTrend {
   benchmarkId: string;

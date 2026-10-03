@@ -138,8 +138,7 @@ const seedRow = async (row: SeedRow) => {
 const servedFullDescription = async (slug: string): Promise<string> => {
   const detail = await getResearchGroupDetail(slug);
   const served = (detail as Record<string, any> | null)?.researchEntity as
-    | Record<string, any>
-    | undefined;
+    Record<string, any> | undefined;
   return typeof served?.fullDescription === 'string' ? served.fullDescription : '';
 };
 

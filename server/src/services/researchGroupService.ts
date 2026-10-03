@@ -1939,8 +1939,7 @@ export async function searchResearchGroupsViaMeili(
   const resolvedTotalHits = totalHits ?? estimatedTotalHits;
 
   const disjunctiveRawFacetDistribution = (():
-    | Record<string, Record<string, number>>
-    | undefined => {
+    Record<string, Record<string, number>> | undefined => {
     if (!safeOptions.includeFacets) return undefined;
     if (!rawFacetDistribution) return rawFacetDistribution;
     if (activeDisjunctiveFacets.length === 0) return rawFacetDistribution;
@@ -2494,11 +2493,7 @@ function isVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
 }
 
 export type PublicRosterDisclosureStatus =
-  | 'current'
-  | 'partial'
-  | 'no-verified-data'
-  | 'withheld'
-  | 'optional-source-failure';
+  'current' | 'partial' | 'no-verified-data' | 'withheld' | 'optional-source-failure';
 
 export interface PublicRosterDisclosure {
   status: PublicRosterDisclosureStatus;

@@ -5776,13 +5776,7 @@ describe('a failed companion Meilisearch query marks the search degraded (#3751)
 
 describe('the independent Meilisearch legs of a text search run concurrently (#3949)', () => {
   type Leg =
-    | 'pool'
-    | 'count'
-    | 'keyword'
-    | 'semantic'
-    | 'matchPositions'
-    | 'deepPool'
-    | 'deepKeyword';
+    'pool' | 'count' | 'keyword' | 'semantic' | 'matchPositions' | 'deepPool' | 'deepKeyword';
 
   const legOf = (params: Record<string, any>): Leg => {
     if (params.showMatchesPosition) return 'matchPositions';
