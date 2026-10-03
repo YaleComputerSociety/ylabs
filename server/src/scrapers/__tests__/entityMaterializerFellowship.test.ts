@@ -400,7 +400,7 @@ describe('fellowship materialization', () => {
     const find = vi
       .spyOn(Fellowship, 'find')
       .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([]) } as any)
-      .mockImplementationOnce(((query: any) => ({ limit: () => byApplicationLink(query) })) as any);
+      .mockImplementation(((query: any) => ({ limit: () => byApplicationLink(query) })) as any);
 
     const result = await materializeEntity(
       'fellowship',
@@ -445,7 +445,7 @@ describe('fellowship materialization', () => {
     };
     vi.spyOn(Fellowship, 'find')
       .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([sameTitleOtherFund]) } as any)
-      .mockReturnValueOnce({
+      .mockReturnValue({
         limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }),
       } as any);
 

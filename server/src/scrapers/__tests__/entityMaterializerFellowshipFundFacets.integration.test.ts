@@ -260,9 +260,27 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
 
     const outcome = await materializeEntity('fellowship', { entityKey: FUND_KEY });
 
-    expect(outcome.skipped).toBe('missing-required-fields');
+    expect(outcome.created).toBe(false);
     expect(await Fellowship.countDocuments({})).toBe(1);
     expect((await officeRow())?.archived).toBe(true);
+  });
+
+  it('a fund read live before it retired resolves to its archived row on every later pass (#4174)', async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await seedFund(FUND_PAGE, FUND_FACETS, '2026-02-01T00:00:00Z');
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-04-01T00:00:00Z');
+    await materializeEntity('fellowship', { entityKey: FUND_KEY });
+    expect((await officeRow())?.archived).toBe(true);
+
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-05-01T00:00:00Z');
+    const reread = await materializeEntity('fellowship', { entityKey: FUND_KEY });
+    expect(reread.created).toBe(false);
+    expect(await Fellowship.countDocuments({})).toBe(1);
+
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: false }, '2026-06-01T00:00:00Z');
+    const republished = await materializeEntity('fellowship', { entityKey: FUND_KEY });
+    expect(republished.created).toBe(false);
+    expect(await Fellowship.countDocuments({})).toBe(1);
   });
 
   it('a live fund never revives a row its owning lane archived (#4174)', async () => {

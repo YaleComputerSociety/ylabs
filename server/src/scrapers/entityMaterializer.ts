@@ -4731,20 +4731,26 @@ async function findFellowshipByRecordSpecificApplicationLink(
 
   const query = new URL(applicationLink).search.replace(/^\?/, '');
   const observingLane = observedOwningFellowshipLane(obs);
-  const candidates = (
-    await Model.find({
-      applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
-      archived: { $ne: true },
-      ...(observingLane ? { sourceName: { $ne: observingLane } } : {}),
-    })
-      .limit(2)
-      .lean()
-  ).filter(
-    (candidate: any) =>
-      recordSpecificApplicationPortalIdentity(String(candidate.applicationLink || '').trim()) ===
-      fund,
-  );
-  return candidates.length === 1 ? candidates[0] : null;
+  const candidatesCitingFund = async (archived: boolean) =>
+    (
+      await Model.find({
+        applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
+        archived: archived ? true : { $ne: true },
+        ...(observingLane ? { sourceName: { $ne: observingLane } } : {}),
+      })
+        .limit(2)
+        .lean()
+    ).filter(
+      (candidate: any) =>
+        recordSpecificApplicationPortalIdentity(String(candidate.applicationLink || '').trim()) ===
+        fund,
+    );
+  const active = await candidatesCitingFund(false);
+  if (active.length > 0) return active.length === 1 ? active[0] : null;
+  // A fund retirement archives the row it resolved to, so a later read of the same fund,
+  // retired or republished, must resolve to that row rather than mint a duplicate (#4174).
+  const archived = await candidatesCitingFund(true);
+  return archived.length === 1 ? archived[0] : null;
 }
 
 // An owning lane finds its own rows by sourceKey, title and page, so a row it already owns
