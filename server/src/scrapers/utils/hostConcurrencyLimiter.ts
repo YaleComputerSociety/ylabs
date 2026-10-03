@@ -75,12 +75,30 @@ export interface HostSlotLimiter {
   acquire(host: string): Promise<HostSlotRelease>;
 }
 
+export class ChainedHostSlotLimiter implements HostSlotLimiter {
+  constructor(private readonly limiters: readonly HostSlotLimiter[]) {}
+
+  async acquire(host: string): Promise<HostSlotRelease> {
+    const releases: HostSlotRelease[] = [];
+    try {
+      for (const limiter of this.limiters) releases.push(await limiter.acquire(host));
+    } catch (error) {
+      for (const release of releases.reverse()) release();
+      throw error;
+    }
+    return () => {
+      for (const release of [...releases].reverse()) release();
+    };
+  }
+}
+
 const realSleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 interface HostSlotState {
   active: number;
   lastGrantAt: number;
+  lastActualGrantAt: number;
   waiters: Array<() => void>;
 }
 
@@ -122,6 +140,25 @@ export class HostConcurrencyLimiter implements HostSlotLimiter {
     state.lastGrantAt = grantAt;
     const waitMs = grantAt - this.now();
     if (waitMs > 0) await this.sleep(waitMs);
+    // A timer that fires late moves this grant but not the reservations after it, so the
+    // next grant is re-spaced against the grant actually made rather than the one reserved.
+    for (
+      let gapMs = state.lastActualGrantAt + throttle.minIntervalMs - this.now();
+      gapMs > 0;
+      gapMs = state.lastActualGrantAt + throttle.minIntervalMs - this.now()
+    ) {
+      await this.sleep(gapMs);
+    }
+    state.lastActualGrantAt = this.now();
+    return this.makeRelease(key);
+  }
+
+  adopt(host: string): HostSlotRelease {
+    const key = host || '(unknown-host)';
+    const state = this.stateFor(key);
+    state.active += 1;
+    state.lastGrantAt = Math.max(state.lastGrantAt, this.now());
+    state.lastActualGrantAt = Math.max(state.lastActualGrantAt, this.now());
     return this.makeRelease(key);
   }
 
@@ -136,7 +173,12 @@ export class HostConcurrencyLimiter implements HostSlotLimiter {
   private stateFor(key: string): HostSlotState {
     let state = this.states.get(key);
     if (!state) {
-      state = { active: 0, lastGrantAt: Number.NEGATIVE_INFINITY, waiters: [] };
+      state = {
+        active: 0,
+        lastGrantAt: Number.NEGATIVE_INFINITY,
+        lastActualGrantAt: Number.NEGATIVE_INFINITY,
+        waiters: [],
+      };
       this.states.set(key, state);
     }
     return state;

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HostConcurrencyLimiter, type HostSlotRelease } from '../hostConcurrencyLimiter';
+import {
+  ChainedHostSlotLimiter,
+  HostConcurrencyLimiter,
+  type HostSlotRelease,
+} from '../hostConcurrencyLimiter';
 import {
   BrokeredHostSlotLimiter,
   brokerSocketPath,
@@ -129,11 +133,24 @@ describe('HostSlotBroker', () => {
     expect(fallback.activeCount('b.yale.edu')).toBe(0);
   });
 
-  it('uses the broker only when the sweep names one', () => {
+  it('uses the sweep broker only when the sweep names one, and the machine-wide one otherwise', async () => {
     const local = new HostConcurrencyLimiter(1);
-    expect(resolveScraperHostSlotLimiter({}, local)).toBe(local);
+    const machineGrants: string[] = [];
+    const machine = {
+      acquire: async (host: string) => {
+        machineGrants.push(host);
+        return () => {};
+      },
+    };
+    const standalone = resolveScraperHostSlotLimiter({}, local, machine);
+    expect(standalone).toBeInstanceOf(ChainedHostSlotLimiter);
+    const release = await standalone.acquire('a.yale.edu');
+    expect(local.activeCount('a.yale.edu')).toBe(1);
+    expect(machineGrants).toEqual(['a.yale.edu']);
+    release();
+    expect(local.activeCount('a.yale.edu')).toBe(0);
     expect(
-      resolveScraperHostSlotLimiter({ SCRAPER_HOST_SLOT_BROKER: '/tmp/x.sock' }, local),
+      resolveScraperHostSlotLimiter({ SCRAPER_HOST_SLOT_BROKER: '/tmp/x.sock' }, local, machine),
     ).toBeInstanceOf(BrokeredHostSlotLimiter);
   });
 

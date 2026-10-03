@@ -3,11 +3,7 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { SHARED_TEMP_ROOT } from '../../utils/tempArtifactRoots';
-import {
-  HostConcurrencyLimiter,
-  type HostSlotLimiter,
-  type HostSlotRelease,
-} from './hostConcurrencyLimiter';
+import type { HostSlotLimiter, HostSlotRelease } from './hostConcurrencyLimiter';
 import { lineReader, writeLine as send } from './brokerWire';
 import { handleSweepPageMessage, type SweepPageStore } from './sweepPageStore';
 
@@ -24,8 +20,21 @@ export function brokerSocketPath(fileName: string, directory: string = os.tmpdir
   return fitsUnixSocketPath(preferred) ? preferred : path.join(SHARED_TEMP_ROOT, fileName);
 }
 
-type ClientMessage = { t: 'acquire'; id: number; host: string } | { t: 'release'; id: number };
-type BrokerMessage = { t: 'grant'; id: number };
+type ClientMessage =
+  | { t: 'acquire'; id: number; host: string }
+  | { t: 'hold'; id: number; host: string }
+  | { t: 'release'; id: number }
+  | { t: 'ping' };
+export type BrokerMessage = { t: 'grant'; id: number } | { t: 'pong' };
+
+export interface BrokerSlotLimiter extends HostSlotLimiter {
+  adopt?(host: string): HostSlotRelease;
+}
+
+export interface HostSlotBrokerOptions {
+  pageStore?: SweepPageStore;
+  detached?: boolean;
+}
 
 export class HostSlotBroker {
   private readonly connections = new Set<net.Socket>();
@@ -38,8 +47,8 @@ export class HostSlotBroker {
 
   static async listen(
     socketPath: string,
-    limiter: HostConcurrencyLimiter,
-    options: { pageStore?: SweepPageStore } = {},
+    limiter: BrokerSlotLimiter,
+    options: HostSlotBrokerOptions = {},
   ): Promise<HostSlotBroker> {
     if (!fitsUnixSocketPath(socketPath)) {
       throw new Error(
@@ -47,7 +56,12 @@ export class HostSlotBroker {
       );
     }
     fs.rmSync(socketPath, { force: true });
-    const server = net.createServer((socket) => broker.serve(socket, limiter));
+    const server = net.createServer((socket) => {
+      // A detached broker lives inside a scrape process, which must still exit when its own
+      // work is done; its clients then take over (see machineHostSlotBroker.ts).
+      if (options.detached) socket.unref();
+      broker.serve(socket, limiter);
+    });
     const broker = new HostSlotBroker(server, socketPath, options.pageStore);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -57,10 +71,11 @@ export class HostSlotBroker {
       });
     });
     fs.chmodSync(socketPath, 0o600);
+    if (options.detached) server.unref();
     return broker;
   }
 
-  private serve(socket: net.Socket, limiter: HostConcurrencyLimiter): void {
+  private serve(socket: net.Socket, limiter: BrokerSlotLimiter): void {
     this.connections.add(socket);
     const leases = new Map<number, HostSlotRelease>();
     let closed = false;
@@ -86,18 +101,28 @@ export class HostSlotBroker {
             leases.set(message.id, release);
             send(socket, { t: 'grant', id: message.id });
           });
+        } else if (message?.t === 'hold' && Number.isInteger(message.id)) {
+          const host = String(message.host ?? '');
+          if (limiter.adopt) leases.set(message.id, limiter.adopt(host));
         } else if (message?.t === 'release') {
           leases.get(message.id)?.();
           leases.delete(message.id);
+        } else if (message?.t === 'ping') {
+          send(socket, { t: 'pong' });
         }
       }),
     );
   }
 
-  async close(): Promise<void> {
-    for (const socket of this.connections) socket.destroy();
+  async close(options: { keepSocketFile?: boolean } = {}): Promise<void> {
+    this.closeSync(options);
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
-    fs.rmSync(this.socketPath, { force: true });
+  }
+
+  closeSync(options: { keepSocketFile?: boolean } = {}): void {
+    for (const socket of this.connections) socket.destroy();
+    if (this.server.listening) this.server.close();
+    if (!options.keepSocketFile) fs.rmSync(this.socketPath, { force: true });
   }
 }
 
