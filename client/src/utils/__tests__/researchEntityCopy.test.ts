@@ -51,11 +51,16 @@ describe('researchEntityCopy', () => {
       expect(decisionHeadingLabel(entity)).toBe('What this creative practice covers');
       expect(approachHeadingLabel(entity)).toBe('Ways to approach this creative practice');
       expect(summarySectionLabel(entity)).toBe('Practice summary');
-      expect(leadRoleLabelForEntity(entity)).toBe('Faculty');
+      for (const role of ['pi', 'co-pi', 'Principal Investigator']) {
+        expect(leadRoleLabelForEntity(entity, role)).toBe('Faculty');
+      }
+      for (const role of ['director', 'co-director', 'Director', 'Professor']) {
+        expect(leadRoleLabelForEntity(entity, role)).toBeUndefined();
+      }
     }
     const research = { name: 'Example Lab', kind: 'lab', entityType: 'LAB' };
     expect(summarySectionLabel(research)).toBe('Research summary');
-    expect(leadRoleLabelForEntity(research)).toBeUndefined();
+    expect(leadRoleLabelForEntity(research, 'pi')).toBeUndefined();
   });
 
   it('uses faculty research labels for FACULTY_RESEARCH entities despite stale lab kind', () => {

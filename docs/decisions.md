@@ -12,10 +12,11 @@ Students interested in art need a way in to the people who make it, and a direct
 The defect #4388 measured was never the field itself: it was a performance or exhibition biography presented under "Research summary", a "Faculty Research" pill and a "Principal Investigator" heading, which tells a student there is a research group to join when the page describes a career in practice.
 So the fix is an honest label, not a withhold.
 
-It is a serve-time derivation in `server/src/utils/creativePracticeDescription.ts`, computed once in the public DTO from the row's served body, so the detail page, browse and search read the same answer, and no field is written or locked.
+It is a serve-time derivation in `server/src/utils/creativePracticeDescription.ts`, computed once in the public DTO from the row's served body, so the detail page, browse, search and related cards read the same answer, and no field is written or locked.
 
 **The predicate.**
-A row is creative practice when three things hold.
+A row is creative practice when four things hold.
+It is person-scoped: a `LAB`, `FACULTY_RESEARCH_AREA` or `FACULTY_PROJECT` row, because a lab in an arts school named after one artist is that artist's practice, while a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` is an organization and is never labelled.
 Its department (Music, Art, Architecture, Film and Media Studies, Theater, Dance, and Performance Studies, English Language and Literature) or its school (the music, art, drama and architecture schools, the Institute of Sacred Music) places it in an arts context.
 Its served body, or its card when no body serves, states at least two kinds of practice evidence among exhibitions, performances, compositions, productions, creative writing and a practitioner noun ("is a violinist", "as a playwright").
 And that text states no research: a research, scholarship, musicology, theory, cognition, history-of, analysis, dissertation, journal or university-press statement keeps the row research, and so does a synthesized body that opens in the research voice ("Studies ...", "Examines ...").
@@ -23,7 +24,7 @@ An artwork in subject position ("work that examines memory") is an artist statem
 Arts research that states a research question, such as music cognition, digital humanities, musicology or film history, therefore stays research.
 
 **What a labelled row serves.**
-The kind pill and the browse card read "Creative practice", the summary is headed "Practice summary" and "What this creative practice covers", the website action reads "Visit website", and the lead is "Faculty" rather than "Principal Investigator".
+The kind pill and the browse card read "Creative practice", the summary is headed "Practice summary" and "What this creative practice covers", the website action reads "Visit website", and a principal-investigator lead (`pi`, `co-pi`) is "Faculty" rather than "Principal Investigator", while a director lead stays "Director" and the lead section heading follows the same rule.
 Nothing on the row claims a lab, a research group or an opening the page does not state.
 A card in the research voice ("Studies chamber music.", or a sentence claiming the person studies something) contradicts the label beside it and is usually a chip summary the practice body never states, so `decideCreativePracticeCard` in `server/src/services/creativePracticeCard.ts` replaces it with the body's own first practice sentence, and withholds it when the body offers none, on the #2911 reasoning that a blank card line costs less than a false one.
 

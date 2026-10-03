@@ -2634,7 +2634,7 @@ const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 // official-roster lead, hand the copy sanitizer a short lead list, and make a rail
 // card strip the very name its own detail page keeps (#2240).
 export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
-  '_id slug departments studentVisibilityTier rosterEnrichment',
+  '_id slug departments school studentVisibilityTier rosterEnrichment',
 );
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;

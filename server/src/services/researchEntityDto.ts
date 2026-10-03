@@ -231,6 +231,7 @@ function creativePracticeOfServedCopy(
   served: Record<string, any>,
 ): Readonly<CreativePracticeDecision> {
   return decideCreativePractice({
+    entityType: group.entityType || mapResearchGroupKindToEntityType(group.kind),
     fullDescription: served.fullDescription,
     shortDescription: served.shortDescription,
     departments: group.departments,

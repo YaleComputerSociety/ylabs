@@ -3235,6 +3235,26 @@ describe('LabDetail for a creative practice profile (#4519)', () => {
     expect(screen.getAllByText('Faculty').length).toBeGreaterThan(0);
   });
 
+  it('keeps a director lead and its heading a director on a labelled row', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        creativePractice: true,
+      },
+      members: [{ ...practiceLead, role: 'director' as const }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Director').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Faculty')).toBeNull();
+    expect(screen.queryByText(/Principal Investigator/)).toBeNull();
+  });
+
   it('keeps the research wording on a row the server did not label', async () => {
     renderLabDetail({
       ...basePayload,

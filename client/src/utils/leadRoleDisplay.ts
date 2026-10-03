@@ -59,12 +59,18 @@ export const leadRoleFamily = (member: LabMember): LeadRoleFamily => {
   return 'other';
 };
 
-export const leadSectionHeading = (members: LabMember[]): string => {
-  if (members.length === 0) return 'Principal Investigator';
+export const leadSectionHeading = (
+  members: LabMember[],
+  principalInvestigatorLabel?: string,
+): string => {
+  if (members.length === 0) return principalInvestigatorLabel ?? 'Principal Investigator';
   const families = new Set(members.map(leadRoleFamily));
   if (families.size === 1) {
     if (families.has('pi')) {
-      return members.length > 1 ? 'Principal Investigators' : 'Principal Investigator';
+      return (
+        principalInvestigatorLabel ??
+        (members.length > 1 ? 'Principal Investigators' : 'Principal Investigator')
+      );
     }
     if (families.has('director')) {
       return members.length > 1 ? 'Directors' : 'Director';

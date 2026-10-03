@@ -40,11 +40,9 @@ const countLabel = (count: number, singular: string, plural: string): string =>
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
-const titleCaseContactRole = (role?: string): string => {
-  const trimmed = (role || '').trim();
-  if (!trimmed) return 'Principal investigator';
-  return formatTitleCaseLabel(trimmed);
-};
+const DEFAULT_CONTACT_ROLE = 'Principal investigator';
+
+const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Undergrad evidence': 'Has hosted undergraduate researchers',
@@ -157,8 +155,9 @@ const ResearchHomeCard = ({
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
+  const contactRole = servedContactRole(leadEntity?.contactRole);
   const leadRole =
-    leadRoleLabelForEntity(home.entities[0]) ?? titleCaseContactRole(leadEntity?.contactRole);
+    leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];

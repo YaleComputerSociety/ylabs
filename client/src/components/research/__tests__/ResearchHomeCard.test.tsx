@@ -139,6 +139,30 @@ describe('ResearchHomeCard', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('keeps a director lead a director on a creative practice card (#4519)', () => {
+    const home = researchHome();
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                creativePractice: true,
+                contactName: 'Fixture Performer',
+                contactRole: 'Director',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Director: Fixture Performer');
+    expect(container.textContent).not.toContain('Faculty: Fixture Performer');
+  });
+
   it('carries no creative practice label for an ordinary card', () => {
     render(
       <MemoryRouter>

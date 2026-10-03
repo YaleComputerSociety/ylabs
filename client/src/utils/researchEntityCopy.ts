@@ -172,9 +172,15 @@ export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): s
     : `Ways to approach this ${researchStructureLabel(entity)}`;
 };
 
+const PRINCIPAL_INVESTIGATOR_ROLE = /^(?:co-?pi|pi|(?:co-)?principal investigators?)$/i;
+
 export const leadRoleLabelForEntity = (
-  entity?: ResearchEntityCopyInput | null,
-): string | undefined => (isCreativePracticeEntity(entity) ? 'Faculty' : undefined);
+  entity: ResearchEntityCopyInput | null | undefined,
+  role: string | null | undefined,
+): string | undefined =>
+  isCreativePracticeEntity(entity) && PRINCIPAL_INVESTIGATOR_ROLE.test((role || '').trim())
+    ? 'Faculty'
+    : undefined;
 
 const facultyResearchLabelBase = (entity: ResearchEntityCopyInput): string =>
   String(entity.displayName || entity.name || '')

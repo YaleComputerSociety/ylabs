@@ -6,8 +6,16 @@ import {
   statesResearchApartFromArtwork,
 } from '../creativePracticeDescription';
 
-const MUSIC = { departments: ['Music'], school: 'School of Music' };
-const DRAMA_SCHOOL_ONLY = { departments: [], school: 'David Geffen School of Drama' };
+const MUSIC = {
+  entityType: 'FACULTY_RESEARCH_AREA',
+  departments: ['Music'],
+  school: 'School of Music',
+};
+const DRAMA_SCHOOL_ONLY = {
+  entityType: 'FACULTY_RESEARCH_AREA',
+  departments: [],
+  school: 'David Geffen School of Drama',
+};
 
 describe('decideCreativePractice (#4519)', () => {
   it('labels a performance biography in an arts department', () => {
@@ -60,6 +68,7 @@ describe('decideCreativePractice (#4519)', () => {
     ).toBe(false);
     expect(
       decideCreativePractice({
+        entityType: 'FACULTY_PROJECT',
         departments: ['Art'],
         fullDescription:
           'An artist whose work examines memory and duration through installations, she has exhibited at galleries in New York and Berlin.',
@@ -93,11 +102,28 @@ describe('decideCreativePractice (#4519)', () => {
     ).toBe(false);
     expect(
       decideCreativePractice({
+        entityType: 'FACULTY_RESEARCH_AREA',
         departments: ['Internal Medicine'],
         fullDescription:
           'A pianist who has performed with orchestras on four continents and recorded the complete sonatas.',
       }).creativePractice,
     ).toBe(false);
+  });
+
+  it('labels a person-scoped row but never an organizational one', () => {
+    const fullDescription =
+      'A pianist who has performed with orchestras on four continents and recorded the complete sonatas.';
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']) {
+      expect(
+        decideCreativePractice({ ...MUSIC, entityType, fullDescription }).creativePractice,
+      ).toBe(true);
+    }
+    for (const entityType of ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY', undefined]) {
+      expect(decideCreativePractice({ ...MUSIC, entityType, fullDescription })).toEqual({
+        creativePractice: false,
+        evidence: [],
+      });
+    }
   });
 
   it('reads the card only when no body serves', () => {

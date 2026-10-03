@@ -621,7 +621,7 @@ const DecisionSummary = ({
           {principalInvestigator && (
             <div className="py-4 first:pt-0 last:pb-0">
               <SectionHeading>
-                {leadRoleLabelForEntity(group) ?? leadSectionHeading([principalInvestigator])}
+                {leadSectionHeading([principalInvestigator], leadRoleLabelForEntity(group, 'pi'))}
               </SectionHeading>
               <div>
                 <LabMembersList
@@ -629,7 +629,7 @@ const DecisionSummary = ({
                   singleColumn
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={() => leadCardProfileUrl}
-                  leadRoleLabel={leadRoleLabelForEntity(group)}
+                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
                 />
               </div>
             </div>
@@ -1176,7 +1176,7 @@ const LabDetail = () => {
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
               <SectionHeading>
-                {leadRoleLabelForEntity(group) ?? leadSectionHeading(principalInvestigators)}
+                {leadSectionHeading(principalInvestigators, leadRoleLabelForEntity(group, 'pi'))}
               </SectionHeading>
               {leadIdentityUnderReview ? (
                 <div
@@ -1194,7 +1194,7 @@ const LabDetail = () => {
                   members={principalInvestigators}
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
-                  leadRoleLabel={leadRoleLabelForEntity(group)}
+                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
                 />
               )}
             </section>
