@@ -808,7 +808,7 @@ The verdict carries `provenInert: true` and the summary counts it as `plannedRel
 
 The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
 `--release-never-backed` is that path.
-A lock whose field's provenance names a lane that never observed the field on the row (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
+A lock whose field's provenance names a lane that never observed the field on the row or any row merged into it (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`, #4418) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
 It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
 Silence counts as that answer only on a field whose collection the lock does not stop.
 A lock over a cleared field stays shut on silence, for the reason the fence above gives.
@@ -939,7 +939,7 @@ The model refuses to persist a `fieldProvenance` entry that carries no `observat
 The only listed authority is `description-derived-research-area`, which the materializer recomputes from the row's own description on every resolve.
 `$unset` and a subpath repoint of `sourceUrl` author no attribution and are allowed.
 A raw `collection` handle skips those hooks, so `models/__tests__/rawResearchEntityWriteGuard.test.ts` keeps raw writers of `research_entities` to a reviewed list with a reason per file and refuses any raw write that authors a whole entry or its `sourceName` (#3788).
-For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field on the row at all, live or superseded.
+For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field at all, live or superseded, under the row's own key and id or any merged-in row's (#4418).
 An entry on a locked field is left to `research-entity:release-field-locks --release-never-backed`, described with the lock release tool above.
 It clears the attribution and never the value: the value stays exactly as evidenced, which is by nothing, and a later lane observation re-attributes it through the normal projection.
 Everything else is history and is kept: an `observationId` that resolves to a superseded observation or to nothing (a pruned one), a bare `sourceId` (the #2897 residue), and an unrecorded-id entry whose lane really did observe the field.
