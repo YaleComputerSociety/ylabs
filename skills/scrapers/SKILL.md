@@ -648,8 +648,8 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   Over that union a lane's newest read of a latest-wins field wins whichever key it was filed under, and an accumulating award list unions only within the row that newest read was filed under, so a merged-in key's older award list is outranked rather than retired.
   Sweep lane gated by `SCRAPER_FIELD_RETRACTION=true` at the end of `materializeFromRun`; operator lane `observations:reconcile-field-retractions` (dry-run default, `--confirm-field-retraction`, `--max-apply`) needs no fresh scrape because the evidence is already in the log.
   `docs/research-data-pipeline.md` owns the guard rationale, including why the drop-guard denominator is holders rather than everything read.
-- `laneRefusedWebsiteUrl.ts` - how a lane withdraws its own earlier `websiteUrl` when a later read refuses the link the page still carries (#3926).
-  `ysm-faculty-directory` emits `refusedWebsiteUrl` for a populated lab slot it will not adopt; on every resolve that newer read withdraws every older `websiteUrl` the lane asserted on the row, whatever the link.
+- `laneRefusedWebsiteUrl.ts` - how a lane withdraws its own earlier `websiteUrl` and `website` when a later read refuses the link the page still carries (#3926).
+  A lane that emits `refusedWebsiteUrl` withdraws, on every resolve, every older website it asserted on the row, whatever the link.
   Another lane's evidence still counts, and the stored value clears only when nothing else states it.
   `docs/research-data-pipeline.md` owns the contract.
 - `yaleProfileDepartureEvidence.ts` - the Yale-side signal that positively asserts a person is gone, and the only thing that licenses `facultyRosterDepartureReconciler`'s suppression (#3144).
