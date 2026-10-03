@@ -199,17 +199,25 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 
 ## Default `/research` ordering
 
-With no query, `/research` sorts by `browseRankScore:desc` then `lastObservedAt:desc`.
-The path is `researchGroupService.searchResearchGroupsViaMeili`.
+With no query, `/research` sorts by `browseRankScore:desc` then `browseTiebreakKey:asc`.
+The path is `researchGroupService.searchResearchGroupsViaMeili`, and a filter-only browse (facets, no query) takes the same path, because the client's "Recommended" option sends no `sortBy`.
+`browseTiebreakKey` is a fixed hash of the row id computed when the index document is built (`utils/researchEntityBrowseTiebreakKey.ts`), so ties keep one order across calls, pages, and sweeps (#4547).
+The tiebreak used to be `lastObservedAt`, but a sweep stamps nearly every row on the same day: on 2026-10-03, 3,407 of 3,464 `student_ready` Development rows carried the same observation day, so browse served the sweep's write order and reshuffled pages mid-sweep.
+An index whose settings predate `browseTiebreakKey` degrades the tiebreak alone back to `lastObservedAt` and marks the result degraded; it drops `browseRankScore` only when that is also unsortable.
+`yarn --cwd server journey:eval --case=default-browse-order-is-repeatable` checks the order is repeatable and pages are distinct.
 
 `browseRankScore` is precomputed on the ResearchEntity document and mirrored to Meilisearch as a sortable attribute.
 The scorer lives in `researchEntityBrowseRank.ts`.
 The join, persist, and resync logic lives in `researchEntityBrowseRankService.ts`.
 
-The scorer rewards completeness plus strength-weighted undergrad access signals.
+The scorer rewards completeness (a source-backed description, an identified lead, an official source URL), then served enrichment, minus a duplicate-risk penalty and an umbrella demotion for a center, institute, or initiative that hosts other research.
+Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), and there is no entity-type bonus, so a faculty research row is never demoted for its type.
 Completeness is read from the copy a row serves, so the stored-only `profileSynthesisDescription` earns no rank: before #4120 it lifted a row with no served description from 0 or 2 description points to 8.
-Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OUT_PLAUSIBLE` fallback.
-`NOT_CURRENTLY_AVAILABLE` is negative.
+The gate requires every completeness term of a served row, so completeness alone tied 3,379 of 3,464 `student_ready` Development rows at the maximum score on 2026-10-03.
+Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website (+8), served methods (+5), and a current grant from the served current-funding view (+5), so a grant whose end date has passed earns nothing.
+The grant term is only as broad as the grant lanes: NIH RePORTER supplies most served grant evidence, NSF Award Search most of the rest, NEH and DOE OSTI a handful of rows, and no private-foundation, other-agency, or internal-award source exists, so the term favours NIH-funded and NSF-funded research over well-funded rows the lanes cannot see.
+The score is computed when it is recomputed, not at serve time, so a grant that ends after the last recompute keeps its points until the next materialize or browse-rank backfill.
+The `duplicate_risk` penalty never reaches a served row today: on 2026-10-03 all 224 live rows carrying the reason were `suppressed` or `operator_review`.
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
 Browse sorts on the indexed score, not the stored one, so a Mongo write whose resync failed still serves the old order.

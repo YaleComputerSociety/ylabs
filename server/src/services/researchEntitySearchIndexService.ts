@@ -9,6 +9,7 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { researchEntityBrowseTiebreakKey } from '../utils/researchEntityBrowseTiebreakKey';
 import {
   isFacultyResearchEntity,
   researchEntitySortTitle,
@@ -85,6 +86,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   ],
   sortableAttributes: [
     'browseRankScore',
+    'browseTiebreakKey',
     'lastObservedAt',
     'name',
     'sortTitle',
@@ -590,6 +592,7 @@ export function buildResearchEntitySearchIndexDocument(
   }
   out.sortTitle = researchEntitySortTitle(out);
   out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
+  out.browseTiebreakKey = researchEntityBrowseTiebreakKey(id);
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
+import { researchEntityBrowseTiebreakKey } from '../../utils/researchEntityBrowseTiebreakKey';
 
 const mocks = vi.hoisted(() => {
   const addDocuments = vi.fn();
@@ -115,6 +116,7 @@ describe('syncEntity transform', () => {
       researchAreas: ['Genetics'],
       sortTitle: 'smith lab',
       sortTitleQualifier: 'bio)',
+      browseTiebreakKey: researchEntityBrowseTiebreakKey('rg-id-42'),
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -206,8 +208,20 @@ describe('syncEntities', () => {
     const [meiliDocs, opts] = mocks.addDocuments.mock.calls[0];
     expect(opts).toEqual({ primaryKey: 'id' });
     expect(meiliDocs).toEqual([
-      { id: 'a', name: 'A', sortTitle: 'a', sortTitleQualifier: '' },
-      { id: 'b', name: 'B', sortTitle: 'b', sortTitleQualifier: '' },
+      {
+        id: 'a',
+        name: 'A',
+        sortTitle: 'a',
+        sortTitleQualifier: '',
+        browseTiebreakKey: researchEntityBrowseTiebreakKey('a'),
+      },
+      {
+        id: 'b',
+        name: 'B',
+        sortTitle: 'b',
+        sortTitleQualifier: '',
+        browseTiebreakKey: researchEntityBrowseTiebreakKey('b'),
+      },
     ]);
   });
 

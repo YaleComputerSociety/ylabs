@@ -20,6 +20,7 @@ import {
   checkFacetAgreement,
   checkConstantReportedTotal,
   checkCreativePracticeLabelAttribution,
+  checkDefaultBrowseOrderIsRepeatable,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
@@ -390,6 +391,54 @@ const paginationServesDistinctRows: JourneyCase = {
     return {
       invariants: [
         checkNoRepeatedRowsAcrossPages(pages, corpusBefore, corpusAfter, {
+          pagesRequested: context.pagesChecked,
+          reachablePages,
+        }),
+      ],
+      rates: [],
+    };
+  },
+};
+
+const defaultBrowseOrderIsRepeatable: JourneyCase = {
+  id: 'default-browse-order-is-repeatable',
+  title: 'The default browse serves one fixed order a student can page through and come back to',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const walk = async () => {
+      const pages: string[][] = [];
+      let degradedPages = 0;
+      for (let page = 1; page <= pagesToWalk; page += 1) {
+        const result = await context.browse({ page, pageSize: context.window });
+        if (result.degraded !== false) degradedPages += 1;
+        pages.push(servedRows(result).map(rowKey).filter(Boolean));
+      }
+      return { pages, degradedPages };
+    };
+    const firstWalk = await walk();
+    const secondWalk = await walk();
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        buildInvariant(
+          'default-browse-is-not-degraded',
+          'The default browse does not fall back to the observation-time tiebreak',
+          firstWalk.degradedPages + secondWalk.degradedPages === 0,
+          {
+            pagesWalked: pagesToWalk,
+            degradedPages: firstWalk.degradedPages + secondWalk.degradedPages,
+          },
+        ),
+        checkDefaultBrowseOrderIsRepeatable(
+          firstWalk.pages,
+          secondWalk.pages,
+          corpusBefore,
+          corpusAfter,
+        ),
+        checkNoRepeatedRowsAcrossPages(firstWalk.pages, corpusBefore, corpusAfter, {
           pagesRequested: context.pagesChecked,
           reachablePages,
         }),
@@ -917,6 +966,7 @@ export const journeyCases: readonly JourneyCase[] = [
   paginationServesDistinctRows,
   textQueryTotalIsStable,
   sortedBrowseKeepsOrder,
+  defaultBrowseOrderIsRepeatable,
   titleSortedBrowseFollowsCardTitle,
   topicQueryRelevance,
   undergradEvidenceQuotePrecision,

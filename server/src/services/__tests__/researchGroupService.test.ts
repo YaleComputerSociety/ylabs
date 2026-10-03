@@ -1182,20 +1182,61 @@ describe('searchResearchGroupsViaMeili', () => {
   });
 
   it('marks browse results degraded when Meili cannot sort by browse rank', async () => {
+    const unsortable = {
+      code: 'invalid_search_sort',
+      message: 'Attribute `browseRankScore` is not sortable.',
+    };
+    mocks.search
+      .mockRejectedValueOnce(unsortable)
+      .mockRejectedValueOnce(unsortable)
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(3);
+    expect(mocks.search.mock.calls[2][1]).toEqual(
+      expect.objectContaining({ sort: ['lastObservedAt:desc'] }),
+    );
+    expect(result.degraded).toBe(true);
+  });
+
+  it('breaks default browse ties on the stable tiebreak key rather than observation time', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1].sort).toEqual([
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
+  it('keeps the browse rank when only the tiebreak key is not yet sortable', async () => {
     mocks.search
       .mockRejectedValueOnce({
         code: 'invalid_search_sort',
-        message: 'Attribute `browseRankScore` is not sortable.',
+        message: 'Attribute `browseTiebreakKey` is not sortable.',
       })
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
     const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[1][1]).toEqual(
-      expect.objectContaining({ sort: ['lastObservedAt:desc'] }),
-    );
+    expect(mocks.search.mock.calls[1][1].sort).toEqual([
+      'browseRankScore:desc',
+      'lastObservedAt:desc',
+    ]);
     expect(result.degraded).toBe(true);
+  });
+
+  it('keeps a text query sorted only by browse rank after relevance', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    for (const [, params] of mocks.search.mock.calls) {
+      if (params.sort) expect(params.sort).toEqual(['browseRankScore:desc']);
+    }
   });
 
   it('sorts A-Z by the indexed card title rather than the stored name', async () => {

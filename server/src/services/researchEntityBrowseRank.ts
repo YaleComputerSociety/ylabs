@@ -6,10 +6,13 @@
  * act on first. It ranks on profile completeness (source-backed description, an
  * attached identified lead, an official source URL) reusing the existing
  * quality-state classification so there is one source of truth for those
- * states, plus a small umbrella-type demotion. Access-plausibility signals do
- * not contribute to rank (see the 2026-08-25 "Simple Directory First"
- * decision): reaching out is the universal action, so ordering is by data
- * quality and relevance, not by a computed access grade.
+ * states, then on served enrichment (a research website, methods, a current
+ * grant), plus a small umbrella-type demotion. The gate already requires the
+ * completeness terms of every served row, so on their own they tie nearly the
+ * whole served corpus (#4547). Access-plausibility signals do not contribute to
+ * rank (see the 2026-08-25 "Simple Directory First" decision): reaching out is
+ * the universal action, so ordering is by data quality and relevance, not by a
+ * computed access grade.
  *
  * Higher score = better. Pure function (no DB access) so it is fully testable;
  * persistence/sync orchestration lives in researchEntityBrowseRankService.ts.
@@ -18,7 +21,11 @@ import {
   buildResearchEntityQualitySummary,
   ResearchEntityQualitySummary,
 } from './researchEntityQuality';
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  publicDescriptionLeadMemberNames,
+} from './researchEntityPublicDescription';
+import { toPublicResearchEntityDto } from './researchEntityDto';
 import {
   mapResearchGroupKindToEntityType,
   ResearchEntityType,
@@ -64,7 +71,7 @@ const resolveEntityType = (entity: Record<string, any>): ResearchEntityType =>
  * many labs) are valid research homes but are not the single joinable lab or
  * project a student is usually looking for, so they are ranked below comparable
  * direct research homes rather than excluded. The magnitude is small relative to
- * the completeness and access terms, so a strong umbrella entity can still
+ * the completeness and enrichment terms, so a strong umbrella entity can still
  * surface above a weak lab.
  *
  * The umbrella demotion is applied by behavior, not by name: it only affects an
@@ -90,6 +97,32 @@ const entityTypeRankAdjustment = (
   if (UMBRELLA_GATED_TYPES.has(entityType) && !hostsAffiliatedResearchHomes) return 0;
   return adjustment;
 };
+
+const ENRICHMENT_POINTS = {
+  website: 8,
+  methods: 5,
+  currentGrant: 5,
+} as const;
+
+const servedEnrichmentPoints = (
+  entity: Record<string, any>,
+  leadMembers: Array<Record<string, any>>,
+): number => {
+  const served = toPublicResearchEntityDto(entity, {
+    leadMemberNames: publicDescriptionLeadMemberNames(leadMembers),
+  });
+  let points = 0;
+  if (served.websiteUrl || served.website) points += ENRICHMENT_POINTS.website;
+  if (Array.isArray(served.methods) && served.methods.length > 0) {
+    points += ENRICHMENT_POINTS.methods;
+  }
+  if (servesACurrentGrant(served)) points += ENRICHMENT_POINTS.currentGrant;
+  return points;
+};
+
+const servesACurrentGrant = (served: Record<string, any>): boolean =>
+  (typeof served.recentGrantCount === 'number' && served.recentGrantCount > 0) ||
+  (Array.isArray(served.recentGrants) && served.recentGrants.length > 0);
 
 const withoutUnservedDescriptions = (entity: Record<string, any>): Record<string, any> => {
   const { profileSynthesisDescription: _unserved, ...served } = entity;
@@ -123,6 +156,7 @@ export function computeResearchEntityBrowseRank({
     score += 10;
   }
   if (summary.repairFlags.includes('duplicate_risk')) score -= 14;
+  score += servedEnrichmentPoints(entity, leadMembers);
   score += entityTypeRankAdjustment(entity, hostsAffiliatedResearchHomes);
 
   return score;
@@ -130,6 +164,7 @@ export function computeResearchEntityBrowseRank({
 
 export const __testing = {
   ENTITY_TYPE_RANK_ADJUSTMENT,
+  ENRICHMENT_POINTS,
   UMBRELLA_GATED_TYPES,
   descriptionPoints,
   leadPoints,
