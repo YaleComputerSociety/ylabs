@@ -129,10 +129,12 @@ Start the API and the client dev server (isolated to this worktree):
 Log in locally (returns to this worktree's client):
   http://localhost:${SERVER_PORT}/api/dev-login?redirect=http://localhost:${PORT}/
 
-Merge without --delete-branch, which removes the worktree and switches the
-primary checkout's branch. Then delete the remote branch, remove the worktree,
+Merge through the queue without --delete-branch, which removes the worktree
+and switches the primary checkout's branch. Once the PR reads MERGED (deleting
+the branch earlier closes it), delete the remote branch, remove the worktree,
 and confirm the primary checkout is still on beta:
-  gh pr merge <n> --squash --admin --repo YaleComputerSociety/ylabs
+  gh pr merge <n> --auto --repo YaleComputerSociety/ylabs
+  gh pr view <n> --repo YaleComputerSociety/ylabs --json state --jq .state
   git push origin --delete "${BRANCH}"
   git -C "${PRIMARY_ROOT}" worktree remove "${WORKTREE_DIR}"
   git -C "${PRIMARY_ROOT}" branch --show-current
