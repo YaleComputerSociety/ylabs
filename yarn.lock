@@ -1452,26 +1452,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rdb@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "rdb@workspace:."
-  dependencies:
-    "@eslint/js": "npm:10.0.1"
-    concurrently: "npm:^10.0.5"
-    dotenv: "npm:^18.0.5"
-    eslint: "npm:^10.11.0"
-    eslint-config-prettier: "npm:^10.1.8"
-    eslint-plugin-react-hooks: "npm:^7.1.1"
-    globals: "npm:^17.13.0"
-    js-yaml: "npm:5.4.2"
-    mongoose: "npm:^9.10.3"
-    playwright: "npm:^1.63.0"
-    prettier: "npm:3.9.9"
-    typescript: "npm:^6.0.3"
-    typescript-eslint: "npm:^8.71.0"
-  languageName: unknown
-  linkType: soft
-
 "rxjs@npm:7.8.2":
   version: 7.8.2
   resolution: "rxjs@npm:7.8.2"
@@ -1756,6 +1736,26 @@ __metadata:
   checksum: 10c0/bf290e4723876ea9c638c786a5c42ac28e03c9ca2325e1424bf43b94e5876456292d3ed905b853ebbba6daf43ed29e772ac2a6b3c5fb1b16533245d6211778f3
   languageName: node
   linkType: hard
+
+"ylabs@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "ylabs@workspace:."
+  dependencies:
+    "@eslint/js": "npm:10.0.1"
+    concurrently: "npm:^10.0.5"
+    dotenv: "npm:^18.0.5"
+    eslint: "npm:^10.11.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-react-hooks: "npm:^7.1.1"
+    globals: "npm:^17.13.0"
+    js-yaml: "npm:5.4.2"
+    mongoose: "npm:^9.10.3"
+    playwright: "npm:^1.63.0"
+    prettier: "npm:3.9.9"
+    typescript: "npm:^6.0.3"
+    typescript-eslint: "npm:^8.71.0"
+  languageName: unknown
+  linkType: soft
 
 "yocto-queue@npm:^0.1.0":
   version: 0.1.0

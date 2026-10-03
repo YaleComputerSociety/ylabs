@@ -1,8 +1,11 @@
 {
-  "name": "rdb",
+  "name": "ylabs",
   "version": "1.0.0",
   "main": "index.js",
-  "repository": "git@github.com:JulianLee123/RDB.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YaleComputerSociety/ylabs.git"
+  },
   "author": "lee-julian",
   "license": "MIT",
   "scripts": {
