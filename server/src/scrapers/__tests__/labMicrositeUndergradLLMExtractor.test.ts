@@ -13,6 +13,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   LabMicrositeUndergradLLMExtractor,
   htmlToPromptText,
+  htmlToRosterText,
   discoverSubPageUrl,
   discoverSubPageUrls,
   candidateSubPageUrls,
@@ -23,6 +24,7 @@ import {
   extractionToObservations,
   joinPageRecruitsOnlyNonUndergraduates,
   laneJoinPageRefusal,
+  rosterSnippetSitsUnderAHistoricalHeading,
   pageContainingQuote,
   pagesWithinEntityScope,
   evidenceQuoteRecitationObservation,
@@ -2610,6 +2612,179 @@ describe('LabMicrositeUndergradLLMExtractor.run on a stale center-program citati
       }),
     );
     expect(result.metrics?.evidenceQuotesRecited).toBe(1);
+  });
+});
+
+describe('roster lines under an alumni heading (#4430)', () => {
+  const rosterPage = (text: string) => [{ url: 'https://examplelab.org/people', text }];
+
+  it('reads bare names listed after an Alumni heading as historical', () => {
+    const pages = rosterPage(
+      'Lab members Principal Investigator Graduate student Alumni Avery Example (undergraduate) Jordan Sample (undergraduate) Casey Placeholder (graduate student)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Avery Example (undergraduate)', pages)).toBe(
+      true,
+    );
+  });
+
+  it('reads a Former members heading as historical', () => {
+    const pages = rosterPage(
+      'Undergraduate researchers Riley Fixture Former members Quinn Fixture (Yale College 2024)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Quinn Fixture', pages)).toBe(true);
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Riley Fixture', pages)).toBe(false);
+  });
+
+  it('keeps a current undergraduate listed before the alumni heading', () => {
+    const pages = rosterPage(
+      'People Undergraduate Students Morgan Example is a member of a residential college studying physics. Alumni Taylor Example (now a graduate student)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Morgan Example', pages)).toBe(false);
+  });
+
+  it('keeps a roster that follows a navigation link named Alumni once a current heading resets it', () => {
+    const pages = rosterPage(
+      'Home Research Alumni Contact Lab Members Drew Sample Undergraduate Student Email',
+    );
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading('Drew Sample Undergraduate Student', pages),
+    ).toBe(false);
+  });
+
+  it('keeps a line a tab strip puts after the alumni tab when the panel repeats it under the team heading', () => {
+    const pages = rosterPage(
+      'Members Alumni Sky Fixture Undergraduate Student Team Members Sky Fixture Undergraduate Student',
+    );
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading('Sky Fixture Undergraduate Student', pages),
+    ).toBe(false);
+  });
+
+  it('treats a Current: label as current and a Former: label as historical', () => {
+    const pages = rosterPage(
+      'Undergraduate Students Current: Rowan Example Former: Harper Example (BS 2023; graduate student elsewhere)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Rowan Example', pages)).toBe(false);
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Harper Example', pages)).toBe(true);
+  });
+
+  it('does not read a career line inside an alumni list as a current heading', () => {
+    const pages = rosterPage(
+      'Alumni Parker Example, PhD Student. Current position: Postdoc elsewhere. Sage Example (undergraduate)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Sage Example (undergraduate)', pages)).toBe(
+      true,
+    );
+  });
+
+  it('lets a principal investigator heading reset a prose mention of an alumnus', () => {
+    const pages = rosterPage(
+      'People Life in Lab sketch gallery drawn by an alumnus. Principal Investigator Example PI Postdocs Avery Example Undergraduate Students Jordan Example Undergraduate Student Alumni Casey Example Former Graduate Student',
+    );
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading('Jordan Example Undergraduate Student', pages),
+    ).toBe(false);
+  });
+
+  it('reads role sub-headings inside an alumni section as historical', () => {
+    const pages = rosterPage(
+      'People Faculty Example PI Lab alumni Postdocs Avery Example - Assistant Professor elsewhere Masters students Jordan Example Undergraduate students Yale: Casey Example, Riley Example',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Casey Example', pages)).toBe(true);
+  });
+
+  it('finds an alumni heading a site builder glued to the words around it', () => {
+    const pages = rosterPage(
+      'People Riley ExampleUndergraduate Researcher Other UniversityAlumniCasey FixtureRotation Student Quinn ExampleUndergraduate Researcher Yale',
+    );
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading('Quinn ExampleUndergraduate Researcher Yale', pages),
+    ).toBe(true);
+  });
+
+  it('reads the roster against the page without its navigation menu', () => {
+    const html = `<html><body><nav><a>People</a> <a>Publications</a> <a>Alumni</a> <a>Past members</a></nav>
+      <main><h2>Directory</h2><p>Avery Example Graduate Student</p><p>Drew Sample Undergraduate</p></main></body></html>`;
+    const page = {
+      url: 'https://examplelab.org/directory',
+      text: htmlToPromptText(html),
+      rosterText: htmlToRosterText(html),
+    };
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Drew Sample Undergraduate', [page])).toBe(
+      false,
+    );
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading('Drew Sample Undergraduate', [
+        { url: page.url, text: page.text },
+      ]),
+    ).toBe(true);
+  });
+
+  it('reads a section label the counted line itself carries', () => {
+    const pages = rosterPage(
+      'Graduate Students Current: Avery Example Former: Jordan Example Undergraduate Students Current: Rowan Example',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Current: Rowan Example', pages)).toBe(false);
+  });
+
+  it('reads a Former Graduate Students heading as historical', () => {
+    const pages = rosterPage(
+      'Lab Members Example PI Former Graduate Students Avery Example Sage Example (undergraduate)',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Sage Example (undergraduate)', pages)).toBe(
+      true,
+    );
+  });
+
+  it('does not count undergraduates the page lists only under alumni', () => {
+    const page = {
+      url: 'https://examplelab.org/people',
+      text: 'Lab members Postdoctoral Fellow Graduate Student Alumni Avery Example (undergraduate) Jordan Sample (undergraduate)',
+    };
+    const obs = extractionToObservations(
+      'lab-alumni',
+      page.url,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 2,
+        currentUndergradEvidenceQuotes: [
+          'Avery Example (undergraduate)',
+          'Jordan Sample (undergraduate)',
+        ],
+        evidenceQuote: '',
+        evidenceSource: 'members_section',
+        joinPageUrl: null,
+      },
+      new Date('2026-10-01T00:00:00Z'),
+      { sourcePages: [page] },
+    );
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
+  });
+
+  it('still counts undergraduates listed under the current undergraduate heading', () => {
+    const page = {
+      url: 'https://examplelab.org/people',
+      text: 'People Undergraduate Students Morgan Example Yale College Physics Riley Example Yale College Chemistry Alumni Taylor Example (undergraduate)',
+    };
+    const obs = extractionToObservations(
+      'lab-current',
+      page.url,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 3,
+        currentUndergradEvidenceQuotes: [
+          'Morgan Example Yale College Physics',
+          'Riley Example Yale College Chemistry',
+          'Taylor Example (undergraduate)',
+        ],
+        evidenceQuote: '',
+        evidenceSource: 'members_section',
+        joinPageUrl: null,
+      },
+      new Date('2026-10-01T00:00:00Z'),
+      { sourcePages: [page] },
+    );
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(2);
   });
 });
 

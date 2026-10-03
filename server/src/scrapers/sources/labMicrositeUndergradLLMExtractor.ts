@@ -165,6 +165,7 @@ export interface LLMExtraction {
 export interface PromptSourcePage {
   url: string;
   text: string;
+  rosterText?: string;
 }
 
 export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
@@ -224,6 +225,25 @@ export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
  * prompt. Strips `<script>`, `<style>`, `<noscript>`, collapses whitespace,
  * and truncates to MAX_PROMPT_CHARS so we stay well below model context.
  */
+const PAGE_CHROME_SELECTOR =
+  'script, style, noscript, svg, iframe, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs';
+
+/**
+ * The page's text without its navigation, header and footer. A site menu lists "Alumni" or
+ * "Past members" beside every other section, so a roster read against the whole page sat
+ * under that menu link and looked historical (#4430).
+ */
+export function htmlToRosterText(html: string): string {
+  if (!html) return '';
+  try {
+    const $ = cheerio.load(html);
+    $(PAGE_CHROME_SELECTOR).remove();
+    return (plainTextContent($('body').toArray()) || '').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
 export function htmlToPromptText(html: string): string {
   if (!html) return '';
   let $: cheerio.CheerioAPI;
@@ -712,6 +732,76 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
   return !isHistoricalUndergradEvidence(quote) && !namesNonYaleInstitution(quote);
 }
 
+const HISTORICAL_ROSTER_SECTION_MARKER =
+  /\b(?:(?:lab|group|team)\s+)?alumn(?:i|ae|us|a)\b|\b(?:former|past|previous)\s+(?:[\w-]+\s+){0,2}?(?:members?|students?|undergrad(?:uate)?s?|researchers?|trainees?|interns?|people|fellows?|associates?|post-?docs?)\b|\b(?:former|past|previous)\s*:|\bwhere\s+are\s+they\s+now\b/gi;
+
+const CURRENT_ROSTER_SECTION_MARKER =
+  /\bcurrent\b(?!\s*:?\s*(?:position|role|affiliation|job|employer|title|institution|address|location)\b)(?:\s+(?:(?:lab|group|team)\s+)?(?:members?|students?|undergrad(?:uate)?s?|researchers?|trainees?|team))?|\b(?:lab|group|team)\s+members\b|\b(?:our|the|meet\s+the)\s+team\b|\bmembers\b|\bpeople\b|\bprincipal\s+investigators?\b/gi;
+
+// Site builders glue adjacent blocks without a space ("Example UniversityAlumniCasey"), so
+// a heading would not stand on a word boundary; both sides are split the same way.
+const rosterText = (text: string): string =>
+  normalizeQuoteText(text).replace(/([a-z])([A-Z])/g, '$1 $2');
+
+interface RosterSectionMarker {
+  start: number;
+  end: number;
+  historical: boolean;
+}
+
+function rosterSectionMarkers(text: string): RosterSectionMarker[] {
+  const historical = Array.from(text.matchAll(HISTORICAL_ROSTER_SECTION_MARKER), (match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    historical: true,
+  }));
+  const current = Array.from(text.matchAll(CURRENT_ROSTER_SECTION_MARKER), (match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    historical: false,
+  })).filter((marker) =>
+    historical.every((span) => marker.end <= span.start || marker.start >= span.end),
+  );
+  return [...historical, ...current].sort((left, right) => left.start - right.start);
+}
+
+/**
+ * Whether a roster line the model counted sits only under an alumni or former-members
+ * heading (#4430). A lab page lists alumni as bare names below that heading, so the line
+ * carries no marker of its own and `isHistoricalUndergradEvidence` cannot see it; one
+ * served row counted seven undergraduates who were all listed under "Alumni". The line is
+ * judged by the nearest section marker before each place it appears, and is historical
+ * only when every appearance is, because a site that renders its roster twice (a tab
+ * strip, then the panel) puts the first copy after the tab labels.
+ */
+export function rosterSnippetSitsUnderAHistoricalHeading(
+  snippet: string | undefined,
+  pages: readonly PromptSourcePage[],
+): boolean {
+  const needle = rosterText(snippet || '');
+  if (!needle) return false;
+  let appearances = 0;
+  for (const page of pages) {
+    const withoutChrome = [page.rosterText || '', redactDirectContactInfo(page.rosterText || '')]
+      .map(rosterText)
+      .filter((text) => text.includes(needle));
+    const texts = new Set(
+      withoutChrome.length > 0
+        ? withoutChrome
+        : [rosterText(page.text), rosterText(redactDirectContactInfo(page.text))],
+    );
+    for (const text of texts) {
+      const markers = rosterSectionMarkers(text);
+      for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+        appearances += 1;
+        const nearest = markers.filter((marker) => marker.start < at + needle.length).pop();
+        if (!nearest?.historical) return false;
+      }
+    }
+  }
+  return appearances > 0;
+}
+
 const RECRUITING_SENTENCE = new RegExp(
   [
     'looking\\s+for',
@@ -956,7 +1046,9 @@ export function extractionToObservations(
     ...extraction,
     evidenceQuote: evidenceQuote?.text ?? '',
     currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
-      (quote) => pageContainingQuote(quote, pages) !== null,
+      (quote) =>
+        pageContainingQuote(quote, pages) !== null &&
+        !rosterSnippetSitsUnderAHistoricalHeading(quote, pages),
     ),
   });
   if (currentUndergradCount > 0 || sourceContext.readIsComplete !== false) {
@@ -1568,7 +1660,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           }
           const text = htmlToPromptText(fetched.html);
           if (!text) continue;
-          subPages.push({ url: fetched.url, text });
+          subPages.push({ url: fetched.url, text, rosterText: htmlToRosterText(fetched.html) });
         }
         const [primarySubPage, ...additionalSubPages] = subPages;
 
@@ -1680,7 +1772,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           }
         }
 
-        const sourcePages = [{ url: homePage.url, text: homeText }, ...subPages];
+        const sourcePages = [
+          { url: homePage.url, text: homeText, rosterText: htmlToRosterText(homePage.html) },
+          ...subPages,
+        ];
         quotesNotOnPage += quoteFieldsNotOnPage(extraction, sourcePages).length;
         const joinPage = await this.readNamedJoinPage(extraction.joinPageUrl, sourcePages);
         if (joinPage?.metric) fetchAttempts.push(joinPage.metric);
