@@ -1,7 +1,6 @@
 const PROGRAMS_INTENT_WORDS = new Set([
   'freshman',
   'freshmen',
-  'frosh',
   'sophomore',
   'sophomores',
   'beginner',
