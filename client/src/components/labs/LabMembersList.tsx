@@ -149,6 +149,13 @@ const LabMemberCard = ({
           >
             {roleLabel}
           </span>
+          {user.emeritus && LEAD_ROLES.has(role) && (
+            <span
+              className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full bg-gold-soft px-1.5 py-0.5 font-medium text-[var(--yr-gold-deep)]`}
+            >
+              Emeritus
+            </span>
+          )}
           {departmentLabel && (
             <span
               className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-ink-soft`}

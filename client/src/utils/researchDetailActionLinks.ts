@@ -42,6 +42,7 @@ export interface ResearchDetailActionLinkContext {
   preferOrgEngagementOutreach: boolean;
   officialSource?: { url: string } | null;
   hasApplyPage: boolean;
+  wayInWithheld?: boolean;
 }
 
 export interface ResearchDetailActionLinks {
@@ -51,6 +52,7 @@ export interface ResearchDetailActionLinks {
   showsProfileButton: boolean;
   offersOrgEngagementPage: boolean;
   offersApplyPage: boolean;
+  activityCheckUrl?: string;
   leadCardLinksProfile: boolean;
   profileOpenedAbove: boolean;
   /** Both slots resolved to a link, which is the population the duplicate audit walks. */
@@ -59,9 +61,39 @@ export interface ResearchDetailActionLinks {
   slotsShareOneDestination: boolean;
 }
 
+function resolveWithheldWayInActionLinks(
+  context: ResearchDetailActionLinkContext,
+): ResearchDetailActionLinks {
+  const { websiteUrl, profileUrl, hasLeadCard, profileNeedsOwnButton, officialSource } = context;
+  const leadCardLinksProfile = hasLeadCard && Boolean(profileUrl);
+  const websiteRepeatsLeadCard = hasLeadCard && isSameActionDestination(websiteUrl, profileUrl);
+  const activityCheckUrl =
+    (websiteUrl && !websiteRepeatsLeadCard ? websiteUrl : undefined) ||
+    (leadCardLinksProfile ? undefined : profileUrl) ||
+    (officialSource?.url &&
+    !(hasLeadCard && isSameActionDestination(officialSource.url, profileUrl))
+      ? officialSource.url
+      : undefined);
+  return {
+    leadCardProfileUrl: profileUrl,
+    showsWebsiteCta: false,
+    showsProfileButton: false,
+    offersOrgEngagementPage: false,
+    offersApplyPage: false,
+    ...(activityCheckUrl ? { activityCheckUrl } : {}),
+    leadCardLinksProfile,
+    profileOpenedAbove:
+      !profileNeedsOwnButton || isSameActionDestination(activityCheckUrl, profileUrl),
+    offersBothLinks: leadCardLinksProfile && Boolean(activityCheckUrl),
+    slotsShareOneDestination:
+      leadCardLinksProfile && isSameActionDestination(activityCheckUrl, profileUrl),
+  };
+}
+
 export function resolveResearchDetailActionLinks(
   context: ResearchDetailActionLinkContext,
 ): ResearchDetailActionLinks {
+  if (context.wayInWithheld) return resolveWithheldWayInActionLinks(context);
   const {
     websiteUrl,
     profileUrl,
@@ -207,5 +239,6 @@ export function resolveResearchDetailActionLinkContext({
     preferOrgEngagementOutreach,
     officialSource: outreachOfficialSource,
     hasApplyPage: Boolean(outreachApplySource),
+    wayInWithheld: group.wayInWithheld === true,
   };
 }

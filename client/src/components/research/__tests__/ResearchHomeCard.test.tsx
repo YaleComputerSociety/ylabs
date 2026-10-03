@@ -86,6 +86,32 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
 });
 
 describe('ResearchHomeCard', () => {
+  it('labels a card led by emeritus faculty (#4431)', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [{ ...home.entities[0], emeritusLed: true, wayInWithheld: true }],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Led by emeritus faculty')).toBeTruthy();
+  });
+
+  it('carries no emeritus label for an ordinary card', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Led by emeritus faculty')).toBeNull();
+  });
+
   it('frames profile results as research instead of clusters', () => {
     const onSelect = vi.fn();
     const { container } = render(

@@ -60,6 +60,25 @@ const renderMembersWithConfig = (members: LabMember[], entityDepartments: string
   );
 
 describe('LabMembersList', () => {
+  it('labels an emeritus lead beside the role (#4431)', () => {
+    renderMembers([member('', { title: 'Professor Emeritus of Physics', emeritus: true })]);
+
+    expect(screen.getByText('Emeritus')).toBeTruthy();
+    expect(screen.getByText('Principal Investigator')).toBeTruthy();
+  });
+
+  it('labels only a lead, and only one the server marked emeritus', () => {
+    renderMembers([
+      member('', { title: 'Professor Emeritus of Physics' }),
+      {
+        ...member('', { _id: 'user-2', displayName: 'Fixture Trainee', emeritus: true }),
+        role: 'grad-student',
+      },
+    ]);
+
+    expect(screen.queryByText('Emeritus')).toBeNull();
+  });
+
   it('does not link member netids to internal faculty profiles', () => {
     const { container } = renderMembers([member('')]);
 

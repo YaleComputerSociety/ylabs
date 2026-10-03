@@ -26,6 +26,7 @@ import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import LongText from '../components/shared/LongText';
+import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
@@ -396,6 +397,47 @@ const formatPastAdvisees = (group: any): string | null => {
   }`;
 };
 
+const emeritusResearchLabel = (group: any): string => {
+  if (group.entityType === 'LAB') return 'Emeritus lab';
+  if (group.entityType === 'FACULTY_RESEARCH_AREA' || group.entityType === 'FACULTY_PROJECT') {
+    return 'Emeritus faculty research';
+  }
+  return 'Led by emeritus faculty';
+};
+
+const EmeritusCurrentActivityNotice = ({
+  group,
+  activityCheckUrl,
+  leadCardLinksProfile,
+}: {
+  group: any;
+  activityCheckUrl?: string;
+  leadCardLinksProfile: boolean;
+}) => (
+  <div className="py-4 first:pt-0 last:pb-0" role="note" aria-label="Current activity">
+    <p className="text-xs font-semibold uppercase tracking-wider text-muted">Current activity</p>
+    <p className="mt-1 text-sm leading-relaxed text-ink">
+      {emeritusResearchLabel(group)}: check the official page for current activity.
+    </p>
+    <p className="mt-1 text-sm leading-relaxed text-muted">
+      {activityCheckUrl || !leadCardLinksProfile
+        ? 'y/labs has no record that this research is active now, so it lists no way to join.'
+        : 'y/labs has no record that this research is active now, so it lists no way to join. The official profile above is the place to check.'}
+    </p>
+    {activityCheckUrl && (
+      <a
+        href={activityCheckUrl}
+        target="_blank"
+        rel={EXTERNAL_LINK_REL}
+        className="yr-focus-ring yr-pressable mt-3 inline-flex min-h-11 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+      >
+        Open the official page
+        <ArrowRightIcon />
+      </a>
+    )}
+  </div>
+);
+
 const DecisionSummary = ({
   group,
   profileUrl,
@@ -448,6 +490,7 @@ const DecisionSummary = ({
     .filter(Boolean)
     .join(' · ');
   const piMailtoHref = safeMailtoHref(piEmail);
+  const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
@@ -461,6 +504,7 @@ const DecisionSummary = ({
     preferOrgEngagementOutreach,
     officialSource,
     hasApplyPage: Boolean(applySource),
+    wayInWithheld,
   });
   const showsWebsiteCta = actionLinks.showsWebsiteCta;
   const leadCardProfileUrl = actionLinks.leadCardProfileUrl;
@@ -480,6 +524,7 @@ const DecisionSummary = ({
    * a profile.
    */
   const offersOfficialPage =
+    !wayInWithheld &&
     Boolean(officialSource) &&
     !showsWebsiteCta &&
     !offersOrgEngagementPage &&
@@ -491,10 +536,12 @@ const DecisionSummary = ({
     Boolean(applyPageUrl) ||
     showsProfileButton ||
     offersOfficialPage;
-  const directoryFallbackCandidate = Boolean(piMailtoHref) || !hasActionablePath;
+  const directoryFallbackCandidate =
+    !wayInWithheld && (Boolean(piMailtoHref) || !hasActionablePath);
   const needsDirectoryFallback = !leadCardLinksProfile && directoryFallbackCandidate;
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
+  const activityCheckUrl = actionLinks.activityCheckUrl;
   return (
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -587,7 +634,14 @@ const DecisionSummary = ({
               </div>
             </div>
           )}
-          {showGetInvolvedBlock && (
+          {wayInWithheld && (
+            <EmeritusCurrentActivityNotice
+              group={group}
+              activityCheckUrl={activityCheckUrl}
+              leadCardLinksProfile={leadCardLinksProfile}
+            />
+          )}
+          {!wayInWithheld && showGetInvolvedBlock && (
             <div className="py-4 first:pt-0 last:pb-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 How to get involved
@@ -997,7 +1051,7 @@ const LabDetail = () => {
   );
   const headerWebsiteDedupeUrls = decisionSummaryActionLinks.showsWebsiteCta
     ? [decisionProfileUrl, officialWebsiteUrl]
-    : [decisionProfileUrl];
+    : [decisionProfileUrl, decisionSummaryActionLinks.activityCheckUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest('a');

@@ -153,6 +153,7 @@ const ResearchHomeCard = ({
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
   const leadRole = titleCaseContactRole(leadEntity?.contactRole);
+  const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
@@ -245,6 +246,11 @@ const ResearchHomeCard = ({
         )}
 
         <div className="flex flex-wrap gap-1.5">
+          {isEmeritusLed && (
+            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
+              Led by emeritus faculty
+            </span>
+          )}
           {metadataBadges.map((label) => (
             <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
               {formatTitleCaseLabel(label)}

@@ -121,3 +121,53 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.slotsShareOneDestination).toBe(false);
   });
 });
+
+describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () => {
+  const JOIN = 'https://medicine.yale.edu/lab/fixture/join-us/';
+
+  it('closes every action slot and checks activity on the research website', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+      officialSource: { url: JOIN },
+      hasApplyPage: true,
+      preferOrgEngagementOutreach: true,
+    });
+    expect(links).toMatchObject({
+      showsWebsiteCta: false,
+      showsProfileButton: false,
+      offersOrgEngagementPage: false,
+      offersApplyPage: false,
+      activityCheckUrl: WEBSITE,
+      leadCardLinksProfile: true,
+      slotsShareOneDestination: false,
+    });
+    expect(links.websiteCtaUrl).toBeUndefined();
+  });
+
+  it('never repeats the profile the lead card already links', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      profileUrl: PROFILE,
+      websiteUrl: PROFILE,
+    });
+    expect(links.activityCheckUrl).toBeUndefined();
+    expect(links.slotsShareOneDestination).toBe(false);
+  });
+
+  it('uses the profile as the activity check when no lead card links it', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      hasLeadCard: false,
+      profileNeedsOwnButton: true,
+      profileUrl: PROFILE,
+    });
+    expect(links.activityCheckUrl).toBe(PROFILE);
+    expect(links.showsProfileButton).toBe(false);
+    expect(links.profileOpenedAbove).toBe(true);
+  });
+});
