@@ -310,7 +310,7 @@ Custom errors in `server/src/utils/errors.ts`:
 | `SearchUnavailableError` | 503, with `Retry-After` |
 
 The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.
-Response bodies are generic in every environment; outside deployed runtimes the stack is logged, never returned.
+Response bodies are generic in every environment, except that a `BadRequestError` returns its own thrown message; outside deployed runtimes the stack is logged, never returned.
 
 ## Sensitive areas
 

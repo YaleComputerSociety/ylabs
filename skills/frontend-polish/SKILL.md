@@ -160,7 +160,7 @@ The first two are gaps a re-measurement against `client/src` on 2026-10-02 still
 - **A loader needs an anti-flicker delay**: show after roughly 150 to 300ms, then stay for 300 to 500ms.
 `LoadingSpinner` has one, and `InfiniteScrollLoadingDots` still does not.
 - **In-progress and follow-up labels end in a real ellipsis character**, not three periods.
-Three placeholders still use `...`: the `CombinedFilterDropdown` search field and two operator fields in `AdminFellowshipsTable` and `AdminFellowshipEditModal`.
+Three placeholders and one label still use `...`: the `CombinedFilterDropdown` search field and its "Type to search more" follow-up label, and two operator fields in `AdminFellowshipsTable` and `AdminFellowshipEditModal`.
 - **Upstream now prefers APCA over WCAG 2 for contrast judgements.**
 The contrast work in this repo used WCAG 2 ratios throughout, which is the stricter and more conservative choice, so this is a note rather than a defect.
 - **A hover, active, or focus state should exceed the resting state's contrast.**

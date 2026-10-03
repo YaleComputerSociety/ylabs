@@ -16,7 +16,7 @@ This file claimed a single shadow token and a serif heading stack.
 Both were false in `src/`, one of them from the day it was written, while the brand-color rule held because it is the only one with a CI guard.
 So every visual rule here either carries an executable guard or gets deleted.
 A documented rule with no guard does not describe the product, it describes an intention, and the gap widens silently.
-The guards are the `*Guard.test.ts` files in `src/__tests__/`, starting with `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`.
+The guards are the `*Guard.test.ts(x)` files in `src/__tests__/`, starting with `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`.
 
 **Judge a change on rendered pixels, not on computed style or a class count.**
 A blanket serif rule on `h1` through `h4` passed every static check and was visibly wrong: it turned a section kicker into a giant serif banner and inflated small sidebar labels.

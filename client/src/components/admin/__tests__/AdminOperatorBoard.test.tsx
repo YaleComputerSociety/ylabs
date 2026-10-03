@@ -313,7 +313,7 @@ describe('AdminOperatorBoard', () => {
             status: 'review_required',
             command:
               'yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json',
-            note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+            note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
             excludedSyntheticUsers: 2,
             collectionCategoryCount: 3,
           },
@@ -714,7 +714,7 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Production copy status: review_required')).toBeTruthy();
     expect(
       screen.getByText(
-        'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+        'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Excluded synthetic users: 2')).toBeTruthy();
