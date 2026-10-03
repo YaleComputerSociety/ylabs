@@ -26,6 +26,7 @@ Arts research that states a research question, such as music cognition, digital 
 **What a labelled row serves.**
 The kind pill and the browse card read "Creative practice", the summary is headed "Practice summary" and "What this creative practice covers", the website action reads "Visit website", and a principal-investigator lead (`pi`, `co-pi`) is "Faculty" rather than "Principal Investigator", while a director lead stays "Director" and the lead section heading follows the same rule.
 Nothing on the row claims a lab, a research group or an opening the page does not state.
+An emeritus-led labelled row's current-activity notice reads "Emeritus faculty" and "this practice" rather than "Emeritus lab" and "this research".
 A card in the research voice ("Studies chamber music.", or a sentence claiming the person studies something) contradicts the label beside it and is usually a chip summary the practice body never states, so `decideCreativePracticeCard` in `server/src/services/creativePracticeCard.ts` replaces it with the body's own first practice sentence, and withholds it when the body offers none, on the #2911 reasoning that a blank card line costs less than a false one.
 
 **Measured on Development, 2026-10-03, through `getResearchGroupDetail` and the browse route over all 3,470 served rows.**
