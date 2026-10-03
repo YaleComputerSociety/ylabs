@@ -99,6 +99,8 @@ yarn -v
 Expected versions:
 
 - `node` should match `.node-version`. CI tests that major only, so a different one is untested here (#3915).
+An older major does not merely go untested: on Node 20 every client test file fails to start with `ReferenceError: Iterator is not defined`, because `jsdom` 30 needs the `Iterator` global from Node 22 and later.
+If you see that error, your shell is on the wrong Node; rerun the `nvm use` and `nvm alias default` lines above and open a new shell.
 - `yarn` should match the `packageManager` field in `package.json`, which is the only place the version is pinned. Read it with `node -p "require('./package.json').packageManager"` rather than trusting a number written here, because a number written here goes stale on the next bump.
 
 ### 2. Install dependencies
