@@ -183,6 +183,24 @@ export function isOwnDepartmentUndergraduateResearchProgramme(
   return Boolean(department) && entityDepartmentKeys(entity).has(department as string);
 }
 
+/**
+ * A programme-shaped page the join admission keeps as one row's own way in: a page under the
+ * row's own website, such as a lab's `/research-opportunities` page, or its own department's
+ * undergraduate research programme. The detail route serves the same pages as the join
+ * citation, so the page admitted and the page served cannot disagree (#4430).
+ */
+export function isProgrammePageAdmittedAsJoinRoute(
+  value: unknown,
+  entity?: JoinPageEntity,
+): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return (
+    isOwnDepartmentUndergraduateResearchProgramme(url.toString(), entity) ||
+    (isDepartmentProgrammePageUrl(url.toString()) && isUnderEntityWebsite(url, entity?.websiteUrl))
+  );
+}
+
 const isBareSiteRoot = (url: URL): boolean =>
   url.pathname.replace(/\/+$/, '').length === 0 && url.search.replace(/^\?/, '').length === 0;
 
@@ -207,8 +225,7 @@ export function joinPageUrlRefusal(
   if (isBareSiteRoot(url)) return 'site-root-is-not-a-join-page';
   if (
     isDepartmentProgrammePageUrl(url.toString()) &&
-    !isUnderEntityWebsite(url, entity?.websiteUrl) &&
-    !isOwnDepartmentUndergraduateResearchProgramme(url.toString(), entity)
+    !isProgrammePageAdmittedAsJoinRoute(url.toString(), entity)
   ) {
     return 'programme-page-of-another-entity';
   }

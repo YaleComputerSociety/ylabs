@@ -23,7 +23,9 @@ import { isKnownDeadSourceUrl } from './sourceLinkHealth';
  *    excerpt preserves what it said. The signal itself is NOT retired, because a 404 is
  *    not evidence a programme ended: a removed url is equally a renamed one, which is
  *    why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate
- *    (#3144).
+ *    (#3144). The exception is a signal whose claim IS the page (`APPLICATION_FORM_EXISTS`):
+ *    its excerpt only says a page was found, so the detail route serves neither once the
+ *    url is withheld, and the stored signal is still not retired (#4430).
  * 3. **The `websiteUrl` call-to-action is suppressed separately**, which
  *    `isUnreachableResearchWebsiteCtaUrl` already does at render, while the same url
  *    still appears in Sources under rule 1. A broken button and a historical citation
