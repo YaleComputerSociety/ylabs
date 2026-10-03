@@ -163,7 +163,8 @@ Merge when CI is green and the pull request is mergeable on its current head.
 
 `beta` is protected by two rulesets.
 `require CI on beta` requires `test-and-build` and `student-journey-smoke` and a squash merge queue, blocks force pushes, and has no bypass actors.
-`require review on beta` requires one approving review, which only the Admin repository role may bypass.
+`require review on beta` requires one approving review.
+The `Admin Author Approval` workflow supplies it for a pull request whose author holds the Admin repository role, because a sole maintainer cannot approve their own pull request and the merge queue ignores ruleset bypasses.
 `release-hold` applies only to pull requests into `main`.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
@@ -182,7 +183,6 @@ The queue rebases it onto the current `beta` plus everything queued ahead of it,
 A red check drops it out of the queue: fix the check, or report the blocker, and enqueue it again.
 
 **Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
-The Admin role bypasses only the review requirement, because a sole maintainer cannot approve their own pull request.
 Nobody bypasses the queue or the checks, so do not pass `--admin`.
 
 Confirm the linked issue auto-closed, then clean up:

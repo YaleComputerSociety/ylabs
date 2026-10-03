@@ -1032,6 +1032,7 @@ const workflowJobs = (workflow) => Object.entries(workflow?.jobs ?? {});
 const WRITE_FREE_SCOPE_LEVELS = new Set(['read', 'none']);
 
 const REVIEWED_JOB_WRITE_GRANTS = {
+  'admin-author-approval.yml': { approve: ['pull-requests'] },
   'keep-alive.yml': { alert: ['issues'] },
 };
 

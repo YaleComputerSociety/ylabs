@@ -110,7 +110,8 @@ Once `gh pr view <n> --json state` reads `MERGED`, delete the remote branch with
 - Never pass `--admin`, and do not try to get around a refusal.
 Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
 `require CI on beta` requires `test-and-build` and `student-journey-smoke` and the squash merge queue, and has no bypass actors, so nothing reaches `beta` around the queue.
-`require review on beta` requires **one approving review** and lets only the Admin repository role bypass it, so a maintainer's own PR needs no approval and every other contributor's does.
+`require review on beta` requires **one approving review**.
+GitHub does not honour a ruleset bypass when enqueuing, so the `Admin Author Approval` workflow approves a PR whose author holds the Admin repository role; every other contributor's PR waits for a human review.
 `protect main (production)` additionally requires `release-hold` and allows merge commits only.
 - A red check in the queue drops the PR out of it; fix the check or report the blocker, then enqueue again.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
