@@ -1610,6 +1610,110 @@ function rowStoresWebsite(entity: Record<string, any>, url: string): boolean {
   );
 }
 
+const LAB_WEBSITE_SLOT_LABEL_RE = /\b(?:view|visit)\s+(?:lab|group|research)\s+website\b/i;
+
+function affiliationIsALabWebsiteSlot(
+  value: unknown,
+  profileUrl: string,
+  storedIdentities: ReadonlySet<string>,
+): boolean {
+  const record =
+    value && typeof value === 'object' ? (value as Record<string, any>) : { name: value };
+  const rawUrl = textValue(record.url || record['@id']);
+  let url: string;
+  try {
+    url = rawUrl ? new URL(rawUrl, profileUrl).toString() : '';
+  } catch {
+    url = rawUrl;
+  }
+  if (url && storedIdentities.has(websiteIdentity(url))) return true;
+  const name = canonicalResearchHomeName(record.name);
+  return (
+    Boolean(name) && !genericOrganizationName(name) && Boolean(classifyResearchHome(name, url))
+  );
+}
+
+/**
+ * The only state in which this lane may say a row's website is gone, kept apart from every
+ * refusal path (#2647, #3153): it re-read the very profile the stored website was observed
+ * from, the page carries no lab-website slot of any kind, and the stored link appears nowhere
+ * among its links. A guard declining a link the page still carries never reaches here (#4544).
+ */
+export function profileAttestsItsLabWebsiteIsGone(
+  html: string,
+  profileUrl: string,
+  entity: Record<string, any>,
+): boolean {
+  const provenance = entity.fieldProvenance?.websiteUrl;
+  if (provenance?.sourceName !== SOURCE_NAME) return false;
+  if (
+    normalizeOfficialProfileUrl(provenance.sourceUrl) !== normalizeOfficialProfileUrl(profileUrl)
+  ) {
+    return false;
+  }
+  const storedIdentity = websiteIdentity(entity.websiteUrl);
+  if (!storedIdentity) return false;
+  const storedIdentities = new Set(
+    [storedIdentity, websiteIdentity(entity.website)].filter(Boolean),
+  );
+
+  const $ = cheerio.load(html);
+  const profiles = jsonLdProfiles($);
+  if (
+    affiliationValuesFromProfiles(profiles).some((value) =>
+      affiliationIsALabWebsiteSlot(value, profileUrl, storedIdentities),
+    )
+  ) {
+    return false;
+  }
+  const surname = profilePersonSurname($, profiles);
+  let carriesALabWebsiteSlot = false;
+  $('a[href]').each((_i, el) => {
+    if (carriesALabWebsiteSlot) return;
+    const link = $(el);
+    const href = textValue(link.attr('href'));
+    let absolute: string;
+    try {
+      absolute = new URL(href, profileUrl).toString();
+    } catch {
+      absolute = href;
+    }
+    if (storedIdentities.has(websiteIdentity(absolute))) {
+      carriesALabWebsiteSlot = true;
+      return;
+    }
+    if (isProfileChromeLink(link)) return;
+    const text = textValue(link.text());
+    const context = textValue(link.closest('p,li,article,section,div').first().text());
+    if (
+      LAB_WEBSITE_SLOT_LABEL_RE.test(`${text} ${context}`) ||
+      isEponymousResearchGroupLinkText(text, surname)
+    ) {
+      carriesALabWebsiteSlot = true;
+    }
+  });
+  return !carriesALabWebsiteSlot;
+}
+
+export function emptyLabWebsiteSlotObservation(
+  entity: Record<string, any>,
+  profileUrl: string,
+): ObservationInput {
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  const sourceUrl = normalizeOfficialProfileUrl(profileUrl);
+  return {
+    entityType: 'researchEntity',
+    ...(entityId ? { entityId } : {}),
+    ...(entityKey ? { entityKey } : {}),
+    sourceUrl,
+    confidenceOverride: 0.96,
+    field: 'sourceUrls',
+    value: [sourceUrl],
+    assertsNoValueFor: ['websiteUrl', 'website'],
+  };
+}
+
 /**
  * A refusal is a judgement about a link the page still carries, not an absence, so it is
  * stated as evidence: resolve then withdraws this lane's own older `websiteUrl` and
@@ -3077,19 +3181,28 @@ async function selectResearchHomeProfileTargets(
     targetKeys.length > 0
       ? targetKeyFilter(targetKeys)
       : {
-          $and: [
+          $or: [
             {
-              $or: [{ websiteUrl: { $exists: false } }, { websiteUrl: null }, { websiteUrl: '' }],
+              $and: [
+                {
+                  $or: [
+                    { websiteUrl: { $exists: false } },
+                    { websiteUrl: null },
+                    { websiteUrl: '' },
+                  ],
+                },
+                {
+                  $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
+                },
+              ],
             },
-            {
-              $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
-            },
+            { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
           ],
         };
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl',
     limit,
   );
   if (entities.length === 0) return [];
@@ -3401,20 +3514,31 @@ export async function resolveExistingUserForIdentity(
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
 }
 
-async function websiteUrlOwnedByAnotherEntity(
+/**
+ * For a row that already serves the link, only a student-visible holder can own it: a
+ * duplicate that is suppressed or held for review carrying the same site is a dedupe
+ * question, and withdrawing on it stripped real lab sites from the visible row in the
+ * #4544 dry run, with 3 more visible rows exposed to a held-for-review duplicate.
+ */
+export async function websiteUrlOwnedByAnotherEntity(
   websiteUrl: string,
   entity: Record<string, any>,
 ): Promise<boolean> {
   const lookupUrls = websiteDuplicateLookupUrls(websiteUrl);
   if (lookupUrls.length === 0) return false;
+  const entityId = idValue(entity._id || entity.id);
   const owner = (await ResearchEntity.findOne({
     archived: { $ne: true },
+    ...(mongoose.isValidObjectId(entityId) ? { _id: { $ne: entityId } } : {}),
+    ...(rowStoresWebsite(entity, websiteUrl)
+      ? { studentVisibilityTier: { $in: [...publicStudentVisibilityTiers] } }
+      : {}),
     $or: [{ websiteUrl: { $in: lookupUrls } }, { website: { $in: lookupUrls } }],
   })
     .select('_id')
     .lean()) as { _id?: unknown } | Array<{ _id?: unknown }> | null;
   const ownerRecord = Array.isArray(owner) ? owner[0] : owner;
-  return Boolean(ownerRecord && idValue(ownerRecord._id) !== idValue(entity._id || entity.id));
+  return Boolean(ownerRecord && idValue(ownerRecord._id) !== entityId);
 }
 
 interface FetchedProfile {
@@ -3768,6 +3892,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             } else if (identity && home) {
               observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
               homesAdopted += 1;
+            } else if (identity && profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)) {
+              observations.push(emptyLabWebsiteSlotObservation(entity, profileUrl));
+              homesRefusedByReason['profile-no-longer-links-the-stored-website'] =
+                (homesRefusedByReason['profile-no-longer-links-the-stored-website'] ?? 0) + 1;
             }
           }
 

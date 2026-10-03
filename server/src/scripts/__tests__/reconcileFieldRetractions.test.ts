@@ -15,9 +15,10 @@ describe('observations:reconcile-field-retractions arguments', () => {
   });
 
   it('refuses a source that declares no retraction contract', () => {
-    // `dept-faculty-roster` used to stand here and now declares one (#3135), so both
-    // names are checked against the registry rather than assumed to stay undeclared.
-    for (const source of ['ysm-atoz-index', 'official-profile-pi-backfill']) {
+    // `dept-faculty-roster` (#3135) and `official-profile-pi-backfill` (#4544) used to stand
+    // here and now declare one, so the name is checked against the registry rather than
+    // assumed to stay undeclared.
+    for (const source of ['ysm-atoz-index']) {
       expect(fieldRetractionContracts).not.toHaveProperty(source);
       expect(() => parseArgs([`--source=${source}`])).toThrow(
         /declares no field-retraction contract/,
@@ -29,6 +30,9 @@ describe('observations:reconcile-field-retractions arguments', () => {
     expect(parseArgs(['--source=dept-faculty-roster']).sources).toEqual(['dept-faculty-roster']);
     expect(parseArgs(['--source=ysm-faculty-directory']).sources).toEqual([
       'ysm-faculty-directory',
+    ]);
+    expect(parseArgs(['--source=official-profile-pi-backfill']).sources).toEqual([
+      'official-profile-pi-backfill',
     ]);
   });
 
