@@ -78,9 +78,9 @@ export const fellowshipAbsenceAssertionContracts: Readonly<
   Record<string, FellowshipAbsenceAssertionContract>
 > = {
   'student-grants-database': {
-    assertableFields: ['applicationLink', 'yearOfStudy'],
+    assertableFields: ['applicationLink', 'yearOfStudy', 'eligibility'],
     notes:
-      'A fund page states no application link when its prose routes applications elsewhere and links nowhere (FundApplicationRoute "elsewhere-unlinked"), so the fund page is positively not where a student applies; a linked route and a page applied to from itself both state a value. It states no year of study when the eligibility prose names a level the stored vocabulary cannot express ("graduate affiliates"), which is a resolution the prose forces rather than an empty filter: a silent prose with an empty filter states nothing (#4216).',
+      'A fund page states no application link when its prose routes applications elsewhere and links nowhere (FundApplicationRoute "elsewhere-unlinked"), so the fund page is positively not where a student applies; a linked route and a page applied to from itself both state a value. It states no year of study when the eligibility prose names a level the stored vocabulary cannot express ("graduate affiliates"), which is a resolution the prose forces rather than an empty filter: a silent prose with an empty filter states nothing (#4216). It states no eligibility when its Special Eligibility Requirements section holds only contact directions, which say who to ask rather than who may apply and often name a staff member (#4177); an empty section states nothing.',
   },
   'yale-college-fellowships-office': {
     assertableFields: ['deadline'],
