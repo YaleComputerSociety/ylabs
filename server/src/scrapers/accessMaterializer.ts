@@ -112,7 +112,15 @@ export interface StoredAccessSignal {
   archived?: unknown;
   archivedReason?: unknown;
   suppression?: { reason?: string; lockedFields?: string[] };
+  source?: { evidenceIds?: unknown } | null;
 }
+
+export interface CitedAccessEvidenceStatus {
+  live: ReadonlySet<string>;
+  retired: ReadonlySet<string>;
+}
+
+const NO_CITED_EVIDENCE_STATUS: CitedAccessEvidenceStatus = { live: new Set(), retired: new Set() };
 
 export interface AccessSignalChange {
   signalId: string;
@@ -126,12 +134,27 @@ export interface AccessSignalChangePlan {
 
 export const ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON = 'access-materializer:evidence-withdrawn';
 
+// `signal:CURRENT_UNDERGRADS` and `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` are absent
+// on purpose: #4430 owns whether those two types are admissible at all (#3920).
 export const EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
   'signal:REACH_OUT_PLAUSIBLE': ['undergradAccessEvidence'],
   'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': [
     'contactInstructionsQuote',
     'undergradAccessEvidence',
   ],
+  'signal:NOT_CURRENTLY_AVAILABLE': [
+    'undergradAccessEvidence',
+    'undergradConstraintQuote',
+    'undergradEvidenceQuote',
+  ],
+  'signal:CREDIT_FORMALIZATION_POSSIBLE': ['offersIndependentStudy', 'independentStudyCourses'],
+  'signal:FACULTY_SUPERVISES_STUDENT_PROJECTS:SENIOR_THESIS': [
+    'offersIndependentStudy',
+    'independentStudyCourses',
+  ],
+  'signal:PAST_UNDERGRADS': ['pastUndergradAdvisees'],
+  'signal:FELLOWSHIP_COMPATIBLE': ['pastUndergradAdvisees'],
+  [CONTACT_FIELDS_SIGNAL_DERIVATION_KEY]: [...RESEARCH_ENTITY_CONTACT_FIELDS],
 };
 
 function observationId(obs: AccessObservation): string | undefined {
@@ -679,8 +702,10 @@ async function resolveResearchEntityId(identifier: {
 /**
  * An empty observation read yields no signals here, and that is a no-op rather
  * than a retraction: `materializeAccessForResearchGroup` archives a signal it did
- * not derive only when the read holds that signal's own evidence fields (#3921),
- * so an empty read archives nothing. So do NOT move an observation-store
+ * not derive only when the read holds that signal's own evidence fields (#3921)
+ * or every observation the signal cites was superseded or rolled back (#3920),
+ * so an empty store archives nothing and an empty read archives only signals
+ * whose cited evidence was withdrawn. So do NOT move an observation-store
  * availability guard into this function, which #2514 proposed. Three paths reach
  * the read below without supplying observations - the reconcile lane, the entity
  * materializer through the wrapper, and the orphan-reference repair's
@@ -727,12 +752,26 @@ function archiveIsSuppressionLocked(signal: StoredAccessSignal): boolean {
   return !('archived' in omitSuppressionLockedFields({ archived: true }, signal));
 }
 
+function citedEvidenceIds(signal: StoredAccessSignal): string[] {
+  const ids = signal.source?.evidenceIds;
+  if (!Array.isArray(ids)) return [];
+  return ids.map((id) => serializedDocumentId(id)).filter((id): id is string => Boolean(id));
+}
+
 export function planEvidenceGovernedSignalChanges(
   derivedKeys: ReadonlySet<string>,
   observations: readonly AccessObservation[],
   stored: readonly StoredAccessSignal[],
+  citedEvidence: CitedAccessEvidenceStatus = NO_CITED_EVIDENCE_STATUS,
 ): AccessSignalChangePlan {
   const fieldsRead = new Set(observations.map((obs) => obs.field));
+  const idsRead = new Set(
+    observations.map((obs) => observationId(obs)).filter((id): id is string => Boolean(id)),
+  );
+  const citesLiveEvidenceThisReadMissed = (cited: readonly string[]) =>
+    cited.some((id) => citedEvidence.live.has(id) && !idsRead.has(id));
+  const citedEvidenceWasWithdrawn = (cited: readonly string[]) =>
+    cited.length > 0 && cited.every((id) => citedEvidence.retired.has(id));
   const plan: AccessSignalChangePlan = { retired: [], revived: [] };
   for (const signal of stored) {
     const derivationKey = firstString(signal.derivationKey);
@@ -746,7 +785,10 @@ export function planEvidenceGovernedSignalChanges(
       }
       continue;
     }
-    if (!derived && evidenceFields.some((field) => fieldsRead.has(field))) {
+    if (derived) continue;
+    const cited = citedEvidenceIds(signal);
+    if (citesLiveEvidenceThisReadMissed(cited)) continue;
+    if (evidenceFields.some((field) => fieldsRead.has(field)) || citedEvidenceWasWithdrawn(cited)) {
       plan.retired.push({ signalId, derivationKey });
     }
   }
@@ -760,8 +802,29 @@ async function storedEvidenceGovernedSignals(
     researchEntityId: toAccessMaterializerObjectId(researchEntityId),
     derivationKey: { $in: Object.keys(EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS) },
   })
-    .select('_id derivationKey archived archivedReason suppression')
+    .select('_id derivationKey archived archivedReason suppression source.evidenceIds')
     .lean()) as unknown as StoredAccessSignal[];
+}
+
+async function citedAccessEvidenceStatus(
+  stored: readonly StoredAccessSignal[],
+): Promise<CitedAccessEvidenceStatus> {
+  const ids = [...new Set(stored.flatMap(citedEvidenceIds))]
+    .map((id) => toAccessMaterializerObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  if (ids.length === 0) return NO_CITED_EVIDENCE_STATUS;
+  const found = (await Observation.find({ _id: { $in: ids } })
+    .select('_id superseded rollback.rolledBackAt')
+    .lean()) as Array<{ _id?: unknown; superseded?: boolean; rollback?: { rolledBackAt?: Date } }>;
+  const live = new Set<string>();
+  const retired = new Set<string>();
+  for (const observation of found) {
+    const id = serializedDocumentId(observation._id);
+    if (!id) continue;
+    if (observation.superseded === true || observation.rollback?.rolledBackAt) retired.add(id);
+    else live.add(id);
+  }
+  return { live, retired };
 }
 
 async function applyAccessSignalChanges(
@@ -804,10 +867,12 @@ export async function materializeAccessForResearchGroup(
     };
   }
   const { researchEntityId, artifacts } = derivation;
+  const stored = await storedEvidenceGovernedSignals(researchEntityId);
   const changes = planEvidenceGovernedSignalChanges(
     new Set(artifacts.accessSignals.map((signal) => signal.derivationKey)),
     derivation.observations ?? [],
-    await storedEvidenceGovernedSignals(researchEntityId),
+    stored,
+    await citedAccessEvidenceStatus(stored),
   );
   if (!options.dryRun) await applyAccessSignalChanges(artifacts.accessSignals, changes);
 
@@ -829,8 +894,9 @@ interface ContactSignalLike {
 
 const idText = (value: unknown): string => (value == null ? '' : String(value).trim());
 
-// The access materializer upserts and never archives, so a contact signal derived
-// before #3609 is withheld here at serve time and kept as history. Its stored
+// The access pass keeps a signal whose cited evidence it did not read (#3920), so a
+// contact signal derived before #3609 from another row's contact evidence is withheld
+// here at serve time and kept as history. Its stored
 // evidence id names only the single best contact observation while its excerpt
 // combines the best of each contact field, so the excerpt itself is re-derived.
 export async function foreignContactFieldSignalIds(
