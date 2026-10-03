@@ -20,6 +20,9 @@ describe('servedResearchEntityNameWithoutPageFurniture (#4372)', () => {
     ["Ada O'Quill - Research", FACULTY, "Ada O'Quill Faculty Research"],
     ['Quill Lab | Diagnostic Research', LAB, 'Quill Lab'],
     ['Ada Quill | Clarinetist', FACULTY, 'Ada Quill Faculty Research'],
+    ['Lab Members | Quill Lab', LAB, 'Quill Lab'],
+    ['Projects | Quill Lab', LAB, 'Quill Lab'],
+    ['Center for Quill Studies | Example University', LAB, 'Center for Quill Studies'],
     ['Quill Lab Git Hub', LAB, 'Quill Lab'],
     ['Quill Lab GitHub', LAB, 'Quill Lab'],
     ['Quill Laboratory ResearchGate', LAB, 'Quill Laboratory'],
@@ -38,6 +41,8 @@ describe('servedResearchEntityNameWithoutPageFurniture (#4372)', () => {
     ['Google Scholar', LAB],
     ['Quill GitHub', LAB],
     ['ABC | DEF', LAB],
+    ['Lab Members | Projects', LAB],
+    ['Lab GitHub', LAB],
   ])('leaves %s alone', (name, entity) => {
     expect(served(name, entity)).toBe('');
   });

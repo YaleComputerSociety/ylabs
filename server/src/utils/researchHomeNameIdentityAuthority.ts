@@ -665,8 +665,8 @@ const HYPHEN_RESEARCH_SUFFIX_RE = /^(.*\S)\s+[-\u2013\u2014]\s*Research$/i;
 const PAGE_TITLE_SEPARATOR_RE = /\s+\|\s+/;
 const TRAILING_PLATFORM_WORD_RE =
   /^(.*\S)\s+(?:git\s?hub|google\s+scholar|orcid|research\s?gate|linked\s?in)$/i;
-const ENDS_IN_RESEARCH_HOME_HEAD_NOUN_RE = new RegExp(
-  `${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}$`,
+const NAMED_RESEARCH_HOME_RE = new RegExp(
+  `(?:\\S\\s+${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}$|^${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}\\s+(?:of|for|on|in)\\s+\\S)`,
   'i',
 );
 
@@ -689,14 +689,15 @@ export function servedResearchEntityNameWithoutPageFurniture(entity: {
     personScopedResearchEntityNameFromPersonName({ ...entity, candidateName: personName });
   const hyphenHead = HYPHEN_RESEARCH_SUFFIX_RE.exec(name)?.[1];
   if (hyphenHead) return personScopedName(hyphenHead);
-  const [titleHead, ...subtitles] = name.split(PAGE_TITLE_SEPARATOR_RE);
-  if (subtitles.length > 0 && titleHead) {
-    return RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(titleHead)
-      ? titleHead
-      : personScopedName(titleHead);
+  const titleSegments = name.split(PAGE_TITLE_SEPARATOR_RE);
+  if (titleSegments.length > 1 && titleSegments[0]) {
+    return (
+      titleSegments.find((segment) => NAMED_RESEARCH_HOME_RE.test(segment)) ??
+      personScopedName(titleSegments[0])
+    );
   }
   const platformHead = TRAILING_PLATFORM_WORD_RE.exec(name)?.[1];
-  if (platformHead && ENDS_IN_RESEARCH_HOME_HEAD_NOUN_RE.test(platformHead)) return platformHead;
+  if (platformHead && NAMED_RESEARCH_HOME_RE.test(platformHead)) return platformHead;
   return '';
 }
 

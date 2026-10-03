@@ -1256,6 +1256,28 @@ function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuar
   return null;
 }
 
+function extractedFullDescription(
+  extraction: Pick<DescriptionExtraction, 'fullDescription'>,
+  context: ExtractedPageIdentityContext,
+): string {
+  return normalizeKnownDescriptionAcronyms(
+    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
+  );
+}
+
+function bodyDescribesAnotherOrganization(
+  fullDescription: string,
+  context: ExtractedPageIdentityContext,
+): boolean {
+  return (
+    isPersonScopedResearchEntity(context) &&
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description: fullDescription,
+      slug: context.entityKey,
+    })
+  );
+}
+
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
   context: ExtractedPageIdentityContext & { entityId?: string },
@@ -1287,9 +1309,7 @@ export function describeDescriptionExtraction(
     return refusedBy('subject_not_named_entity');
   }
 
-  const fullDescription = normalizeKnownDescriptionAcronyms(
-    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
-  );
+  const fullDescription = extractedFullDescription(extraction, context);
   if (!fullDescription) return { observations: [] };
   const contentRefusal = fullDescriptionContentRefusal(fullDescription);
   if (contentRefusal) return refusedBy(contentRefusal);
@@ -1307,13 +1327,7 @@ export function describeDescriptionExtraction(
   // this context, and the page's name must not stand in for it: the subject and the
   // page name come from the same page, so they always agree and the check would
   // always clear itself.
-  if (
-    isPersonScopedResearchEntity(context) &&
-    personScopedResearchEntityBodyDescribesAnotherOrganization({
-      description: fullDescription,
-      slug: context.entityKey,
-    })
-  ) {
+  if (bodyDescribesAnotherOrganization(fullDescription, context)) {
     return refusedBy('another_organization_body');
   }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
@@ -1410,7 +1424,7 @@ export function labNameIsStatedInPageHeadings(labName: string, html: string): bo
  * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead.
  */
 export function pageStatedLabNameObservations(
-  extraction: Pick<DescriptionExtraction, 'name' | 'subject'>,
+  extraction: Pick<DescriptionExtraction, 'name' | 'subject' | 'fullDescription'>,
   context: ExtractedPageIdentityContext & { entityId?: string },
   pageHtml: string,
 ): ObservationInput[] {
@@ -1423,6 +1437,8 @@ export function pageStatedLabNameObservations(
   const labName = usefulLabName(extraction.name);
   if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
   if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
+  const fullDescription = extractedFullDescription(extraction, context);
+  if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
   return labNameObservations(
     labName,
     {

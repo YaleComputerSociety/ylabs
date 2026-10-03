@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   LabMicrositeDescriptionLLMExtractor,
+  pageStatedLabNameObservations,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -138,5 +139,23 @@ describe('the microsite lane emits the page-stated lab name on every description
     });
 
     expect(valueOf('name')).toBeUndefined();
+  });
+
+  it('withholds the name of a page whose own body describes another organization, whatever else was refused', () => {
+    const personScoped = {
+      sourceUrl: SITE_URL,
+      entityKey: 'directory-faculty-fixture-person',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+    };
+    const html = newsFeedHtml(LAB_NAME);
+    const orgBody =
+      'The department supports undergraduate research through paid research assistantships and summer programs.';
+
+    expect(pageStatedLabNameObservations(extraction({}), personScoped, html)).not.toHaveLength(0);
+    expect(
+      pageStatedLabNameObservations(extraction({ fullDescription: orgBody }), personScoped, html),
+    ).toHaveLength(0);
   });
 });
