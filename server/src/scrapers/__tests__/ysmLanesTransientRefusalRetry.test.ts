@@ -133,7 +133,7 @@ describe('ysm-faculty-directory fetch under a transient 403', () => {
     const profileCalls = vi.mocked(axios.get).mock.calls.filter(([url]) => url === PROFILE_URL);
     expect(profileCalls).toHaveLength(8);
     expect((outcome as PromiseFulfilledResult<{ notes?: string }>).value.notes).toContain(
-      '1 profiles refused then 0 recovered on one retry',
+      '1 profiles refused then 0 recovered on a second pass',
     );
     expect(emitted).toEqual([]);
   });

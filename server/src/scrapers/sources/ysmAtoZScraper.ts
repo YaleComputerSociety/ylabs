@@ -176,7 +176,7 @@ async function fetchLabHomepage(
     return html;
   } catch (error) {
     log(
-      `Lab page fetch failed after retries: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`,
+      `Lab page fetch failed: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`,
     );
     return null;
   }
@@ -814,7 +814,7 @@ export class YsmAtoZScraper implements IScraper {
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);
     ctx.log(`Inferred PI for ${piMatched}/${work.length} labs`);
     ctx.log(`Found official homepage descriptions for ${descriptionsFound}/${work.length} labs`);
-    ctx.log(`${pageFetchFailures} lab page fetch(es) still failed after retries`);
+    ctx.log(`${pageFetchFailures} lab page fetch(es) failed`);
 
     return {
       observationCount: totalObs,

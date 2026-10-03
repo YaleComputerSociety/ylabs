@@ -712,7 +712,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
         `${supportStaffSkipped} research-support staff skipped, ` +
-        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on one retry`,
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
     };
   }
 }
