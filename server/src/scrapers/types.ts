@@ -5,6 +5,7 @@ import type { ObservedEntityType } from '../models/observation';
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
+import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -122,6 +123,7 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
   httpCache?: HttpValidatorCacheStats;
   sweepPageReuse?: SweepPageReuseStats;
+  throttleRetry?: ThrottleRetryStats;
   summary: {
     total: number;
     succeeded: number;

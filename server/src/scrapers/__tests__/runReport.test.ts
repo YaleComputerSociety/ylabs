@@ -656,6 +656,34 @@ describe('buildScrapeRunReport', () => {
     expect(serialized).not.toContain('203-555-1212');
   });
 
+  it('reports throttled requests that recovered and warns about those that were lost', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-throttle',
+        sourceName: 'ysm-faculty-directory',
+        status: 'success',
+        fetchMetrics: {
+          attempts: [],
+          throttleRetry: { refused: 5, recovered: 3, exhausted: 2, retries: 11 },
+          summary: {
+            total: 0,
+            succeeded: 0,
+            failed: 0,
+            blocked: 0,
+            selectorBreakages: 0,
+            averageLatencyMs: 0,
+            byMode: {},
+          },
+        },
+      },
+      [],
+    );
+    expect(report.coverage.fetch).toMatchObject({ throttleRecovered: 3, throttleExhausted: 2 });
+    expect(
+      report.warnings.some((warning) => warning.startsWith('2 request(s) were still refused')),
+    ).toBe(true);
+  });
+
   it('adds source-level coverage and fetch coverage metrics', () => {
     const report = buildScrapeRunReport(
       {

@@ -78,6 +78,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -759,13 +760,15 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;

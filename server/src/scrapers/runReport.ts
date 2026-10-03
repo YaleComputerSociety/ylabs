@@ -236,6 +236,8 @@ export interface ScrapeRunReport {
       failed: number;
       blocked: number;
       selectorBreakages: number;
+      throttleRecovered: number;
+      throttleExhausted: number;
       byMode: Record<
         string,
         {
@@ -617,6 +619,8 @@ function buildCoverageFetchSummary(
     failed: summary?.failed || 0,
     blocked: summary?.blocked || 0,
     selectorBreakages: summary?.selectorBreakages || 0,
+    throttleRecovered: fetchMetrics?.throttleRetry?.recovered || 0,
+    throttleExhausted: fetchMetrics?.throttleRetry?.exhausted || 0,
     byMode,
   };
 }
@@ -914,6 +918,11 @@ export function buildScrapeRunReport(
   if (coverageFetch.succeeded > 0 && reportedObservationCount === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
+    );
+  }
+  if (coverageFetch.throttleExhausted > 0) {
+    warnings.push(
+      `${coverageFetch.throttleExhausted} request(s) were still refused after the throttle retry budget; their pages are missing from this run.`,
     );
   }
   if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && reportedObservationCount > 0) {

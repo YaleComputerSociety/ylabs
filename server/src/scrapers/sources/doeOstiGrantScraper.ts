@@ -64,6 +64,7 @@ import {
 import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -286,17 +287,19 @@ async function fetchPage(
     const cached = await getCached<OstiRecord[]>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(OSTI_ENDPOINT, {
-    params: {
-      research_org: RESEARCH_ORG_QUERY,
-      product_type: TECHNICAL_REPORT_PRODUCT_TYPE,
-      rows: String(PAGE_SIZE),
-      page: String(page),
-      sort: 'publication_date desc',
-    },
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(OSTI_ENDPOINT, {
+      params: {
+        research_org: RESEARCH_ORG_QUERY,
+        product_type: TECHNICAL_REPORT_PRODUCT_TYPE,
+        rows: String(PAGE_SIZE),
+        page: String(page),
+        sort: 'publication_date desc',
+      },
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    }),
+  );
   const records: OstiRecord[] = Array.isArray(res.data) ? res.data : res.data?.records || [];
   if (useCache) await setCached(sourceName, cacheKey, records);
   return records;

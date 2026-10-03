@@ -27,6 +27,7 @@ import {
   beginBenchmarkReplay,
   finishBenchmarkReplay,
 } from '../snapshotBenchmarkMode';
+import { withThrottleRetryScope } from '../utils/throttleRetryStats';
 
 beforeEach(() => {
   mocks.execFile.mockReset();
@@ -334,6 +335,60 @@ describe('createScraplingRenderedFetcher guarded browser egress', () => {
     await fetcher?.({ url: 'https://8.8.8.8/source' });
 
     expect(proxy.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createScraplingRenderedFetcher throttle retry', () => {
+  const retry = { sleep: async () => {}, jitter: () => 0 };
+  const fetcherWith = (maxRetries?: number) =>
+    createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
+      retry: { ...retry, ...(maxRetries === undefined ? {} : { maxRetries }) },
+    });
+  const refusedRender = {
+    url: 'https://8.8.8.8/source',
+    statusCode: 403,
+    html: '<html>denied</html>',
+    blocked: true,
+    blockedReason: 'http-403',
+  };
+
+  it('renders again after a throttled refusal and returns the page that loaded', async () => {
+    execFileSuccess(refusedRender);
+    execFileSuccess({ url: 'https://8.8.8.8/source', statusCode: 200, html: '<html>ok</html>' });
+
+    const { value, stats } = await withThrottleRetryScope(
+      async () => (await fetcherWith()?.({ url: 'https://8.8.8.8/source' })) ?? null,
+    );
+
+    expect(value).toMatchObject({ statusCode: 200, html: '<html>ok</html>' });
+    expect(mocks.execFile).toHaveBeenCalledTimes(2);
+    expect(stats).toMatchObject({ refused: 1, recovered: 1, exhausted: 0 });
+  });
+
+  it('returns the refused page once the retry budget is spent', async () => {
+    execFileSuccess(refusedRender);
+    execFileSuccess(refusedRender);
+
+    const { value, stats } = await withThrottleRetryScope(
+      async () => (await fetcherWith(1)?.({ url: 'https://8.8.8.8/source' })) ?? null,
+    );
+
+    expect(value).toMatchObject({ statusCode: 403, blockedReason: 'http-403' });
+    expect(mocks.execFile).toHaveBeenCalledTimes(2);
+    expect(stats).toMatchObject({ refused: 1, recovered: 0, exhausted: 1 });
+  });
+
+  it('does not render again for a page that is gone', async () => {
+    execFileSuccess({ url: 'https://8.8.8.8/source', statusCode: 404, html: '<html>gone</html>' });
+
+    await fetcherWith()?.({ url: 'https://8.8.8.8/source' });
+
+    expect(mocks.execFile).toHaveBeenCalledTimes(1);
   });
 });
 

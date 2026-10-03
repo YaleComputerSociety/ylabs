@@ -8,6 +8,7 @@ import { brokerSocketPath } from '../../scrapers/utils/hostSlotBroker';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
 import {
   sourcesThatProducedNothing,
+  sweepThrottleRetrySummary,
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_SWEEP_SOURCES,
@@ -1699,5 +1700,20 @@ describe('inferred-PI lead reclaim post-run stage', () => {
     expect(() => parseInferredPiLeadReclaimResult(reclaimReport({ tally: {} }))).toThrow(
       /missing a numeric materialized-lead/,
     );
+  });
+});
+
+describe('sweepThrottleRetrySummary', () => {
+  it('totals recovered and lost throttled requests and names the sources that lost pages', () => {
+    const rows = [
+      { sourceName: 'ysm-faculty-directory', throttleRecovered: 12, throttleExhausted: 2 },
+      { sourceName: 'nih-reporter', throttleRecovered: 1, throttleExhausted: 0 },
+      { sourceName: 'yse-centers-index' },
+    ] as never;
+    expect(sweepThrottleRetrySummary(rows)).toEqual({
+      recovered: 13,
+      exhausted: 2,
+      exhaustedSources: ['ysm-faculty-directory'],
+    });
   });
 });
