@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Types } from 'mongoose';
 import {
   MATERIALIZER_DERIVED_FIELD_GROUPS,
   withDerivedMaterializerFields,
@@ -497,6 +498,20 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     expect(args.onlyFields).toEqual(['undergradEvidenceQuote']);
   });
 
+  it('can scope a pass to topics and the grant fields together (#4418)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=researchAreas,recentGrants,recentGrantPeriods,recentGrantCount,fundingAgencies',
+    ]);
+    expect(args.onlyFields).toEqual([
+      'researchAreas',
+      'recentGrants',
+      'recentGrantPeriods',
+      'recentGrantCount',
+      'fundingAgencies',
+    ]);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });
@@ -506,6 +521,15 @@ describe('withDerivedMaterializerFields', () => {
   it('writes a derived pair together whichever half the operator scoped', () => {
     expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
     expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('writes the whole grant closure whichever grant field the operator scoped', () => {
+    expect(withDerivedMaterializerFields(['recentGrantCount']).sort()).toEqual([
+      'fundingAgencies',
+      'recentGrantCount',
+      'recentGrantPeriods',
+      'recentGrants',
+    ]);
   });
 
   it('writes the whole org-unit closure whichever member the operator scoped', () => {
@@ -674,6 +698,30 @@ describe('the change set covers every field the run may write (#3822)', () => {
     ]);
   });
 
+  it('reports no grant change when a dry run plans the awards the row already stores', () => {
+    const plannedGrant = {
+      id: 'award-1',
+      agency: 'Example Agency',
+      title: 'Example Award',
+      startDate: new Date('2024-07-01T00:00:00.000Z'),
+      endDate: new Date('2027-06-30T00:00:00.000Z'),
+    };
+    const before = {
+      ...stored,
+      recentGrants: [{ ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() }],
+      recentGrantCount: 1,
+    };
+    const fields = rematerializeComparedFields([]);
+    const planned = rematerializeStateAfterPlan(
+      before,
+      { recentGrants: [plannedGrant], recentGrantCount: 1 },
+      {},
+      fields,
+    );
+
+    expect(rematerializeReportedChanges(before, planned, fields)).toEqual([]);
+  });
+
   it('counts an entity with no measured change as unchanged whatever the materializer planned', () => {
     const report = rematerializeEntityReportFromChanges({
       slug: 'example-lab',
@@ -821,5 +869,30 @@ describe('the access-signals mode (#3921, #3928)', () => {
       retiredByKey: { 'signal:REACH_OUT_PLAUSIBLE': 2 },
       revivedByKey: { 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': 1 },
     });
+  });
+});
+
+describe('rematerializeReportedChanges on grant subdocuments (#4418)', () => {
+  const grant = (title: string) => ({
+    _id: new Types.ObjectId(),
+    id: 'R01XX000001',
+    title,
+    agency: 'NIH',
+  });
+
+  it('reports no change when a rewrite re-mints only the subdocument ids', () => {
+    const before = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+    const reloaded = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+
+    expect(
+      rematerializeReportedChanges(before, reloaded, ['recentGrants', 'recentGrantCount']),
+    ).toEqual([]);
+  });
+
+  it('still reports a grant whose content changed', () => {
+    const before = { recentGrants: [grant('Example Award')] };
+    const reloaded = { recentGrants: [grant('Renamed Award')] };
+
+    expect(rematerializeReportedChanges(before, reloaded, ['recentGrants'])).toHaveLength(1);
   });
 });

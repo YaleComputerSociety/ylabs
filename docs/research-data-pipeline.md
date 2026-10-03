@@ -429,6 +429,7 @@ Measured on a 400-row Development sample, the pre-fix list reported 244 rows as 
 Add a field here when the materializer plans it and the product serves it; `inferredPiUserKey` stays out because it is planned but persisted on 0 of 8,280 Development rows, so tracking it would report a change on every run forever, and `contactEmail`, `contactName` and `contactRole` stay out because `publicResearchDetailGroup` withholds them from every served payload, so a report that carried their values would print a withheld contact beside a per-slug defect judgement; they are still compared, but recorded by field name and direction only.
 The list doubles as the `--only-fields` allowlist, so widening it mints a write scope as well as a report column, and a field the materializer co-derives needs its whole closure in that scope or the scoped write lands one half of a pair.
 Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written together, so `--only-fields=kind` and `--only-fields=entityType` both write that pair (issue #2144) and `--only-fields=departments` also writes the `school`, `schools` and `orgAffiliationLabels` that `applyResearchEntityOrgUnitCanonicalization` recomputes from it, rather than leaving the stored `schools` facet describing the old departments.
+The four grant fields (`recentGrants`, `recentGrantPeriods`, `recentGrantCount` and `fundingAgencies`) are one closure too, because `aggregateResearchEntityGrantEvidence` derives all four from one award union, so a count written without its list would disagree (#4418).
 A scoped pass also scopes what runs after the projection (#3874).
 Lead-PI school inheritance (`lead-pi-school-inheritance`) runs only when the expanded scope names `school` or `departments`, and otherwise appends no observation and writes no field; before this, a pass scoped to `researchAreas` wrote `departments` on 2 Development rows.
 The inferred-PI and inferred-director lead edges, the access-signal upserts, and the department-roster shell fold are skipped, because they write no field and the report compares fields, so any write they made would be invisible.
@@ -808,7 +809,7 @@ The verdict carries `provenInert: true` and the summary counts it as `plannedRel
 
 The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
 `--release-never-backed` is that path.
-A lock whose field's provenance names a lane that never observed the field on the row (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
+A lock whose field's provenance names a lane that never observed the field on the row or any row merged into it (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`, #4418) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
 It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
 Silence counts as that answer only on a field whose collection the lock does not stop.
 A lock over a cleared field stays shut on silence, for the reason the fence above gives.
@@ -939,7 +940,7 @@ The model refuses to persist a `fieldProvenance` entry that carries no `observat
 The only listed authority is `description-derived-research-area`, which the materializer recomputes from the row's own description on every resolve.
 `$unset` and a subpath repoint of `sourceUrl` author no attribution and are allowed.
 A raw `collection` handle skips those hooks, so `models/__tests__/rawResearchEntityWriteGuard.test.ts` keeps raw writers of `research_entities` to a reviewed list with a reason per file and refuses any raw write that authors a whole entry or its `sourceName` (#3788).
-For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field on the row at all, live or superseded.
+For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field at all, live or superseded, under the row's own key and id or any merged-in row's (#4418).
 An entry on a locked field is left to `research-entity:release-field-locks --release-never-backed`, described with the lock release tool above.
 It clears the attribution and never the value: the value stays exactly as evidenced, which is by nothing, and a later lane observation re-attributes it through the normal projection.
 Everything else is history and is kept: an `observationId` that resolves to a superseded observation or to nothing (a pruned one), a bare `sourceId` (the #2897 residue), and an unrecorded-id entry whose lane really did observe the field.
@@ -963,6 +964,7 @@ Every rematerialize report measures one change list per row over every field the
 A contact change is recorded as `{ field, withheld: 'set' | 'replaced' | 'cleared' }` and never carries a value.
 `entitiesChanged`, `fieldsWritten` and `clearedContactFields` are all read off that list, so they cannot disagree; the materializer's own count, which also counts a planned value equal to the stored one, is reported per row as `materializerFieldsWritten`.
 An apply diffs the row it re-reads, and a dry run diffs the row its plan would leave in the same shape, so an unset field reads as a change in both modes.
+The dry-run plan is cast through the schema so it carries the same subdocument defaults a re-read does, and a subdocument `_id` is ignored in the comparison because Mongoose re-mints it on every write.
 
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.

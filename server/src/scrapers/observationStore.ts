@@ -974,6 +974,10 @@ function latestWinsObservedTime(value: unknown): number {
  * drops a topic is usually a correction, and unioning them would hoard every topic a
  * source ever guessed. An accumulating field is one whose items are dated events, not
  * a description of the present.
+ *
+ * Given `memberOf`, the union stops at the row the freshest read was filed under: a merged-in
+ * key's older read is one the same lane has since re-read on the survivor, so it is superseded
+ * there exactly as write-time supersession would have retired it on one key (#4418).
  */
 const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants', 'recentGrantPeriods']);
 
@@ -1013,7 +1017,7 @@ export function unionAdditiveListValues(
 
 export function collapseLatestWins<
   T extends { field: string; sourceName: string; observedAt?: unknown; value?: unknown },
->(observations: T[], entityType: string): T[] {
+>(observations: T[], entityType: string, memberOf?: (observation: T) => string | undefined): T[] {
   const indicesByKey = new Map<string, number[]>();
   observations.forEach((observation, index) => {
     if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return;
@@ -1085,7 +1089,10 @@ export function collapseLatestWins<
       void kept;
       if (!ADDITIVE_LATEST_WINS_LIST_FIELDS.has(observation.field)) return observation;
       const key = JSON.stringify([observation.sourceName, observation.field]);
-      const group = indicesByKey.get(key);
+      const winnerMember = memberOf?.(observation);
+      const group = indicesByKey
+        .get(key)
+        ?.filter((index) => !memberOf || memberOf(observations[index]) === winnerMember);
       if (!group || group.length < 2) return observation;
       const newestFirst = [...group].sort(
         (left, right) =>

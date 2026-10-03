@@ -1,34 +1,52 @@
 import { Observation } from '../models/observation';
 import {
+  mergedRowEvidenceIdentity,
+  mergedRowEvidenceQueryClauses,
+  type MergedInRowRef,
+} from './mergedRowEvidenceIdentity';
+import {
   fieldProvenanceEntries,
   fieldProvenanceEntryNamesALaneWithoutEvidence,
 } from '../models/fieldProvenanceBacking';
 
-export type SourceObservedFieldLookup = (input: {
-  entityKey?: string;
-  entityId?: string;
-  field: string;
-  sourceName: string;
-}) => Promise<boolean>;
+export interface ProvenanceRowEvidenceIdentity {
+  entityKeys: string[];
+  entityIds: string[];
+}
 
-export const sourceEverObservedField: SourceObservedFieldLookup = async ({
-  entityKey,
-  entityId,
-  field,
-  sourceName,
-}) => {
-  const identifiers: Record<string, unknown>[] = [];
-  if (entityKey) identifiers.push({ entityKey });
-  if (entityId) identifiers.push({ entityId });
-  if (identifiers.length === 0) return true;
+export type SourceObservedFieldLookup = (
+  input: ProvenanceRowEvidenceIdentity & { field: string; sourceName: string },
+) => Promise<boolean>;
+
+function identityClauses(input: ProvenanceRowEvidenceIdentity): Array<Record<string, unknown>> {
+  return mergedRowEvidenceQueryClauses([
+    { entityIds: new Set(input.entityIds), entityKeys: new Set(input.entityKeys) },
+  ]);
+}
+
+export const sourceEverObservedField: SourceObservedFieldLookup = async (input) => {
+  const clauses = identityClauses(input);
+  if (clauses.length === 0) return true;
   const found = await Observation.exists({
     entityType: 'researchEntity',
-    field,
-    sourceName,
-    $or: identifiers,
+    field: input.field,
+    sourceName: input.sourceName,
+    $or: clauses,
   });
   return Boolean(found);
 };
+
+/**
+ * The row's own key and id plus every merged-in row's, because a lane that observed a field
+ * under a merged-in key backs the survivor's value as much as one that read the survivor (#3560).
+ */
+function provenanceRowEvidenceIdentity(
+  stored: Record<string, unknown>,
+  mergedInRows: ReadonlyArray<MergedInRowRef> = [],
+): ProvenanceRowEvidenceIdentity {
+  const identity = mergedRowEvidenceIdentity(stored, mergedInRows);
+  return { entityKeys: [...identity.entityKeys], entityIds: [...identity.entityIds] };
+}
 
 function textValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -45,12 +63,12 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
   unset: Record<string, unknown>;
   lockedFields: readonly string[];
   scopedFields?: readonly string[];
+  mergedInRows?: ReadonlyArray<MergedInRowRef>;
   sourceObservedField?: SourceObservedFieldLookup;
 }): Promise<string[]> {
   if (!input.stored) return [];
   const lookup = input.sourceObservedField ?? sourceEverObservedField;
-  const entityKey = textValue(input.stored.slug) || undefined;
-  const entityId = input.stored._id ? String(input.stored._id) : undefined;
+  const identity = provenanceRowEvidenceIdentity(input.stored, input.mergedInRows);
   const retired: string[] = [];
   for (const [field, entry] of fieldProvenanceEntries(input.stored.fieldProvenance)) {
     const path = `fieldProvenance.${field}`;
@@ -59,7 +77,7 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
     if (input.scopedFields && !input.scopedFields.includes(field)) continue;
     if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
     const sourceName = textValue((entry as { sourceName?: unknown }).sourceName);
-    if (await lookup({ entityKey, entityId, field, sourceName })) continue;
+    if (await lookup({ ...identity, field, sourceName })) continue;
     retired.push(field);
   }
   return retired;
@@ -71,6 +89,7 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
  */
 export async function lockedNeverBackedProvenanceFields(input: {
   stored: Record<string, unknown> | null | undefined;
+  mergedInRows?: ReadonlyArray<MergedInRowRef>;
   sourceObservedField?: SourceObservedFieldLookup;
 }): Promise<string[]> {
   if (!input.stored) return [];
@@ -80,14 +99,13 @@ export async function lockedNeverBackedProvenanceFields(input: {
         (field): field is string => typeof field === 'string',
       )
     : [];
-  const entityKey = textValue(input.stored.slug) || undefined;
-  const entityId = input.stored._id ? String(input.stored._id) : undefined;
+  const identity = provenanceRowEvidenceIdentity(input.stored, input.mergedInRows);
   const fields: string[] = [];
   for (const [field, entry] of fieldProvenanceEntries(input.stored.fieldProvenance)) {
     if (!locked.includes(field)) continue;
     if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
     const sourceName = textValue((entry as { sourceName?: unknown }).sourceName);
-    if (await lookup({ entityKey, entityId, field, sourceName })) continue;
+    if (await lookup({ ...identity, field, sourceName })) continue;
     fields.push(field);
   }
   return fields;
@@ -99,29 +117,19 @@ export interface LiveFieldObservation {
   value?: unknown;
 }
 
-export type LiveFieldObservationLookup = (input: {
-  entityKey?: string;
-  entityId?: string;
-  field: string;
-  sourceName: string;
-}) => Promise<LiveFieldObservation[]>;
+export type LiveFieldObservationLookup = (
+  input: ProvenanceRowEvidenceIdentity & { field: string; sourceName: string },
+) => Promise<LiveFieldObservation[]>;
 
-export const liveObservationsOfField: LiveFieldObservationLookup = async ({
-  entityKey,
-  entityId,
-  field,
-  sourceName,
-}) => {
-  const identifiers: Record<string, unknown>[] = [];
-  if (entityKey) identifiers.push({ entityKey });
-  if (entityId) identifiers.push({ entityId });
-  if (identifiers.length === 0) return [];
+export const liveObservationsOfField: LiveFieldObservationLookup = async (input) => {
+  const clauses = identityClauses(input);
+  if (clauses.length === 0) return [];
   return Observation.find({
     entityType: 'researchEntity',
-    field,
-    sourceName,
+    field: input.field,
+    sourceName: input.sourceName,
     superseded: false,
-    $or: identifiers,
+    $or: clauses,
   })
     .select('_id sourceId value')
     .lean<LiveFieldObservation[]>();
@@ -164,12 +172,12 @@ export async function planUnrecordedProvenanceObservationRelink(input: {
   unset: Record<string, unknown>;
   lockedFields: readonly string[];
   scopedFields?: readonly string[];
+  mergedInRows?: ReadonlyArray<MergedInRowRef>;
   liveObservations?: LiveFieldObservationLookup;
 }): Promise<Record<string, Record<string, unknown>>> {
   if (!input.stored) return {};
   const lookup = input.liveObservations ?? liveObservationsOfField;
-  const entityKey = textValue(input.stored.slug) || undefined;
-  const entityId = input.stored._id ? String(input.stored._id) : undefined;
+  const identity = provenanceRowEvidenceIdentity(input.stored, input.mergedInRows);
   const relinked: Record<string, Record<string, unknown>> = {};
   for (const [field, entry] of fieldProvenanceEntries(input.stored.fieldProvenance)) {
     const path = `fieldProvenance.${field}`;
@@ -182,7 +190,7 @@ export async function planUnrecordedProvenanceObservationRelink(input: {
     const record = plainEntry(entry);
     const sourceName = textValue(record.sourceName);
     const held = JSON.stringify(heldValue);
-    const matching = (await lookup({ entityKey, entityId, field, sourceName })).filter(
+    const matching = (await lookup({ ...identity, field, sourceName })).filter(
       (observation) => isPresent(observation._id) && JSON.stringify(observation.value) === held,
     );
     if (matching.length !== 1) continue;

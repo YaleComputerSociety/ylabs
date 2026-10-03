@@ -353,7 +353,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     expect(stored?.fullDescription ?? '').not.toContain('kidney');
   });
 
-  it('still unions an accumulating field the survivor also carries', async () => {
+  it('lets a newer same-lane award read on a merged-in key supersede the survivor older one', async () => {
     const survivor = await seedMerge('ysm-faculty-example-lead');
     const grant = (id: string) => ({ id, title: `Synthetic award ${id}`, agency: 'NIH' });
     await seedObservation(
@@ -375,10 +375,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       recentGrants?: Array<{ id?: string }>;
     }>();
 
-    expect((stored?.recentGrants ?? []).map((award) => award.id).sort()).toEqual([
-      'R01-LOSER',
-      'R01-SURVIVOR',
-    ]);
+    expect((stored?.recentGrants ?? []).map((award) => award.id)).toEqual(['R01-LOSER']);
   });
 
   it('keeps a loser-only clearable field stable across repeated resolves', async () => {

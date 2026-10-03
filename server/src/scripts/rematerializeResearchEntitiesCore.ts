@@ -6,6 +6,7 @@ import {
   RESEARCH_ENTITY_CONTACT_FIELDS,
   observationIsKeyedToRow,
 } from '../scrapers/rowKeyedContactEvidence';
+import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
 import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
@@ -86,6 +87,10 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'orgAffiliationLabels',
   'undergradEvidenceQuote',
   'studentVisibilityTier',
+  'recentGrants',
+  'recentGrantPeriods',
+  'recentGrantCount',
+  'fundingAgencies',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -282,9 +287,24 @@ export interface RematerializeFieldChange {
   after: unknown;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+// Mongoose re-mints a subdocument `_id` on every write, so it carries no content.
+function withoutSubdocumentId(entry: unknown): unknown {
+  if (!isPlainObject(entry)) return entry;
+  const { _id: _ignored, ...content } = entry;
+  return Object.fromEntries(Object.entries(content).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) return value.map((entry) => normalizeForComparison(entry));
+  if (Array.isArray(value)) {
+    return value.map((entry) => withoutSubdocumentId(normalizeForComparison(entry)));
+  }
   return value;
 }
 
@@ -329,10 +349,26 @@ export function rematerializeComparedFields(writeOnlyFields: readonly string[]):
   );
 }
 
+function plannedValuesAsStored(
+  plannedSet: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const planned = Object.fromEntries(
+    fields
+      .filter((field) => Object.prototype.hasOwnProperty.call(plannedSet, field))
+      .map((field) => [field, plannedSet[field]]),
+  );
+  const stored = new ResearchEntity(planned).toObject() as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(planned).map(([field, value]) => [field, stored[field] ?? value]),
+  );
+}
+
 /**
  * The row a dry run's plan would leave, in the same shape an apply re-reads, so the
  * two modes diff the same way. A re-read omits an unset field, which is why the apply
- * side must not fall back to the stored value for an absent key.
+ * side must not fall back to the stored value for an absent key, and carries the
+ * schema's subdocument defaults, which is why the plan is cast through the schema.
  */
 export function rematerializeStateAfterPlan(
   before: Record<string, unknown>,
@@ -340,11 +376,12 @@ export function rematerializeStateAfterPlan(
   plannedUnset: Record<string, unknown>,
   fields: readonly string[],
 ): Record<string, unknown> {
+  const plannedAsStored = plannedValuesAsStored(plannedSet, fields);
   const after: Record<string, unknown> = {};
   for (const field of fields) {
     if (Object.prototype.hasOwnProperty.call(plannedUnset, field)) continue;
-    const value = Object.prototype.hasOwnProperty.call(plannedSet, field)
-      ? plannedSet[field]
+    const value = Object.prototype.hasOwnProperty.call(plannedAsStored, field)
+      ? plannedAsStored[field]
       : before[field];
     if (value !== undefined) after[field] = value;
   }
