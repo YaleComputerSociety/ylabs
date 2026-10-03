@@ -3694,7 +3694,7 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /const querySubjects = resolveTopicSubjects\(\[safeQuery\]\)/);
   assert.match(
     fellowshipService,
-    /const searchTerms = \[safeQuery, \.\.\.queryTopicAliases\]\.filter\(Boolean\)/,
+    /const searchTerms = \[\s*safeQuery,\s*\.\.\.queryTopicAliases,\s*\.\.\.yearOfStudyAliasesForQuery\(safeQuery\),?\s*\]\.filter\(Boolean\)/,
   );
   assert.match(fellowshipService, /filter\.\$text = \{ \$search: searchTerms\.join\(' '\) \}/);
   assert.match(
