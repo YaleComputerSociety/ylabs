@@ -606,6 +606,7 @@ Two things were missing, and both showed up in the queries students typed in Pro
 
 - **Spelling.** The query runs through `correctProgramSearchQuerySpelling` (`programSearchSpellingVocabulary.ts`) first, with a vocabulary built from served programs and cached for ten minutes.
   Besides the research rules, a word is never rewritten when the research corpus carries it in three or more rows (`econ` must not become `icon`), or when it starts a longer word in either corpus, because the search box searches as the student types and an unfinished word is not a typo (`fres` is `freshman`, not `fees`).
+  Until the research vocabulary has loaded, or while it cannot load, program search fails closed and searches the typed spelling, so the same warm-up rule as research search applies to a script that calls `searchFellowships` directly.
 - **Prefixes.** Alongside `$text`, a second query requires every typed word of two or more letters, stop words aside, to start a word in one of the searchable fields (`programQueryWordPrefixClauses`).
   The two are merged by id: `$text` matches first in their existing relevance-then-sort order, then prefix-only matches in sort order, and the total is the size of the union, so paging walks one stable list.
 

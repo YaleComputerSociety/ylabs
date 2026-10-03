@@ -27,7 +27,18 @@ export const PROGRAM_SEARCH_SPELLING_FIELDS = [
 export const PROGRAM_SEARCH_SPELLING_TTL_MS = 10 * 60 * 1000;
 const RESEARCH_WORD_MIN_DOCUMENTS = 3;
 
-export const PROGRAM_QUERY_STOP_WORDS = ['a', 'an', 'and', 'for', 'in', 'of', 'on', 'or', 'the', 'to'];
+export const PROGRAM_QUERY_STOP_WORDS = [
+  'a',
+  'an',
+  'and',
+  'for',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+];
 
 const PROGRAM_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [...PROGRAM_QUERY_ALIAS_PHRASES, ...PROGRAM_QUERY_STOP_WORDS].flatMap(
@@ -144,9 +155,5 @@ export const correctProgramSearchQuerySpelling = async (
   if (!research) return { query, corrections: [] };
   const vocabulary = await getProgramSearchSpellingVocabulary();
   if (!vocabulary) return { query, corrections: [] };
-  return correctSearchQuerySpelling(
-    query,
-    vocabulary,
-    programProtectedTerms(vocabulary, research),
-  );
+  return correctSearchQuerySpelling(query, vocabulary, programProtectedTerms(vocabulary, research));
 };
