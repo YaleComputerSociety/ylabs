@@ -14,13 +14,11 @@
  */
 import { spawn } from 'child_process';
 import type { EventEmitter } from 'events';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { captureServerWarning } from '../utils/errorTracking';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const __filenameLocal = fileURLToPath(import.meta.url);
-const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
+const SERVER_ROOT = resolveServerPackageRoot(import.meta.url);
 const MIN_GATE_REFRESH_INTERVAL_MINUTES = 5;
 const MAX_GATE_REFRESH_INTERVAL_MINUTES = 24 * 60;
 
@@ -88,7 +86,8 @@ export function startGateRefreshScheduler(env: NodeJS.ProcessEnv = process.env):
   if (!intervalMs) return false;
   console.log(
     `[gate-refresh] scheduler enabled: every ${intervalMs / 60_000} min` +
-      (env.GATE_REFRESH_SKIP_HEAVY === 'true' ? ' (skip-heavy)' : ''),
+      (env.GATE_REFRESH_SKIP_HEAVY === 'true' ? ' (skip-heavy)' : '') +
+      ` in ${SERVER_ROOT}`,
   );
   // Kick one off shortly after boot so the board is fresh without waiting a full interval.
   setTimeout(triggerRefresh, 15_000).unref?.();

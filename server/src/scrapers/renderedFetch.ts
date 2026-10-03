@@ -1,8 +1,7 @@
 import { execFile } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
   assertPublicHttpUrl,
@@ -25,6 +24,7 @@ import {
   type SsrfGuardedForwardProxy,
 } from './utils/ssrfGuardedForwardProxy';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 import type {
   ScraperFetchAttemptMetrics,
   ScraperFetchMetric,
@@ -37,8 +37,8 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MIN_RENDERED_FETCH_TIMEOUT_MS = 1_000;
 const MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000;
-const DEFAULT_BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'scraplingBridge.py');
-const SCRAPER_DIR = dirname(fileURLToPath(import.meta.url));
+const SCRAPER_DIR = join(resolveServerPackageRoot(import.meta.url), 'src', 'scrapers');
+const DEFAULT_BRIDGE_PATH = join(SCRAPER_DIR, 'scraplingBridge.py');
 const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
 const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
 const MAX_RENDERED_FETCH_SELECTOR_LENGTH = 256;

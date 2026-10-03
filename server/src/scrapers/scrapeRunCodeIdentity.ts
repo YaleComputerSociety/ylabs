@@ -9,9 +9,9 @@
  */
 import { execFileSync, spawnSync } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const REPO_ROOT = path.dirname(resolveServerPackageRoot(import.meta.url));
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
