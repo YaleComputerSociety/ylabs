@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  BBS_REFUSED_PROFILE_RETRY_PAUSE_MS,
   BBS_TRACKS,
   BbsResearchTrackScraper,
   bbsGraftObservations,
@@ -960,6 +961,85 @@ describe('per-track roster-health snapshot', () => {
       'jo-park',
       'morgan-lee',
       'sam-carter',
+    ]);
+  });
+});
+
+describe('profile reads honour source concurrency and record refusals (#3835)', () => {
+  const roster = Array.from({ length: 6 }, (_v, i) => ({
+    slug: `fixture-pi-${i}`,
+    label: `Pi${i}, Fixture`,
+  }));
+  const profileUrl = (slug: string) => `https://medicine.yale.edu/bbs/profile/${slug}/`;
+  const refusal = (status: number) => Object.assign(new Error('refused'), { response: { status } });
+
+  it('reads profiles in parallel up to --source-concurrency', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'], sourceConcurrency: 3 });
+
+    const result = await scraper.run(ctx);
+
+    expect(peak).toBe(3);
+    expect(logs).toContain('Reading 6 PI profile(s) at source concurrency 3');
+    expect(result.notes).toMatch(/profiles at concurrency 3: 6 of 6 read/);
+  });
+
+  it('retries a refused profile once after a pause and counts it as recovered', async () => {
+    const attempts = new Map<string, number>();
+    const pause = vi.fn(async () => undefined);
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        const seen = (attempts.get(url) ?? 0) + 1;
+        attempts.set(url, seen);
+        if (url === profileUrl('fixture-pi-1') && seen === 1) throw refusal(403);
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+      pause,
+    });
+    const { ctx } = makeContext({ only: ['immunology'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(pause).toHaveBeenCalledWith(BBS_REFUSED_PROFILE_RETRY_PAUSE_MS);
+    expect(attempts.get(profileUrl('fixture-pi-1'))).toBe(2);
+    expect(result.notes).toMatch(/1 refused with HTTP 403\/429 \(1 recovered on a retry, 0 lost\)/);
+    expect(result.partialFailures).toBeUndefined();
+  });
+
+  it('reports a profile refused twice as a partial failure rather than dropping it', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        if (url === profileUrl('fixture-pi-2')) throw refusal(403);
+        if (url === profileUrl('fixture-pi-3')) throw refusal(404);
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+      pause: async () => undefined,
+    });
+    const { ctx } = makeContext({ only: ['immunology'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toMatch(/4 of 6 read/);
+    expect(result.notes).toMatch(/1 refused with HTTP 403\/429 \(0 recovered on a retry, 1 lost\)/);
+    expect(result.notes).toMatch(/1 failed otherwise/);
+    expect(result.partialFailures).toEqual([
+      expect.stringMatching(/^1 BBS profile page\(s\) stayed refused or unreadable after a retry/),
     ]);
   });
 });
