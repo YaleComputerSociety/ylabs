@@ -175,9 +175,7 @@ async function fetchLabHomepage(
     if (useCache) await setCached('ysm-atoz-index', cacheKey, html);
     return html;
   } catch (error) {
-    log(
-      `Lab page fetch failed: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`,
-    );
+    log(`Lab page fetch failed: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`);
     return null;
   }
 }
