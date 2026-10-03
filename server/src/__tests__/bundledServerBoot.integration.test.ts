@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -94,7 +95,7 @@ describe('the bundled server at boot', () => {
         MONGODBURL: memoryServer.getUri('bundled-server-boot'),
         PORT: String(port),
         SERVER_BASE_URL: `http://localhost:${port}`,
-        SESSION_SECRET: 'bundled-boot-session-secret-0123456789-abcdefghij',
+        SESSION_SECRET: crypto.randomBytes(48).toString('base64'),
         GATE_REFRESH_INTERVAL_MINUTES: '60',
         PATH: `${yarnStubDirectory}${path.delimiter}${process.env.PATH ?? ''}`,
       }),
