@@ -86,8 +86,7 @@ export function startGateRefreshScheduler(env: NodeJS.ProcessEnv = process.env):
   if (!intervalMs) return false;
   console.log(
     `[gate-refresh] scheduler enabled: every ${intervalMs / 60_000} min` +
-      (env.GATE_REFRESH_SKIP_HEAVY === 'true' ? ' (skip-heavy)' : '') +
-      ` in ${SERVER_ROOT}`,
+      (env.GATE_REFRESH_SKIP_HEAVY === 'true' ? ' (skip-heavy)' : ''),
   );
   // Kick one off shortly after boot so the board is fresh without waiting a full interval.
   setTimeout(triggerRefresh, 15_000).unref?.();
