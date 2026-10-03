@@ -7,6 +7,7 @@ import {
   createStudentGrantsDetailFetcher,
   fundToObservations,
   isRecordSpecificFundDetailUrl,
+  isRetiredFundPage,
   parseFundDetailPage,
   parseFundSearchResults,
   sourceKeyForFund,
@@ -1056,5 +1057,117 @@ describe('the fields a fund page states it has none of (#4230)', () => {
 
   it('claims nothing at all when the page could not be parsed as a fund', () => {
     expect(parseFundDetailPage(AUTH_SHELL_HTML, { title: 'Anything', url: FUND_A_URL })).toBeNull();
+  });
+});
+
+const TWO_CYCLE_APPLICATION_INFORMATION =
+  'The program accepts applications two times during the year. The <span style="font-weight: bold;">fall term deadline is Thursday July 30, 2026</span>, and the <span style="font-weight: bold;">spring term deadline is Monday January 4, 2027</span>. Letters of recommendation are due January 11, 2027.';
+
+describe('a later cycle the fund prose states (#4171)', () => {
+  const twoCycleFund = (referenceDate: Date) =>
+    parseFundDetailPage(
+      fundDetailHtml({
+        opens: '6/05/2026',
+        deadline: '7/30/2026 5:00 PM',
+        applicationInformation: TWO_CYCLE_APPLICATION_INFORMATION,
+      }),
+      { title: '', url: FUND_A_URL },
+      referenceDate,
+    )!;
+
+  it('plans the next stated cycle once the structured deadline has passed', () => {
+    const fund = twoCycleFund(new Date('2026-10-03T12:00:00Z'));
+
+    expect(fund.deadline?.toISOString()).toBe('2027-01-05T04:59:59.999Z');
+    expect(fund.applicationOpenDate).toBeUndefined();
+    expect(fund.isAcceptingApplications).toBe(true);
+  });
+
+  it('keeps the structured window while its deadline is still ahead', () => {
+    const fund = twoCycleFund(new Date('2026-07-01T12:00:00Z'));
+
+    expect(fund.deadline?.toISOString()).toBe('2026-07-30T21:00:00.000Z');
+    expect(fund.applicationOpenDate?.toISOString()).toBe('2026-06-05T04:00:00.000Z');
+  });
+
+  it('never reads a date another step is due by as an application cycle', () => {
+    const fund = twoCycleFund(new Date('2027-01-06T12:00:00Z'));
+
+    expect(fund.deadline?.toISOString()).toBe('2027-01-05T04:59:59.999Z');
+  });
+
+  it('never moves a deadline earlier than the structured one', () => {
+    const fund = parseFundDetailPage(
+      fundDetailHtml({
+        opens: '6/05/2026',
+        deadline: '7/30/2026 5:00 PM',
+        applicationInformation: 'The priority deadline is June 30, 2026.',
+      }),
+      { title: '', url: FUND_A_URL },
+      new Date('2026-10-03T12:00:00Z'),
+    )!;
+
+    expect(fund.deadline?.toISOString()).toBe('2026-07-30T21:00:00.000Z');
+  });
+});
+
+const FUND_NOT_AVAILABLE_HTML = `
+  <html><head><title>Yale Student Grants and Fellowships - Landing Page</title></head><body>
+    <nav><a href="/Login.aspx">Login</a></nav>
+    <div class="content"><span id="ctl00_PreContent_lblMessage">This fund is no longer available.</span></div>
+  </body></html>
+`;
+
+describe('a fund the portal says is no longer available (#4174)', () => {
+  it('reads the notice page as a retired fund, and neither a login shell nor a fund page as one', () => {
+    expect(isRetiredFundPage(FUND_NOT_AVAILABLE_HTML)).toBe(true);
+    expect(isRetiredFundPage(AUTH_SHELL_HTML)).toBe(false);
+    expect(isRetiredFundPage(FUND_A_DETAIL_HTML)).toBe(false);
+    expect(
+      isRetiredFundPage(
+        fundDetailHtml({ applicationInformation: 'This fund is no longer available.' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('retires the program the fund page keys, and only that', async () => {
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => FUND_NOT_AVAILABLE_HTML),
+      gridEnumerator: null,
+      loadSeedUrls: async () => [FUND_B_URL],
+    });
+    const { ctx, emitted } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityType: 'fellowship',
+        entityKey: sourceKeyForFund(FUND_B_URL),
+        sourceUrl: FUND_B_URL,
+        field: 'archived',
+        value: true,
+      }),
+    ]);
+    expect(result.entitiesObserved).toBe(0);
+    expect(result.notes).toContain('retired=1');
+  });
+
+  it('still emits nothing for a login shell or a failed fetch', async () => {
+    for (const html of [AUTH_SHELL_HTML, '']) {
+      const scraper = new StudentGrantsDatabaseScraper({
+        searchFetcher: vi.fn(async () => ''),
+        detailFetcher: vi.fn(async () => html),
+        gridEnumerator: null,
+        loadSeedUrls: async () => [FUND_B_URL],
+      });
+      const { ctx, emitted } = makeContext();
+
+      const result = await scraper.run(ctx);
+
+      expect(emitted).toEqual([]);
+      expect(result.notes).toContain('retired=0');
+    }
   });
 });

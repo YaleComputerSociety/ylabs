@@ -49,7 +49,12 @@ import {
 } from '../utils/communityForceFundSearch';
 import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
-import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
+import {
+  type ProgramDateBoundary,
+  nextCycleDeadline,
+  parseProgramDate,
+  statedProseDeadlines,
+} from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import {
@@ -338,6 +343,28 @@ function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadli
   return window;
 }
 
+const CYCLE_PROSE_SECTION_IDS = ['lblApplicationInformation', 'lblBriefDescription', 'lblDescription'];
+
+/**
+ * The structured Deadline Date names one cycle, and a fund's prose can state the next
+ * one (#4171). A later prose cycle replaces a structured deadline that has passed, never
+ * an upcoming one, and its opening date is not stated, so the structured opening date
+ * belongs to the passed cycle and is dropped.
+ */
+function nextStatedApplicationWindow(
+  $: cheerio.CheerioAPI,
+  referenceDate: Date,
+): { opensAt?: Date; deadline?: Date } {
+  const structured = parseApplicationWindow($);
+  if (!structured.deadline) return structured;
+  const structuredDeadline = structured.deadline;
+  const laterCycles = CYCLE_PROSE_SECTION_IDS.flatMap((id) =>
+    statedProseDeadlines(sectionText($, id) || '', referenceDate),
+  ).filter((deadline) => deadline.getTime() > structuredDeadline.getTime());
+  const deadline = nextCycleDeadline([structuredDeadline, ...laterCycles], referenceDate);
+  return deadline === structuredDeadline ? structured : { deadline };
+}
+
 function awardAmountText($: cheerio.CheerioAPI): string | undefined {
   const text = sectionText($, 'lblAwardAmount')?.replace(/^award amount\s*:?\s*/i, '');
   return text && /\$|\d/.test(text) ? text.slice(0, 120) : undefined;
@@ -359,7 +386,7 @@ export function parseFundDetailPage(
   const title = sectionText($, 'lblFundName');
   if (!title) return null;
 
-  const { opensAt, deadline } = parseApplicationWindow($);
+  const { opensAt, deadline } = nextStatedApplicationWindow($, referenceDate);
   const closed = Boolean(sectionText($, 'lblFundClosedOn') || sectionText($, 'lblReasonClosed'));
   const now = referenceDate.getTime();
   const { yearOfStudy: yearOfStudyFilter, ...otherFacets } = parseFacets($);
@@ -454,6 +481,34 @@ function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
     ...(fund.applicationRoute.kind === 'elsewhere-unlinked' ? ['applicationLink'] : []),
     ...(fund.yearOfStudyResolution === 'unreconcilable' ? ['yearOfStudy'] : []),
     ...(fund.eligibilityStatesOnlyContactDirections && !fund.eligibility ? ['eligibility'] : []),
+  ];
+}
+
+const RETIRED_FUND_NOTICE = /\bthis fund is no longer available\b/i;
+
+/**
+ * CommunityForce answers a withdrawn fund by redirecting its FundDetails page to
+ * `FundNotAvailable.aspx`, which states that the fund is no longer available (#4174).
+ * That is the portal saying the fund is gone, unlike a login shell or a failed fetch,
+ * which say nothing, so only a page with no fund that carries the notice counts.
+ */
+export function isRetiredFundPage(html: string): boolean {
+  const $ = cheerio.load(html);
+  if (sectionText($, 'lblFundName')) return false;
+  $('script, style, noscript').remove();
+  return RETIRED_FUND_NOTICE.test(cleanText($('body').text()));
+}
+
+export function retiredFundObservations(fundUrl: string): ObservationInput[] {
+  return [
+    {
+      entityType: 'fellowship',
+      entityKey: sourceKeyForFund(fundUrl),
+      sourceUrl: normalizeFundDetailUrl(fundUrl),
+      field: 'archived',
+      value: true,
+      confidenceOverride: 0.95,
+    },
   ];
 }
 
@@ -738,6 +793,7 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     let totalEntities = 0;
     let withDeadline = 0;
     let unavailable = 0;
+    let retired = 0;
     const readKeys = new Set<string>();
     const readNames = new Set<string>();
 
@@ -745,6 +801,16 @@ export class StudentGrantsDatabaseScraper implements IScraper {
       readKeys.add(fundIdentityKey(link.url));
       const detailHtml = await this.detailFetcher(link.url, ctx.options.useCache, this.name);
       const fund = detailHtml ? parseFundDetailPage(detailHtml, link, referenceDate) : null;
+      if (!fund && detailHtml && isRetiredFundPage(detailHtml)) {
+        retired += 1;
+        const observations = retiredFundObservations(link.url);
+        await ctx.emit(observations);
+        totalObservations += observations.length;
+        ctx.log('[student-grants] retired fund - the portal says it is no longer available', {
+          url: link.url,
+        });
+        return;
+      }
       if (!fund) {
         unavailable += 1;
         ctx.log('[student-grants] skipped fund - detail unavailable or not a fund page', {
@@ -774,13 +840,13 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     partialFailures.push(...postback.partialFailures);
 
     ctx.log(
-      `Emitted ${totalObservations} observations across ${totalEntities} student-grants funds (${withDeadline} with a parsed deadline, ${unavailable} skipped)`,
+      `Emitted ${totalObservations} observations across ${totalEntities} student-grants funds (${withDeadline} with a parsed deadline, ${retired} retired, ${unavailable} skipped)`,
     );
 
     return {
       observationCount: totalObservations,
       entitiesObserved: totalEntities,
-      notes: `funds=${totalEntities}, grid=${gridLinks.length}, postbackRows=${staticGrid.rows.length}, postbacks=${postback.posted}, postbackSkippedKnown=${postback.skippedKnown}, postbackUnresolved=${postback.unresolved}, cited=${seedUrls.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
+      notes: `funds=${totalEntities}, grid=${gridLinks.length}, postbackRows=${staticGrid.rows.length}, postbacks=${postback.posted}, postbackSkippedKnown=${postback.skippedKnown}, postbackUnresolved=${postback.unresolved}, cited=${seedUrls.length}, withDeadline=${withDeadline}, retired=${retired}, skipped=${unavailable}`,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }

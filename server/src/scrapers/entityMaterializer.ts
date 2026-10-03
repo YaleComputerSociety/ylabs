@@ -143,6 +143,7 @@ import { planFellowshipClassification } from './fellowshipClassificationDerivati
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   FUND_AUTHORITY_FIELDS,
+  FUND_RETIREMENT_FIELD,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
@@ -153,6 +154,7 @@ import {
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
   fundSpeaksForFellowship,
+  newestFundRetirement,
   preferFundFacetObservations,
 } from './fellowshipFundFacets';
 import {
@@ -4768,14 +4770,18 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title'] },
+      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title', FUND_RETIREMENT_FIELD] },
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
-  if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
+  const retirement = newestFundRetirement(kept);
+  if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) {
+    return retirement ? [retirement] : [];
+  }
   return kept.filter(
     (observation: any) =>
-      observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
-      FUND_AUTHORITY_FIELDS.has(String(observation.field)),
+      observation === retirement ||
+      (observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
+        FUND_AUTHORITY_FIELDS.has(String(observation.field))),
   );
 }
 
