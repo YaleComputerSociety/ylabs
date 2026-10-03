@@ -603,7 +603,7 @@ export async function runShortDescriptionBackfill(options: {
 }): Promise<ShortDescriptionBackfillResult> {
   const query = ResearchEntity.find(
     { archived: { $ne: true } },
-    { _id: 1, slug: 1, shortDescription: 1, fullDescription: 1 },
+    { _id: 1, slug: 1, shortDescription: 1, fullDescription: 1, entityType: 1 },
   ).sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const docs = (await query.lean()) as Array<{
@@ -611,6 +611,7 @@ export async function runShortDescriptionBackfill(options: {
     slug?: string;
     shortDescription?: unknown;
     fullDescription?: unknown;
+    entityType?: unknown;
   }>;
 
   const entities: DescriptionEntityInput[] = docs.map((doc) => ({
@@ -618,6 +619,7 @@ export async function runShortDescriptionBackfill(options: {
     slug: doc.slug,
     shortDescription: doc.shortDescription,
     fullDescription: doc.fullDescription,
+    entityType: asResearchEntityType(doc.entityType),
   }));
 
   const assessments: EntityDescriptionAssessment[] = entities.map(assessEntityDescription);

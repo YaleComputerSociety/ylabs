@@ -111,6 +111,19 @@ describe('classifyFullDescription', () => {
     expect(classifyFullDescription('Studies bats.')).toBe('thin');
     expect(classifyFullDescription(genuineFull)).toBe('genuine');
   });
+
+  it('classifies an education program filed as a lab as off-topic (#4528)', () => {
+    const educationProgram =
+      'Example culinary medicine provides opportunities for medical education through hands-on lessons in preparing meals that promote wellness. Taught at a teaching kitchen in the hospital, classes focus on how cooking can help prevent chronic disease.';
+    expect(classifyFullDescription(educationProgram, 'LAB')).toBe('off-topic');
+    expect(
+      assessEntityDescription({
+        id: 'education-program',
+        fullDescription: educationProgram,
+        entityType: 'LAB',
+      }).fullClass,
+    ).toBe('off-topic');
+  });
 });
 
 describe('assessEntityDescription', () => {

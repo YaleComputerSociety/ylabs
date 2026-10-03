@@ -170,7 +170,7 @@ export async function planCardBackfillRow(
   // thin-full floor) is tuned for lab prose; a program's fullDescription is
   // legitimately terse and describes what it offers rather than what it
   // studies, so program-like entities skip straight to card resolution.
-  if (!isProgramLike && classifyFullDescription(full) !== 'genuine') {
+  if (!isProgramLike && classifyFullDescription(full, resolvedEntityType) !== 'genuine') {
     return {
       ...base,
       action: 'not-genuine-full',
