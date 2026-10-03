@@ -7,7 +7,7 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 ## 2026-10-02: A Merged Survivor's Evidence Reads Go Through One Identity, And A Lane's Newest Read Wins Across Its Keys (#4418)
 
-Every materializer evidence read now says whether it reaches the keys and ids of rows merged into the one being resolved, through `scrapers/mergedRowEvidenceIdentity.ts`, and a guard test fails on a new read that does not say.
+Every materializer evidence read now says whether it reaches the keys and ids of rows merged into the one being resolved, through `scrapers/mergedRowEvidenceIdentity.ts`, and an integration test drives the materializer over evidence filed only under a merged-in key.
 Two reads did not: the never-backed provenance check and the provenance relink asked only the row's own key and id, so a lane that observed a field only under a merged-in key read as never having observed it.
 Two field rules inside the merged read were also wrong, measured on Development after #4413 and #4425.
 
