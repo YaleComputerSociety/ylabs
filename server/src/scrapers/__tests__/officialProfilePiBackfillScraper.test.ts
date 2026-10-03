@@ -1933,9 +1933,7 @@ describe('officialProfilePiBackfillScraper', () => {
         websiteUrl,
         sourceUrls: [profileUrl],
         leadUserProfileUrls: [profileUrl],
-        leadUsers: [
-          { fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.example@yale.edu' },
-        ],
+        leadUsers: [{ fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.example@yale.edu' }],
       });
       const emitted: ObservationInput[] = [];
       const scraper = new OfficialProfilePiBackfillScraper(
