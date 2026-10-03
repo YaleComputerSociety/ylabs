@@ -34,11 +34,17 @@ function writePrivateFile(file, contents) {
   fs.chmodSync(file, PRIVATE_FILE_MODE);
 }
 
-function prepareEnvFile({ label, primaryFile, worktreeFile, values }) {
+function prepareEnvFile({ label, primaryFile, worktreeFile, values, generateWhenMissing }) {
   const keys = Object.keys(values);
-  if (!fs.existsSync(primaryFile)) return { label, keys, ready: false };
-  writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), values));
-  return { label, keys, ready: true };
+  if (fs.existsSync(primaryFile)) {
+    writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), values));
+    return { label, keys, ready: true, source: 'primary' };
+  }
+  if (generateWhenMissing) {
+    writePrivateFile(worktreeFile, upsertEnvValues('', values));
+    return { label, keys, ready: true, source: 'generated' };
+  }
+  return { label, keys, ready: false, source: 'missing' };
 }
 
 export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
@@ -54,15 +60,18 @@ export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
     primaryFile: path.join(primaryRoot, 'client', '.env'),
     worktreeFile: path.join(worktreeRoot, 'client', '.env'),
     values: { VITE_APP_SERVER: serverOrigin },
+    generateWhenMissing: true,
   });
   return { server, client };
 }
 
 export function describePreparedEnv({ server, client }, primaryRoot) {
   return [server, client].map((result) =>
-    result.ready
+    result.source === 'primary'
       ? `  ${result.label}: copied from the primary checkout (${primaryRoot}), mode 0600, ports written`
-      : `  ${result.label}: MISSING. The primary checkout has no ${result.label}, so nothing was copied. Create it from ${result.label}.example (see DEVELOPER_GUIDE.md), then set ${result.keys.join(' and ')} to the ports above.`,
+      : result.source === 'generated'
+        ? `  ${result.label}: the primary checkout has none, so it was created holding only ${result.keys.join(' and ')}, mode 0600`
+        : `  ${result.label}: MISSING. The primary checkout has no ${result.label}, so nothing was copied. Create it from ${result.label}.example (see DEVELOPER_GUIDE.md), then set ${result.keys.join(' and ')} to the ports above.`,
   );
 }
 

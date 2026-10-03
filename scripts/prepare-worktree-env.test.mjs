@@ -63,7 +63,7 @@ test('copies the primary env files privately and points them at the reserved por
   assert.match(fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'), /^PORT=4000$/m);
 });
 
-test('reports missing primary env files instead of inventing them', () => {
+test('reports a missing primary server env and still points the client at the reserved API port', () => {
   const primaryRoot = makeTempDir('ylabs-primary-');
   const worktreeRoot = makeTempDir('ylabs-worktree-');
   writeFile(
@@ -78,12 +78,17 @@ test('reports missing primary env files instead of inventing them', () => {
     serverPort: 4012,
   });
 
-  assert.deepEqual([result.server.ready, result.client.ready], [false, false]);
+  assert.equal(result.server.ready, false);
   assert.equal(fs.existsSync(path.join(worktreeRoot, 'server', '.env')), false);
-  assert.equal(fs.existsSync(path.join(worktreeRoot, 'client', '.env')), false);
   const [serverLine, clientLine] = describePreparedEnv(result, primaryRoot);
   assert.match(serverLine, /set PORT and SERVER_BASE_URL to the ports above/);
-  assert.match(clientLine, /set VITE_APP_SERVER to the ports above/);
+  assert.equal(result.client.source, 'generated');
+  assert.equal(
+    fs.readFileSync(path.join(worktreeRoot, 'client', '.env'), 'utf8'),
+    'VITE_APP_SERVER=http://localhost:4012\n',
+  );
+  assert.equal(fileMode(path.join(worktreeRoot, 'client', '.env')), 0o600);
+  assert.match(clientLine, /created holding only VITE_APP_SERVER/);
 });
 
 const git = (cwd, ...args) => {
