@@ -1296,6 +1296,14 @@ The lane re-gates the moved records' entities through `runStudentVisibilityGate`
 Its false-negative cohort is the point of the narrowness, so do not widen it to chase them: a record bound to a stranger's page that no other record claims stays bound, and 143 Development links are in that state.
 Widening to those means deciding a name question the URL cannot answer, which is the trap the section above records; the instrument for them is the rendered `<h1>`, at a lane that reads the page.
 
+#### Press copy and publication lists are not a description (#4446)
+
+A clinician feature made of attributed quoted speech, book-jacket blurbs, a news announcement, and a body that opens on a citation all passed the description quality bar and served.
+`pressFeatureDescriptionShape` in `server/src/utils/descriptionPressFeatureShape.ts` names those shapes, and the quality bar reads them as `source-news-fragment` or `paper-fragment` for both the body and the card.
+Any lowercase research statement outside the quoted spans exempts the text, so a real description that quotes its subject or cites a paper inside the prose is untouched.
+Calibrated on all 3,459 served Development rows on 2026-10-02: 20 bodies and 1 card flagged, all 21 read as press copy or a citation, and no other served text changed.
+Because the serve path recomputes the bar, a row whose only body is press copy stops serving until the resolver or synthesis supplies a usable one.
+
 #### Detecting grafted prose deterministically
 
 Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.
