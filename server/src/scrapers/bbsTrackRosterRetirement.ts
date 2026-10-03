@@ -19,6 +19,7 @@ import {
 import {
   BBS_TRACKS,
   bbsProfileSlugFromUrl,
+  bbsTrackResearchAreaLabels,
   normalizeMatchUrl,
 } from './sources/bbsResearchTrackScraper';
 
@@ -75,6 +76,7 @@ export interface BbsTrackClaim {
   storedEntityKey?: string;
   scrapeRunId?: string;
   sourceUrl?: string;
+  value?: readonly string[];
   observedAt: Date;
 }
 
@@ -93,6 +95,7 @@ export interface BbsTrackRetirementPlan {
     claimsBlockedByAnUnresolvedPi: number;
     retiredClaims: number;
     movedClaims?: number;
+    restatedClaims?: number;
   };
 }
 
@@ -238,6 +241,69 @@ export function planBbsTrackMovedClaims(input: {
   }
   return moved;
 }
+
+/**
+ * The labels one complete read lists each PI under, keyed as `bbsCitedPiKey` keys a claim.
+ *
+ * Only a run with an admitted snapshot for every track says what a PI is listed under, because a
+ * PI's graft is the union of every track that lists them, and a missing track would read as a
+ * label the source dropped. Any other run returns an empty map, so it restates nothing.
+ */
+export function bbsLabelsListedByCitedPi(
+  snapshots: readonly BbsRunResolutionRow[],
+): Map<string, Set<string>> {
+  const labelsByPi = new Map<string, Set<string>>();
+  const admittedTracks = new Set<string>();
+  for (const snapshot of snapshots) {
+    const value = (snapshot.value ?? {}) as BbsTrackHealthSnapshot;
+    if (value.claimEntityKeysRecorded !== true) continue;
+    if (centerRosterReadAdmissibility(value) !== 'read-listed-members') continue;
+    const trackKey = String(value.entityKey ?? '');
+    const labels = bbsTrackResearchAreaLabels(trackKey);
+    if (labels.length === 0) continue;
+    admittedTracks.add(trackKey);
+    for (const member of snapshotMembers(value)) {
+      const piKey = `bbs:${member.memberKey.toLowerCase()}`;
+      const listed = labelsByPi.get(piKey) ?? new Set<string>();
+      for (const label of labels) listed.add(label);
+      labelsByPi.set(piKey, listed);
+    }
+  }
+  const everyTrackRead = BBS_TRACKS.every((track) => admittedTracks.has(track.slug));
+  return everyTrackRead ? labelsByPi : new Map();
+}
+
+/**
+ * This lane's older claims asserting a label the listing no longer gives their PI.
+ *
+ * The moved-claim pass reaches a claim only through the row its PI resolves to now, so a PI the
+ * run read but could not resolve leaves its pre-split claim live on the row it used to graft onto:
+ * nothing supersedes it, and absence retirement never acts because the PI is still listed. The
+ * listing itself refutes the claim, though, whichever row it sits on, so it is retired on that
+ * evidence. A claim on a row its PI resolved to this run is left to latest-wins supersession, and
+ * one whose labels the listing still gives is still true and kept (#3834).
+ */
+export function planBbsTrackRestatedClaims(input: {
+  claims: readonly BbsTrackClaim[];
+  labelsListedByCitedPi: ReadonlyMap<string, ReadonlySet<string>>;
+  rowsResolvedByCitedPi: ReadonlyMap<string, ReadonlySet<string>>;
+  scrapeRunId: string;
+}): string[] {
+  const restated: string[] = [];
+  for (const claim of input.claims) {
+    if (claim.scrapeRunId === input.scrapeRunId) continue;
+    const piKey = bbsCitedPiKey(claim.sourceUrl);
+    const listed = input.labelsListedByCitedPi.get(piKey);
+    if (!listed || !claim.value?.length) continue;
+    if (input.rowsResolvedByCitedPi.get(piKey)?.has(claim.entityKey)) continue;
+    if (claim.value.every((label) => listed.has(label))) continue;
+    restated.push(claim.observationId);
+  }
+  return restated;
+}
+
+export const BBS_TRACK_RESTATED_CLAIM_REASON =
+  'bbs-research-track lists this PI under labels this claim no longer matches (#3834)';
 
 export const BBS_TRACK_MOVED_CLAIM_REASON =
   'bbs-research-track now resolves this PI to another row, which carries its newer graft (#3834)';
@@ -403,7 +469,7 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
     field: 'researchAreas',
     superseded: { $ne: true },
   })
-    .select('_id entityId entityKey scrapeRunId sourceUrl observedAt')
+    .select('_id entityId entityKey scrapeRunId sourceUrl value observedAt')
     .lean()) as Array<Record<string, unknown>>;
 
   const storedIds = [
@@ -447,6 +513,9 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
       ...(storedEntityKey ? { storedEntityKey } : {}),
       ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
       ...(typeof row.sourceUrl === 'string' ? { sourceUrl: row.sourceUrl } : {}),
+      ...(Array.isArray(row.value)
+        ? { value: row.value.filter((label): label is string => typeof label === 'string') }
+        : {}),
       observedAt: new Date(row.observedAt as Date | string),
     });
   }
@@ -484,8 +553,15 @@ export async function reconcileBbsTrackRetirementsFromRun(
   if (!runRecordedATrackRead) return { outcome: 'no-bbs-track-read', dryRun };
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
   const { claims, orphanedClaims } = await loadBbsTrackClaims();
-  const movedObservationIds = await planMovedClaimsForRun(runObjectId, claims);
-  if (reads.length === 0 && movedObservationIds.length === 0) {
+  const { movedObservationIds, restatedObservationIds } = await planRunResolvedClaims(
+    runObjectId,
+    claims,
+  );
+  if (
+    reads.length === 0 &&
+    movedObservationIds.length === 0 &&
+    restatedObservationIds.length === 0
+  ) {
     return { outcome: 'no-admitted-read', dryRun };
   }
   const retire = async (observationIds: readonly string[], reason: string) => {
@@ -507,6 +583,7 @@ export async function reconcileBbsTrackRetirementsFromRun(
         claimsBlockedByAnUnresolvedPi: 0,
         retiredClaims: 0,
         movedClaims: 0,
+        restatedClaims: 0,
       },
     };
   }
@@ -521,10 +598,17 @@ export async function reconcileBbsTrackRetirementsFromRun(
   plan.counts.orphanedClaims = orphanedClaims;
   const absentIds = plan.verdict === 'frozen' ? [] : plan.retiredObservationIds;
   const movedIds = movedObservationIds.filter((id) => !absentIds.includes(id));
+  const restatedIds = restatedObservationIds.filter(
+    (id) => !absentIds.includes(id) && !movedIds.includes(id),
+  );
   plan.counts.movedClaims = movedIds.length;
+  plan.counts.restatedClaims = restatedIds.length;
   await retire(movedIds, BBS_TRACK_MOVED_CLAIM_REASON);
+  await retire(restatedIds, BBS_TRACK_RESTATED_CLAIM_REASON);
   await retire(absentIds, BBS_TRACK_RETIREMENT_REASON);
-  if (!dryRun) await rematerializeClaimRows(claims, [...movedIds, ...absentIds], deps);
+  if (!dryRun) {
+    await rematerializeClaimRows(claims, [...movedIds, ...restatedIds, ...absentIds], deps);
+  }
   if (plan.verdict === 'frozen') {
     console.warn(
       `[bbs-track-retirement] frozen (${plan.freezeReason}): ${plan.counts.governedClaims} claims governed across ${plan.counts.admittedReads} admitted reads`,
@@ -537,14 +621,14 @@ export async function reconcileBbsTrackRetirementsFromRun(
       counts: plan.counts,
     };
   }
-  const verdict = movedIds.length > 0 ? 'retired' : plan.verdict;
+  const verdict = movedIds.length + restatedIds.length > 0 ? 'retired' : plan.verdict;
   return { outcome: 'reconciled', dryRun, verdict, counts: plan.counts };
 }
 
-async function planMovedClaimsForRun(
+async function planRunResolvedClaims(
   runObjectId: mongoose.Types.ObjectId,
   claims: readonly BbsTrackClaim[],
-): Promise<string[]> {
+): Promise<{ movedObservationIds: string[]; restatedObservationIds: string[] }> {
   const [grafts, snapshots] = await Promise.all([
     Observation.find({
       scrapeRunId: runObjectId,
@@ -563,21 +647,33 @@ async function planMovedClaimsForRun(
       .select('value')
       .lean(),
   ]);
-  const moved = planBbsTrackMovedClaims({
-    claims,
-    rowsResolvedByCitedPi: bbsRowsResolvedByCitedPi({
-      grafts: grafts as BbsRunResolutionRow[],
-      snapshots: snapshots as BbsRunResolutionRow[],
-    }),
-    scrapeRunId: String(runObjectId),
+  const rowsResolvedByCitedPi = bbsRowsResolvedByCitedPi({
+    grafts: grafts as BbsRunResolutionRow[],
+    snapshots: snapshots as BbsRunResolutionRow[],
   });
-  if (!passesCenterRosterAbsenceCeiling(moved.length, claims.length)) {
+  const scrapeRunId = String(runObjectId);
+  const withinCeiling = (pass: string, ids: string[]): string[] => {
+    if (passesCenterRosterAbsenceCeiling(ids.length, claims.length)) return ids;
     console.warn(
-      `[bbs-track-retirement] moved-claim pass frozen: ${moved.length} of ${claims.length} claims would move, above the absence ceiling`,
+      `[bbs-track-retirement] ${pass} pass frozen: ${ids.length} of ${claims.length} claims would retire, above the absence ceiling`,
     );
     return [];
-  }
-  return moved;
+  };
+  return {
+    movedObservationIds: withinCeiling(
+      'moved-claim',
+      planBbsTrackMovedClaims({ claims, rowsResolvedByCitedPi, scrapeRunId }),
+    ),
+    restatedObservationIds: withinCeiling(
+      'restated-claim',
+      planBbsTrackRestatedClaims({
+        claims,
+        labelsListedByCitedPi: bbsLabelsListedByCitedPi(snapshots as BbsRunResolutionRow[]),
+        rowsResolvedByCitedPi,
+        scrapeRunId,
+      }),
+    ),
+  };
 }
 
 async function rematerializeClaimRows(
