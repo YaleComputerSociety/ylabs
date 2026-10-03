@@ -269,7 +269,7 @@ SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
 
 Expected collections:
 
-- `observations`: `fullDescription`, `shortDescription`, `researchAreas`, and `methods`.
+- `observations`: `fullDescription`, `shortDescription`, `researchAreas`, `methods`, and the page-stated `name`/`displayName`.
 - `research_entities`: profile fields only after accepted materialization.
 
 Audit focus:
