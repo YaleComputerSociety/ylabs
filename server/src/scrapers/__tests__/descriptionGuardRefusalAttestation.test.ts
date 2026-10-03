@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   DESCRIPTION_SLOT_ATTESTATION_VOCABULARY,
@@ -52,74 +49,55 @@ const refusalFor = (
   });
 
 describe('a description guard refusal is recorded as refused, never empty (#3739)', () => {
-  const cases: Array<[DescriptionGuardRefusal, () => ReturnType<typeof refusalFor>]> = [
-    ['rejected_source_url', () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' })],
-    ['shared_evidence_url', () => refusalFor(RESEARCH_PROSE, { sharedEvidenceUrl: true })],
-    ['institution_landing_url', () => refusalFor(RESEARCH_PROSE, { institutionLandingUrl: true })],
-    [
-      'another_persons_lab',
-      () =>
-        refusalFor(
-          'The Zephyr laboratory is dedicated to developing a high-throughput cryo-electron tomography pipeline for structure determination of molecular machines in cells.',
-          {
-            sourceUrl: 'https://medicine.yale.edu/lab/quill-zephyr/',
-            entityKey: 'ysm-faculty-fixture-member',
-          },
-          { name: 'The Zephyr Lab' },
-        ),
-    ],
-    [
-      'subject_not_named_entity',
-      () => refusalFor(RESEARCH_PROSE, {}, { subject: 'parent_organization' }),
-    ],
-    [
-      'bio_directory_dump',
-      () =>
-        refusalFor(
-          'About Avery Quill is a postdoctoral fellow studying microglia. About Blake Rowan is a graduate student studying cortex imaging.',
-        ),
-    ],
-    [
-      'interest_chip_list',
-      () =>
-        refusalFor(
-          'Research Interests: Geophysical and geological fluid dynamics Continuum mechanics Multiphase physics Glaciology',
-        ),
-    ],
-    [
-      'navigation_chrome',
-      () =>
-        refusalFor(
-          'Main Menu Sub Menu home publications Research people alum/theses Outreach contact links Welcome to the laboratory, which studies microglia.',
-        ),
-    ],
-    [
-      'career_timeline',
-      () =>
-        refusalFor(
-          'She received her Ph.D. degree from Example University in chemistry and biology. She did her postdoctoral training at another institute. She joined the Example School faculty in 2005.',
-        ),
-    ],
-    [
-      'another_organization_body',
-      () =>
-        refusalFor(
-          'The department supports undergraduate research through paid research assistantships and summer programs.',
-          {
-            entityKey: 'directory-faculty-fixture-person',
-            entityType: 'FACULTY_RESEARCH_AREA',
-            kind: 'individual',
-          },
-        ),
-    ],
-    [
-      'bibliography_entry',
-      () =>
-        refusalFor(
-          'Microglia and the Ageing Brain: Clearance Pathways in Tauopathy and Related Disorders, Example University Press, 2019.',
-        ),
-    ],
-  ];
+  const guardCases: Record<
+    Exclude<DescriptionGuardRefusal, 'unopposed_crawled_prose'>,
+    () => ReturnType<typeof refusalFor>
+  > = {
+    rejected_source_url: () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' }),
+    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, { sharedEvidenceUrl: true }),
+    institution_landing_url: () => refusalFor(RESEARCH_PROSE, { institutionLandingUrl: true }),
+    another_persons_lab: () =>
+      refusalFor(
+        'The Zephyr laboratory is dedicated to developing a high-throughput cryo-electron tomography pipeline for structure determination of molecular machines in cells.',
+        {
+          sourceUrl: 'https://medicine.yale.edu/lab/quill-zephyr/',
+          entityKey: 'ysm-faculty-fixture-member',
+        },
+        { name: 'The Zephyr Lab' },
+      ),
+    subject_not_named_entity: () =>
+      refusalFor(RESEARCH_PROSE, {}, { subject: 'parent_organization' }),
+    bio_directory_dump: () =>
+      refusalFor(
+        'About Avery Quill is a postdoctoral fellow studying microglia. About Blake Rowan is a graduate student studying cortex imaging.',
+      ),
+    interest_chip_list: () =>
+      refusalFor(
+        'Research Interests: Geophysical and geological fluid dynamics Continuum mechanics Multiphase physics Glaciology',
+      ),
+    navigation_chrome: () =>
+      refusalFor(
+        'Main Menu Sub Menu home publications Research people alum/theses Outreach contact links Welcome to the laboratory, which studies microglia.',
+      ),
+    career_timeline: () =>
+      refusalFor(
+        'She received her Ph.D. degree from Example University in chemistry and biology. She did her postdoctoral training at another institute. She joined the Example School faculty in 2005.',
+      ),
+    another_organization_body: () =>
+      refusalFor(
+        'The department supports undergraduate research through paid research assistantships and summer programs.',
+        {
+          entityKey: 'directory-faculty-fixture-person',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+        },
+      ),
+    bibliography_entry: () =>
+      refusalFor(
+        'Microglia and the Ageing Brain: Clearance Pathways in Tauopathy and Related Disorders, Example University Press, 2019.',
+      ),
+  };
+  const cases = Object.entries(guardCases);
 
   it.each(cases)('names the %s guard and so attests refused', (guard, run) => {
     const outcome = run();
@@ -201,28 +179,33 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     });
   });
 
-  it('leaves no unnamed early return in the extraction, so a new guard has to name itself', () => {
-    const source = fs.readFileSync(
-      path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        '../sources/labMicrositeDescriptionLLMExtractor.ts',
-      ),
-      'utf8',
-    );
-    const start = source.indexOf('export function describeDescriptionExtraction(');
-    const end = source.indexOf('\n}\n', start);
-    const body = source
-      .slice(start, end)
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n');
-    const returns = (body.match(/\breturn\b[^;]*;/g) ?? []).map((statement) =>
-      statement.replace(/\s+/g, ' '),
-    );
-    const unnamed = returns.filter((statement) => !/^return refusedBy\([^)]*\);$/.test(statement));
+  const usableProseReads: Array<[string, () => ReturnType<typeof refusalFor>]> = [
+    ['an unnamed lab page', () => refusalFor(RESEARCH_PROSE)],
+    [
+      'a page listing its topics',
+      () => refusalFor(RESEARCH_PROSE, {}, { topics: ['Neuroimmunology'] }),
+    ],
+    [
+      'a person-scoped page',
+      () =>
+        refusalFor(RESEARCH_PROSE, {
+          entityKey: 'directory-faculty-fixture-person',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+        }),
+    ],
+    [
+      'a page with a subject of the entity itself',
+      () => refusalFor(RESEARCH_PROSE, {}, { subject: 'named_entity' }),
+    ],
+  ];
 
-    expect(start).toBeGreaterThan(-1);
-    expect(returns.length).toBeGreaterThan(unnamed.length);
-    expect(unnamed).toEqual(['return { observations: [] };', 'return { observations };']);
+  it.each(usableProseReads)('emits observations for %s that no guard refuses', (_label, run) => {
+    const outcome = run();
+
+    expect(outcome.refusal).toBeUndefined();
+    expect(outcome.observations.map((observation) => observation.field)).toContain(
+      'fullDescription',
+    );
   });
 });
