@@ -415,9 +415,7 @@ function organizationTextIsGenericSelfReference(organizationText: string): boole
   const words = organizationNameWords(organizationText);
   return (
     words.some((word) => ORGANIZATION_NOUN.test(word)) &&
-    words.every(
-      (word) => ORGANIZATION_NAME_FILLER_WORDS.has(word) || ORGANIZATION_NOUN.test(word),
-    )
+    words.every((word) => ORGANIZATION_NAME_FILLER_WORDS.has(word) || ORGANIZATION_NOUN.test(word))
   );
 }
 const FORMER_DIRECTORSHIP =
