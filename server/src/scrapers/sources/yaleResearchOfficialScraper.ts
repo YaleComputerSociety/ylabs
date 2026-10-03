@@ -73,11 +73,33 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map(cleanText).filter(Boolean)));
 }
 
+const RESEARCH_YALE_HOST = 'research.yale.edu';
+
+function decodeUnreservedPercentEscapes(pathname: string): string {
+  return pathname.replace(/%(2[DdEe]|5[Ff]|7[Ee]|3\d|[46][1-9A-Fa-f]|[57][0-9Aa])/g, (escape) =>
+    String.fromCharCode(parseInt(escape.slice(1), 16)),
+  );
+}
+
+/**
+ * The directory publishes some entries as `/index%2ephp/cores/<slug>`, which serves the same
+ * page as `/cores/<slug>` but gives the row a second spelling of its own site (#4533).
+ */
+export function canonicalResearchYaleUrl(url: URL): URL {
+  if (url.hostname.toLowerCase() !== RESEARCH_YALE_HOST) return url;
+  const canonical = new URL(url.toString());
+  canonical.pathname = decodeUnreservedPercentEscapes(canonical.pathname).replace(
+    /^\/index\.php(?=\/)/i,
+    '',
+  );
+  return canonical;
+}
+
 function absoluteUrl(href: string | undefined, baseUrl: string): string {
   const raw = cleanText(href);
   if (!raw) return '';
   try {
-    return new URL(raw, baseUrl).toString();
+    return canonicalResearchYaleUrl(new URL(raw, baseUrl)).toString();
   } catch {
     return raw;
   }
