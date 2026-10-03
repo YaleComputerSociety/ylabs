@@ -522,9 +522,11 @@ export function resolveBbsResearchHome(
   // The key this lane minted rows under before #3561, derived from this same profile, so it names
   // the PI. A fallback rather than a person key: where the canonical row also exists, ranking the
   // two as equals would fail every such PI closed as ambiguous (#3834).
-  const lanesOwnRow = bbsProfileSlug
-    ? index.entityIdBySlug.get(`bbs-${bbsProfileSlug.trim().toLowerCase()}`)
-    : undefined;
+  const profileWasRead = Boolean(profileSlug);
+  const lanesOwnRow =
+    profileWasRead && bbsProfileSlug
+      ? index.entityIdBySlug.get(`bbs-${bbsProfileSlug.trim().toLowerCase()}`)
+      : undefined;
   if (lanesOwnRow) return { status: 'matched', entityId: lanesOwnRow };
 
   if (nameKey) {

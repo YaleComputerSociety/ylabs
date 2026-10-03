@@ -334,6 +334,20 @@ describe("resolveBbsResearchHome on the lane's own pre-#3561 key (#3834)", () =>
       entityId: '343434343434343434343434',
     });
   });
+
+  it("does not fall back to the lane's own row when the profile could not be read", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+      candidate({ _id: '343434343434343434343434', slug: 'ysm-faculty-alex-rivera', nameKey: 'x' }),
+    ]);
+    expect(resolveBbsResearchHome(NO_LINKS, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'unmatched',
+    });
+  });
 });
 
 describe('observation shaping', () => {
