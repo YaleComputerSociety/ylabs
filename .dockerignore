@@ -1,0 +1,12 @@
+**/node_modules
+.git
+.idea
+.yarn/install-state.gz
+client
+graphify-out
+**/.env
+**/.env.*
+!**/.env.example
+**/build
+**/coverage
+server/tmp-*

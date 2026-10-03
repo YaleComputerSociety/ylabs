@@ -18,6 +18,7 @@ import {
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
 import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
+import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import {
   DEFAULT_PER_HOST_CONCURRENCY,
@@ -852,9 +853,21 @@ type ChildRunner = (
   options: ChildRunnerOptions,
 ) => Promise<ScraperSweepChildResult>;
 
+// A container image carries no .git, so the commit it was built from arrives as RENDER_GIT_COMMIT
+// (deploy/sweep-runner/Dockerfile). An image cannot move under a run, so it is a faithful HEAD.
+export function readSweepHeadSha(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  runGit: (repoRoot: string) => { status: number | null; stdout: string } = (root) =>
+    spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }),
+): string | null {
+  const result = runGit(repoRoot);
+  if (result.status === 0) return result.stdout;
+  return readCodeSha(env, repoRoot) ?? null;
+}
+
 function defaultHeadShaReader(repoRoot: string): string | null {
-  const result = spawnSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
-  return result.status === 0 ? result.stdout : null;
+  return readSweepHeadSha(repoRoot);
 }
 
 function spawnChild(
