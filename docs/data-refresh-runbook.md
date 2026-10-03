@@ -75,14 +75,63 @@ The replacement operator should:
 
 Never store personal Yale credentials for a scheduled job.
 Network access no longer argues against a hosted runner, because a runner off Yale network reaches the sources as well as a laptop on it does.
-A hosted scraping runner still needs four things this runbook does not yet describe, so it is follow-up work rather than a step below:
+The hosted runner is the image in `deploy/sweep-runner/Dockerfile`, run weekly by a Render cron job (#4507).
+Until that cron job exists and has completed a run, keep the semester calendar reminder and this operator checklist.
 
-- The `renderedFetch` toolchain, which shells out to `scraplingBridge.py` and needs python3, Scrapling, and a browser in the image. Five sources depend on it, including `dept-faculty-roster` and `centers-institutes-index`.
-- A home for the one hand-placed input directory that `undergrad-fellowships-recipients` reads.
-- MongoDB Atlas access-list entries for the runner's egress addresses, which means the runner needs stable outbound addressing.
-- Development credentials only, because a hosted fetch writes to Development like every other sweep.
+### Weekly Development Sweep Runner
 
-Until that runner exists, use a semester calendar reminder and this operator checklist rather than an unattended scraping cron.
+The image holds the repository's Node major, the server's dependencies, Python 3 with a pinned Scrapling, the Chromium that Scrapling drives, and a pinned Meilisearch binary.
+It runs as a non-root user and carries no secret: every credential arrives as an environment variable of the Render service.
+The commit it was built from arrives as `RENDER_GIT_COMMIT`, which `summary.json` records as `codeSha` and every scrape run records as its own `codeSha`, because the image carries no `.git`.
+Without history in the image, a retraction cutoff that would ask git whether a run contains a fix falls back to the run's start time, which is the documented behaviour for a deploy image (`scrapers/scrapeRunCodeIdentity.ts`).
+
+The entrypoint starts a throwaway Meilisearch on `127.0.0.1` with a random key, because the Development sweep's `search-rebuild` stage refuses any non-local index.
+That index lives only as long as the container and serves nobody, so the stage proves the rebuild works rather than refreshing anything a person reads.
+Beta and Production indexes are still rebuilt by the reindex runbook.
+
+The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --confirm-weekly-development-sweep` (`server/src/scripts/weeklyDevelopmentSweep.ts`), which in order:
+
+1. Refuses unless `MONGODBURL` names `Development`, `SCRAPER_ENV` resolves to `development`, and `MONGODBURL`, `OPENAI_API_KEY` and `YALIES_API_KEY` are all set, so a missing key fails in the first second rather than hours into the LLM lanes.
+2. Refuses when any Beta, Production, or copy-pair database URL is present, because this service holds Development credentials only.
+3. Refuses when any sweep source holds a live scrape job lock, which means another writer, such as a laptop sweep, is writing Development.
+4. Measures the cluster's dataSize plus indexSize, and when headroom is below what a sweep needs it runs `observations:prune-dead --apply --drop-snapshot-cache` once, which also deletes dead superseded observations, and measures again, refusing if headroom is still short (#3536).
+5. Runs `development-full`, then `fellowship-development-full`, one after the other and each with `--restart`, because they share the per-host fetch budget and the storage quota.
+6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when either mode failed or wrote no summary.
+
+`--dry-run` in place of the confirmation runs steps 1 to 4 read-only and prints the two sweep commands without running them.
+
+Two sources stay out of the image on purpose.
+`undergrad-fellowships-recipients` is manual-only and never part of a sweep (`scrapers/manualOnlySweepSources.ts`), and its curated input holds recipient names, so it is neither copied into the image nor committed; run it by hand from a checkout as before.
+The renderer is installed but `SCRAPLING_RENDERER_ENABLED` defaults to `false`, which matches the laptop sweeps that have run without Scrapling, so a first weekly run does not also change how five lanes fetch.
+Set it to `true` on the service as its own reviewed change once a run has been read with it off.
+
+Building the image needs more than 2 GB of memory: the server's `yarn install` was killed at 2 GB and completed at 6 GB.
+The sweep's own peak memory has not been measured, so start the service on an instance with at least 4 GB and read its memory graph after the first run.
+
+### Render Cron Job Settings
+
+Create the service only after the image builds, and use these settings:
+
+- **Service type:** New, then Cron Job.
+- **Repository and branch:** `YaleComputerSociety/ylabs`, branch `beta`.
+- **Language:** Docker.
+- **Dockerfile Path:** `deploy/sweep-runner/Dockerfile`, with the build context left at the repository root.
+- **Schedule:** `0 7 * * 0`, Sundays at 07:00 UTC.
+- **Docker Command:** leave empty, so the image runs the confirmed job; set it to `--dry-run` for the first manual trigger, then clear it.
+- **Environment variables:** `MONGODBURL` (the Development connection string), `OPENAI_API_KEY`, and `YALIES_API_KEY`, all as secrets.
+Do not set `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, or any `MEILISEARCH_*` variable; the job refuses the first two and the entrypoint sets the third.
+Give the job its own OpenAI key rather than reusing an operator's, so it can be spend-capped and rotated without touching anyone's local setup.
+
+Then allow the service into Atlas: on the service's page open **Connect**, switch to the **Outbound** tab, and add each listed range to the Atlas **Network Access** list.
+Those ranges are shared by every Render service in the region, so scope the database user the service holds to the `Development` database.
+
+Render stops a cron run after 12 hours.
+The research sweep alone took 414 minutes on 2026-09-28, so read the first run's duration before trusting both modes to fit; if they do not, split them into two cron jobs on different days.
+
+The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
+Render keeps logs for a limited time and a cron container's disk is discarded, so the `WEEKLY_SWEEP_SUMMARY` lines and Development's own `scrape_runs` are the record of a run.
+Alerting on a failed or missing weekly run is the remaining part of #4507.
+
 Render automation remains appropriate for Beta and Production re-gating, Meilisearch reindexing, and read-only gates.
 
 ## The Model: Sweep Development, Promote Everything Else

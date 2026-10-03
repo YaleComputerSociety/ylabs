@@ -29,6 +29,8 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'syncDevelopmentToBeta.ts': PROMOTION_DATABASE_CHECK,
   'runScraperSweep.ts':
     'forwards --apply to the stage commands it spawns, each behind its own guard, after validateScraperSweepEnvironment refuses any database but Development',
+  'weeklyDevelopmentSweep.ts':
+    'forwards --apply only to observations:prune-dead, which runs its own guard, after weeklySweepEnvironmentProblems refuses any database but Development',
 };
 
 const PACKAGE_JSON = path.resolve(SCRIPTS_DIR, '..', '..', 'package.json');
