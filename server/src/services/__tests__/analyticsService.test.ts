@@ -1156,6 +1156,7 @@ describe('logEvent', () => {
       searchDepartments: Array.from({ length: 55 }, (_, index) => `Department ${index}`),
       metadata: {
         '$private.key': 'hidden@example.edu',
+        ...JSON.parse('{"__proto__": "prototype payload"}'),
         constructor: 'prototype payload',
         prototype: 'prototype payload',
         longText: 'x'.repeat(800),
@@ -1174,6 +1175,7 @@ describe('logEvent', () => {
     expect(Object.prototype.hasOwnProperty.call(created.metadata, '$private.key')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, '_private_key')).toBe(false);
     expect(JSON.stringify(created.metadata)).not.toContain('hidden@example.edu');
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, '__proto__')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'constructor')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'prototype')).toBe(false);
     expect(created.metadata.longText).toHaveLength(512);
