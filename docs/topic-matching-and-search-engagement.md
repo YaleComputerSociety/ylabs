@@ -10,6 +10,9 @@ Subjects are inferred at read time only from existing source-backed program fiel
 An inferred subject is a discovery aid, not a claim that an operator curated the program.
 Programs with no supported topic evidence receive no inferred subjects.
 
+A program text query also widens a student's word for their year to the value the sources store: `freshman`, `freshmen`, and `first year` add `first-year`, and `sophomores` adds `sophomore` (`yearOfStudyAliasesForQuery`, #4369).
+`journey:eval --case=programs-student-year-words-reach-sourced-year` checks that those words serve every row `first-year` serves.
+
 The same taxonomy normalizes saved-plan research areas and research-home names for fellowship matching.
 Topic overlap contributes to the match score alongside compensation, fellowship-compatible evidence, department overlap, application-route evidence, and cycle status.
 It does not bypass existing deadline demotion, minimum-score, source, or eligibility caveats.
