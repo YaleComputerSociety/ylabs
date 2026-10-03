@@ -14,6 +14,7 @@ import UserContext, { defaultUserContext } from '../../../contexts/UserContext';
 import type { BrowsableItem } from '../../../types/browsable';
 import { createFellowship } from '../../../utils/createFellowship';
 import { programBoardSectionOf } from '../../../utils/programBoard';
+import { undersizedRenderedTextClasses } from '../../../testUtils/textSize';
 
 vi.mock('../../../utils/axios', () => ({
   default: { put: vi.fn(() => Promise.resolve({ data: {} })) },
@@ -114,6 +115,15 @@ describe('department research guidance (#4285)', () => {
     expectGuidanceAction(action);
     expect(action.className).toContain('min-h-11');
     expect(action.className).toContain('z-[1]');
+  });
+
+  it('sets the list row status badge at or above the 12px floor', () => {
+    const { container } = withContexts(
+      <BrowseListItem item={item} isFavorite onOpenModal={vi.fn()} onToggleFavorite={vi.fn()} />,
+    );
+
+    expect(screen.getByText('Department guidance').className).toContain('text-xs');
+    expect(undersizedRenderedTextClasses(container)).toEqual([]);
   });
 
   it('renders the detail modal with no dates, no application process and no apply action', () => {

@@ -6,6 +6,7 @@ import LabMembersList from '../LabMembersList';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import type { DepartmentConfig } from '../../../contexts/ConfigContext';
 import type { LabMember } from '../../../types/labDetail';
+import { undersizedRenderedTextClasses } from '../../../testUtils/textSize';
 
 const member = (imageUrl: string, overrides: Partial<LabMember['user']> = {}): LabMember => ({
   role: 'pi',
@@ -378,5 +379,36 @@ describe('LabMembersList lead email line', () => {
       </ConfigContext.Provider>,
     );
     expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+  });
+});
+
+describe('LabMembersList text size floor', () => {
+  const contact = {
+    role: 'pi',
+    user: {
+      _id: 'user-9',
+      netid: 'fixture',
+      fname: 'Ada',
+      lname: 'Fixture',
+      displayName: 'Ada Fixture',
+      title: 'Professor of Synthetic Studies',
+      primaryDepartment: 'Computer Science',
+      primary_department: 'Computer Science',
+      email: 'ada.fixture@example.test',
+      orcid: '9999-9000-9999-9005',
+    },
+  } as unknown as LabMember;
+
+  it.each([true, false])('sets no line below text-xs with singleColumn %s', (singleColumn) => {
+    const { container } = render(
+      <MemoryRouter>
+        <ConfigContext.Provider value={defaultConfigContext}>
+          <LabMembersList members={[contact]} singleColumn={singleColumn} />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
+    expect(undersizedRenderedTextClasses(container)).toEqual([]);
   });
 });

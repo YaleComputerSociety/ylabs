@@ -16,6 +16,23 @@ afterEach(() => {
 });
 
 describe('LoginError', () => {
+  it('centres its actions in the card rather than against its left edge', () => {
+    const { container } = renderLoginError();
+
+    const actionRow = screen.getByRole('link', { name: /return to y\/labs/i })
+      .parentElement as HTMLElement;
+    expect(actionRow.className).toContain('mx-auto');
+    expect(container.querySelector('.max-w-md')).toBe(actionRow);
+  });
+
+  it('gives the secondary action a control radius rather than a container one', () => {
+    renderLoginError();
+
+    const returnLink = screen.getByRole('link', { name: /return to y\/labs/i });
+    expect(returnLink.className).toContain('rounded-control');
+    expect(returnLink.className).not.toContain('rounded-card');
+  });
+
   it('shows an immediate CAS recovery path', () => {
     renderLoginError();
 

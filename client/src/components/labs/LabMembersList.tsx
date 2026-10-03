@@ -137,30 +137,26 @@ const LabMemberCard = ({
           {fullName}
         </p>
         {user.title && (
-          <p
-            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-muted`}
-          >
+          <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
             {user.title}
           </p>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span
-            className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${rolePillClassName}`}
+            className={`${singleColumn ? 'rounded-control leading-snug' : 'rounded-full'} px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}
           >
             {roleLabel}
           </span>
           {departmentLabel && (
             <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-ink-soft`}
+              className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
             >
               {departmentLabel}
             </span>
           )}
         </div>
         {isExternalLink && (
-          <p
-            className={`${singleColumn ? 'text-[10px]' : 'text-xs'} mt-1.5 font-medium text-brand group-hover:underline`}
-          >
+          <p className="mt-1.5 text-xs font-medium text-brand group-hover:underline">
             View official profile
           </p>
         )}
@@ -187,7 +183,8 @@ const LabMemberCard = ({
     ) : (
       <div className={baseClassName}>{identityBody}</div>
     );
-  const sideLinkClassName = `${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`;
+  const sideLinkClassName =
+    'yr-focus-ring self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
   if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
     <div className="flex flex-col gap-1">

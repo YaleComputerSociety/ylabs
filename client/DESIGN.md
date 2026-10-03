@@ -213,6 +213,13 @@ A grey background beside grey text also describes an ordinary secondary button, 
 Those two are now `.yr-secondary-action`, which is the house primitive for a cancel beside a save.
 - A strong button outline uses `muted`, not `line-strong`.
 `line-strong` is a hairline token and disappears when asked to carry a button's edge.
+- **Student-facing text never renders below 12px (`text-xs`).**
+That is the floor for anything a student reads to make a decision: prose, a name, a role, a department, a status badge, a link label.
+The side column on a research profile set a contact's role and department at 9px and their title at 11px, from a ternary that made the narrow variant smaller than the wide one, and 9px is below every common legibility guideline for body text.
+The two exemptions are the tracked uppercase kicker (`.yr-kicker`, 0.72rem), which is a label rather than content, and an operator-only diagnostic surface, which a maintainer reads and a student never sees.
+`src/__tests__/minimumTextSizeGuard.test.ts` enforces it: it fails on any arbitrary `text-[...]` size under 12px outside the operator surfaces it names.
+A kicker is held to its own 0.72rem rather than excused, so shrinking one below that still fails the guard.
+An arbitrary size is the only way to get under the floor, because the smallest size in the Tailwind scale, `text-xs`, is exactly 12px.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
 - Display headings carry `.yr-display`, which tightens tracking to `-0.02em`.
 Type set at a display size with default tracking reads as browser default rather than as set type, and it is the highest-signal way a page looks unconsidered.
