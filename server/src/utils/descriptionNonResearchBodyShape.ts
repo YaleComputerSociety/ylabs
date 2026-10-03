@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { creativePracticeEvidence } from './creativePracticeDescription';
 
 export type NonResearchBodyShape = 'role-biography' | 'third-party-page' | 'instruction-offering';
@@ -17,7 +18,10 @@ const RESEARCH_VOICE_OPENING =
   /^(?:studies|examines|investigates|analy[sz]es|develops|development of)\b/i;
 
 const lowerFirstLetter = (sentence: string): string =>
-  sentence.replace(/[A-Z]/, (letter) => letter.toLowerCase());
+  sentence.replace(
+    /^(["“]?)([A-Z])/,
+    (_match, quote: string, letter: string) => quote + letter.toLowerCase(),
+  );
 
 const anySentenceStates = (text: string, statement: RegExp): boolean =>
   sentencesOf(text).some(
@@ -93,7 +97,8 @@ const STATES_RESEARCH =
 /**
  * An education program's description: the body's subject is the instruction it offers
  * ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course,
- * not a group a student could join. A research statement keeps the body, so a research core
+ * not a group a student could join. Only a lab is refused for it, because a core facility's
+ * or a center's training and workshops are its own service. A research statement keeps the body, so a research core
  * that also trains its users is not read as a course.
  */
 export function isInstructionOfferingText(value: unknown): boolean {
@@ -102,9 +107,17 @@ export function isInstructionOfferingText(value: unknown): boolean {
   return (text.match(INSTRUCTION_OFFERING) ?? []).length >= MIN_INSTRUCTION_OFFERING_MENTIONS;
 }
 
-export function nonResearchBodyShape(value: unknown): NonResearchBodyShape | null {
+const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
+  typeof entityType === 'string' && entityType.toUpperCase() === 'LAB';
+
+export function nonResearchBodyShape(
+  value: unknown,
+  entityType?: ResearchEntityType,
+): NonResearchBodyShape | null {
   if (isThirdPartyPageText(value)) return 'third-party-page';
-  if (isInstructionOfferingText(value)) return 'instruction-offering';
+  if (isLabEntityType(entityType) && isInstructionOfferingText(value)) {
+    return 'instruction-offering';
+  }
   if (isRoleBiographyWithoutResearchOrPractice(value)) return 'role-biography';
   return null;
 }

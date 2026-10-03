@@ -38,8 +38,17 @@ describe('nonResearchBodyShape (#4528)', () => {
     expect(nonResearchBodyShape(sectionBlurbs)).toBe('third-party-page');
   });
 
-  it('reads an education program description as an instruction offering', () => {
-    expect(nonResearchBodyShape(instructionOffering)).toBe('instruction-offering');
+  it('reads an education program description filed as a lab as an instruction offering', () => {
+    expect(nonResearchBodyShape(instructionOffering, 'LAB')).toBe('instruction-offering');
+  });
+
+  it('keeps training and workshops as the service of a core facility or a center', () => {
+    const coreFacilityService =
+      'The example core provides hands-on training on shared instruments for campus users. Workshops cover sample preparation and instrument scheduling.';
+    expect(nonResearchBodyShape(coreFacilityService, 'CORE_FACILITY')).toBeNull();
+    expect(nonResearchBodyShape(instructionOffering, 'CORE_FACILITY')).toBeNull();
+    expect(nonResearchBodyShape(instructionOffering, 'CENTER')).toBeNull();
+    expect(nonResearchBodyShape(instructionOffering)).toBeNull();
   });
 
   it('keeps a role biography that also states research, practice, care or a faculty rank', () => {
@@ -62,12 +71,21 @@ describe('nonResearchBodyShape (#4528)', () => {
     }
   });
 
-  it('keeps an instruction offering that also states research', () => {
+  it('keeps an instruction offering on a lab that also states research', () => {
     expect(
       nonResearchBodyShape(
-        'The imaging core provides training on confocal microscopes for researchers. Workshops cover sample preparation and image analysis.',
+        'The imaging lab provides training on confocal microscopes for researchers. Workshops cover sample preparation and image analysis.',
+        'LAB',
       ),
     ).toBeNull();
+  });
+
+  it('does not read a department name inside a lowercase opening sentence as research', () => {
+    expect(
+      nonResearchBodyShape(
+        'in 2023 the coordinator joined Research Computing as manager of its user accounts and oversees the help desk.',
+      ),
+    ).toBe('role-biography');
   });
 
   it('does not read a department name as a research statement', () => {
@@ -89,12 +107,17 @@ describe('nonResearchBodyShape (#4528)', () => {
   it('refuses each shape as a body and as a card in the quality bar', () => {
     expect(fullDescriptionQuality(careerOfficeBiography).flags).toContain('role-biography');
     expect(fullDescriptionQuality(submissionCall).flags).toContain('third-party-page');
-    expect(fullDescriptionQuality(instructionOffering).isUseful).toBe(false);
+    expect(fullDescriptionQuality(instructionOffering, undefined, 'LAB').isUseful).toBe(false);
     expect(
       shortDescriptionQuality(
         'Taught at a teaching kitchen, classes focus on cooking, and hands-on lessons teach healthy meals.',
         instructionOffering,
+        undefined,
+        { entityType: 'LAB' },
       ).flags,
     ).toContain('instruction-offering');
+    expect(
+      fullDescriptionQuality(instructionOffering, undefined, 'CORE_FACILITY').flags,
+    ).not.toContain('instruction-offering');
   });
 });

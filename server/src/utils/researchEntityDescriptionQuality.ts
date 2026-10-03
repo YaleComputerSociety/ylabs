@@ -1507,7 +1507,7 @@ function computeFullDescriptionQuality(
   }
   const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
-  const nonResearchShape = text ? nonResearchBodyShape(text) : null;
+  const nonResearchShape = text ? nonResearchBodyShape(text, entityType) : null;
   if (nonResearchShape) flags.push(nonResearchShape);
   if (
     text &&
@@ -1850,7 +1850,7 @@ function computeShortDescriptionQuality(
   }
   const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
-  const nonResearchShape = text ? nonResearchBodyShape(text) : null;
+  const nonResearchShape = text ? nonResearchBodyShape(text, options?.entityType) : null;
   if (nonResearchShape) flags.push(nonResearchShape);
   if (
     text &&

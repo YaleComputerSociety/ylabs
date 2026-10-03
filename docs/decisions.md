@@ -17,8 +17,9 @@ Three body shapes passed the description quality bar and served as a row's descr
 - **`instruction-offering`**: an education program's description, whose subject is the instruction it offers ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course rather than a group a student could join.
   A research statement (a research, investigation, experiment, laboratory, scientist or publication word) keeps the body, so a research core that also trains its users is not read as a course.
   The wider research-or-care test is not used here, because an education program's own prose says "classes focus on".
+  Only a `LAB` row is refused for it: a core facility's or a center's training and workshops are its own service, so those rows keep the body.
 
-The research test reads every sentence with its first letter lowered, so a research claim that opens a later sentence ("Research in the group ...") keeps the body as well.
+The research test reads every sentence with only its first letter lowered, so a research claim that opens a later sentence ("Research in the group ...") keeps the body as well.
 `third-party-page` takes no research exemption, because its shapes are structural and the calibrated cases carry research words of their own (a funding agency's section text names research, and a call for artists says "interested in collaborating").
 
 Measured on Development on 2026-10-03 by walking all 3,470 served rows through `getResearchGroupDetail` and the browse route with the old and new code: 5 rows stop serving, because the serve path recomputes the bar and their only body is refused.
