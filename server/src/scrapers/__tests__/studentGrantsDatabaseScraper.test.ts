@@ -475,6 +475,23 @@ describe('a contact direction in fund prose (#4177)', () => {
     expect(fund.eligibility).toBe('Open to juniors.');
   });
 
+  it('states no eligibility when the section only labels a contact and asks for questions', () => {
+    const fund = fundWith({
+      eligibility:
+        '<p>Contact: Quill Fixture, Program Coordinator.</p><p>Questions? Email Quill Fixture.</p>',
+    });
+
+    expect(fund.eligibility).toBeUndefined();
+    expect(witnessOf(fund)?.assertsNoValueFor).toContain('eligibility');
+  });
+
+  it.each(['Call for proposals opens in May.', 'Emailed reports are due in May.'])(
+    'keeps a requirement that only opens with a contact word: %s',
+    (requirement) => {
+      expect(fundWith({ eligibility: requirement }).eligibility).toBe(requirement);
+    },
+  );
+
   it('leaves a section with no contact direction exactly as it reads', () => {
     const fund = fundWith({
       eligibility: '<p>Open to juniors.</p><p>Seniors may apply.</p>',

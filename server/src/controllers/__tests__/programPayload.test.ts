@@ -244,6 +244,19 @@ describe('a contact direction served as eligibility (#4177)', () => {
 
     expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
   });
+
+  it.each([
+    'Open only to sophomores and juniors. Contact: Quill Fixture, Program Coordinator,.',
+    'Open only to sophomores and juniors. Questions? Email Quill Fixture.',
+  ])('drops a stored contact direction whose email was already stripped: %s', (eligibility) => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58522',
+      title: 'Example Research Fellowship',
+      eligibility,
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
+  });
 });
 
 describe('publicProgramForReader read-time redaction ordering (#774)', () => {

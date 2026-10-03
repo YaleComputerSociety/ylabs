@@ -28,7 +28,9 @@ const ENQUIRY_SENT = new RegExp(
   `\\b(?:send|direct|address|forward|e-?mail)\\s+(?:any\\s+|all\\s+|your\\s+)?${ENQUIRY_NOUN}\\s+to\\b`,
   'i',
 );
-const CONTACT_LABEL = /^contact(?:\s+(?:information|info|person|persons|us))?\s*:?$/i;
+const CONTACT_LABEL = /^contact(?:\s+(?:information|info|person|persons|us))?\s*(?::|$)/i;
+const IMPERATIVE_CONTACT = /^(?:e-?mail|write\s+to|call(?!\s+for\b))\b/i;
+const BARE_ENQUIRY = new RegExp(`^(?:any\\s+)?${ENQUIRY_NOUN}\\s*[?:]?$`, 'i');
 
 const withEmailPlaceholders = (text: string): string =>
   text.replace(EMAIL_ADDRESS, EMAIL_PLACEHOLDER);
@@ -38,6 +40,8 @@ export function isContactDirectionSentence(sentence: string): boolean {
   if (!text) return false;
   return (
     CONTACT_LABEL.test(text) ||
+    IMPERATIVE_CONTACT.test(text) ||
+    BARE_ENQUIRY.test(text) ||
     text.includes(EMAIL_PLACEHOLDER) ||
     POLITE_CONTACT_REQUEST.test(text) ||
     (ENQUIRY.test(text) && CONTACT.test(text)) ||
