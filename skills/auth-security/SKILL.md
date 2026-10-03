@@ -141,7 +141,9 @@ A failed insert logs `console.error` naming the action and target type, and an e
 ## Admin search analytics are aggregates only
 
 Decided 2026-10-03 (#4159): an admin sees search-query counts and trends, never who searched for what.
-No analytics response that carries search-query data may contain an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
+No search-query report or row (`topSearchQueries`, the search-quality and search-query reports, and the action-needed query lists) may contain an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
+The overview's `mostActiveUsers` names students by netid alongside `topSearchQueries`, which is allowed because nothing joins the two: each lists its own aggregate and neither carries the other's key.
+A shown query row's `lastSearchedAt` is truncated to its UTC day, because an exact time would match one `search` event's timestamp in the drilldown and name its searcher.
 The per-user drilldown (`GET /api/analytics/users/:netid`) still lists a student's events, but a `search`, `research_search` or `research_filter_change` event carries only its type and time: no `searchQuery`, `searchDepartments` or `metadata`.
 A query string, or a filter-only search's filter summary, is shown only once `MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY` (3) distinct students searched it.
 Below that it is folded into `suppressedQueries`, which counts the hidden query groups and their searches and zero-result searches, so the hidden demand stays visible as a number.

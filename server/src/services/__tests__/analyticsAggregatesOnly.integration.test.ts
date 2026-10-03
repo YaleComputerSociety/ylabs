@@ -208,4 +208,41 @@ describe('admin search analytics are aggregates only', () => {
       }),
     ]);
   });
+
+  it('averages results over every query group, not only the most-searched hundred', async () => {
+    await AnalyticsEvent.collection.insertMany(
+      Array.from({ length: 101 }, (_, index) =>
+        search('synth04', 90, `long tail synthetic topic ${index}`, 50),
+      ),
+    );
+
+    const quality = await getSearchQualityAnalytics();
+
+    expect(quality.totalSearches).toBe(108);
+    expect(quality.avgResultsPerSearch).toBeCloseTo((10 + 101 * 50) / 108, 10);
+  });
+
+  it('dates a shown query row to its day, so it cannot be matched to one search event', async () => {
+    const { queries } = await getSearchQueryAnalytics();
+    const drilldownSearchTimes = new Set(
+      (
+        await Promise.all(students.map((netid) => getUserAnalyticsDrilldown(netid)))
+      ).flatMap((drilldown) =>
+        (drilldown?.events ?? [])
+          .filter((event) => event.eventType === 'search')
+          .map((event) => new Date(event.timestamp).getTime()),
+      ),
+    );
+    const lastSharedSearch = minutesAfterBase(0);
+    const lastSharedSearchDay = Date.UTC(
+      lastSharedSearch.getUTCFullYear(),
+      lastSharedSearch.getUTCMonth(),
+      lastSharedSearch.getUTCDate(),
+    );
+
+    expect(queries).toHaveLength(1);
+    const lastSearchedAt = new Date(queries[0].lastSearchedAt!).getTime();
+    expect(lastSearchedAt).toBe(lastSharedSearchDay);
+    expect(drilldownSearchTimes.has(lastSearchedAt)).toBe(false);
+  });
 });

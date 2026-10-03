@@ -1279,8 +1279,6 @@ const computeSearchQualityAnalytics = async (
         ],
         averageResultsBasis: [
           ...queryGroupStages,
-          { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
-          { $limit: 100 },
           { $project: { avgResultCount: 1, searchesThatReachedTheCorpus: 1 } },
         ],
         suppressedQueries: [...queryGroupStages, ...suppressedQueryGroupSummaryStages],
@@ -1494,7 +1492,7 @@ export const getSearchQueryAnalytics = async (
             0,
           ],
         },
-        lastSearchedAt: 1,
+        lastSearchedAt: { $dateTrunc: { date: '$lastSearchedAt', unit: 'day' } },
       },
     },
     {

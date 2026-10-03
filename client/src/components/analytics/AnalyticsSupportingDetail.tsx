@@ -34,6 +34,7 @@ import {
   formatSearchQueryLabel,
   formatSearchSurface,
   formatUserType,
+  formatUtcDay,
   formatVisibilityTier,
 } from './analyticsPresentation';
 
@@ -181,8 +182,8 @@ const AnalyticsSupportingDetail = ({
       { header: 'Unique Searchers', value: (row) => row.uniqueSearchers },
       { header: 'Zero Results', value: (row) => row.zeroResultSearches || 0 },
       {
-        header: 'Last Search',
-        value: (row) => (row.lastSearchedAt ? formatDateTime(row.lastSearchedAt) : ''),
+        header: 'Last Search Day',
+        value: (row) => (row.lastSearchedAt ? formatUtcDay(row.lastSearchedAt) : ''),
       },
     ]);
   };
@@ -676,7 +677,7 @@ const AnalyticsSupportingDetail = ({
                     Zero Results
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
-                    Last Search
+                    Last Search Day
                   </th>
                 </tr>
               </thead>
@@ -703,7 +704,7 @@ const AnalyticsSupportingDetail = ({
                         {formatNumber(query.zeroResultSearches || 0)}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
-                        {formatDateTime(query.lastSearchedAt)}
+                        {formatUtcDay(query.lastSearchedAt)}
                       </td>
                     </tr>
                   ))

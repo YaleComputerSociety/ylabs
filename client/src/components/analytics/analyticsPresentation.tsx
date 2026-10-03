@@ -42,6 +42,17 @@ export const formatDateTime = (value?: string | null): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
+export const formatUtcDay = (value?: string | null): string => {
+  if (!value) {
+    return 'Never';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString(undefined, { timeZone: 'UTC' });
+};
+
 export const formatEventType = (eventType: string): string => {
   const labelMap: Record<string, string> = {
     research_search: 'Research searches',
