@@ -122,6 +122,27 @@ Once the root is installed, `yarn install:all` calls the same script.
 
 ### 3. Configure environment
 
+There are two data paths, and the local one is the default.
+
+**Local MongoDB (no credentials).** One command starts a local MongoDB and Meilisearch in Docker, writes `server/.env.local`, and seeds both with the synthetic smoke rows:
+
+```bash
+yarn local:setup        # docker compose: mongodb + meilisearch, then yarn local:seed
+yarn dev:server:local   # API on the ylabs_local database
+cp client/.env.example client/.env
+yarn dev:client         # http://localhost:3000/research shows synthetic cards
+```
+
+- `server/.env.local` is created from `server/.env.local.example` with mode 0600 and a generated `SESSION_SECRET`, and is gitignored.
+- The `local` data profile (`scripts/run-data-profile.mjs`) accepts only a `localhost`, `127.0.0.1` or `::1` host and only the `ylabs_local` database, and refuses anything else, so it can never be pointed at Development.
+- It blanks every other key `server/.env` declares, so a credentialed `server/.env` beside it cannot leak a Development URL into the local server.
+- It sets `MEILISEARCH_INDEX_PREFIX=ylabs_local`, so the local index never replaces the bare `researchentities` index a Development-backed server reads.
+- `yarn local:seed` re-runs `db:build-indexes --apply`, `e2e:seed-smoke` and the index rebuild through that profile. `yarn mongo:up` and `yarn mongo:down` start and stop the database alone; data persists in the `mongo_data` volume.
+- `yarn --cwd server e2e:seed-smoke` refuses any database named for an operator environment (Development, Beta, Production, production-copy), and any non-local host unless `ALLOW_REMOTE_E2E_SEED=true` names a disposable remote database.
+
+Use the local path for serve-time work: DTOs, visibility, sanitizers and client rendering.
+
+**Development (credentials from a maintainer).** Data work, and anything that needs the real corpus, runs against the shared Development database.
 Copy the example and fill in credentials:
 
 ```bash
@@ -143,7 +164,8 @@ cp client/.env.example client/.env
 
 The default `VITE_APP_SERVER=http://localhost:4000` is correct for local work and is the only variable the client needs. The `VITE_SENTRY_*` entries are optional and commented out; with no DSN the client skips Sentry initialization rather than failing.
 
-Ask a project maintainer for the development MongoDB and API credentials. Do not commit `server/.env` or `client/.env`.
+Ask a project maintainer for the development MongoDB and API credentials when you need real data. Do not commit `server/.env`, `server/.env.local` or `client/.env`.
+A server booted against Development writes to it: a dev-login creates a user row, and the corpus snapshot scheduler records a `CorpusQualitySnapshot` row when the newest one is over a day old.
 
 ### 4. Start local Meilisearch
 

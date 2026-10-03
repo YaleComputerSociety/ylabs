@@ -103,6 +103,11 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
   for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
+  writeFile(
+    path.join(primaryRoot, 'scripts', 'install-gh-identifier-guard.sh'),
+    '#!/bin/sh\nexit 0\n',
+  );
+  fs.chmodSync(path.join(primaryRoot, 'scripts', 'install-gh-identifier-guard.sh'), 0o755);
   fs.mkdirSync(path.join(primaryRoot, 'server'), { recursive: true });
   writeFile(path.join(primaryRoot, '.gitignore'), '.env\n**/.env\n');
   git(primaryRoot, 'init', '--quiet', '--initial-branch=beta');

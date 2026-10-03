@@ -9,7 +9,19 @@ import dotenv from 'dotenv';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const LOCAL_PROFILE_DATABASE = 'ylabs_local';
+
 const PROFILES = {
+  local: {
+    file: path.join(REPO_ROOT, 'server', '.env.local'),
+    missingHint: 'Run yarn local:setup to create it.',
+    shadowedFile: path.join(REPO_ROOT, 'server', '.env'),
+    environment: 'development',
+    database: LOCAL_PROFILE_DATABASE,
+    requireLocalMongo: true,
+    writable: false,
+    meiliIndexPrefix: LOCAL_PROFILE_DATABASE,
+  },
   development: {
     file: path.join(REPO_ROOT, 'server', '.env'),
     environment: 'development',
@@ -26,7 +38,10 @@ const PROFILES = {
   },
 };
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const PROFILE_CHOICES = 'Use local, development or beta-operator.';
+const USAGE =
+  'Usage: run-data-profile.mjs <local|development|beta-operator> [--write] -- <command> [args...]';
 
 export function parseMongoTarget(value) {
   if (!value) throw new Error('MONGODBURL is required by the selected data profile.');
@@ -53,7 +68,7 @@ export function parseMongoTarget(value) {
 export function validateProfileValues(profileName, values) {
   const profile = PROFILES[profileName];
   if (!profile) {
-    throw new Error(`Unknown data profile "${profileName}". Use development or beta-operator.`);
+    throw new Error(`Unknown data profile "${profileName}". ${PROFILE_CHOICES}`);
   }
 
   const target = parseMongoTarget(values.MONGODBURL);
@@ -64,6 +79,11 @@ export function validateProfileValues(profileName, values) {
   }
   if (profile.requireRemoteMongo && target.local) {
     throw new Error(`The ${profileName} profile requires a remote MongoDB database.`);
+  }
+  if (profile.requireLocalMongo && !target.local) {
+    throw new Error(
+      `The ${profileName} profile requires a local MongoDB host (localhost, 127.0.0.1 or ::1); resolved ${target.host}.`,
+    );
   }
   if (values.SCRAPER_ENV && values.SCRAPER_ENV !== profile.environment) {
     throw new Error(
@@ -77,9 +97,7 @@ export function validateProfileValues(profileName, values) {
 export function parseInvocation(argv) {
   const separator = argv.indexOf('--');
   if (separator < 0) {
-    throw new Error(
-      'Usage: run-data-profile.mjs <development|beta-operator> [--write] -- <command> [args...]',
-    );
+    throw new Error(USAGE);
   }
 
   const options = argv.slice(0, separator);
@@ -87,9 +105,7 @@ export function parseInvocation(argv) {
   const profileName = options[0];
   const unknown = options.slice(1).filter((option) => option !== '--write');
   if (!profileName || unknown.length > 0 || command.length === 0) {
-    throw new Error(
-      'Usage: run-data-profile.mjs <development|beta-operator> [--write] -- <command> [args...]',
-    );
+    throw new Error(USAGE);
   }
 
   return {
@@ -107,18 +123,26 @@ export function assertWritesAllowed(profileName, writesEnabled) {
   }
 }
 
+export function shadowedValues(profile, values) {
+  if (!profile.shadowedFile || !fs.existsSync(profile.shadowedFile)) return {};
+  const shadowed = dotenv.parse(fs.readFileSync(profile.shadowedFile));
+  return Object.fromEntries(
+    Object.keys(shadowed)
+      .filter((key) => !(key in values))
+      .map((key) => [key, '']),
+  );
+}
+
 export function run(argv = process.argv.slice(2)) {
   const invocation = parseInvocation(argv);
   const profile = PROFILES[invocation.profileName];
   if (!profile) {
-    throw new Error(
-      `Unknown data profile "${invocation.profileName}". Use development or beta-operator.`,
-    );
+    throw new Error(`Unknown data profile "${invocation.profileName}". ${PROFILE_CHOICES}`);
   }
   if (!fs.existsSync(profile.file)) {
     const example = `${profile.file}.example`;
     throw new Error(
-      `Missing ${path.relative(REPO_ROOT, profile.file)}. Copy ${path.relative(REPO_ROOT, example)} and fill in its placeholders.`,
+      `Missing ${path.relative(REPO_ROOT, profile.file)}. ${profile.missingHint ?? `Copy ${path.relative(REPO_ROOT, example)} and fill in its placeholders.`}`,
     );
   }
 
@@ -128,6 +152,7 @@ export function run(argv = process.argv.slice(2)) {
 
   const childEnv = {
     ...process.env,
+    ...shadowedValues(profile, values),
     ...values,
     SCRAPER_ENV: profile.environment,
     CONFIRM_PROD_SCRAPE: 'false',
@@ -136,6 +161,9 @@ export function run(argv = process.argv.slice(2)) {
     childEnv.ALLOW_NON_PROD_SCRAPER_WRITES = 'true';
   } else {
     delete childEnv.ALLOW_NON_PROD_SCRAPER_WRITES;
+  }
+  if (profile.meiliIndexPrefix) {
+    childEnv.MEILISEARCH_INDEX_PREFIX = profile.meiliIndexPrefix;
   }
   if (invocation.profileName === 'beta-operator') {
     childEnv.MEILISEARCH_HOST = 'http://127.0.0.1:7700';
