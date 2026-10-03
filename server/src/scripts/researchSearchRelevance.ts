@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
 import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
@@ -420,6 +421,7 @@ async function main(): Promise<void> {
   });
 
   await initializeConnections();
+  await warmResearchSearchSpellingVocabulary();
   const databaseName = mongoose.connection.db?.databaseName || mongoose.connection.name || '';
   const index = await getMeiliIndex('researchentities');
   const [stats, settings] = await Promise.all([index.getStats(), index.getSettings()]);

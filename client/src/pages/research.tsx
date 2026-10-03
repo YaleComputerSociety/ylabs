@@ -6,6 +6,7 @@ import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
+import ResearchSearchSpellingNotice from '../components/research/ResearchSearchSpellingNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
@@ -35,6 +36,7 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
+import type { ResearchSearchQueryCorrection } from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
@@ -125,6 +127,7 @@ interface ResearchEntitySearchPage {
   // set. Ends the walk without overwriting the total already on screen.
   depthLimited?: boolean;
   degraded?: boolean;
+  queryCorrection?: ResearchSearchQueryCorrection;
 }
 
 interface ActiveResearchSearchRequest {
@@ -169,6 +172,7 @@ interface ResearchPageSnapshot {
   hasFacetError: boolean;
   searchDegraded: boolean;
   defaultSearchDegraded: boolean;
+  queryCorrection: ResearchSearchQueryCorrection | null;
 }
 
 interface ResearchEntitySearchOptions {
@@ -181,6 +185,7 @@ interface ResearchEntitySearchOptions {
   // Marks a search this page issued on the student's behalf, so search-query
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
+  exactSpelling?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -216,6 +221,7 @@ const searchResearchEntities = async (
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
+      ...(options.exactSpelling ? { correctSpelling: false } : {}),
     },
     { signal },
   );
@@ -228,6 +234,7 @@ const searchResearchEntities = async (
     facetDistribution: normalized.facetDistribution,
     depthLimited: normalized.depthLimited === true,
     degraded: normalized.degraded === true,
+    queryCorrection: normalized.queryCorrection,
   };
 };
 
@@ -493,6 +500,9 @@ const Research = () => {
   const [defaultSearchDegraded, setDefaultSearchDegraded] = useState(
     () => restoredSnapshotRef.current?.defaultSearchDegraded ?? false,
   );
+  const [queryCorrection, setQueryCorrection] = useState<ResearchSearchQueryCorrection | null>(
+    () => restoredSnapshotRef.current?.queryCorrection ?? null,
+  );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
@@ -684,6 +694,7 @@ const Research = () => {
       filterChanges?: ResearchFilterAnalyticsChange[];
       preserveResults?: boolean;
       preserveDraftQuery?: boolean;
+      exactSpelling?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -708,6 +719,7 @@ const Research = () => {
       trustTierFilters: isAdmin ? trustTierFilters : [],
       includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
       sort: currentSortRequestOptions(),
+      exactSpelling: options.exactSpelling === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -735,6 +747,7 @@ const Research = () => {
         trustTierFilters: isAdmin ? trustTierFilters : [],
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
+        ...(options.exactSpelling ? { exactSpelling: true } : {}),
       },
     });
     if (!options.preserveDraftQuery) setQuery(trimmed);
@@ -748,6 +761,7 @@ const Research = () => {
     setIsApplyingFilters(Boolean(options.preserveResults));
     setHasFacetError(false);
     setSearchDegraded(false);
+    setQueryCorrection(null);
     if (!options.preserveResults) {
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
@@ -778,6 +792,7 @@ const Research = () => {
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
+          ...(options.exactSpelling ? { exactSpelling: true } : {}),
         },
       );
 
@@ -786,6 +801,7 @@ const Research = () => {
       const researchEntities = researchEntitiesPage.researchEntities;
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
+      setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       if (researchEntitiesPage.facetDistribution) {
@@ -931,6 +947,10 @@ const Research = () => {
     ...(department ? { departments: [department] } : {}),
   });
 
+  const activeSearchKeepsTypedSpelling = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.exactSpelling === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     scrollViewportToTop();
@@ -961,6 +981,7 @@ const Research = () => {
     activeSearchAnalyticsKeyRef.current = null;
     setHasFacetError(false);
     setSearchDegraded(false);
+    setQueryCorrection(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
     writeResearchSearchParams(
@@ -1201,6 +1222,7 @@ const Research = () => {
       hasFacetError,
       searchDegraded,
       defaultSearchDegraded,
+      queryCorrection,
     };
   }, [
     hasSubmittedSearch,
@@ -1235,6 +1257,7 @@ const Research = () => {
     hasFacetError,
     searchDegraded,
     defaultSearchDegraded,
+    queryCorrection,
   ]);
 
   useEffect(() => {
@@ -1410,6 +1433,7 @@ const Research = () => {
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
       preserveResults: true,
+      exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1450,6 +1474,7 @@ const Research = () => {
       preserveResults: true,
       preserveDraftQuery: true,
       syncUrl: false,
+      exactSpelling: activeSearchRequest.options?.exactSpelling === true,
     });
   };
   const reloadDefaultResearchHomes = () => {
@@ -1581,6 +1606,16 @@ const Research = () => {
     void runSearchRef.current(relaxedQuerySuggestion, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
+    });
+  };
+
+  const searchOriginalSpelling = () => {
+    if (!queryCorrection) return;
+    const filters = studentSearchFilters();
+    void runSearchRef.current(queryCorrection.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      exactSpelling: true,
     });
   };
 
@@ -1902,21 +1937,29 @@ const Research = () => {
             {hasSubmittedSearch && (
               <section aria-busy={searchLoading} aria-label="Search results">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    aria-atomic="true"
-                    className="min-w-0 text-sm font-medium text-ink-soft"
-                  >
-                    {resultSummary(
-                      activeResults,
-                      submittedQuery,
-                      searchLoading,
-                      departmentSearch?.label,
-                      searchTotal,
-                      searchDegraded,
+                  <div className="min-w-0">
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="text-sm font-medium text-ink-soft"
+                    >
+                      {resultSummary(
+                        activeResults,
+                        queryCorrection?.correctedQuery ?? submittedQuery,
+                        searchLoading,
+                        departmentSearch?.label,
+                        searchTotal,
+                        searchDegraded,
+                      )}
+                    </p>
+                    {queryCorrection && !searchLoading && (
+                      <ResearchSearchSpellingNotice
+                        originalQuery={queryCorrection.originalQuery}
+                        onSearchOriginal={searchOriginalSpelling}
+                      />
                     )}
-                  </p>
+                  </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <ResearchSortDropdown
                       sortBy={sortBy}

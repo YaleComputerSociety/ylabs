@@ -71,6 +71,7 @@ const mockSearchResponses = (
       page?: number;
       browseQuality?: string;
       qualityFilters?: string[];
+      correctSpelling?: boolean;
     },
   ) => unknown,
 ) => {
@@ -3392,5 +3393,57 @@ describe('Research degraded search notice', () => {
     expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
     expect(document.body.textContent).not.toContain('Your search still works');
+  });
+});
+
+describe('Research spelling correction notice', () => {
+  it('names the corrected search and lets the student search the spelling they typed', async () => {
+    const immunologyEntity = {
+      ...researchEntity,
+      _id: 'immunology-1',
+      slug: 'immunology-lab',
+      name: 'Immunology Lab',
+      displayName: 'Immunology Lab',
+    };
+    const searchRequests: Array<Record<string, unknown>> = [];
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q !== 'imunology') return researchSearchResponse([]);
+      if (body.correctSpelling === false) return researchSearchResponse([]);
+      return researchSearchResponse([immunologyEntity], {
+        estimatedTotalHits: 1,
+        queryCorrection: { originalQuery: 'imunology', correctedQuery: 'immunology' },
+      });
+    });
+
+    renderResearch(departments, ['/research?q=imunology']);
+
+    expect(await screen.findByRole('heading', { name: 'Immunology Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("result for 'immunology'");
+    expect(document.body.textContent).toContain('Spelling corrected. Search instead for imunology');
+
+    fireEvent.click(screen.getByRole('button', { name: 'imunology' }));
+
+    await waitFor(() => {
+      expect(
+        searchRequests.some(
+          (request) => request.q === 'imunology' && request.correctSpelling === false,
+        ),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).not.toContain('Spelling corrected');
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: 'imunology', sortBy: 'name', correctSpelling: false }),
+      );
+    });
+    expect(document.body.textContent).not.toContain('Spelling corrected');
   });
 });
