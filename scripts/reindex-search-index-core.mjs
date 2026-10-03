@@ -119,7 +119,12 @@ export function describeMissingEnvVars(missing) {
     lines.push(`    why:      ${why}`);
     lines.push('');
   }
-  lines.push('Values come from the Render dashboard for the target service.');
+  lines.push(
+    'MONGODBURL, MEILISEARCH_HOST and MEILISEARCH_INDEX_PREFIX come from the Render dashboard for the target service.',
+  );
+  lines.push(
+    'MEILISEARCH_WRITE_API_KEY is not stored on the service: export it in this shell session only.',
+  );
   lines.push('Do not paste them into a shared shell history or a committed file.');
   return lines.join('\n');
 }
