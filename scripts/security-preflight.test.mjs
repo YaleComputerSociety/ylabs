@@ -3479,13 +3479,13 @@ test('Mongo sanitizer rejects operator-shaped requests and bounds recursive trav
     [{ body: { list: [{ $or: [] }] } }, rejected],
     [{ body: { list: Array.from({ length: 201 }, () => 1) } }, rejected],
     [{ body: wideObject(201) }, rejected],
-    [{ body: deep(34) }, rejected],
+    [{ body: deep(33) }, rejected],
   ];
   const accepted = [
     { body: { name: 'safe', tags: ['a', 'b'], nested: { ok: 1 } } },
     { body: { list: Array.from({ length: 200 }, () => 1) } },
     { body: wideObject(200) },
-    { body: deep(31) },
+    { body: deep(32) },
     { query: { q: 'machine learning' } },
   ];
   const evaluate = [

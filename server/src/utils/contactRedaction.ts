@@ -5,7 +5,8 @@
 const DIRECT_EMAIL_ADDRESS_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
 const ADDRESS_LOCAL_PART = String.raw`(?<![A-Z0-9._%+-])[A-Z0-9][A-Z0-9._%+-]*`;
-const DOMAIN_LABEL = String.raw`(?!(?:the|a|an|this|that|our|its|their|his|her|my|your)\b)[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?`;
+const DOMAIN_LABEL = String.raw`[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?`;
+const NON_PROSE_DOMAIN_LABEL = String.raw`(?!(?:the|a|an|this|that|our|its|their|his|her|my|your)\b)${DOMAIN_LABEL}`;
 const BRACKETED = (word: string): string => String.raw`\s*[[({<]\s*(?:${word})\s*[\])}>]\s*`;
 const OBFUSCATED_AT_SIGN = String.raw`(?:\s*@\s+|\s*(?:\uFF20|&#0*64;|&#x0*40;|&commat;)\s*)`;
 const SPELLED_AT = String.raw`\s+at\s+`;
@@ -20,7 +21,7 @@ const SYMBOLIC_AT_EMAIL_PATTERN = new RegExp(
 );
 
 const SPELLED_AT_EMAIL_PATTERN = new RegExp(
-  `${ADDRESS_LOCAL_PART}${SPELLED_AT}${DOMAIN_LABEL}(?:${ANY_DOT}${DOMAIN_LABEL})*${OBFUSCATED_DOT}(?:${KNOWN_DOMAIN_SUFFIX})${ADDRESS_END}`,
+  `${ADDRESS_LOCAL_PART}${SPELLED_AT}${NON_PROSE_DOMAIN_LABEL}(?:${ANY_DOT}${DOMAIN_LABEL})*${OBFUSCATED_DOT}(?:${KNOWN_DOMAIN_SUFFIX})${ADDRESS_END}`,
   'gi',
 );
 

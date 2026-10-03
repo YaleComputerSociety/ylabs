@@ -101,6 +101,10 @@ describe('redactDirectContactInfo obfuscated email arm', () => {
     ['jdoe {at} example {.} org today', `${EMAIL} today`],
     ['jdoe [at] example.edu today', `${EMAIL} today`],
     ['jdoe at cs.example dot edu today', `${EMAIL} today`],
+    ['help [at] its.example.edu today', `${EMAIL} today`],
+    ['help (at) my.example.edu today', `${EMAIL} today`],
+    ['jdoe [at] cs [dot] its [dot] edu today', `${EMAIL} today`],
+    ['jdoe&#64;the.example.org today', `${EMAIL} today`],
   ])('redacts an obfuscated address: %s', (input, expected) => {
     expect(redactDirectContactInfo(input)).toBe(expected);
   });
