@@ -1338,10 +1338,10 @@ describe('computeResearchEntityStudentVisibility', () => {
       ).not.toContain('unbacked_lab_name');
     });
 
-    it('holds a lab name a repair script wrote directly', () => {
+    it('keeps a lab name a data correction wrote, which #4050 leaves to its operator', () => {
       expect(
         reasonsFor({ name: { sourceName: 'manual-data-correction', sourceUrl: PROFILE } }),
-      ).toContain('unbacked_lab_name');
+      ).not.toContain('unbacked_lab_name');
     });
   });
 

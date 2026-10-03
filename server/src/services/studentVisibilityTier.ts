@@ -361,13 +361,17 @@ function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
   if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
   if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
-  if (
-    OPERATOR_AUTHORED_SOURCE_NAMES.includes(textValue(entity.fieldProvenance?.name?.sourceName))
-  ) {
-    return false;
-  }
+  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
   return !citedUrls(entity).some(urlNamesALaboratory);
 }
+
+// `manual-data-correction` is kept beside the operator-authored sources because #4050 scopes
+// the one served row it names out: its name is operator-locked, and a repair that needs
+// revisiting is a judgement on that row rather than this arm's to withdraw.
+const OPERATOR_NAME_SOURCES: ReadonlySet<string> = new Set([
+  ...OPERATOR_AUTHORED_SOURCE_NAMES,
+  'manual-data-correction',
+]);
 
 /**
  * A recorded name source backs a lab name only when the lane that recorded it also
