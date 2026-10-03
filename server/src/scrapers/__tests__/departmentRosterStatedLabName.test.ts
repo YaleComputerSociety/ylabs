@@ -281,3 +281,82 @@ describe('a stated lab name the sentence does not end on', () => {
     expect(statedFor('Dr. Fixture runs the Spindle Mechanics Lab.')).toBeUndefined();
   });
 });
+
+describe('a profile whose only research evidence is the lab it says the person leads', () => {
+  async function mintFromBareProfile(
+    body: string,
+    deptOverrides: Record<string, unknown> = {},
+    labUrl?: string,
+  ) {
+    const entry = await enrichEntryFromOfficialProfile(
+      { name: 'Ada Fixture', profileUrl: PROFILE_URL, ...(labUrl ? { labUrl } : {}) },
+      'dept-faculty-roster',
+      false,
+      async () => profilePage(body),
+      () => undefined,
+    );
+    return rosterResearchEntityMint(
+      entry,
+      { ...(dept as object), ...deptOverrides } as never,
+      ROSTER_URL,
+      'dept-mcdb-ada-fixture',
+    ).observations;
+  }
+
+  it('mints the stated lab, typed LAB and cited to the profile', async () => {
+    const observations = await mintFromBareProfile(
+      `<p>Dr. Fixture directs the Cytoskeleton Dynamics Lab, an interdisciplinary research group.</p>`,
+    );
+    const byField = (field: string) =>
+      observations.find((observation) => observation.field === field);
+
+    expect(byField('name')?.value).toBe('Cytoskeleton Dynamics Lab');
+    expect(byField('entityType')?.value).toBe('LAB');
+    expect(byField('name')?.sourceUrl).toBe(PROFILE_URL);
+    expect(byField('sourceUrls')?.value).toEqual([PROFILE_URL]);
+    expect(byField('websiteUrl')).toBeUndefined();
+  });
+
+  it('mints the stated lab on a roster that mints no personal research rows', async () => {
+    const observations = await mintFromBareProfile(
+      `<p>Dr. Fixture directs the Cytoskeleton Dynamics Lab, an interdisciplinary research group.</p>`,
+      { emitPersonalResearchEntities: false },
+    );
+    expect(observations.find((observation) => observation.field === 'name')?.value).toBe(
+      'Cytoskeleton Dynamics Lab',
+    );
+  });
+
+  it('cites only the profile when a personal link is all the row has on such a roster', async () => {
+    const observations = await mintFromBareProfile(
+      `<p>Dr. Fixture directs the Cytoskeleton Dynamics Lab, an interdisciplinary research group.</p>`,
+      { emitPersonalResearchEntities: false },
+      'https://fixture-homepage.example.org/',
+    );
+    const byField = (field: string) =>
+      observations.find((observation) => observation.field === field);
+
+    expect(byField('name')?.value).toBe('Cytoskeleton Dynamics Lab');
+    expect(byField('websiteUrl')).toBeUndefined();
+    expect(byField('sourceUrls')?.value).toEqual([PROFILE_URL]);
+    expect(observations.every((observation) => observation.sourceUrl === PROFILE_URL)).toBe(true);
+  });
+
+  it('mints nothing when the profile only mentions a lab', async () => {
+    expect(
+      await mintFromBareProfile(
+        `<p>Ada Fixture collaborates closely with the Cytoskeleton Dynamics Lab on imaging.</p>`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('never names the row after a link label', async () => {
+    const observations = await mintFromBareProfile(
+      `<p>Ada Fixture teaches cell biology.</p><p><a href="https://mcdb.yale.edu/news/item">Cytoskeleton Dynamics Lab</a></p>`,
+    );
+    const names = observations
+      .filter((observation) => observation.field === 'name')
+      .map((observation) => observation.value);
+    expect(names).not.toContain('Cytoskeleton Dynamics Lab');
+  });
+});
