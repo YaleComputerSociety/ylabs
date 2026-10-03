@@ -121,7 +121,13 @@ describe('dept-faculty-roster resolves a lab name the profile states the person 
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'researchers', 'sources', 'scrape_runs']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'researchers',
+      'sources',
+      'scrape_runs',
+    ]) {
       await db.collection(name).deleteMany({});
     }
     profileBodies.clear();
@@ -226,7 +232,10 @@ describe('dept-faculty-roster resolves a lab name the profile states the person 
   });
 
   it.each([
-    ['a lab merely mentioned', '<p>Ada Fixture collaborates with the Cytoskeleton Dynamics Lab.</p>'],
+    [
+      'a lab merely mentioned',
+      '<p>Ada Fixture collaborates with the Cytoskeleton Dynamics Lab.</p>',
+    ],
     [
       'anchor text of a lab link',
       '<p>Ada Fixture studies cell division in model organisms.</p><p><a href="https://fixturelab.org/">Cytoskeleton Dynamics Lab</a></p>',
