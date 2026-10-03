@@ -34,6 +34,19 @@ describe('withoutLaneRefusedWebsiteUrls (#3926)', () => {
     expect(result.withdrawnValues).toEqual([LAB]);
   });
 
+  it('withdraws the lane own older website alongside its websiteUrl', () => {
+    const result = withoutLaneRefusedWebsiteUrls(
+      [
+        observation({}),
+        observation({ field: 'website' }),
+        observation({ field: REFUSED_WEBSITE_URL_FIELD, observedAt: NEW }),
+      ],
+      ROW,
+    );
+    expect(result.observations).toEqual([]);
+    expect(result.withdrawnValues).toEqual([LAB, LAB]);
+  });
+
   it('bridges the two identity forms of the same row', () => {
     const result = withoutLaneRefusedWebsiteUrls(
       [
@@ -114,6 +127,7 @@ describe('withoutLaneRefusedWebsiteUrls (#3926)', () => {
 describe('planLaneWithdrawnWebsiteUrlClear (#3926)', () => {
   const plan = (overrides: Partial<Parameters<typeof planLaneWithdrawnWebsiteUrlClear>[0]> = {}) =>
     planLaneWithdrawnWebsiteUrlClear({
+      field: 'websiteUrl',
       stored: { websiteUrl: 'http://www.syntheticlab.example.org' },
       staged: {},
       withdrawnValues: [LAB],
@@ -123,6 +137,19 @@ describe('planLaneWithdrawnWebsiteUrlClear (#3926)', () => {
 
   it('clears a stored value its lane withdrew, matched by website identity', () => {
     expect(plan()).toBe(true);
+  });
+
+  it('clears a stored website its lane withdrew the same way', () => {
+    expect(
+      plan({ field: 'website', stored: { website: 'http://www.syntheticlab.example.org' } }),
+    ).toBe(true);
+    expect(
+      plan({
+        field: 'website',
+        stored: { website: 'http://www.syntheticlab.example.org' },
+        lockedFields: ['website'],
+      }),
+    ).toBe(false);
   });
 
   it('respects a lock, a staged rival value, and an empty withdrawal', () => {

@@ -2,14 +2,18 @@
  * A refusal is not an absence (#2647), so field retraction cannot withdraw a lane's
  * earlier `websiteUrl` when a later read refuses the link the page still carries. The
  * lane states the refusal as evidence instead, and on every resolve that newer read
- * wins over every older `websiteUrl` the lane asserted on the row, whatever the link,
+ * wins over every older `websiteUrl` and `website` the lane asserted on the row, whatever the link,
  * without writing the observation log, so another lane's evidence still counts (#3926).
  */
 import { websiteIdentity } from './survivorOwnedWebsiteClear';
 
 export const REFUSED_WEBSITE_URL_FIELD = 'refusedWebsiteUrl';
 
-const WITHDRAWABLE_FIELD = 'websiteUrl';
+export const LANE_WITHDRAWABLE_WEBSITE_FIELDS = ['website', 'websiteUrl'] as const;
+
+export type LaneWithdrawableWebsiteField = (typeof LANE_WITHDRAWABLE_WEBSITE_FIELDS)[number];
+
+const WITHDRAWABLE_FIELDS: ReadonlySet<string> = new Set(LANE_WITHDRAWABLE_WEBSITE_FIELDS);
 
 const WEBSITE_STATING_FIELDS: ReadonlySet<string> = new Set([
   'website',
@@ -76,7 +80,8 @@ export function withoutLaneRefusedWebsiteUrls<T extends LaneWebsiteObservation>(
     return refusedAt !== undefined && observedTime(observation.observedAt) < refusedAt;
   };
   const isWithdrawnBySameLane = (observation: LaneWebsiteObservation): boolean =>
-    observation.field === WITHDRAWABLE_FIELD && isSupersededByLaneRefusal(observation);
+    WITHDRAWABLE_FIELDS.has(String(observation.field ?? '')) &&
+    isSupersededByLaneRefusal(observation);
   const identitiesStillStatedBy = (observation: LaneWebsiteObservation): string[] => {
     if (!WEBSITE_STATING_FIELDS.has(String(observation.field ?? ''))) return [];
     if (isSupersededByLaneRefusal(observation)) return [];
@@ -112,15 +117,14 @@ export function isLaneWithdrawnWebsiteUrl(
 }
 
 export function planLaneWithdrawnWebsiteUrlClear(input: {
+  field: LaneWithdrawableWebsiteField;
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
   withdrawnValues: readonly unknown[];
   lockedFields: readonly string[];
 }): boolean {
-  if (input.lockedFields.includes(WITHDRAWABLE_FIELD)) return false;
+  if (input.lockedFields.includes(input.field)) return false;
   const current =
-    WITHDRAWABLE_FIELD in input.staged
-      ? input.staged[WITHDRAWABLE_FIELD]
-      : input.stored?.[WITHDRAWABLE_FIELD];
+    input.field in input.staged ? input.staged[input.field] : input.stored?.[input.field];
   return isLaneWithdrawnWebsiteUrl(current, input.withdrawnValues);
 }

@@ -181,6 +181,7 @@ import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWeb
 import {
   REFUSED_WEBSITE_URL_FIELD,
   isLaneWithdrawnWebsiteUrl,
+  type LaneWithdrawableWebsiteField,
   planLaneWithdrawnWebsiteUrlClear,
   withoutLaneRefusedWebsiteUrls,
 } from './laneRefusedWebsiteUrl';
@@ -7254,7 +7255,21 @@ export async function projectFromLog(
       set[field] = '';
       fieldsWritten++;
     };
+    const clearLaneWithdrawnWebsite = (field: LaneWithdrawableWebsiteField) => {
+      const clearsLaneWithdrawnWebsite = planLaneWithdrawnWebsiteUrlClear({
+        field,
+        stored: entityDoc,
+        staged: set,
+        withdrawnValues: laneWithdrawnWebsiteValues,
+        lockedFields: manuallyLockedFields,
+      });
+      if (!clearsLaneWithdrawnWebsite) return;
+      console.log(`[lane-refused-website-url] cleared a ${field} its own lane has since refused`);
+      set[field] = '';
+      fieldsWritten++;
+    };
     clearLoserOnlySurvivorWebsite('website');
+    clearLaneWithdrawnWebsite('website');
     if (!manuallyLockedFields.includes('websiteUrl')) {
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the
@@ -7292,20 +7307,7 @@ export async function projectFromLog(
         delete set.websiteUrl;
       }
       clearLoserOnlySurvivorWebsite('websiteUrl');
-      if (
-        planLaneWithdrawnWebsiteUrlClear({
-          stored: entityDoc,
-          staged: set,
-          withdrawnValues: laneWithdrawnWebsiteValues,
-          lockedFields: manuallyLockedFields,
-        })
-      ) {
-        console.log(
-          '[lane-refused-website-url] cleared a websiteUrl its own lane has since refused',
-        );
-        set.websiteUrl = '';
-        fieldsWritten++;
-      }
+      clearLaneWithdrawnWebsite('websiteUrl');
       if (
         planUnsourcedProvenanceWebsiteUrlClear({
           stored: entityDoc,

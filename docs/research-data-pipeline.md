@@ -994,14 +994,15 @@ Each run records `metrics.descriptionSlotAttestation` with `empty`, `refused`, `
 Before #3739 the lane wrote `empty` for most of those refusals, and measured on Development on 2026-10-02 304 of the 480 live `empty` attestations cite a page the shared-evidence or institution guard now refuses.
 `research-entity:refuse-unasserted-descriptions` therefore counts only attestations from runs whose metrics carry the vocabulary marker and reports the rest as `excludedPreVocabularyAttestations`; on that date it excluded all 988 and planned nothing, where it had planned 16 refusals before.
 
-### A lane's refusal withdraws its own earlier `websiteUrl` (#3926)
+### A lane's refusal withdraws its own earlier `websiteUrl` and `website` (#3926)
 
 A refusal is not an absence, so field retraction cannot act on one, and a read that withholds `websiteUrl` used to leave the lane's earlier assertion of the same link live and unopposed.
 Measured on Development on 2026-10-02, 60 non-archived rows served a `websiteUrl` whose provenance named `ysm-faculty-directory` while that lane's newest read typed the row `FACULTY_RESEARCH_AREA` and stated no empty slot, 47 of them `student_ready`.
 
 `ysm-faculty-directory` now states the refusal as evidence: a populated lab slot it will not adopt emits a `refusedWebsiteUrl` observation carrying the refused link.
+`official-profile-pi-backfill` states it the same way for a refused lab-website card (#4509, described with that lane below).
 `withoutLaneRefusedWebsiteUrls` in `scrapers/laneRefusedWebsiteUrl.ts` reads it on every resolve, before the resolver ranks anything.
-The lane's newest read wins over its own older reads of the row: every `websiteUrl` it asserted before the refusal stops counting, whatever the link, on either identity form of the row, because a slot that now carries a refused link no longer carries the earlier one.
+The lane's newest read wins over its own older reads of the row: every `websiteUrl` and `website` it asserted before the refusal stops counting, whatever the link, on either identity form of the row, because a slot that now carries a refused link no longer carries the earlier one.
 A newer read that adopts a link again wins over the refusal.
 The lane's own older citations stop keeping a withdrawn link standing for the same reason.
 Another lane's assertion of the link resolves normally, and the stored value is cleared only when no other lane asserts or cites it after the withdrawal and the field carries no lock.
@@ -1804,6 +1805,12 @@ Action-evidence repair must prefer official/profile-quality entity source URLs o
 When no official profile bio exists, trusted personal or lab homepages may support reviewed user-bio backfill only when the page contains person-specific narrative evidence. Keep this as a guarded review lane unless a deterministic extractor can prove identity and narrative quality. Do not synthesize a stored profile bio from WTI-style roster pages, contact pages, generic lab slogans, title-only pages, person-named shells, or pages where the only evidence is a broad research-home summary.
 
 Explicit `View Lab Website` links on official Yale profiles are a stronger research-home signal than broad profile affiliations. This path may accept a non-Yale lab domain when the official profile card itself labels the target as a lab website; the materialized lab name should use the profile person's name plus `Lab`, with credential suffixes such as `PhD` stripped. These lab-card links still must not be confused with profile chrome, academic-publication concept links, social/profile services, or broader center/department pages.
+
+A lab-website card is the slot faculty fill with either their own lab or an organization they are affiliated with, so `official-profile-pi-backfill` asks the shared `classifyHarvestedResearchHomeName` authority which it is (#4509).
+A card the authority calls `AFFILIATED_ORGANIZATION` is admitted only when the profile text states the person leads it, as a title (`Director of the X Unit at ...`, `Director, Center for X and Y`, with `&` and `and` treated alike) or as a verb (`directs the X`); membership and deputy titles do not count.
+When the lane refuses a card for that reason, or because another row already owns the link, and the row is serving that link, it emits `refusedWebsiteUrl` for the link, so resolve withdraws the lane's own older `websiteUrl` and `website` instead of leaving them live behind a silent refusal (#3926).
+The refusal is limited to a row serving the refused link because the withdrawal reaches every older website the lane asserted on the row, including one its lead-direct mode read from the lead's own website slot.
+An untargeted run selects only rows with no website, so it never re-reads a row already serving an affiliated organization; the repair is a targeted run, `--only profile-research-home-backfill,<keys>`, over the rows where this lane's own `websiteUrl` observation is the stored value.
 
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.

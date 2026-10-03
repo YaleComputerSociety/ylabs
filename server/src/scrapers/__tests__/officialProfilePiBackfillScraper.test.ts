@@ -22,6 +22,8 @@ import {
   preferredOfficialProfileUrl,
   rankedOfficialProfileFetchCandidates,
   isEponymousResearchGroupLinkText,
+  refusedResearchHomeWebsiteObservation,
+  profileTextStatesLeadershipOf,
   PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD,
   resolveExistingUserForIdentity,
   selectVisibleProfileBioTargets,
@@ -1797,6 +1799,189 @@ describe('officialProfilePiBackfillScraper', () => {
 
     expect(fetchedUrls[0]).toBe(departmentUrl);
     expect(fetchedUrls).toContain(mirrorUrl);
+  });
+
+  describe('a lab-website card that links an affiliated organization', () => {
+    const cardProfileHtml = (cardTitle: string, cardUrl: string, bio: string) => `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <section class="profile-body"><p>${bio}</p></section>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">${cardTitle}</h3>
+          <a href="${cardUrl}"><span>View Lab Website</span></a>
+        </article>
+      </main></body></html>
+    `;
+    const profileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+    const shell = { slug: 'ysm-faculty-quinn-marlowfixture' };
+
+    it('refuses an office the profile does not say the person leads', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Office of Fixture Excellence',
+          'https://medicine.yale.edu/fixture-excellence/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(home.leadershipEvidenced).toBe(false);
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).toBe(
+        'affiliated-organization-without-leadership',
+      );
+    });
+
+    it('admits a unit the profile says the person directs', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Fixture Computational Unit',
+          'https://fixtureunit.example.org/',
+          'Quinn Marlowfixture is Director of the Fixture Computational Unit.',
+        ),
+        profileUrl,
+      );
+      expect(home.leadershipEvidenced).toBe(true);
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).not.toBe(
+        'affiliated-organization-without-leadership',
+      );
+    });
+
+    it("leaves the person's own named lab alone without any leadership phrase", () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Marlowfixture Lab',
+          'https://medicine.yale.edu/lab/marlowfixture/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).toBeNull();
+    });
+
+    it('reads leadership stated with a trailing place, an ampersand, or a verb', () => {
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Director of the Fixture Psychiatry Unit at Yale School of Medicine.',
+          'Fixture Psychiatry Unit',
+        ),
+      ).toBe(true);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Additional Titles Director, Center for Fixture and Repair Research Learn more',
+          'Center for Fixture & Repair Research',
+        ),
+      ).toBe(true);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn directs the Collaborative Center for Fixture Science that coordinates trials.',
+          'Collaborative Center for Fixture Science',
+        ),
+      ).toBe(true);
+    });
+
+    it('does not read membership or a deputy title as leadership', () => {
+      expect(
+        profileTextStatesLeadershipOf('Quinn is a member of the Fixture Unit.', 'Fixture Unit'),
+      ).toBe(false);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Deputy Director of the Fixture Unit.',
+          'Fixture Unit',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not read a qualified deputy or assistant title as leadership', () => {
+      for (const title of [
+        'Deputy Co-Director of the Fixture Unit',
+        'Deputy Associate Director of the Fixture Unit',
+        'Assistant Director of the Fixture Unit',
+        'Assistant Co-Director of the Fixture Unit',
+      ]) {
+        expect(profileTextStatesLeadershipOf(`Quinn is ${title}.`, 'Fixture Unit')).toBe(false);
+      }
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Associate Director of the Fixture Unit.',
+          'Fixture Unit',
+        ),
+      ).toBe(true);
+    });
+
+    it('emits the refusal from a run only for a row that serves the refused link', async () => {
+      vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        lean: vi.fn().mockResolvedValue(null),
+      } as any);
+      const officeUrl = 'https://medicine.yale.edu/fixture-excellence/';
+      const html = `
+        <html><head>
+          <link rel="canonical" href="${profileUrl}" />
+          <script type="application/ld+json" data-schema="ProfilePage">
+            {"@type": "ProfilePage", "mainEntity": {"@type": "Person",
+              "name": "Quinn Marlowfixture", "email": "quinn.example@yale.edu",
+              "jobTitle": "Professor"}}
+          </script>
+        </head>${cardProfileHtml(
+          'Office of Fixture Excellence',
+          officeUrl,
+          'Quinn Marlowfixture is a professor of medicine.',
+        ).replace(/<\/?html>/g, '')}</html>`;
+      const row = (slug: string, websiteUrl: string) => ({
+        _id: `entity-${slug}`,
+        name: 'Quinn Marlowfixture Research',
+        slug,
+        websiteUrl,
+        sourceUrls: [profileUrl],
+        leadUserProfileUrls: [profileUrl],
+        leadUsers: [{ fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.example@yale.edu' }],
+      });
+      const emitted: ObservationInput[] = [];
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => html),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => []),
+        vi.fn(async () => [
+          row('serves-the-office', officeUrl),
+          row('serves-its-own-lab', 'https://marlowfixturelab.example.org/'),
+        ]),
+      );
+
+      const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+      expect(result.notes).toContain('affiliated-organization-without-leadership=2');
+      expect(emitted).toEqual([
+        expect.objectContaining({
+          entityKey: 'serves-the-office',
+          field: 'refusedWebsiteUrl',
+          value: officeUrl,
+        }),
+      ]);
+    });
+
+    it('states the refusal as a refusedWebsiteUrl observation for the link', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Office of Fixture Excellence',
+          'https://medicine.yale.edu/fixture-excellence/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(
+        refusedResearchHomeWebsiteObservation(
+          { _id: '0123456789abcdef01234567', slug: shell.slug },
+          home,
+          profileUrl,
+        ),
+      ).toMatchObject({
+        entityType: 'researchEntity',
+        entityKey: shell.slug,
+        field: 'refusedWebsiteUrl',
+        value: 'https://medicine.yale.edu/fixture-excellence/',
+        sourceUrl: profileUrl,
+      });
+    });
   });
 
   it("admits a department profile's eponymous group button as the lab website", () => {
@@ -4561,6 +4746,7 @@ describe('officialProfilePiBackfillScraper', () => {
       kind: 'initiative' as const,
       entityType: 'INITIATIVE' as const,
       score: 1,
+      leadershipEvidenced: true,
     };
     const ownLab = {
       ...centre,
