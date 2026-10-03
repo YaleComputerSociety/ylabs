@@ -23,6 +23,7 @@ import {
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
+  servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   personSynthesisDescribesAnotherPerson,
 } from './researchHomeNameIdentityAuthority';
@@ -3111,6 +3112,19 @@ export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
     const cleaned = sanitizeServedResearchEntityName(next[field]);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_NAME_FIELDS) {
+    if (typeof next[field] !== 'string' || !next[field]) continue;
+    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
+      candidateName: next[field],
+      entityType: next.entityType,
+      kind: next.kind,
+    });
+    if (withoutFurniture && withoutFurniture !== next[field]) {
+      next[field] = withoutFurniture;
       changed = true;
     }
   }

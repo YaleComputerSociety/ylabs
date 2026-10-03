@@ -19,6 +19,7 @@ import {
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
+import { isNavigationMenuPhrase } from './titleHygiene';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -660,6 +661,46 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
 }
 
+const HYPHEN_RESEARCH_SUFFIX_RE = /^(.*\S)\s+[-\u2013\u2014]\s*Research$/i;
+const PAGE_TITLE_SEPARATOR_RE = /\s+\|\s+/;
+const TRAILING_PLATFORM_WORD_RE =
+  /^(.*\S)\s+(?:git\s?hub|google\s+scholar|orcid|research\s?gate|linked\s?in)$/i;
+const NAMED_RESEARCH_HOME_RE = new RegExp(
+  `(?:\\S\\s+${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}$|^${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}\\s+(?:of|for|on|in)\\s+\\S)`,
+  'i',
+);
+
+/**
+ * The served name for a stored name that wears page furniture around a real
+ * identity, or `''` when the name needs no rewrite: a minted "<Person> - Research"
+ * becomes the person-scoped name for the row's type, a page-title " | <subtitle>"
+ * tail is dropped, and a platform word appended to a research home ("<Surname> Lab
+ * GitHub") is peeled. Each rewrite keeps the identity underneath and produces a value
+ * no rewrite matches again, so it is idempotent (#4372).
+ */
+export function servedResearchEntityNameWithoutPageFurniture(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): string {
+  const name = textValue(entity.candidateName);
+  if (!name) return '';
+  const personScopedName = (personName: string) =>
+    personScopedResearchEntityNameFromPersonName({ ...entity, candidateName: personName });
+  const hyphenHead = HYPHEN_RESEARCH_SUFFIX_RE.exec(name)?.[1];
+  if (hyphenHead) return personScopedName(hyphenHead);
+  const titleSegments = name.split(PAGE_TITLE_SEPARATOR_RE);
+  if (titleSegments.length > 1 && titleSegments[0]) {
+    return (
+      titleSegments.find((segment) => NAMED_RESEARCH_HOME_RE.test(segment)) ??
+      personScopedName(titleSegments[0])
+    );
+  }
+  const platformHead = TRAILING_PLATFORM_WORD_RE.exec(name)?.[1];
+  if (platformHead && NAMED_RESEARCH_HOME_RE.test(platformHead)) return platformHead;
+  return '';
+}
+
 const FACULTY_RESEARCH_NAME_SUFFIX_RE = /\s+faculty\s+research$/i;
 
 /**
@@ -1259,6 +1300,17 @@ export type HarvestedNameIdentityVerdict =
   | 'NON_IDENTIFYING_LABEL'
   | 'UNUSABLE';
 
+const LOWERCASE_URL_LEAF_NAME_RE = /^[a-z][a-z0-9_-]*$/;
+const CAPITALISED_SINGLE_WORD_RE = /^\p{Lu}\p{Ll}+$/u;
+const TRAILING_LAB_HEAD_NOUN_RE = /\s+(?:labs?|laborator(?:y|ies)|groups?)$/i;
+
+function isHarvestedPageFurnitureName(name: string, personName: unknown): boolean {
+  if (isNavigationMenuPhrase(name.replace(TRAILING_LAB_HEAD_NOUN_RE, ''))) return true;
+  if (LOWERCASE_URL_LEAF_NAME_RE.test(name)) return true;
+  if (!CAPITALISED_SINGLE_WORD_RE.test(name)) return false;
+  return personIdentityTokens(personName).includes(name.toLowerCase());
+}
+
 /**
  * Classifies a name harvested from a website linked off a person's profile.
  * `OWN_IDENTITY` is returned when the name carries the person's own name, or
@@ -1296,6 +1348,7 @@ export function classifyHarvestedResearchHomeName(args: {
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
+  if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {

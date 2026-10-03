@@ -46,6 +46,7 @@ import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import { personScopedResearchEntityNameFromPersonName } from '../utils/researchHomeNameIdentityAuthority';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
 import {
   detectProfileIdentityRisk,
@@ -377,7 +378,14 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
   const surname = (owner.lname || '').trim();
   const fname = (owner.fname || '').trim();
   if (kind === 'individual') {
-    if (fname && surname) return `${fname} ${surname} - Research`;
+    if (fname && surname) {
+      return (
+        personScopedResearchEntityNameFromPersonName({
+          candidateName: `${fname} ${surname}`,
+          kind,
+        }) || `${fname} ${surname} Faculty Research`
+      );
+    }
     if (surname) return `${surname} Research`;
     return owner.netid ? `${owner.netid} Research` : 'Research';
   }

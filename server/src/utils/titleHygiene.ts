@@ -58,6 +58,12 @@ const navMenuPhrasePattern = new RegExp(
   'gi',
 );
 
+const NAV_MENU_PHRASE_SET = new Set(NAV_MENU_PHRASES);
+
+export function isNavigationMenuPhrase(value: string | null | undefined): boolean {
+  return NAV_MENU_PHRASE_SET.has(normalizeTitleWhitespace(value).toLowerCase());
+}
+
 const breadcrumbSeparatorPattern = /[>»›•·]/g;
 
 function concatenatedWordRunCount(value: string): number {

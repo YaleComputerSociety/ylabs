@@ -123,6 +123,7 @@ const MIN_LLM_PAGE_TEXT_CHARS = 120;
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
 // (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
 const LAB_NAME_CONFIDENCE = 0.95;
+export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v1';
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
@@ -1255,6 +1256,28 @@ function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuar
   return null;
 }
 
+function extractedFullDescription(
+  extraction: Pick<DescriptionExtraction, 'fullDescription'>,
+  context: ExtractedPageIdentityContext,
+): string {
+  return normalizeKnownDescriptionAcronyms(
+    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
+  );
+}
+
+function bodyDescribesAnotherOrganization(
+  fullDescription: string,
+  context: ExtractedPageIdentityContext,
+): boolean {
+  return (
+    isPersonScopedResearchEntity(context) &&
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description: fullDescription,
+      slug: context.entityKey,
+    })
+  );
+}
+
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
   context: ExtractedPageIdentityContext & { entityId?: string },
@@ -1286,9 +1309,7 @@ export function describeDescriptionExtraction(
     return refusedBy('subject_not_named_entity');
   }
 
-  const fullDescription = normalizeKnownDescriptionAcronyms(
-    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
-  );
+  const fullDescription = extractedFullDescription(extraction, context);
   if (!fullDescription) return { observations: [] };
   const contentRefusal = fullDescriptionContentRefusal(fullDescription);
   if (contentRefusal) return refusedBy(contentRefusal);
@@ -1306,13 +1327,7 @@ export function describeDescriptionExtraction(
   // this context, and the page's name must not stand in for it: the subject and the
   // page name come from the same page, so they always agree and the check would
   // always clear itself.
-  if (
-    isPersonScopedResearchEntity(context) &&
-    personScopedResearchEntityBodyDescribesAnotherOrganization({
-      description: fullDescription,
-      slug: context.entityKey,
-    })
-  ) {
+  if (bodyDescribesAnotherOrganization(fullDescription, context)) {
     return refusedBy('another_organization_body');
   }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
@@ -1339,19 +1354,101 @@ export function describeDescriptionExtraction(
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
 
   if (labName && pageAttribution === 'THIS_ENTITY') {
-    const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
-    observations.push({ ...nameBase, field: 'name', value: labName });
-    observations.push({ ...nameBase, field: 'displayName', value: labName });
-    // A brand adopted without its type leaves the row labelled "Faculty Research"
-    // while carrying a laboratory's name, which is the divergence a since-deleted
-    // hand-judged list was patching one row at a time (#2685, #3675). Only a person-scoped row is re-typed: an organization name is the
-    // right name for an organization-shaped row, so there is nothing to correct.
-    if (namesASelfDeclaredLaboratory(labName) && isPersonScopedResearchEntity(context)) {
-      observations.push({ ...nameBase, field: 'entityType', value: 'LAB' });
-      observations.push({ ...nameBase, field: 'kind', value: 'lab' });
-    }
+    observations.push(...labNameObservations(labName, base, context));
   }
   return { observations };
+}
+
+function labNameObservations(
+  labName: string,
+  base: Omit<ObservationInput, 'field' | 'value'>,
+  context: ExtractedPageIdentityContext,
+): ObservationInput[] {
+  const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
+  const observations: ObservationInput[] = [
+    { ...nameBase, field: 'name', value: labName },
+    { ...nameBase, field: 'displayName', value: labName },
+  ];
+  // A brand adopted without its type leaves the row labelled "Faculty Research"
+  // while carrying a laboratory's name, which is the divergence a since-deleted
+  // hand-judged list was patching one row at a time (#2685, #3675). Only a person-scoped row is re-typed: an organization name is the
+  // right name for an organization-shaped row, so there is nothing to correct.
+  if (namesASelfDeclaredLaboratory(labName) && isPersonScopedResearchEntity(context)) {
+    observations.push({ ...nameBase, field: 'entityType', value: 'LAB' });
+    observations.push({ ...nameBase, field: 'kind', value: 'lab' });
+  }
+  return observations;
+}
+
+const PAGE_HEADING_CHROME_SUFFIX_RE =
+  /\s*[-\u2013\u2014|:\u00b7\u2022]\s*(?:home(?:\s*page)?|welcome|main\s+page)\s*$/i;
+const PAGE_HEADING_CHROME_PREFIX_RE =
+  /^\s*(?:home(?:\s*page)?|welcome)\s*[-\u2013\u2014|:\u00b7\u2022]\s*/i;
+
+const comparableHeadingText = (value: string): string =>
+  ` ${value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/^\s*the\s+/, '')
+    .trim()} `;
+
+export function pageIdentityHeadings(html: string): string[] {
+  const $ = cheerio.load(html);
+  return [
+    $('title').first().text(),
+    $('meta[property="og:site_name"]').attr('content'),
+    $('h1').first().text(),
+  ]
+    .map((heading) =>
+      textValue(heading)
+        .replace(PAGE_HEADING_CHROME_SUFFIX_RE, '')
+        .replace(PAGE_HEADING_CHROME_PREFIX_RE, '')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+export function labNameIsStatedInPageHeadings(labName: string, html: string): boolean {
+  const target = comparableHeadingText(labName);
+  if (!target.trim()) return false;
+  return pageIdentityHeadings(html).some((heading) =>
+    comparableHeadingText(heading).includes(target),
+  );
+}
+
+/**
+ * The page's own name, emitted whatever became of its description (#4370). The
+ * description screens cannot run without a description, so the name has to be
+ * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead.
+ */
+export function pageStatedLabNameObservations(
+  extraction: Pick<DescriptionExtraction, 'name' | 'subject' | 'fullDescription'>,
+  context: ExtractedPageIdentityContext & { entityId?: string },
+  pageHtml: string,
+): ObservationInput[] {
+  if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
+  if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
+    return [];
+  }
+  if (context.institutionLandingUrl === true) return [];
+  if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
+  const labName = usefulLabName(extraction.name);
+  if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
+  if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
+  const fullDescription = extractedFullDescription(extraction, context);
+  if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
+  return labNameObservations(
+    labName,
+    {
+      entityType: 'researchEntity',
+      entityId: context.entityId,
+      entityKey: context.entityKey,
+      sourceUrl: context.sourceUrl,
+    },
+    context,
+  );
 }
 
 /**
@@ -1927,6 +2024,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           this.model,
           this.cardModel,
           CARD_SYNTHESIS_PROMPT_HASH,
+          LAB_NAME_EMISSION_CONTRACT,
         );
         const storedContentHash = ctx.options.forceLlm
           ? undefined
@@ -2112,6 +2210,30 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
 
+        const pageNameRefused =
+          guardRefusal === 'another_persons_lab' || guardRefusal === 'another_organization_body';
+        const pageStatedNameObservations =
+          groundedLlmExtraction &&
+          !pageNameRefused &&
+          !observations.some((observation) => observation.field === 'name')
+            ? pageStatedLabNameObservations(
+                groundedLlmExtraction,
+                {
+                  ...identity,
+                  sourceUrl: primaryPage.url,
+                  sharedEvidenceUrl: isSharedEvidenceUrl(
+                    primaryPage.url,
+                    identityCorpus.sharedUrls ?? EMPTY_SET,
+                  ),
+                  institutionLandingUrl: isInstitutionSectionLandingUrl(
+                    primaryPage.url,
+                    identityCorpus.institutionalHosts ?? EMPTY_SET,
+                  ),
+                },
+                primaryPage.html,
+              )
+            : [];
+
         if (observations.length === 0) {
           // No usable description this run, but grounded methods (e.g. derived
           // from the stored description when the live page is an empty shell)
@@ -2143,6 +2265,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             hashObservations,
             slotAttestation,
           );
+          const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
           if (methods.length > 0 && !foreignLabPage) {
             const methodsObservation: ObservationInput = {
               entityType: 'researchEntity',
@@ -2153,8 +2276,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               field: 'methods',
               value: methods,
             };
-            await ctx.emit([methodsObservation, ...attestedHashObservations]);
-            observationCount += 1;
+            await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
+            observationCount += 1 + nameObservations.length;
+            entitiesObserved += 1;
+          } else if (nameObservations.length > 0) {
+            await ctx.emit([...nameObservations, ...attestedHashObservations]);
+            observationCount += nameObservations.length;
             entitiesObserved += 1;
           } else {
             await ctx.emit(attestedHashObservations);
@@ -2162,8 +2289,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           return;
         }
 
-        const { observations: withCard, cardCallFailed } =
-          await this.withSynthesizedCard(observations);
+        const { observations: withCard, cardCallFailed } = await this.withSynthesizedCard([
+          ...observations,
+          ...pageStatedNameObservations,
+        ]);
         // This lane's OWN last description, not `lab.fullDescription`: the materialized field can
         // hold another lane's winning prose, and the bound asks whether re-reading produced the
         // same prose THIS lane already failed to synthesize a card from. Read before emitting, so
