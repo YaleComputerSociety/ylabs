@@ -1,3 +1,5 @@
+name: ylabs
+
 services:
   meilisearch:
     image: getmeili/meilisearch:v1.13

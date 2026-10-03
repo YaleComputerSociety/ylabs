@@ -189,7 +189,7 @@ The app sets `query parser` to `simple` explicitly, so a query value is a string
 A route param is typed `string | string[]` because a `*name` wildcard captures segments, so read a named param with `routeParam` from `server/src/utils/routeParams.ts`, which answers `''` for anything that is not a single string.
 
 The CORS policy is an allowlist in every runtime.
-`allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward) talk to the API with credentials.
+`allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward, with an API port from `4000` upward) talk to the API with credentials.
 Nothing reflects an arbitrary `Origin`, so an allowlist entry is the only way in from a browser.
 
 ### Static client files
