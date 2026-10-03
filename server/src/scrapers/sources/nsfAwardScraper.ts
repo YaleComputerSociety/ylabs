@@ -483,7 +483,13 @@ export class NsfAwardScraper implements IScraper {
     if (incompleteReason) {
       const notes = `NSF award window incomplete: ${incompleteReason}; ${windowCounts}; failed closed with no writes rather than undercount grants`;
       ctx.log(notes);
-      return { observationCount: 0, entitiesObserved: 0, notes, partialFailures: [notes] };
+      return {
+        observationCount: 0,
+        entitiesObserved: 0,
+        notes,
+        partialFailures: [notes],
+        failedClosed: true,
+      };
     }
 
     // 2. Group by PI.

@@ -253,7 +253,7 @@ export class ScraperOrchestrator {
       }
       const status: ReturnedScrapeRunStatus = interrupted
         ? 'interrupted'
-        : barrenStreakFailure || barrenUnitFailures.length > 0
+        : result.failedClosed || barrenStreakFailure || barrenUnitFailures.length > 0
           ? 'failure'
           : errors.length === 0
             ? 'success'

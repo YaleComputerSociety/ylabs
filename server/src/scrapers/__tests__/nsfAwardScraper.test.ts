@@ -490,6 +490,7 @@ describe('NsfAwardScraper.run', () => {
     expect(result.notes).toMatch(/fetched 50 of 60 reported/);
     expect(result.notes).toMatch(/failed closed with no writes/);
     expect(result.partialFailures).toEqual([result.notes]);
+    expect(result.failedClosed).toBe(true);
   });
 
   it('recovers a transiently failed page by retrying it', async () => {
@@ -511,6 +512,7 @@ describe('NsfAwardScraper.run', () => {
 
     expect(result.entitiesObserved).toBe(26);
     expect(result.partialFailures).toBeUndefined();
+    expect(result.failedClosed).toBeUndefined();
     expect(result.notes).toMatch(/fetched 26 of 26 reported/);
   });
 

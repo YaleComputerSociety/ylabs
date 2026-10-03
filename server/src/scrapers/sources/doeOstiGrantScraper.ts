@@ -386,7 +386,13 @@ export class DoeOstiGrantScraper implements IScraper {
     if (incompleteReason) {
       const notes = `DOE OSTI window incomplete: ${incompleteReason}; read ${windowCounts}; failed closed, no observations emitted`;
       ctx.log(notes);
-      return { observationCount: 0, entitiesObserved: 0, notes, partialFailures: [notes] };
+      return {
+        observationCount: 0,
+        entitiesObserved: 0,
+        notes,
+        partialFailures: [notes],
+        failedClosed: true,
+      };
     }
 
     ctx.log(`Collected ${records.length} in-window technical-report record(s)`);

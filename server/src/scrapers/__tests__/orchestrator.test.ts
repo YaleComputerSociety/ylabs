@@ -450,6 +450,37 @@ describe('ScraperOrchestrator', () => {
       expect(persistedSet()?.notes).toBe('source window empty');
       consoleError.mockRestore();
     });
+
+    it('fails a run whose lane failed closed, keeping its notes and errors', async () => {
+      const notes = 'window incomplete: page 2 unreadable after retries; failed closed';
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          return {
+            observationCount: 0,
+            entitiesObserved: 0,
+            notes,
+            partialFailures: [notes],
+            failedClosed: true,
+          };
+        },
+      });
+      const outcome = await orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+
+      expect(outcome.status).toBe('failure');
+      expect(persistedSet()?.status).toBe('failure');
+      expect(persistedSet()?.notes).toBe(notes);
+      expect(
+        (persistedSet() as { errors?: Array<{ message: string }> }).errors?.map((e) => e.message),
+      ).toEqual([notes]);
+    });
   });
 
   it('records the frame a crash came from, not only its message (#3891)', async () => {

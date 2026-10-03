@@ -363,6 +363,7 @@ describe('DoeOstiGrantScraper.run', () => {
     expect(result.notes).toMatch(/window incomplete: page 2 unreadable/);
     expect(result.notes).toMatch(/100 in-window record\(s\) across 1 page\(s\)/);
     expect(result.partialFailures).toEqual([result.notes]);
+    expect(result.failedClosed).toBe(true);
   });
 
   it('recovers a transiently failed page by retrying it', async () => {
@@ -383,6 +384,7 @@ describe('DoeOstiGrantScraper.run', () => {
 
     expect(emitted.length).toBeGreaterThan(0);
     expect(result.partialFailures).toBeUndefined();
+    expect(result.failedClosed).toBeUndefined();
   });
 
   it('honors --limit by capping the number of PIs processed', async () => {
