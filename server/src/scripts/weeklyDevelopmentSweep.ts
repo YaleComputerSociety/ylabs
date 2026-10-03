@@ -42,7 +42,7 @@ import {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-async function heldSweepSourceLocks(): Promise<string[]> {
+export async function heldSweepSourceLocks(): Promise<string[]> {
   const names = [...RESEARCH_SWEEP_SOURCES, ...FELLOWSHIP_SWEEP_SOURCES].map(
     (source) => source.name,
   );

@@ -378,6 +378,69 @@ Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preser
 The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
+## One-Command Promotion
+
+The weekly runner does all the scraping, observation, and materialization in Development.
+Promotion only moves that result: `yarn promote:beta` moves Development into Beta, and `yarn promote:production` moves Beta into Production.
+Both are operator-triggered, run from a laptop, and compose the commands Phases 2 to 5 describe, which stay below as the reference for what each one runs and for running a step by hand.
+
+### What `yarn promote:beta` does
+
+1. Reads the newest `weekly_sweep_runs` row in Development, or the one `--weekly-run <id>` names, and refuses unless it `succeeded`, recorded no code drift or refusal, ran both modes with a summary, and finished within the last 8 days.
+`--allow-without-weekly-run` skips this check for a Development refreshed by a laptop sweep, which writes no row.
+2. Refuses while any sweep source holds a live scrape job lock, because a mirror of a Development that is being written copies a moving corpus.
+3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.
+4. Checks the Render operator service through the Render API: it must exist, be running, deploy `beta`, and use the repository root as its root directory.
+5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
+6. Applies the mirror and stops unless it reports `"status": "applied"`.
+7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the strict trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+
+### What `yarn promote:production` does
+
+1. Runs `database:verify-names --pair beta-to-production`.
+2. Reads every open pull request to `main` and refuses while any carries the `hold` label, or when GitHub cannot be read.
+A draft does not hold the data copy, because `docs/release-process.md` copies data before the code merge.
+3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared synthetic-reference blocker, or a plan that would promote observations or `scrape_runs`.
+It prints the Production login carry; an `inserted` of 0 while Production has logged-in users is still a stop you read for yourself.
+4. Checks the Production operator service, which must deploy `main`.
+5. Requires the operator to type `production`; it never accepts `--yes`.
+6. Applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
+7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, rebuilds the Production index with `CONFIRM_PROD_SCRAPE=true`, and runs the Production smoke.
+It refuses when `PFR3_MEILI_RESTORE_POINT` is not set on that service.
+8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
+
+### Running them
+
+```bash
+yarn promote:beta --dry-run
+yarn promote:beta --backup-ref <beta-backup-reference>
+yarn promote:production --dry-run
+yarn promote:production
+```
+
+`--dry-run` runs every read and check, prints both plans, and starts no Render job; it exits nonzero and lists what an apply would refuse on.
+`--skip-remote-phase` applies the copy and stops, for when the gate and reindex must be run from the Render shell instead.
+Every child command writes its output to a numbered log file in the run's temporary directory, which the command prints first, and a failed step prints its last 20 lines.
+The Render job's own log is on the operator service's **One-off Jobs** page; its final line starts `PROMOTE_REMOTE_PHASE_RESULT` and names the failed step.
+A gate that fails on Beta leaves Beta's MongoDB holding the new copy while search keeps serving the previous index: fix the defect in Development and run `yarn promote:beta` again, never patch Beta.
+
+### What to set up once
+
+On the laptop, as environment variables or in `server/.env`, never committed:
+
+- `MONGODBURL` (Development), `BETA_MONGODBURL`, and for Production also `PRODUCTION_MONGODBURL`.
+- `RENDER_API_KEY`, a Render API key with access to the operator services.
+- `RENDER_BETA_OPERATOR_SERVICE_ID` and `RENDER_PRODUCTION_OPERATOR_SERVICE_ID`, each a `crn-` or `srv-` id.
+- An authenticated `gh` for the release-hold read.
+
+On Render, one operator service per environment, which is what the one-off job runs on.
+A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the web process must never hold.
+Create each as a Cron Job in the same region as that environment's private Meilisearch, from this repository with the root directory left empty, branch `beta` for Beta and `main` for Production, a Node runtime with the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), and a schedule that never matters, such as `0 0 1 1 *` with start command `true`.
+Give it `SCRAPER_ENV` (`beta` or `production`), `MONGODBURL` for that environment, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX` (`beta` or `prod`), `MEILISEARCH_WRITE_API_KEY`, and `OPENAI_API_KEY`, all as secrets, plus `PFR3_MEILI_RESTORE_POINT` on the Production one before each promotion.
+Its outbound ranges need the same Atlas access-list entry as any Render shell.
+The Production operator service deploys `main`, so `promote:remote-phase` reaches it only after the code promotion that carries this command.
+
 ## Phase 1: Development Sweep - Run Locally
 
 Complete the Source Reachability Preflight before running a full source.
@@ -518,6 +581,7 @@ Stop this phase if the report status is not `success`, materialization errors ar
 
 ## Phase 2: Development-to-Beta Mirror - Run Locally
 
+`yarn promote:beta` runs this phase and Phase 3; the steps below are what it runs.
 Run this phase only after the exhaustive Development sweep has succeeded and its data-quality review has been accepted.
 It is the only way data enters Beta.
 The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
@@ -604,6 +668,7 @@ A defect found on Beta is fixed in Development, verified there, and mirrored aga
 
 ## Phase 4: Beta-to-Production MongoDB Promotion - Run Locally
 
+`yarn promote:production` runs this phase and Phase 5; the steps below are what it runs.
 The current supported Production lane is an accepted Beta copy.
 It is not continuous replication.
 Run the promotion from a trusted operator environment with separate Beta and Production credentials.
@@ -774,7 +839,7 @@ The refresh is incomplete if any required artifact, restore point, or independen
 | Situation                                    | Action                                                                 |
 | -------------------------------------------- | ---------------------------------------------------------------------- |
 | Need more data for debugging                 | Run a larger Development scrape locally                                |
-| Development looks correct                    | Mirror it to Beta with `beta:refresh-from-development`                 |
+| Development looks correct                    | Run `yarn promote:beta`                                                |
 | Beta shows a data defect                     | Fix it in Development, verify there, and mirror again                  |
 | Beta search is stale                         | Re-gate, then reindex Beta from the Beta Render shell                  |
 | Beta gates fail                              | Stop, fix in Development, and mirror again                             |
