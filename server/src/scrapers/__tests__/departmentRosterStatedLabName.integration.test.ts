@@ -220,6 +220,15 @@ describe('dept-faculty-roster resolves a lab name the profile states the person 
     expect(again?.manuallyLockedFields ?? []).toEqual([]);
   });
 
+  it('adopts a stated name that ends its paragraph without punctuation before the next section', async () => {
+    withAdaProfile('<p>Dr. Fixture directs the Spindle Mechanics Lab</p>');
+    const entity = await scrapeAndResolve();
+    record('STATED_UNPUNCTUATED', entity);
+    expect(entity?.name).toBe('Spindle Mechanics Lab');
+    expect(entity?.entityType).toBe('LAB');
+    expect(entity?.manuallyLockedFields ?? []).toEqual([]);
+  });
+
   it('outranks the composed person-named lab when the profile also links a lab website', async () => {
     withAdaProfile(
       '<p>Ada Fixture studies cell division. Dr. Fixture directs the Cytoskeleton Dynamics Lab.</p><p><a href="https://fixturelab.org/">Lab website</a></p>',
@@ -259,6 +268,10 @@ describe('dept-faculty-roster resolves a lab name the profile states the person 
     [
       'a core facility laboratory',
       '<p>Ada Fixture studies cell division. Dr. Fixture directs the Flow Cytometry Core Laboratory.</p>',
+    ],
+    [
+      'a facility noun after a source line break inside the paragraph',
+      '<p>Ada Fixture studies cell division. Dr. Fixture directs the Proteomics Laboratory\n      core facility.</p>',
     ],
     [
       'two different labs',

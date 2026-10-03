@@ -177,6 +177,15 @@ describe('a lab name the profile does not state as the person own lab', () => {
     expect(statedFor('Dr. Fixture directs the Spindle Mechanics Lab at Yale.')).toBe(
       'Spindle Mechanics Lab',
     );
+    expect(
+      statedFor('Dr. Fixture directs the Spindle Mechanics Lab (SML), which studies cells.'),
+    ).toBe('Spindle Mechanics Lab');
+    expect(statedFor('"Dr. Fixture directs the Spindle Mechanics Lab" opens the page.')).toBe(
+      'Spindle Mechanics Lab',
+    );
+    expect(statedFor('Dr. Fixture directs the Spindle Mechanics Lab\nSpindles divide cells.')).toBe(
+      'Spindle Mechanics Lab',
+    );
   });
 
   it('states nothing when the page states two different labs', () => {
@@ -227,5 +236,48 @@ describe('a lab name the profile does not state as the person own lab', () => {
     ).observations;
     const name = observations.find((observation) => observation.field === 'name');
     expect(name?.value).toBe('Ada Fixture Lab');
+  });
+});
+
+describe('a stated lab name the sentence does not end on', () => {
+  it.each([
+    'Dr. Fixture directs the Proteomics Laboratory core facility.',
+    'Dr. Fixture directs the Spindle Lab-based imaging program.',
+    "Dr. Fixture directs the Spindle Mechanics Lab's imaging work.",
+  ])('refuses a head noun the name continues past: %s', (text) => {
+    expect(statedFor(text)).toBeUndefined();
+  });
+
+  it('adopts a name the sentence ends or continues the clause after', () => {
+    expect(statedFor('Dr. Fixture directs the Spindle Mechanics Lab at Yale.')).toBe(
+      'Spindle Mechanics Lab',
+    );
+    expect(statedFor('Dr. Fixture directs the Spindle Mechanics Lab, which studies cells.')).toBe(
+      'Spindle Mechanics Lab',
+    );
+  });
+
+  it('states nothing when the person also leads a group of another name', () => {
+    expect(
+      statedFor(
+        'Dr. Fixture directs the Spindle Mechanics Lab. Dr. Fixture also leads the Fixture Research Group.',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not adopt a teaching or instructional facility', () => {
+    expect(statedFor('Dr. Fixture directs the Undergraduate Teaching Laboratory.')).toBeUndefined();
+    expect(statedFor('Dr. Fixture directs the Instructional Microscopy Lab.')).toBeUndefined();
+    expect(statedFor('Dr. Fixture directs the Animal Lab.')).toBeUndefined();
+  });
+
+  it('adopts a research lab named for its method', () => {
+    expect(statedFor('Dr. Fixture directs the Molecular Simulation Laboratory.')).toBe(
+      'Molecular Simulation Laboratory',
+    );
+  });
+
+  it('does not read a lab the person runs as one the person leads', () => {
+    expect(statedFor('Dr. Fixture runs the Spindle Mechanics Lab.')).toBeUndefined();
   });
 });

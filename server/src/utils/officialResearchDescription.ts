@@ -7,7 +7,10 @@ import {
   selectResearchHomeDescription,
   type DescriptionEntityKind,
 } from './researchHomeDescriptionSelection';
-import { extractElementTextWithBlockSeparators } from '../scrapers/utils/htmlText';
+import {
+  extractElementTextWithBlockSeparators,
+  extractElementTextWithLineBreaks,
+} from '../scrapers/utils/htmlText';
 import { removeProfilePublicityRegions } from '../scrapers/utils/profilePublicityRegions';
 
 export interface OfficialResearchDescription {
@@ -79,14 +82,29 @@ function jsonLdDescriptions($: cheerio.CheerioAPI): string[] {
   return descriptions.filter(Boolean);
 }
 
-export function collectVisibleDescriptionCandidates(html: string): string[] {
-  const $ = cheerio.load(html);
-  const structuredDescriptions = jsonLdDescriptions($);
+function removeNonDescriptionRegions($: cheerio.CheerioAPI): void {
   $('script, style, noscript, svg, iframe, nav, header, footer, aside, form, button').remove();
   // `CONTENT_BLOCK_SELECTORS` includes `section`, so a profile page's news region is a
   // candidate block and each news item's own paragraph competes to become the served
   // description (#3184).
   removeProfilePublicityRegions($);
+}
+
+/**
+ * The page text a description is drawn from, with a line break at every block
+ * boundary, so a reader can tell a block that ends on a name from a sentence
+ * that continues past it.
+ */
+export function visibleDescriptionTextWithLineBreaks(html: string): string {
+  const $ = cheerio.load(html);
+  removeNonDescriptionRegions($);
+  return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0]);
+}
+
+export function collectVisibleDescriptionCandidates(html: string): string[] {
+  const $ = cheerio.load(html);
+  const structuredDescriptions = jsonLdDescriptions($);
+  removeNonDescriptionRegions($);
 
   const candidates: string[] = [
     ...structuredDescriptions,
