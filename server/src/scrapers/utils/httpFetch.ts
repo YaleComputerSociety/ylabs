@@ -10,7 +10,11 @@
  */
 import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
-import { HostConcurrencyLimiter, hostnameForLimiter } from './hostConcurrencyLimiter';
+import {
+  HostConcurrencyLimiter,
+  hostnameForLimiter,
+  resolveHostRetryBudget,
+} from './hostConcurrencyLimiter';
 import {
   benchmarkCacheRead,
   benchmarkCacheWrite,
@@ -86,6 +90,7 @@ export interface RetryPolicyOptions {
   maxRetries?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
+  maxTotalBackoffMs?: number;
   retryableStatuses?: ReadonlySet<number>;
   sleep?: (ms: number) => Promise<void>;
   jitter?: () => number;
@@ -100,28 +105,68 @@ export interface FetchPageWithPolicyOptions extends RetryPolicyOptions {
   assertUrl?: (url: string) => Promise<{ toString(): string }>;
 }
 
-interface ResolvedRetryPolicy {
+export const DEFAULT_MAX_RETRIES = 3;
+export const DEFAULT_MAX_BACKOFF_MS = 8_000;
+
+export interface ResolvedRetryPolicy {
   maxRetries: number;
+  maxTransportRetries: number;
+  maxTotalBackoffMs: number;
   retryable: ReadonlySet<number>;
   sleep: (ms: number) => Promise<void>;
   backoffMs: (attempt: number) => number;
   statusRetryDelayMs: (attempt: number, retryAfterMs: number | undefined) => number;
 }
 
-function resolveRetryPolicy(options: RetryPolicyOptions): ResolvedRetryPolicy {
+export function resolveRetryPolicy(
+  options: RetryPolicyOptions,
+  host?: string,
+): ResolvedRetryPolicy {
+  const hostBudget = resolveHostRetryBudget(host);
   const jitter = options.jitter ?? Math.random;
   const base = options.baseBackoffMs ?? 500;
-  const maxBackoff = options.maxBackoffMs ?? 8_000;
+  const maxBackoff = options.maxBackoffMs ?? hostBudget?.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
   const backoffMs = (attempt: number): number =>
     Math.min(maxBackoff, base * 2 ** attempt + Math.floor(jitter() * base));
   return {
-    maxRetries: options.maxRetries ?? 3,
+    maxRetries: options.maxRetries ?? hostBudget?.maxRetries ?? DEFAULT_MAX_RETRIES,
+    maxTransportRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
+    maxTotalBackoffMs:
+      options.maxTotalBackoffMs ?? hostBudget?.maxTotalBackoffMs ?? Number.POSITIVE_INFINITY,
     retryable: options.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
     sleep: options.sleep ?? realSleep,
     backoffMs,
     statusRetryDelayMs: (attempt, retryAfterMs) =>
       retryAfterMs !== undefined ? Math.min(retryAfterMs, maxBackoff) : backoffMs(attempt),
   };
+}
+
+class RetryBackoffBudget {
+  private retries = 0;
+  private transportRetries = 0;
+  private spentMs = 0;
+
+  constructor(readonly policy: ResolvedRetryPolicy) {}
+
+  async waitAfterStatusRefusal(attempt: number, retryAfterMs?: number): Promise<boolean> {
+    if (this.retries >= this.policy.maxRetries) return false;
+    return this.wait(this.policy.statusRetryDelayMs(attempt, retryAfterMs));
+  }
+
+  async waitAfterTransportFailure(attempt: number): Promise<boolean> {
+    if (this.retries >= this.policy.maxRetries) return false;
+    if (this.transportRetries >= this.policy.maxTransportRetries) return false;
+    this.transportRetries += 1;
+    return this.wait(this.policy.backoffMs(attempt));
+  }
+
+  private async wait(delayMs: number): Promise<boolean> {
+    if (this.spentMs + delayMs > this.policy.maxTotalBackoffMs) return false;
+    this.retries += 1;
+    this.spentMs += delayMs;
+    await this.policy.sleep(delayMs);
+    return true;
+  }
 }
 
 function parseRetryAfterMs(header: unknown): number | undefined {
@@ -249,8 +294,7 @@ async function fetchPageLive(
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
   const request = options.request ?? defaultAxiosRequest;
-  const { maxRetries, retryable, sleep, backoffMs, statusRetryDelayMs } =
-    resolveRetryPolicy(options);
+  const policy = resolveRetryPolicy(options, host);
 
   const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
   const config: HttpRequestConfig = {
@@ -262,15 +306,13 @@ async function fetchPageLive(
     ...submission,
   };
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+  const backoff = new RetryBackoffBudget(policy);
+  for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
       result = await limiter.run(host, () => request(safeUrl, config));
     } catch (error) {
-      lastError = error;
-      if (attempt >= maxRetries) throw error;
-      await sleep(backoffMs(attempt));
+      if (!(await backoff.waitAfterTransportFailure(attempt))) throw error;
       continue;
     }
     if (result.status >= 200 && result.status < 300) {
@@ -281,17 +323,19 @@ async function fetchPageLive(
         ...(result.setCookies?.length ? { setCookies: result.setCookies } : {}),
       };
     }
-    if (retryable.has(result.status) && attempt < maxRetries) {
-      await sleep(statusRetryDelayMs(attempt, result.retryAfterMs));
+    if (
+      policy.retryable.has(result.status) &&
+      (await backoff.waitAfterStatusRefusal(attempt, result.retryAfterMs))
+    ) {
       continue;
     }
     throw new HttpStatusError(result.status);
   }
-  throw lastError ?? new Error('fetchPageWithPolicy exhausted retries');
 }
 
 interface HttpStatusRejection {
   response: { status: number; headers?: Record<string, unknown> };
+  config?: { url?: string; baseURL?: string };
 }
 
 function httpStatusRejection(error: unknown): HttpStatusRejection | undefined {
@@ -305,17 +349,22 @@ export async function retryOnRetryableStatus<T>(
   send: () => Promise<T>,
   options: RetryPolicyOptions = {},
 ): Promise<T> {
-  const { maxRetries, retryable, sleep, statusRetryDelayMs } = resolveRetryPolicy(options);
+  let backoff: RetryBackoffBudget | undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await send();
     } catch (error) {
       const rejection = httpStatusRejection(error);
-      if (!rejection || !retryable.has(rejection.response.status) || attempt >= maxRetries) {
-        throw error;
-      }
+      if (!rejection) throw error;
+      backoff ??= new RetryBackoffBudget(
+        resolveRetryPolicy(
+          options,
+          hostnameForLimiter(rejection.config?.url, rejection.config?.baseURL),
+        ),
+      );
+      if (!backoff.policy.retryable.has(rejection.response.status)) throw error;
       const retryAfterMs = parseRetryAfterMs(rejection.response.headers?.['retry-after']);
-      await sleep(statusRetryDelayMs(attempt, retryAfterMs));
+      if (!(await backoff.waitAfterStatusRefusal(attempt, retryAfterMs))) throw error;
     }
   }
 }
