@@ -31,6 +31,7 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 import { ScraperOrchestrator } from '../orchestrator';
 import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../interruptCleanup';
 import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
+import { SCRAPE_RUN_NOTES_MAX_LENGTH, SCRAPE_RUN_NOTES_TRUNCATED_SUFFIX } from '../scrapeRunNotes';
 import {
   SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
   ScrapeRunTerminalWriteError,
@@ -383,6 +384,102 @@ describe('ScraperOrchestrator', () => {
       });
 
       expect(persistedSet()?.metrics).toBeUndefined();
+    });
+  });
+
+  describe('a run keeps the account its lane gave (#3893)', () => {
+    const persistedSet = () =>
+      (
+        mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+          $set?: { status?: string; notes?: string };
+        }
+      ).$set;
+
+    const runWithNotes = async (notes: string | undefined) => {
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          return { observationCount: 0, entitiesObserved: 0, notes };
+        },
+      });
+      return orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+    };
+
+    it('stores the notes a lane returned on the run record', async () => {
+      await runWithNotes('rows enriched: 3 of 5; not attached: 2 have no existing research row');
+
+      expect(persistedSet()?.status).toBe('success');
+      expect(persistedSet()?.notes).toBe(
+        'rows enriched: 3 of 5; not attached: 2 have no existing research row',
+      );
+    });
+
+    it('bounds stored notes and marks the cut', async () => {
+      await runWithNotes('x'.repeat(SCRAPE_RUN_NOTES_MAX_LENGTH * 3));
+
+      const notes = persistedSet()?.notes ?? '';
+      expect(notes.length).toBe(SCRAPE_RUN_NOTES_MAX_LENGTH);
+      expect(notes.endsWith(SCRAPE_RUN_NOTES_TRUNCATED_SUFFIX)).toBe(true);
+    });
+
+    it('stores no notes key for a lane that returns none', async () => {
+      await runWithNotes(undefined);
+
+      expect(persistedSet()).not.toHaveProperty('notes');
+    });
+
+    it('stores the notes on a run the yield guard fails', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mocks.scrapeRunFind.mockReturnValue(
+        priorRuns([
+          { status: 'success', observationCount: 0 },
+          { status: 'success', observationCount: 0 },
+          { status: 'success', observationCount: 120 },
+        ]),
+      );
+      await runWithNotes('source window empty');
+
+      expect(persistedSet()?.status).toBe('failure');
+      expect(persistedSet()?.notes).toBe('source window empty');
+      consoleError.mockRestore();
+    });
+
+    it('fails a run whose lane failed closed, keeping its notes and errors', async () => {
+      const notes = 'window incomplete: page 2 unreadable after retries; failed closed';
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          return {
+            observationCount: 0,
+            entitiesObserved: 0,
+            notes,
+            partialFailures: [notes],
+            failedClosed: true,
+          };
+        },
+      });
+      const outcome = await orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+
+      expect(outcome.status).toBe('failure');
+      expect(persistedSet()?.status).toBe('failure');
+      expect(persistedSet()?.notes).toBe(notes);
+      expect(
+        (persistedSet() as { errors?: Array<{ message: string }> }).errors?.map((e) => e.message),
+      ).toEqual([notes]);
     });
   });
 

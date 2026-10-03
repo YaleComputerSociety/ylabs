@@ -61,6 +61,7 @@ import {
   type GrantEnrichmentTarget,
   type GrantPersonResolution,
 } from '../utils/grantEnrichmentTarget';
+import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
@@ -307,6 +308,7 @@ export interface DoeOstiGrantScraperDeps {
   researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
   lookbackYears?: number;
   now?: () => Date;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 function defaultPiResolver(canonicalName: string): ReturnType<PiResolver> {
@@ -343,17 +345,24 @@ export class DoeOstiGrantScraper implements IScraper {
 
     const records: OstiRecord[] = [];
     let reachedCutoff = false;
-    let fetchFailed = false;
+    let windowEnded = false;
+    let pagesRead = 0;
+    let failedPage: { page: number; error: string } | undefined;
     for (let page = 1; page <= MAX_PAGES && !reachedCutoff; page++) {
-      let pageRecords: OstiRecord[];
-      try {
-        pageRecords = await fetcher(page, ctx.options.useCache, this.name);
-      } catch (err: unknown) {
-        ctx.log(`fetch failed at page ${page}: ${sanitizeLogValue(err)} - failing closed`);
-        fetchFailed = true;
+      const outcome = await fetchGrantWindowPage(
+        () => fetcher(page, ctx.options.useCache, this.name),
+        { label: `DOE OSTI page ${page}`, sleep: this.deps.sleep, log: ctx.log },
+      );
+      if (outcome.status === 'failed') {
+        failedPage = { page, error: outcome.error };
         break;
       }
-      if (pageRecords.length === 0) break;
+      const pageRecords = outcome.value;
+      pagesRead++;
+      if (pageRecords.length === 0) {
+        windowEnded = true;
+        break;
+      }
       for (const record of pageRecords) {
         const published = parseOstiDate(record.publication_date);
         if (published && published.getTime() < cutoff.getTime()) {
@@ -362,14 +371,27 @@ export class DoeOstiGrantScraper implements IScraper {
         }
         records.push(record);
       }
-      if (pageRecords.length < PAGE_SIZE) break;
+      if (pageRecords.length < PAGE_SIZE) {
+        windowEnded = true;
+        break;
+      }
     }
 
-    if (fetchFailed && records.length === 0) {
+    const windowCounts = `${records.length} in-window record(s) across ${pagesRead} page(s)`;
+    const incompleteReason = failedPage
+      ? `page ${failedPage.page} unreadable after retries (${failedPage.error})`
+      : !reachedCutoff && !windowEnded
+        ? `page cap of ${MAX_PAGES} reached before the window ended`
+        : undefined;
+    if (incompleteReason) {
+      const notes = `DOE OSTI window incomplete: ${incompleteReason}; read ${windowCounts}; failed closed, no observations emitted`;
+      ctx.log(notes);
       return {
         observationCount: 0,
         entitiesObserved: 0,
-        notes: 'DOE OSTI unreachable - failed closed, no observations emitted',
+        notes,
+        partialFailures: [notes],
+        failedClosed: true,
       };
     }
 
@@ -417,7 +439,7 @@ export class DoeOstiGrantScraper implements IScraper {
       observationCount: totalObs,
       entitiesObserved: groups.length,
       notes:
-        `DOE OSTI technical reports: ${records.length} in-window, ` +
+        `DOE OSTI technical reports: ${windowCounts}, ` +
         `${resolved.length} attributed to ${allGroups.length} PI(s); ` +
         `researcher refusals count reports, row outcomes count PIs; ` +
         grantAttachSummary(attach) +

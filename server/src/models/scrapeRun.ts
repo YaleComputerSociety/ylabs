@@ -116,6 +116,10 @@ const scrapeRunSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
     },
+    notes: {
+      type: String,
+      required: false,
+    },
     errors: {
       type: [
         {

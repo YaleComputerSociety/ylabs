@@ -14,6 +14,7 @@ import { appendObservations, getSourceByName } from './observationStore';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
+import { boundedScrapeRunNotes } from './scrapeRunNotes';
 import {
   SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
   ScrapeRunTerminalWriteError,
@@ -252,13 +253,14 @@ export class ScraperOrchestrator {
       }
       const status: ReturnedScrapeRunStatus = interrupted
         ? 'interrupted'
-        : barrenStreakFailure || barrenUnitFailures.length > 0
+        : result.failedClosed || barrenStreakFailure || barrenUnitFailures.length > 0
           ? 'failure'
           : errors.length === 0
             ? 'success'
             : 'partial';
       if (!interrupted) {
         const finishedAt = new Date();
+        const runNotes = boundedScrapeRunNotes(result.notes);
         await writeScrapeRunTerminalStatus(
           () =>
             ScrapeRun.updateOne(
@@ -273,6 +275,7 @@ export class ScraperOrchestrator {
                   // The returned object wins key by key, because it is the lane's
                   // final word; anything only reported mid-run survives beside it.
                   metrics: runMetrics(reportedMetrics, result.metrics, evidenceCoverageImpact),
+                  ...(runNotes ? { notes: runNotes } : {}),
                   errors,
                 },
               },
