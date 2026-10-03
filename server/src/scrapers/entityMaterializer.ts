@@ -304,7 +304,6 @@ import {
 import {
   resolveResearcherIdForPersonName,
   type ResearcherPersonNameResolution,
-  type ResearcherPersonNameResolutionStatus,
 } from '../services/researcherPersonNameResolver';
 import {
   Researcher,
@@ -5670,12 +5669,14 @@ async function materializeUserIdentityToResearcher(
 
   let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
   let identityJoin: UserIdentityJoin | undefined = researcher ? 'account-netid' : undefined;
-  let personNameStatus: ResearcherPersonNameResolutionStatus | undefined;
+  let personNameHeldByNobody = false;
   if (!researcher && displayName) {
     const resolution = await resolveResearcherIdForPersonName(displayName, {
       netid: accountNetid ?? netid,
     });
-    personNameStatus = resolution.status;
+    personNameHeldByNobody =
+      resolution.status === 'absent' ||
+      (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
       researcher = await Researcher.findById(resolution.researcherId);
       if (researcher) identityJoin = 'person-name';
@@ -5757,10 +5758,13 @@ async function materializeUserIdentityToResearcher(
   // two wrong-person joins, so this path does not guess at names.
   //
   // Three conditions keep the mint from adding records nobody can use:
-  //   - Only `absent` may mint. `ambiguous` means the corpus already holds same-name
-  //     candidates, so minting would add one more, and `dedupeAccountlessResearcherShells`
-  //     cannot heal equal-tier same-name shells: every later pass would stay ambiguous
-  //     and mint again, while raising ambiguity for every other lane that resolves names.
+  //   - Only a name nobody holds may mint: `absent`, or `ambiguous` with every same-surname
+  //     candidate naming someone else (#4388). Any other `ambiguous` means the corpus
+  //     already holds candidates that could be this person, so minting would add one more,
+  //     and `dedupeAccountlessResearcherShells` cannot heal equal-tier same-name shells:
+  //     every later pass would stay ambiguous and mint again, while raising ambiguity for
+  //     every other lane that resolves names. A minted name resolves `matched` on the next
+  //     pass, so the wider reading still converges.
   //   - Only a key that ASSERTS an identity may mint, which is the `dept:<ns>:<slug>` shape
   //     `materializeInferredPiMembership` derives a name from, or an alias the directory
   //     maps to a real netid. #2763 lets the lead resolver read a `netid:<first>.<last>`
@@ -5786,7 +5790,7 @@ async function materializeUserIdentityToResearcher(
     const resolvableBack = Boolean(keyIdentity.name) || Boolean(resolvedNetid);
     const namedAsLead =
       Boolean(displayName) &&
-      personNameStatus === 'absent' &&
+      personNameHeldByNobody &&
       resolvableBack &&
       (await liveResearchEntityNamesUserKeyAsLead(attributionKey));
     if (!namedAsLead) {
