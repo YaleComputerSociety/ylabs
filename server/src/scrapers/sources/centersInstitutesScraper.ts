@@ -402,7 +402,7 @@ const DIRECTORSHIP_OF_NAMED_UNIT =
   /\bdirector\s+(?:of|for|at)\s+(?:the\s+)?([^,;]+?)(?:\s+and\s+|,|$)/i;
 const DIRECTORSHIP_COMMA_NAMED_UNIT = /\bdirector\s*,\s*([^,;]+)/i;
 const ORGANIZATION_NOUN =
-  /\b(?:center|centre|institute|program|programme|lab|laboratory|council|initiative|foundation|school|department|office|project|committee)\b/i;
+  /\b(?:center|centre|institute|institution|program|programme|lab|laboratory|council|initiative|foundation|school|department|office|project|committee)\b/i;
 
 function directorshipNamedUnit(clause: string): string | undefined {
   const ofUnit = clause.match(DIRECTORSHIP_OF_NAMED_UNIT)?.[1];
@@ -497,7 +497,7 @@ export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
  *   <p  class="teaser__text">Faculty Member, Department</p>
  * No profile URL is exposed in the listing.
  */
-export const wuTsaiExtractor: CenterExtractor = (html) => {
+export const wuTsaiExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
   $('.teaser__heading').each((_i, el) => {
@@ -507,7 +507,7 @@ export const wuTsaiExtractor: CenterExtractor = (html) => {
     // teaser__text lives in the same teaser__content sibling block
     const titleEl = heading.parent().find('.teaser__text').first();
     const title = titleEl.text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, title, role: inferRole(title) });
+    members.push({ name, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -609,7 +609,7 @@ export const viewsFieldNameExtractor: CenterExtractor = (html, ctx) => {
           : link.closest('tr');
     const title =
       row.find('.views-field-field-title .field-content').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -635,7 +635,7 @@ export const ispsExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       row.find('.field-name-field-team-member-creds').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -800,7 +800,7 @@ function collectPeopleCards(
       name,
       profileUrl,
       title: subheading || undefined,
-      role: inferRole(roleText),
+      role: inferRole(roleText, ctx.centerName),
     });
   });
 }
@@ -1022,7 +1022,7 @@ export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       card.find('.grid__user__job-title').first().text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -1098,7 +1098,7 @@ export const jacksonProfileItemExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       card.find('.profile-positions').first().text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
