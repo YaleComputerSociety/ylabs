@@ -904,7 +904,8 @@ Read `brokenLanes`, not `status`: `section-contract-broken`, `stale-publish-date
 | `centerAffiliationLLMExtractor.ts` | LLM extraction of the faculty explicitly named on a CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY official page for the heterogeneous long tail with no uniform roster; emits only `researchEntityRelationship` observations keyed by the center slug. The shared materializer resolves each name to an existing PI-led lab (`AFFILIATED_LAB`) or faculty-research-area entity and skips anyone who does not uniquely resolve, so hallucinated or ambiguous names never create an entity or edge. Never emits name-only member rows. Each read also emits a `centerRosterHealth` snapshot, so a claim two complete reads omit, and the page no longer names, retires through the centres pass (#4022). |
 
 A relationship edge cites the page its lane read: the materializer stores the top-level `sourceUrl` of the observation that won `targetEntityKey`, because no lane emits a `sourceUrl` or `evidenceQuote` field for a `researchEntityRelationship` (#4024).
-The same page is the `rosterProvenance.sourceUrl` of the PI membership the edge syncs onto a faculty research area it links.
+The edge syncs a PI membership onto a faculty research area it links only when that row holds no `PI` edge at all, archived or not, and the new edge's `rosterProvenance` carries the relationship lane's `sourceName` and that same page.
+A relationship lane asserts nothing about who leads the row, so a lead edge another lane owns is never re-upserted, and its `sourceName` and `sourceUrl` survive every center pass (#4020).
 An observation that carries no page leaves a stored citation alone rather than blanking it.
 
 #### Minting a center that only exists as a URL on somebody's faculty row

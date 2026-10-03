@@ -158,5 +158,51 @@ describe('a relationship cites the page its observation read (#4024)', () => {
       'target.id': area._id,
     }).lean()) as { rosterProvenance?: { sourceUrl?: string } } | null;
     expect(membership?.rosterProvenance?.sourceUrl).toBe(ROSTER_URL);
+    expect(membership?.rosterProvenance).toMatchObject({ sourceName: SOURCE_NAME });
+  });
+
+  it("keeps another lane's provenance on the lead edge a faculty research area already holds (#4020)", async () => {
+    const area = await ResearchEntity.create({
+      slug: FACULTY_AREA_SLUG,
+      name: 'Synthetic Cited Person Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Synthetic Cited Person',
+      profileLinks: [],
+      archived: false,
+    });
+    const owningProvenance = {
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: 'https://fixture-profile.example.edu/person',
+      observedAt: new Date('2026-09-01T00:00:00Z'),
+    };
+    await RoleAssignment.create({
+      personId: researcher._id,
+      target: { kind: 'RESEARCH_ENTITY', id: area._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+      reviewStatus: 'UNREVIEWED',
+      rosterProvenance: owningProvenance,
+    });
+
+    const result = await observeAndMaterialize(
+      relationshipObservations(ROSTER_URL, FACULTY_AREA_SLUG, FACULTY_AREA_ENTITY_KEY),
+      FACULTY_AREA_ENTITY_KEY,
+    );
+
+    expect(result.skipped).toBeUndefined();
+    const leads = (await RoleAssignment.find({
+      'target.id': area._id,
+      role: 'PI',
+    }).lean()) as Array<{
+      rosterProvenance?: Record<string, unknown>;
+    }>;
+    expect(leads).toHaveLength(1);
+    expect(leads[0].rosterProvenance).toEqual(owningProvenance);
   });
 });

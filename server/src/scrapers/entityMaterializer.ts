@@ -3782,6 +3782,20 @@ interface ResolvedRelationshipMaterializationDeps {
 
 interface ProfileBackedFacultyResearchAreaMemberDeps {
   researcherModel?: Pick<typeof Researcher, 'findById'>;
+  roleAssignmentModel?: Pick<typeof RoleAssignment, 'findOne'>;
+}
+
+async function heldLeadPersonId(
+  roleAssignmentModel: Pick<typeof RoleAssignment, 'findOne'>,
+  researchEntityId: string,
+): Promise<string | undefined> {
+  const targetId = toMaterializerObjectId(researchEntityId);
+  if (!targetId) return undefined;
+  const held = (await roleAssignmentModel
+    .findOne({ 'target.kind': 'RESEARCH_ENTITY', 'target.id': targetId, role: 'PI' })
+    .select('personId')
+    .lean()) as { personId?: unknown } | null;
+  return held ? normalizeMaterializerObjectId(held.personId) || '' : undefined;
 }
 
 function normalizeResearchEntityName(value: unknown): string {
@@ -3985,6 +3999,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     name?: unknown;
     entityType?: unknown;
     userId?: string;
+    sourceName?: string;
     sourceUrl?: string;
     confidence?: number;
   },
@@ -3994,7 +4009,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   created: boolean;
   researchEntityId?: string;
   userId?: string;
-  skipped?: 'not-faculty-research-area' | 'user-not-resolved';
+  skipped?: 'not-faculty-research-area' | 'lead-edge-held' | 'user-not-resolved';
 }> {
   const observedEntityType = textValue(identity.entityType);
   const observedKey = textValue(identity.entityKey);
@@ -4002,6 +4017,20 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     observedEntityType === 'FACULTY_RESEARCH_AREA' || isFacultyResearchAreaKey(observedKey);
   if (!isFacultyResearchArea) {
     return { synced: false, created: false, skipped: 'not-faculty-research-area' };
+  }
+
+  const heldLead = await heldLeadPersonId(
+    deps.roleAssignmentModel || RoleAssignment,
+    researchEntityId,
+  );
+  if (heldLead !== undefined) {
+    return {
+      synced: false,
+      created: false,
+      researchEntityId,
+      ...(heldLead ? { userId: heldLead } : {}),
+      skipped: 'lead-edge-held',
+    };
   }
 
   const researcherModel = deps.researcherModel || Researcher;
@@ -4024,16 +4053,6 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   const observedAt = new Date();
   const confidence = Number(identity.confidence) || 0.8;
 
-  const normalizedName = displayName.toLowerCase();
-  const roster = await getResearchEntityRoster(researchEntityId);
-  const existing = roster.some(
-    (entry) =>
-      entry.role === 'pi' &&
-      (researcherId && entry.personId
-        ? entry.personId.toString() === researcherId
-        : Boolean(normalizedName) && textValue(entry.name).toLowerCase() === normalizedName),
-  );
-
   await materializeCanonicalMembership(
     researchEntityId,
     {
@@ -4043,6 +4062,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
       confidence,
       startedAt: observedAt,
       rosterProvenance: {
+        sourceName: textValue(identity.sourceName) || undefined,
         sourceUrl: textValue(identity.sourceUrl) || undefined,
         observedAt,
       },
@@ -4056,7 +4076,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     },
   );
 
-  return { synced: true, created: !existing, researchEntityId, userId: researcherId };
+  return { synced: true, created: true, researchEntityId, userId: researcherId };
 }
 
 function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
@@ -4160,6 +4180,7 @@ async function materializeResearchEntityRelationship(
         entityKey: targetEntityKey,
         name: target.name,
         entityType: 'FACULTY_RESEARCH_AREA',
+        sourceName: textValue(resolved.targetEntityKey?.sourceName),
         sourceUrl,
         confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
       },
