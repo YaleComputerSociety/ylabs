@@ -321,6 +321,9 @@ The server test suite must never read them either, and `server/src/test/hermetic
 A log line must not interpolate a netid, email, or name, because hosted logs sit outside the database and its access controls; log the document id and let an operator join to it.
 Route any value that is not a literal through `sanitizeLogValue` in `server/src/utils/logSanitizer.ts`, which redacts credentials, emails, phone-shaped digits, and the values a MongoDB duplicate-key error quotes after `dup key:`, since a unique index keyed on `netid` or `reporter.netId` puts the identifier into the error message.
 `server/src/__tests__/correctionReportSubmissionLogs.integration.test.ts` captures every console call while a report is filed, including one that loses the duplicate race, and asserts the reporter's netid appears in none of them.
+- `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` also redacts hand-obfuscated email addresses (#4202); the shapes it covers and the prose it leaves intact are owned by the contact redaction paragraph in `docs/research-model.md`.
+- The preflight asserts what a guard does by running it on a fixed table of hostile inputs, through `runServerGuard`, and keeps source-text pins only for wiring, meaning that a call site routes through the guard at all (#3736).
+A pin on a guard's own spelling fails on behaviour-preserving rewrites and passes when a new code path leaks, so a new guarantee is written as an input and its expected output.
 - Error reports to Sentry carry no user identity, cookie, header beyond the client `User-Agent`, body, query value, or local variable.
 The posture, including why every `dataCollection` category is set off explicitly and why Express's automatic capture is disabled, is owned by the Error Reporting section of `docs/research-journey-analytics.md`.
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).

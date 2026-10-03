@@ -85,3 +85,42 @@ describe('redactDirectContactInfo email arm', () => {
     );
   });
 });
+
+const EMAIL = '[email redacted]';
+
+describe('redactDirectContactInfo obfuscated email arm', () => {
+  it.each([
+    ['Contact jdoe [at] example [dot] edu', `Contact ${EMAIL}`],
+    ['Contact jdoe(at)example(dot)edu', `Contact ${EMAIL}`],
+    ['Contact jdoe at example dot edu', `Contact ${EMAIL}`],
+    ['Contact jdoe＠example.edu', `Contact ${EMAIL}`],
+    ['Contact jdoe&#64;example.edu', `Contact ${EMAIL}`],
+    ['Contact jdoe&commat;example.edu', `Contact ${EMAIL}`],
+    ['Contact jdoe @ example.edu', `Contact ${EMAIL}`],
+    ['Write to JDOE AT CS DOT EXAMPLE DOT EDU.', `Write to ${EMAIL}.`],
+    ['jdoe {at} example {.} org today', `${EMAIL} today`],
+    ['jdoe [at] example.edu today', `${EMAIL} today`],
+    ['jdoe at cs.example dot edu today', `${EMAIL} today`],
+    ['help [at] its.example.edu today', `${EMAIL} today`],
+    ['help (at) my.example.edu today', `${EMAIL} today`],
+    ['jdoe [at] cs [dot] its [dot] edu today', `${EMAIL} today`],
+    ['jdoe&#64;the.example.org today', `${EMAIL} today`],
+  ])('redacts an obfuscated address: %s', (input, expected) => {
+    expect(redactDirectContactInfo(input)).toBe(expected);
+  });
+
+  it.each([
+    'We work at the lab every day.',
+    'Code is available at github.com for review.',
+    'The dot com bubble shaped the field.',
+    'Students invested at the dot com peak.',
+    'Meet at 5 pm in the lab.',
+    'Students at the school study at the institute.',
+    'Follow us @examplelab on social media.',
+    'Find us on Bluesky @examplelab.bsky.social today.',
+    'Systems that run C [at] scale.',
+    'A professor at the university dot',
+  ])('leaves ordinary prose alone: %s', (input) => {
+    expect(redactDirectContactInfo(input)).toBe(input);
+  });
+});
