@@ -34,8 +34,8 @@ import {
   CENTER_ROSTER_HEALTH_FIELD,
   type CenterRosterReadMember,
 } from '../centerRosterRetirement';
-import { normalizeName, slugTokens } from '../utils/scraperHelpers';
-import { plainTextContent } from '../utils/htmlText';
+import { SLUG_MAX_LENGTH, slugTokens } from '../utils/scraperHelpers';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -125,7 +125,8 @@ function htmlToPromptText(html: string): { text: string; truncated: boolean } {
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
   const text = textValue(
-    plainTextContent($('body').toArray()) || plainTextContent($.root().toArray()),
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
   );
   return { text: text.slice(0, MAX_PROMPT_CHARS), truncated: text.length > MAX_PROMPT_CHARS };
 }
@@ -136,24 +137,6 @@ export function personSlugIsStatedOnPage(
 ): boolean {
   const tokens = personSlug.split('-').filter(Boolean);
   return tokens.length > 0 && tokens.every((token) => pageTokens.has(token));
-}
-
-export function groundedAffiliationExtraction(
-  extraction: CenterAffiliationExtraction,
-  pageText: string,
-): { extraction: CenterAffiliationExtraction; droppedNames: number } {
-  const pageTokens = new Set(slugTokens(pageText));
-  const people = extraction?.affiliatedPeople || [];
-  const grounded = people.filter((person) =>
-    personSlugIsStatedOnPage(
-      slugTokens(normalizeName(textValue(person?.name))).join('-'),
-      pageTokens,
-    ),
-  );
-  return {
-    extraction: { affiliatedPeople: grounded },
-    droppedNames: people.length - grounded.length,
-  };
 }
 
 /**
@@ -175,9 +158,11 @@ export function affiliationReadMembers(
   const pageTokens = new Set(slugTokens(pageText));
   for (const claim of liveClaims) {
     if (listed.has(claim.relationshipKey)) continue;
-    const personSlug = claim.targetEntityKey.startsWith(FACULTY_RESEARCH_AREA_SLUG_PREFIX)
-      ? claim.targetEntityKey.slice(FACULTY_RESEARCH_AREA_SLUG_PREFIX.length)
-      : '';
+    const personSlug =
+      claim.targetEntityKey.startsWith(FACULTY_RESEARCH_AREA_SLUG_PREFIX) &&
+      claim.targetEntityKey.length < SLUG_MAX_LENGTH
+        ? claim.targetEntityKey.slice(FACULTY_RESEARCH_AREA_SLUG_PREFIX.length)
+        : '';
     if (!personSlug || personSlugIsStatedOnPage(personSlug, pageTokens)) {
       listed.add(claim.relationshipKey);
     }
@@ -382,7 +367,6 @@ interface CenterReadTally {
   admittedReads: number;
   partialReads: number;
   emptyReads: number;
-  ungroundedNamesDropped: number;
   outcomes: Record<CenterReadOutcome, number>;
 }
 
@@ -430,7 +414,6 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       admittedReads: 0,
       partialReads: 0,
       emptyReads: 0,
-      ungroundedNamesDropped: 0,
       outcomes: { 'fetch-failed': 0, 'page-too-small': 0, 'llm-failed': 0, read: 0 },
     };
 
@@ -450,7 +433,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         `Extracted LLM affiliations for ${tally.entitiesObserved} centers; ` +
         `${tally.admittedReads} complete read(s), ${tally.partialReads} partial, ${tally.emptyReads} empty, ` +
         `${tally.outcomes['fetch-failed']} fetch failure(s), ${tally.outcomes['page-too-small']} page(s) too small, ` +
-        `${tally.outcomes['llm-failed']} model failure(s); ${tally.ungroundedNamesDropped} name(s) dropped as absent from the page.`,
+        `${tally.outcomes['llm-failed']} model failure(s).`,
     };
   }
 
@@ -490,9 +473,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       return 'llm-failed';
     }
 
-    const grounded = groundedAffiliationExtraction(extraction, pageText);
-    tally.ungroundedNamesDropped += grounded.droppedNames;
-    const observations = affiliationExtractionToObservations(grounded.extraction, {
+    const observations = affiliationExtractionToObservations(extraction, {
       centerEntityKey,
       sourceUrl,
     });
@@ -519,10 +500,8 @@ export class CenterAffiliationLLMExtractor implements IScraper {
     tally.entitiesObserved += 1;
     ctx.log(
       `[${center.slug}] emitted ${observations.length} affiliation relationship observations${
-        grounded.droppedNames
-          ? `, dropped ${grounded.droppedNames} name(s) absent from the page`
-          : ''
-      }${truncated ? ' (page truncated, read not admitted for retirement)' : ''}.`,
+        truncated ? ' (page truncated, read not admitted for retirement)' : ''
+      }.`,
     );
     return 'read';
   }

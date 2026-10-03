@@ -20,8 +20,10 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
  * as `robin-read-er` on the hyphenated page and `robin-reader` everywhere else, and
  * the two keys never join (#2874).
  */
+export const SLUG_MAX_LENGTH = 100;
+
 export function slugify(input: string): string {
-  return unboundedSlug(input).slice(0, 100);
+  return unboundedSlug(input).slice(0, SLUG_MAX_LENGTH);
 }
 
 export function slugTokens(input: string): string[] {

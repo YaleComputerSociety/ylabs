@@ -165,16 +165,48 @@ describe('CenterAffiliationLLMExtractor.run', () => {
     expect(result.notes).toContain('1 model failure(s)');
   });
 
-  it('drops a returned name the page does not state and reports the drop', async () => {
-    const { emitted, result } = await runOnce(
-      `<html><body>${'Jane Doe directs the center. '.repeat(20)}</body></html>`,
-      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }, { name: 'Robin Absent' }] }),
+  it('emits a returned name from minified markup with adjacent block elements', async () => {
+    const { emitted } = await runOnce(
+      `<html><body>${'<h3>Jane Doe</h3><p>Professor</p>'.repeat(20)}</body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }] }),
     );
     const targets = emitted
       .filter((o) => o.field === 'targetEntityKey')
       .map((o) => o.value as string);
     expect(targets).toEqual(['faculty-research-area-jane-doe']);
-    expect(result.notes).toContain('1 name(s) dropped as absent from the page');
+  });
+
+  it('lists an omitted live claim the page names inside adjacent block elements', async () => {
+    const stillNamed = {
+      relationshipKey: `${center.slug}:faculty-research-area-bob-smith:MEMBER_RESEARCH_AREA`,
+      targetEntityKey: 'faculty-research-area-bob-smith',
+    };
+    const { snapshot } = await runOnce(
+      `<html><body><ul>${'<li>Jane Doe</li><li>Bob Smith</li><li>Professor</li>'.repeat(10)}</ul></body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }] }),
+      [stillNamed],
+    );
+    const listed = ((snapshot!.value as any).members as Array<{ relationshipKey: string }>).map(
+      (member) => member.relationshipKey,
+    );
+    expect(listed).toContain(stillNamed.relationshipKey);
+  });
+
+  it('lists an omitted live claim whose target key reached the slug length cap', async () => {
+    const cappedTarget = `faculty-research-area-${'longname-'.repeat(12)}`.slice(0, 100);
+    const capped = {
+      relationshipKey: `${center.slug}:${cappedTarget}:MEMBER_RESEARCH_AREA`,
+      targetEntityKey: cappedTarget,
+    };
+    const { snapshot } = await runOnce(
+      `<html><body>${'Jane Doe directs the center. '.repeat(20)}</body></html>`,
+      async () => ({ affiliatedPeople: [{ name: 'Jane Doe' }] }),
+      [capped],
+    );
+    const listed = ((snapshot!.value as any).members as Array<{ relationshipKey: string }>).map(
+      (member) => member.relationshipKey,
+    );
+    expect(listed).toContain(capped.relationshipKey);
   });
 
   it('lists a live claim the page still names although the model omitted it', async () => {

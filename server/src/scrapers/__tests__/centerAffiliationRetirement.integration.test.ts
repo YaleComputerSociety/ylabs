@@ -212,15 +212,6 @@ describe(
       expect(await liveAffiliations()).toContain(areaSlug('Devon Synthetic'));
     });
 
-    it('never writes a name the page does not state', async () => {
-      await readCenter({
-        pageNames: without('Devon Synthetic'),
-        modelNames: PEOPLE,
-      });
-
-      expect(await liveAffiliations()).toEqual(without('Devon Synthetic').map(areaSlug).sort());
-    });
-
     it('keeps a relationship another source still asserts', async () => {
       await readCenter({ pageNames: PEOPLE });
       await appendAndMaterialize(

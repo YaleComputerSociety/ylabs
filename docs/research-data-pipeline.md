@@ -1335,8 +1335,8 @@ Role edges that carry no `rosterProvenance` at all predate provenance, and this 
 `center-affiliation-llm` runs the same pass over its own claims (#4022), as `CENTER_AFFILIATION_ROSTER_LANE`, scoped to observations and edges naming that source.
 Its claims are relationship keys, and before this pass a key a later read left out stayed live forever and shielded the edge from the roster lane's retirement too.
 One model call is not a repeatable read, so a read lists a live claim of this lane whose person the fetched page text still states, by slug tokens, even when the model omitted it; a claim retires only when two admitted reads omit it and the page no longer names the person.
-A returned name whose slug tokens the page text does not contain is dropped before it is emitted and counted in the run notes, because the prompt asks for names copied from the page.
-A read is admitted only when the page fetched, its text fit the prompt untruncated, the model answered with a complete response, and at least one name survived; a truncated page records `partial-read`, a model that names nobody records `empty`, and a failed fetch or model call records nothing.
+A claim whose target key reached the slug length cap may end in a cut-off token, so it is always listed rather than judged absent.
+A read is admitted only when the page fetched, its text fit the prompt untruncated, the model answered with a complete response, and it named at least one person; a truncated page records `partial-read`, a model that names nobody records `empty`, and a failed fetch or model call records nothing.
 A relationship another source still asserts for the same target keeps its edge while this lane's observations retire.
 
 A read can hand such an edge to this pass by adopting it (#3799).
