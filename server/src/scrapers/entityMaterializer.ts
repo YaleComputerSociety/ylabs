@@ -5204,6 +5204,17 @@ export async function mergedSurvivorEvidence(
   const survivorReadOnARoster = entryPointIndependentOrder.some(
     (observation: any) => !loserOrigin(observation) && isRosterAppointment(observation),
   );
+  const survivorStoredType = textValue(storedSurvivor.entityType);
+  const survivorObservesItsOwnType = entryPointIndependentOrder.some(
+    (observation: any) => !loserOrigin(observation) && observation.field === 'entityType',
+  );
+  const loserCorroboratesUnbackedSurvivorType = (observation: any): boolean =>
+    observation.field === 'entityType' &&
+    !survivorTypeIsLocked &&
+    !survivorObservesItsOwnType &&
+    Boolean(survivorStoredType) &&
+    textValue(observation.value) === survivorStoredType &&
+    !valueIsRefused(survivor.fieldValueRefusals, 'entityType', observation.value);
   const droppedLoserWebsiteValues: unknown[] = [];
   const loserRosterAppointments: any[] = [];
   const observations = entryPointIndependentOrder.filter((observation: any) => {
@@ -5214,6 +5225,7 @@ export async function mergedSurvivorEvidence(
       loserRosterAppointments.push(observation);
       return false;
     }
+    if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
     if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
       droppedLoserWebsiteValues.push(observation.value);
