@@ -708,9 +708,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
     };
     const before = {
       ...stored,
-      recentGrants: [
-        { ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() },
-      ],
+      recentGrants: [{ ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() }],
       recentGrantCount: 1,
     };
     const fields = rematerializeComparedFields([]);
