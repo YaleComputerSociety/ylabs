@@ -330,7 +330,7 @@ function citedUrls(entity: Record<string, any>): string[] {
 
 /**
  * A row whose heading claims a laboratory that nothing it cites names, and whose
- * `name` no source is recorded for.
+ * `name` no lane recorded together with its `LAB` type (#4050).
  *
  * `student_ready` is the claim that a card will not mislead a student, and a title
  * is the loudest claim a card makes. These rows were minted from a person's own
@@ -359,8 +359,33 @@ function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
   if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
-  if (entity.fieldProvenance?.name) return false;
+  if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
+  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
   return !citedUrls(entity).some(urlNamesALaboratory);
+}
+
+const OPERATOR_NAME_SOURCES: ReadonlySet<string> = new Set([
+  'manual-data-correction',
+  'manual-admin-edit',
+  'manual-pi-edit',
+]);
+
+/**
+ * A recorded name source backs a lab name only when the lane that recorded it also
+ * recorded the `LAB` type from the same page (#4050). A name recorded from a grant
+ * record while the type came from elsewhere, or with no type beside it, was composed
+ * rather than read: hand-reading every served row in that shape found the lab name on
+ * no cited page, while each row whose lane recorded both from one page described a lab
+ * that page names.
+ */
+function labNameAndTypeReadTogether(fieldProvenance: Record<string, any> | undefined): boolean {
+  const name = fieldProvenance?.name;
+  const type = fieldProvenance?.entityType;
+  if (!name || !type) return false;
+  const sourceName = textValue(name.sourceName);
+  const sourceUrl = textValue(name.sourceUrl);
+  if (!sourceName || !sourceUrl) return false;
+  return sourceName === textValue(type.sourceName) && sourceUrl === textValue(type.sourceUrl);
 }
 
 function isNonOwnerGrantShell({

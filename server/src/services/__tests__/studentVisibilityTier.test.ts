@@ -1277,30 +1277,66 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('unbacked_lab_name');
   });
 
-  it('leaves a lab-titled row alone when a source is recorded for its name', () => {
-    const result = computeResearchEntityStudentVisibility({
-      entity: {
-        _id: 'named-from-source-lab-fixture',
-        name: 'Fixture Lab',
-        slug: 'named-from-source-lab-fixture',
-        kind: 'lab',
-        entityType: 'LAB',
-        shortDescription:
-          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
-        fullDescription:
-          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
-        sourceUrls: ['https://example.edu/profile/example-person/'],
-        fieldProvenance: {
-          name: { sourceUrl: 'https://example.edu/profile/example-person/' },
+  describe('a recorded name source backs a lab name only beside a type from the same page (#4050)', () => {
+    const PROFILE = 'https://medicine.yale.edu/profile/example-person/';
+    const reasonsFor = (fieldProvenance: Record<string, unknown>, sourceUrls = [PROFILE]) =>
+      computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'recorded-name-source-lab-fixture',
+          name: 'Fixture Lab',
+          slug: 'recorded-name-source-lab-fixture',
+          kind: 'lab',
+          entityType: 'LAB',
+          shortDescription:
+            'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+          fullDescription:
+            'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+          sourceUrls,
+          fieldProvenance,
         },
-      },
-      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
-      accessSignalCount: 1,
-      actionablePathwayCount: 1,
-      relatedEntityAccessPathCount: 1,
+        leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+        relatedEntityAccessPathCount: 1,
+      }).reasons;
+
+    it('serves a lab name one lane read with its type off the person own page', () => {
+      const read = { sourceName: 'ysm-faculty-directory', sourceUrl: PROFILE };
+      expect(reasonsFor({ name: read, entityType: read })).not.toContain('unbacked_lab_name');
     });
 
-    expect(result.reasons).not.toContain('unbacked_lab_name');
+    it('holds a lab name a lane recorded from a person page with no type beside it', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'lab-microsite-description-llm', sourceUrl: PROFILE } }),
+      ).toContain('unbacked_lab_name');
+    });
+
+    it('holds a lab name recorded from a grant record while the type came from elsewhere', () => {
+      const grant = 'https://reporter.nih.gov/project-details/00000000';
+      expect(
+        reasonsFor(
+          {
+            name: { sourceName: 'nih-reporter', sourceUrl: grant },
+            entityType: { sourceName: 'dept-faculty-roster', sourceUrl: PROFILE },
+          },
+          [PROFILE, grant],
+        ),
+      ).toContain('unbacked_lab_name');
+    });
+
+    it('serves a lab name and type one lane recorded together from a listing page', () => {
+      const listing = 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/';
+      const read = { sourceName: 'dept-faculty-roster', sourceUrl: listing };
+      expect(reasonsFor({ name: read, entityType: read }, [PROFILE, listing])).not.toContain(
+        'unbacked_lab_name',
+      );
+    });
+
+    it('keeps an operator correction of the name', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'manual-data-correction', sourceUrl: PROFILE } }),
+      ).not.toContain('unbacked_lab_name');
+    });
   });
 
   it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {
