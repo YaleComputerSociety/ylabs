@@ -686,10 +686,17 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
 
 const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
 
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS = 30 * 1000;
+
 export type ResearchEntitySearchEmbedderState = 'configured' | 'absent' | 'unknown';
 
-let embedderStateCache: Exclude<ResearchEntitySearchEmbedderState, 'unknown'> | null = null;
+let embedderStateCache: ResearchEntitySearchEmbedderState | null = null;
 let embedderStateCacheAt = 0;
+
+const embedderStateCacheTtlMs = (state: ResearchEntitySearchEmbedderState): number =>
+  state === 'unknown'
+    ? RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS
+    : RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
 
 export const invalidateResearchEntitySearchEmbedderCache = (): void => {
   embedderStateCache = null;
@@ -706,7 +713,7 @@ export async function readResearchEntitySearchEmbedderState(
   const now = Date.now();
   if (
     embedderStateCache !== null &&
-    now - embedderStateCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
+    now - embedderStateCacheAt < embedderStateCacheTtlMs(embedderStateCache)
   ) {
     return embedderStateCache;
   }
@@ -719,6 +726,8 @@ export async function readResearchEntitySearchEmbedderState(
       'ResearchEntity Meilisearch embedder check failed; searching keyword-only:',
       sanitizeLogValue(error),
     );
+    embedderStateCache = 'unknown';
+    embedderStateCacheAt = Date.now();
     return 'unknown';
   }
 
