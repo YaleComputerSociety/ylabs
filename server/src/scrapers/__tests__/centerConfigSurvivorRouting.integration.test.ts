@@ -33,7 +33,7 @@ import { materializeFromRun } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 import {
   CentersInstitutesScraper,
-  routeCenterConfigToLiveRow,
+  routeCenterConfigsToLiveRows,
   type CenterConfig,
   type CenterMember,
   type HtmlFetcher,
@@ -47,6 +47,7 @@ const ROSTER_URL = 'https://fixture-merged.example.edu/people';
 const MERGED_KEY = 'center-fixture-merged-away';
 const SURVIVOR_KEY = 'center-fixture-survivor';
 const RETIRED_KEY = 'center-fixture-retired-initiative';
+const SECOND_MERGED_KEY = 'center-fixture-second-merged-away';
 
 const member = (first: string): CenterMember => ({
   name: `${first} Synthetic`,
@@ -235,12 +236,32 @@ describe(
     });
 
     it('refuses a survivor that another config already reads', async () => {
-      const route = await routeCenterConfigToLiveRow(config(), [
+      const [route] = await routeCenterConfigsToLiveRows([
         config(),
         config({ centerKey: 'fixture-survivor', entityKey: SURVIVOR_KEY }),
       ]);
 
       expect(route).toEqual({ refusal: 'survivor-claimed-by-another-config' });
+    });
+
+    it('refuses both configs when two merged rows converge on one survivor', async () => {
+      await ResearchEntity.create({
+        slug: SECOND_MERGED_KEY,
+        name: 'Fixture Second Merged Center',
+        kind: 'center',
+        entityType: 'CENTER',
+        archived: true,
+        canonicalGroupId: await entityId(SURVIVOR_KEY),
+      });
+
+      const { fetched, notes } = await runLane(ROSTER, [
+        config(),
+        config({ centerKey: 'fixture-second-merged', entityKey: SECOND_MERGED_KEY }),
+      ]);
+
+      expect(fetched).toEqual([]);
+      expect(notes).not.toContain('routed onto merge survivor');
+      expect(await currentLaneEdges(SURVIVOR_KEY)).toHaveLength(0);
     });
   },
 );

@@ -918,7 +918,7 @@ So a config must keep one center entity key to itself, and a pager change must s
 - A config whose row a merge archived is read onto the live survivor (#4021).
 Each run resolves `centerEntityKey(config)` through `resolveResearchEntityCanonicalIdentity`, the engine's `canonicalGroupId` walk, before reading, so the roster, its snapshot and its retirement land on the row students are served, and the run log and notes name every redirect.
 A config whose row is archived with no live survivor reads nothing and reports `archived-without-survivor`, because every consumer skips an archived key and a roster written under one is neither served nor retired.
-A survivor that another config already reads is refused as `survivor-claimed-by-another-config`, which keeps one center entity key per config.
+A survivor that another config already reads, directly or through its own redirect in the same run, is refused as `survivor-claimed-by-another-config`, which keeps one center entity key per config.
 Never hand-edit a config's `entityKey` to follow a merge; the next merge would strand it again.
 - A listing's profile URL is usually a page the center hosts itself, which no researcher carries, so the lane follows each Yale-hosted member page and emits what it states as `profileIdentityEvidence`: the page's canonical and linked Yale person pages, the member's own Yale email, and a netid only where the page's Person metadata labels one (#3802).
 The materializer joins the listing to a researcher only through that evidence, with the name as a veto and never as the join, and two agreeing people resolve to nobody; `resolveRosterMemberIdentity` in `entityMaterializer.ts` owns the order.

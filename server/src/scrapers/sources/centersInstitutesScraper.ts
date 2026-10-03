@@ -274,23 +274,29 @@ export type CenterConfigRoute =
   | { config: CenterConfig; redirectedFrom?: string }
   | { refusal: CenterConfigRouteRefusal };
 
-export async function routeCenterConfigToLiveRow(
-  config: CenterConfig,
-  allConfigs: readonly CenterConfig[],
+export async function routeCenterConfigsToLiveRows(
+  configs: readonly CenterConfig[],
   resolve: (entityKey: string) => Promise<CenterConfigKeyResolution> = resolveCenterConfigKey,
-): Promise<CenterConfigRoute> {
-  const configuredKey = centerEntityKey(config);
-  const resolution = await resolve(configuredKey);
-  if (resolution.kind === 'live' || resolution.kind === 'unminted') return { config };
-  if (resolution.kind === 'archived-without-survivor') return { refusal: resolution.kind };
-  const survivorIsAnotherConfigsRow = allConfigs.some(
-    (other) => other !== config && centerEntityKey(other) === resolution.survivorKey,
-  );
-  if (survivorIsAnotherConfigsRow) return { refusal: 'survivor-claimed-by-another-config' };
-  return {
-    config: { ...config, entityKey: resolution.survivorKey },
-    redirectedFrom: configuredKey,
-  };
+): Promise<CenterConfigRoute[]> {
+  const resolutions = await Promise.all(configs.map((config) => resolve(centerEntityKey(config))));
+  const readKeys = configs.map((config, index) => {
+    const resolution = resolutions[index];
+    if (resolution.kind === 'archived-without-survivor') return null;
+    return resolution.kind === 'survivor' ? resolution.survivorKey : centerEntityKey(config);
+  });
+  return configs.map((config, index): CenterConfigRoute => {
+    const resolution = resolutions[index];
+    if (resolution.kind === 'live' || resolution.kind === 'unminted') return { config };
+    if (resolution.kind === 'archived-without-survivor') return { refusal: resolution.kind };
+    const survivorIsReadByAnotherConfig = readKeys.some(
+      (key, otherIndex) => otherIndex !== index && key === resolution.survivorKey,
+    );
+    if (survivorIsReadByAnotherConfig) return { refusal: 'survivor-claimed-by-another-config' };
+    return {
+      config: { ...config, entityKey: resolution.survivorKey },
+      redirectedFrom: centerEntityKey(config),
+    };
+  });
 }
 
 export function centerHomeUrlWriteRefusal(
@@ -2092,11 +2098,12 @@ export class CentersInstitutesScraper implements IScraper {
       });
     };
 
-    for (const configured of this.configs) {
+    const routes = await routeCenterConfigsToLiveRows(this.configs);
+    for (const [index, configured] of this.configs.entries()) {
       if (onlyFilter && !onlyFilter.has(configured.centerKey.toLowerCase())) continue;
       if (centersProcessed >= limit) break;
 
-      const route = await routeCenterConfigToLiveRow(configured, this.configs);
+      const route = routes[index];
       if ('refusal' in route) {
         ctx.log(
           `[${configured.centerKey}] refused - its row ${sanitizeLogValue(centerEntityKey(configured))} is archived (${route.refusal}); nothing read`,
