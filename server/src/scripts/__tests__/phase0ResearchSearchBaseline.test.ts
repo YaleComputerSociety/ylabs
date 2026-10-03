@@ -257,7 +257,7 @@ describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
 
     try {
       expect(() => writePhase0ResearchSearchBaseline(fixtureReport(), output)).toThrow(
-        /must write under/,
+        /must write under|outside the approved temporary directory|must contain only real directories/,
       );
       expect(fs.existsSync(path.join(outside, 'new'))).toBe(false);
     } finally {

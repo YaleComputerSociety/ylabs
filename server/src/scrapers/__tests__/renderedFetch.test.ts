@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
@@ -27,6 +27,12 @@ import {
   beginBenchmarkReplay,
   finishBenchmarkReplay,
 } from '../snapshotBenchmarkMode';
+
+beforeEach(() => {
+  mocks.execFile.mockReset();
+  mocks.getCached.mockReset();
+  mocks.setCached.mockReset();
+});
 
 const execFileSuccess = (payload: unknown) => {
   mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
