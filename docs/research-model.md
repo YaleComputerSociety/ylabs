@@ -481,6 +481,8 @@ Public access excerpts should redact direct contact details. The scraper may kee
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
 A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).
 The one shape it leaves alone is a bare digit run with a letter directly before it and no phone label, because on Development every such run was a record id, such as an IRB protocol number or a journal article number.
+It also redacts hand-obfuscated addresses: bracketed or parenthesised `at` and `dot`, a spaced `@`, the fullwidth at sign, and its HTML entities (#4202).
+Spelled-out `at` counts only alongside an obfuscated `dot` ending in a known suffix, and a spaced `@` needs whitespace after it, so "available at github.com" and a social handle stay intact; the 7,667 stored Development descriptions it was measured over gained zero new redactions.
 The search index redacts the same way over every description field it indexes.
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
