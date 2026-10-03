@@ -4,6 +4,22 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: TypeScript moves to 6.0, and TypeScript 7 is held (#4433)
+
+`typescript` is on 6.0.3 in the root, `client`, and `server` projects, up from 5.9.3.
+TypeScript 7 (7.0.2) is held, because `typescript-eslint` 8.71, the newest release, declares a `typescript >=4.8.4 <6.1.0` peer range, so the lint toolchain would parse with a compiler it does not support.
+The exit condition is a `typescript-eslint` release whose `typescript` peer range admits 7.x; that is when the TypeScript 7 step of #4038 can start.
+TypeScript 6.0 is the release that deprecates what 7.0 removes, so each `tsconfig.json` was moved onto the 6.0 defaults without `ignoreDeprecations`, which leaves no deprecated option for the TypeScript 7 move to clear.
+
+- The client's `moduleResolution: node` (now named `node10`) is deprecated, and it becomes `bundler`, which is how Vite resolves.
+- The client adds `vite/client` to `types`, because 6.0 turns on `noUncheckedSideEffectImports` and that file is what declares `import './index.css'`.
+- `esModuleInterop` and `allowSyntheticDefaultImports` are removed, because 6.0 always enables them and setting either to `false` is an error; the client's `dom.iterable` lib is removed, because 6.0 folds it into `dom`.
+- The server's `outDir` and its emit-only options are replaced by `noEmit`, because `tsup` builds the server and `tsc` only type-checks it.
+  Under 6.0 `rootDir` defaults to the `tsconfig.json` directory, and the server program includes the client modules that server tests import, so an `outDir` made that a `rootDir` error even under `--noEmit`.
+
+The one new type error was a `??` whose left side could never be nullish, in `server/src/scripts/engineBenchmarkRun.ts`, and the unreachable fallback is removed.
+`tsup`, `tsx`, `vite`, and `vitest` all run unchanged, because they transpile with their own transformers and read only the `tsconfig.json` fields that did not change.
+
 ## 2026-10-02: The remaining small majors move, and `domhandler` stays on 5 (#4434)
 
 `@testing-library/jest-dom` moves to 7, `concurrently` to 10, and `js-yaml` to 5.

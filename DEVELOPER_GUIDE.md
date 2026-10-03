@@ -27,8 +27,8 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 | Layer           | Technology                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v9, TailwindCSS v3                            |
-| Server          | Express 5, TypeScript, Passport.js (CAS strategy), Mongoose 9                                    |
+| Client          | React 19, TypeScript 6, Vite 8, React Router v7, MUI v9, TailwindCSS v3                          |
+| Server          | Express 5, TypeScript 6, Passport.js (CAS strategy), Mongoose 9                                  |
 | Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
 | Package Manager | Yarn 4 via Corepack                                                                              |

@@ -8,8 +8,8 @@ A research-discovery app for Yale students. It helps students find Yale research
 
 | Layer           | Tech                                                                      |
 | --------------- | ------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                              |
-| Server          | Express 5, TypeScript, Passport.js (Yale CAS)                             |
+| Client          | React 19, TypeScript 6, Vite, TailwindCSS, MUI                            |
+| Server          | Express 5, TypeScript 6, Passport.js (Yale CAS)                           |
 | Database        | MongoDB Atlas (Mongoose 9)                                                |
 | Search          | Meilisearch (keyword plus semantic via OpenAI embedder where appropriate) |
 | Package Manager | Yarn 4 via Corepack                                                       |
