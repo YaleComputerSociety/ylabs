@@ -134,7 +134,7 @@ The environment is discovered from the connected database name via `operatorEnvi
 A database the mapping cannot place records nothing.
 
 On by default in every runtime except `NODE_ENV=test`, because a measurement nobody remembers to take is the problem this exists to solve.
-That includes a laptop: a local server booted against Development records a Development snapshot when the newest one is stale, measured by whatever branch is checked out, and one booted on the local data path (`yarn dev:server:local`) records into its own `ylabs_local` database.
+That includes a laptop: a local server booted against Development records a Development snapshot when the newest one is stale, measured by whatever branch is checked out, while one booted on the local data path (`yarn dev:server:local`) records nothing, because the mapping cannot place `ylabs_local`.
 Off under `NODE_ENV=test` so suites never write, and disableable with `CORPUS_SNAPSHOT_DISABLED=true`.
 
 There is deliberately no GitHub Actions workflow and no database secret.

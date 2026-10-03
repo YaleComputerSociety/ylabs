@@ -137,7 +137,7 @@ yarn dev:client         # http://localhost:3000/research shows synthetic cards
 - The `local` data profile (`scripts/run-data-profile.mjs`) accepts only a `localhost`, `127.0.0.1` or `::1` host and only the `ylabs_local` database, and refuses anything else, so it can never be pointed at Development.
 - It blanks every other key `server/.env` declares, so a credentialed `server/.env` beside it cannot leak a Development URL into the local server.
 - It sets `MEILISEARCH_INDEX_PREFIX=ylabs_local`, so the local index never replaces the bare `researchentities` index a Development-backed server reads.
-- `yarn local:seed` re-runs `db:build-indexes --apply`, `e2e:seed-smoke` and the index rebuild through that profile. `yarn mongo:up` and `yarn mongo:down` start and stop the database alone; data persists in the `mongo_data` volume.
+- `yarn local:seed` re-runs `db:build-indexes --apply`, `e2e:seed-smoke` and the index rebuild through that profile. Data persists in the `mongo_data` volume.
 - `yarn --cwd server e2e:seed-smoke` refuses any database named for an operator environment (Development, Beta, Production, production-copy), and any non-local host unless `ALLOW_REMOTE_E2E_SEED=true` names a disposable remote database.
 
 Use the local path for serve-time work: DTOs, visibility, sanitizers and client rendering.

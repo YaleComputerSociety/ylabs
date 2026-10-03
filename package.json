@@ -20,8 +20,6 @@
     "dev:server:local": "node scripts/run-data-profile.mjs local -- yarn --cwd server dev",
     "local:setup": "node scripts/setup-local-env.mjs && docker compose up -d --wait mongodb meilisearch && yarn local:seed",
     "local:seed": "node scripts/run-data-profile.mjs local -- yarn --cwd server db:build-indexes --apply && node scripts/run-data-profile.mjs local -- yarn --cwd server e2e:seed-smoke && node scripts/run-data-profile.mjs local -- yarn --cwd server meili:seed",
-    "mongo:up": "docker compose up -d mongodb",
-    "mongo:down": "docker compose stop mongodb",
     "dev:infra:up": "docker compose up -d meilisearch",
     "dev:infra:down": "docker compose stop meilisearch",
     "dev:infra:logs": "docker compose logs -f meilisearch",
