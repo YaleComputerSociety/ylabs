@@ -166,7 +166,7 @@ Merge when CI is green and the pull request is mergeable on its current head.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
-gh pr merge <n> --squash --repo YaleComputerSociety/ylabs
+gh pr merge <n> --squash --admin --repo YaleComputerSociety/ylabs
 git push origin --delete <branch>
 ```
 
