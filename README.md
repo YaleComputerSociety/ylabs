@@ -41,7 +41,7 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session, or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`.
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session (in a worktree, use the dev-login URL `scripts/new-agent-worktree.sh` prints, whose `?redirect=` returns you to that worktree's client port), or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`.
 
 ## Product Surfaces
 
@@ -63,7 +63,8 @@ Scrapers run as short-lived CLI or cron jobs outside the web service process. Do
 
 ### Playwright environment fix (no root required)
 
-This shim is Linux-only: it downloads x86_64 Debian libraries.
+This shim only changes anything on a Linux host without root: there it downloads x86_64 Debian libraries.
+On macOS and every other platform it runs the wrapped command unchanged, so `yarn e2e:smoke` works there too.
 If `npx playwright` crashes with missing system libs (for example `libnspr4.so`), run Playwright through the local shim:
 
 ```bash

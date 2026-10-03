@@ -218,9 +218,12 @@ Never `git switch`, commit, or edit feature work directly in it.
 Multiple agents sharing one checkout will switch branches under each other and serve the wrong code.
 - Create one worktree plus branch per workstream, based on `beta`:
 `scripts/new-agent-worktree.sh <branch-name>`.
-The helper creates the worktree, runs `scripts/install-all.sh` so dependencies are fully isolated, and reserves a free client dev-server port.
+The helper creates the worktree, runs `scripts/install-all.sh` so dependencies are fully isolated, and reserves a free client dev-server port and a free API port.
+It copies `server/.env` and `client/.env` from the primary checkout with mode 0600, writes the reserved ports into them (`PORT`, `SERVER_BASE_URL`, `VITE_APP_SERVER`), and prints both start commands and a dev-login URL that returns to the worktree's client port.
+It never prints the env values, and says so when the primary checkout has no `server/.env` to copy.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 A real per-worktree install is the isolation boundary.
-- Run each worktree's client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
+- Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
+`compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
 - Integrate an approved branch by merging or landing its pull request, then remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.

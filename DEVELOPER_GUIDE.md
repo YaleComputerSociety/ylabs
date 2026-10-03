@@ -211,7 +211,7 @@ Then confirm the app actually serves data, which is the check that catches a wro
 
 - `yarn dev:server` boots with `Connected to database` and no `MONGODBURL is required`.
 - `yarn dev:client`, then `http://localhost:3000/research` renders cards with real descriptions rather than an empty list.
-- `http://localhost:4000/api/dev-login` gives you a session.
+- `http://localhost:4000/api/dev-login` gives you a session. A direct visit carries no `Referer`, so it returns you to `http://localhost:3000`; add `?redirect=http://localhost:<client-port>/` to land on another client port, which is the URL `scripts/new-agent-worktree.sh` prints.
 
 The full suites take a while and are the last step rather than the first:
 

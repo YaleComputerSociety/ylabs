@@ -55,7 +55,8 @@ Work in a dedicated git worktree, never in the primary checkout:
 scripts/new-agent-worktree.sh fix/short-description
 ```
 
-The helper branches from `beta`, installs dependencies in isolation, and reserves a free client dev-server port.
+The helper branches from `beta`, installs dependencies in isolation, reserves a free client port and a free API port, and copies `server/.env` and `client/.env` from the primary checkout with those ports written in.
+Start the worktree with the two commands it prints, and log in through the dev-login URL it prints, which returns you to that worktree's client port.
 The primary checkout is for review and integration only.
 Two people or agents sharing one checkout will switch branches under each other and serve the wrong code.
 Do not symlink `node_modules` between worktrees while running dev servers, because they share Vite's `node_modules/.vite` cache and clobber each other.

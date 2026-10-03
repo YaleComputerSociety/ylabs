@@ -131,7 +131,7 @@ Measured churn over the 90 days to 2026-09-25, which is a decent proxy for where
 ## Day 4: your first change
 
 1. Find or file an issue. Substantive work needs one; a typo does not.
-2. `scripts/new-agent-worktree.sh fix/short-name`. Never work in the primary checkout, because two people sharing it will switch branches under each other.
+2. `scripts/new-agent-worktree.sh fix/short-name`. Never work in the primary checkout, because two people sharing it will switch branches under each other. The helper copies your `server/.env` and `client/.env` into the worktree with its own API and client ports, and prints the start commands and the dev-login URL to use there.
 3. Make the smallest change that fixes the cause rather than the symptom.
 4. `yarn verify:fast`, then `yarn test:client` or `yarn test:server` for what you touched.
 5. Open the PR against `beta` with a Conventional Commit title and `Closes #<n>`.
