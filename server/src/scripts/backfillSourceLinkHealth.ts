@@ -188,7 +188,9 @@ export const DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY = 4;
 export const DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS = 250;
 
 export function measuredHostBudget(host: string): HostThrottle | undefined {
-  return Object.hasOwn(HOST_THROTTLE_OVERRIDES, host) ? HOST_THROTTLE_OVERRIDES[host] : undefined;
+  if (!Object.hasOwn(HOST_THROTTLE_OVERRIDES, host)) return undefined;
+  const { concurrency, minIntervalMs } = HOST_THROTTLE_OVERRIDES[host];
+  return { concurrency, minIntervalMs };
 }
 
 const hostOf = (url: string): string => {
