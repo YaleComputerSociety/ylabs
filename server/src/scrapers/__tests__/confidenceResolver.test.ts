@@ -213,56 +213,44 @@ describe('resolveField', () => {
   });
 
   it('applies an agreement bonus when multiple sources agree on a value', () => {
-    const single = resolveField(
-      'title',
-      [
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'Y',
-          sourceName: 'lab-microsite-llm',
-          confidence: 0.95,
-          observedAt: D('2026-04-01'),
-        },
-      ],
-      { now: D('2026-04-10') },
-    );
-    expect(single?.value).toBe('Y');
+    const observedAt = D('2026-04-10');
+    const agreeingPairAgainstOneStrongerSource = [
+      {
+        field: 'title',
+        value: 'X',
+        sourceName: 'openalex',
+        confidence: 0.45,
+        observedAt,
+      },
+      {
+        field: 'title',
+        value: 'X',
+        sourceName: 'semantic-scholar',
+        confidence: 0.45,
+        observedAt,
+      },
+      {
+        field: 'title',
+        value: 'Y',
+        sourceName: 'lab-microsite-llm',
+        confidence: 0.95,
+        observedAt,
+      },
+    ];
 
-    const agreed = resolveField(
-      'title',
-      [
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'semantic-scholar',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'Y',
-          sourceName: 'lab-microsite-llm',
-          confidence: 0.95,
-          observedAt: D('2026-04-01'),
-        },
-      ],
-      { now: D('2026-04-10'), agreementBonusPerExtraSource: 0.5 },
-    );
+    const withoutBonus = resolveField('title', agreeingPairAgainstOneStrongerSource, {
+      now: observedAt,
+      agreementBonusPerExtraSource: 0,
+    });
+    expect(withoutBonus?.value).toBe('Y');
+    expect(withoutBonus?.confidence).toBeCloseTo(0.95 / 1.85, 5);
+
+    const agreed = resolveField('title', agreeingPairAgainstOneStrongerSource, {
+      now: observedAt,
+      agreementBonusPerExtraSource: 0.5,
+    });
     expect(agreed?.value).toBe('X');
+    expect(agreed?.confidence).toBeCloseTo(1.35 / 2.3, 5);
     expect(agreed?.contributingSources).toEqual(
       expect.arrayContaining(['openalex', 'semantic-scholar']),
     );

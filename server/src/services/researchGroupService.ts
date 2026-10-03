@@ -1328,7 +1328,7 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // Cross-facet narrowing is preserved because only the facet's own clause is
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
-const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
+export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
   meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
 }> = [
@@ -1338,7 +1338,7 @@ const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
 ];
 
-const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
+export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
 
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
