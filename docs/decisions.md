@@ -5,6 +5,46 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-02: Research Led By Emeritus Faculty Is Labelled And Claims No Way In Without Current Activity (#4431)
+
+Owner decision: a research row led by emeritus faculty stays served and its tier is unchanged.
+Its lead is labelled Emeritus on the browse card and the detail page, and the row claims no way in unless evidence keyed to the row shows current activity.
+This refines the 2026-09-22 refusal below rather than reversing it: emeritus is still not a visibility signal, and it now decides what a served row may offer.
+
+It is a serve-time derivation in `server/src/services/emeritusLeadWayIn.ts`, and no field is written.
+
+**Emeritus-led.**
+A person's own served title holds only emeritus appointments when it names a faculty appointment as emeritus (professor, lecturer, lector, scholar, scientist, faculty) and names no active faculty or research appointment beside it.
+"Professor Emeritus and Senior Research Scientist" and "Professor Emeritus of Law and Professorial Lecturer in Law" are therefore not emeritus, because the title states current employment in the person's own words, and "President Emeritus and Sterling Professor" is not either, because only an office is emeritus.
+A trailing "Emeritus" set off from the appointment ("Professor of History, Emeritus") qualifies every appointment in its clause; an affiliation ("Affiliated Faculty, ...") is neither.
+"Emergency" never matches, and the word naming an institution ("Emeriti Association") is ignored; no named chair or prize in the corpus uses the word in another sense, measured over all 437 researcher titles containing `emer`.
+A row is emeritus-led only when it has a lead and every lead passes, so a row co-led by an active lead, or by a lead with no title, is not.
+The person-level label still appears beside an emeritus co-lead on the detail page, because it is a fact about that person.
+
+**Current activity.**
+Two arms, both already stored and keyed to the row.
+A running research award: a served award (`servedCurrentFunding`) whose end date has not passed, excluding NIH conference awards (activity code R13 or U13), which fund a meeting rather than research.
+A current team: a non-lead member (postdoc, graduate student, undergraduate, staff) on a fresh verified official roster row, the roster the detail page already serves as current.
+Undergraduate evidence is deliberately not an arm.
+Every emeritus-led row carrying a `CURRENT_UNDERGRADS` signal or a stored current-undergraduate count was hand-read against its page, and four of six were wrong or stale: an alumni list, a department committee roster, a retired lead's homepage, and a members page last updated two years ago, with one more uncertain.
+Re-admit it only after the undergraduate lanes are re-measured (#4430).
+Observation recency is not an arm either, because the sweep re-reads every row, so it dates the crawler rather than the research.
+
+**What is withheld.**
+On a withheld row the detail payload drops the `CONTACT_INSTRUCTIONS_EXIST`, `REACH_OUT_PLAUSIBLE` and `APPLICATION_FORM_EXISTS` signals, the lead email, and `planningContext` and `waysIn`.
+The client replaces the "How to get involved" block with "Current activity" copy and one link to the official page, and offers no apply, get-involved, directory, or email action.
+`hasUndergradHostingEvidence` and its badge stay, because "Has hosted undergraduate researchers" is a historical fact rather than a way in; no browse filter offers a way in, and `hostsUndergrads` reads that same historical predicate.
+The browse and search DTOs carry `emeritusLed` and `wayInWithheld` from the same derivation as the detail page, computed in the batched lead read.
+
+**Measured on Development, 2026-10-02, through `getResearchGroupDetail` over all 3,459 served rows.**
+235 rows are emeritus-led (216 faculty research profiles, 19 labs), 233 withhold their way in and 2 keep it.
+On the 233, 250 way-in signals on 155 rows and the lead email on 205 rows are no longer served; no row outside the 233 changed its signals or email.
+263 rows have a lead whose title contains the word; 28 of them are not emeritus-led under the rules above.
+Browse over all 3,459 rows, eight search queries (764 rows), and the `hostsUndergrads` filter (136 rows) served the same two flags as the detail page on every row.
+Both kept rows hold a running NIH R01: one lab page lists a current research team, and the other row's awards were confirmed running in NIH RePORTER.
+Of 10 sampled withheld rows, 8 show no current group a student could join, 1 is a false withhold whose profile lists active appointments the stored title omits, and 1 holds an external directorship.
+The gate dry run promoted 3,459 rows before and 3,460 after; the one difference is a row a concurrent writer updated between the two runs, and the gate reads none of this code.
+
 ## 2026-10-02: `dotenv` Loads Quietly, And Prettier Stays On 3.8 For Now (#4367)
 
 `dotenv` 17 and later print `injected env (N) from .env` on every `config()` call unless `quiet` is set, including in deployed runtimes where no `.env` file exists, and 18 sends that line to stderr.

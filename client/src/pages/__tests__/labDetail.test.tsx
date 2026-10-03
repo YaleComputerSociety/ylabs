@@ -3070,3 +3070,121 @@ describe('LabDetail display name unification', () => {
     expect(exploreLink.getAttribute('href')).toBe('/research');
   });
 });
+
+describe('LabDetail for research led by emeritus faculty (#4431)', () => {
+  const EMERITUS_LAB_WEBSITE_URL = 'https://emeritus-lab.example.test/';
+  const EMERITUS_JOIN_URL = 'https://emeritus-lab.example.test/join-us';
+  const EMERITUS_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-emeritus';
+  const emeritusLead = {
+    role: 'pi' as const,
+    user: {
+      netid: 'fixture.emeritus',
+      fname: 'Rowan',
+      lname: 'Elderfield',
+      displayName: 'Rowan Elderfield',
+      title: 'Professor Emeritus of Pathology',
+      emeritus: true,
+      primary_department: 'Pathology',
+      profileUrls: { official: EMERITUS_PROFILE_URL },
+    },
+  };
+
+  it('labels the lead and offers only a current-activity check when the way in is withheld', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: EMERITUS_LAB_WEBSITE_URL,
+        sourceUrls: [EMERITUS_LAB_WEBSITE_URL, EMERITUS_JOIN_URL],
+        emeritusLed: true,
+        wayInWithheld: true,
+      },
+      members: [emeritusLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('Emeritus')).toBeTruthy();
+    expect(screen.getByText('Current activity')).toBeTruthy();
+    expect(
+      screen.getByText('Emeritus lab: check the official page for current activity.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open the official page' }).getAttribute('href')).toBe(
+      EMERITUS_LAB_WEBSITE_URL,
+    );
+    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Visit .*website$/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/introduce yourself/i);
+    expect(screen.getByRole('note', { name: 'Current activity' }).textContent).not.toMatch(
+      /reach out|email|apply/i,
+    );
+  });
+
+  it('points at the lead card instead of a duplicate link when the only official page is the profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [EMERITUS_PROFILE_URL],
+        emeritusLed: true,
+        wayInWithheld: true,
+      },
+      members: [emeritusLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByText('Emeritus faculty research: check the official page for current activity.'),
+    ).toBeTruthy();
+    expect(screen.getByText(/The official profile above is the place to check/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(
+      screen
+        .getByRole('link', { name: "Open Rowan Elderfield's official profile" })
+        .getAttribute('href'),
+    ).toBe(EMERITUS_PROFILE_URL);
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('keeps the usual next step and the label when current activity is on record', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: EMERITUS_LAB_WEBSITE_URL,
+        sourceUrls: [EMERITUS_LAB_WEBSITE_URL],
+        emeritusLed: true,
+      },
+      members: [emeritusLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('Emeritus')).toBeTruthy();
+    expect(screen.getByText('How to get involved')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Visit .*website$/ }).getAttribute('href')).toBe(
+      EMERITUS_LAB_WEBSITE_URL,
+    );
+    expect(screen.queryByText('Current activity')).toBeNull();
+  });
+
+  it('does not label a lead the server did not mark emeritus', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [{ ...emeritusLead, user: { ...emeritusLead.user, emeritus: undefined } }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Emeritus')).toBeNull();
+  });
+});

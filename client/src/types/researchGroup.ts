@@ -155,6 +155,8 @@ export interface ResearchGroup {
   studentDecisionExplanation?: StudentDecisionExplanation;
   leadIdentityStatus?: 'verified' | 'under_review';
   leadProfessorPublicKey?: string;
+  emeritusLed?: boolean;
+  wayInWithheld?: boolean;
   studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 

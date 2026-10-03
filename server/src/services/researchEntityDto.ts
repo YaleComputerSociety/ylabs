@@ -54,6 +54,7 @@ import {
 } from '../utils/servedFieldContributionLabels';
 import { isCurrentFundingField, servedCurrentFunding } from './servedCurrentFunding';
 import { withMemoizedDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { servedEmeritusWayInFlags, type EmeritusWayInDecision } from './emeritusLeadWayIn';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
@@ -459,6 +460,8 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants']);
 
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'planningContext']);
+
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {
     return redactDirectContactInfo(value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH));
@@ -527,8 +530,10 @@ function derivePublicResearchEntityDto(
   };
 
   const currentFunding = servedCurrentFunding(group);
+  const wayInWithheld = group.wayInWithheld === true;
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
     if (options.forList && LIST_TRIMMED_DETAIL_ONLY_FIELDS.has(field)) continue;
+    if (wayInWithheld && WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD.has(field)) continue;
     if (isCurrentFundingField(field)) {
       if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
       continue;
@@ -649,6 +654,14 @@ function derivePublicResearchEntityDto(
     if (leadProfessorPublicKey) dto.leadProfessorPublicKey = leadProfessorPublicKey;
   }
 
+  Object.assign(
+    dto,
+    servedEmeritusWayInFlags({
+      emeritusLed: group.emeritusLed === true,
+      wayInWithheld,
+    }),
+  );
+
   if (options.includeOperatorFields) {
     for (const field of OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS) {
       if (group[field] !== undefined) {
@@ -669,6 +682,10 @@ function derivePublicResearchEntityDto(
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
   leadMemberNamesUnavailable?: boolean;
+  emeritusWayInByEntityId?: ReadonlyMap<
+    string,
+    Pick<EmeritusWayInDecision, 'emeritusLed' | 'wayInWithheld'>
+  >;
 }
 
 /**
@@ -711,13 +728,22 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
-  const { leadMemberNamesByEntityId, leadMemberNamesUnavailable, ...entityOptions } = options;
+  const {
+    leadMemberNamesByEntityId,
+    leadMemberNamesUnavailable,
+    emeritusWayInByEntityId,
+    ...entityOptions
+  } = options;
   const listOptions: PublicResearchEntityDtoOptions = { ...entityOptions, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
     (result.hits || []).map((hit) => {
-      const leadMemberNames = leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || ''));
+      const hitKey = String(hit?._id || hit?.id || '');
+      const leadMemberNames = leadMemberNamesByEntityId?.get(hitKey);
       return toPublicResearchEntityDto(
-        researchEntityListServedSource(hit, leadMemberNames, leadMemberNamesUnavailable),
+        {
+          ...researchEntityListServedSource(hit, leadMemberNames, leadMemberNamesUnavailable),
+          ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
+        },
         { ...listOptions, leadMemberNames },
       );
     }),

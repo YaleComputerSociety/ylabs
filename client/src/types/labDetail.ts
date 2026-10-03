@@ -38,6 +38,7 @@ export interface LabMemberUser {
   orcid?: string;
   orcidUrl?: string;
   title?: string;
+  emeritus?: boolean;
 }
 
 export interface LabMember {

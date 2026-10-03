@@ -131,6 +131,21 @@ describe('research-home detail accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('has no serious or critical axe violations when an emeritus-led row withholds its way in', async () => {
+    const { container } = renderLabDetail({
+      ...richPayload,
+      group: { ...richPayload.group, emeritusLed: true, wayInWithheld: true },
+      members: richPayload.members.map((member) =>
+        member.role === 'pi'
+          ? { ...member, user: { ...member.user, title: 'Professor Emeritus', emeritus: true } }
+          : member,
+      ),
+    });
+    await screen.findByText(ENTITY_NAME);
+    expect(screen.getByRole('note', { name: 'Current activity' })).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
   it('has no serious or critical axe violations for an anonymous visitor', async () => {
     const { container } = renderLabDetail(richPayload, { isAuthenticated: false });
     await screen.findByText(ENTITY_NAME);
