@@ -731,7 +731,7 @@ export function derivePromotionCopyGate(input?: PromotionCopyDryRunArtifact) {
   return {
     status: 'review_required' as const,
     command,
-    note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+    note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
     applyBlockerCount: input.applyBlockerCount,
     excludedSyntheticUsers: input.excludedSyntheticUsers,
     collectionCategoryCount: input.collectionCategoryCount,

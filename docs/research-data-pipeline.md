@@ -596,7 +596,7 @@ Letting a sibling act second would judge it against a target state that no longe
 The deferred key reports `deferred_target_written_by_a_sibling_key` and keeps its evidence and its stranded status, so a later run re-derives its decision against the home as the first key left it.
 
 This is a stored-data operation, so merging the code changes nothing a student sees.
-Read the served output afterwards with `yarn --cwd server research-entity:served-scoreboard`, and treat a `redirect_withdrawn_merge_did_not_land` count above zero as a row still needing a home rather than as a completed merge.
+Read the served output afterwards with `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, and treat a `redirect_withdrawn_merge_did_not_land` count above zero as a row still needing a home rather than as a completed merge.
 
 ### Ingest-time observation-store guards
 
@@ -1269,7 +1269,7 @@ A lane whose read regressed against its own previous read withholds its departme
 A lane the drop guard freezes does not withhold, because the drop guard compares one lane against the whole department's governed rows, so a small sibling lane such as a School of Management tab would freeze on every run and permanently withhold its department.
 A frozen lane still counts as presence evidence: when a sibling lane governs the department, the people the frozen lane listed are unioned into the department's discovered set, so the sibling cannot conclude absence for somebody only the frozen lane lists.
 
-A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-rosters` run in which every roster fetch failed.
+A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-roster` run in which every roster fetch failed.
 Without that, a lane whose every page was unreachable still emitted its honest not-read snapshot, which counted as an observation, so the barren-streak guard could never fire and the run read healthy.
 
 #### A first absence counts only for its own department and its own read

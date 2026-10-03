@@ -16,6 +16,8 @@ A research-discovery app for Yale students. It helps students find Yale research
 
 ## Quick Start
 
+Use the Node major in `.node-version`; an older major is untested and fails the client suite.
+
 ```bash
 npm install -g corepack@0.36.0
 corepack enable
@@ -23,6 +25,13 @@ bash scripts/install-all.sh
 ```
 
 Create `server/.env` and `client/.env` - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
+Then start and seed the local search index, which needs Docker:
+
+```bash
+yarn meili:up
+yarn meili:seed
+yarn meili:health   # {"status":"available"}
+```
 
 ```bash
 # Terminal 1
@@ -54,6 +63,7 @@ Scrapers run as short-lived CLI or cron jobs outside the web service process. Do
 
 ### Playwright environment fix (no root required)
 
+This shim is Linux-only: it downloads x86_64 Debian libraries.
 If `npx playwright` crashes with missing system libs (for example `libnspr4.so`), run Playwright through the local shim:
 
 ```bash

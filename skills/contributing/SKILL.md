@@ -14,12 +14,12 @@ The server follows a layered architecture: **Routes -> Middleware -> Controllers
 1. **Route** in `server/src/routes/<resource>.ts` - define HTTP method, path, and the middleware chain.
 2. **Controller** in `server/src/controllers/<resource>Controller.ts` - extract request data, call the service, format the response.
 3. **Service** in `server/src/services/<resource>Service.ts` - business logic, DB operations.
-4. Apply **auth middleware** (`isAuthenticated`, `isProfessor`, `isAdmin`, etc.) and **validation middleware** in the route.
+4. Apply **auth middleware** (`isAuthenticated` or `isAdmin`) and **validation middleware** in the route.
 5. Add tests where risk justifies them.
 
-Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, and `isConfirmed`.
+Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated` and `isAdmin`.
 
-Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination()`, `validateQuery(allowedParams[])`.
+Validation middleware: `validateObjectId(paramName?)`, `validateResearchEntityId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination` (plain middleware, not a factory), `validateQuery(allowedParams[])`.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers.
 

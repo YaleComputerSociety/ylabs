@@ -21,7 +21,7 @@ yarn security:smoke:production
 ```
 
 The same check also runs automatically as the `Post-Promotion Verify` GitHub
-Actions workflow on every push to `main`. It fails if the deployed app is stale, if `/api/config` is
+Actions workflow on every push to `main`. It fails if `/api/config` is
 missing CSP or Permissions-Policy, if current API routes are absent, or if
 authenticated/private surfaces no longer enforce the expected boundary.
 Override `SMOKE_API_BASE` or `SMOKE_APP_BASE` only when intentionally checking a
@@ -227,7 +227,7 @@ yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promot
 The `--output` artifact contains the same redacted dry-run summary printed to stdout, including collection category totals, excluded synthetic-user counts, excluded Beta-login account counts, and synthetic-user reference blockers. Saving the artifact does not verify readiness; the real Production dry-run still needs operator review before apply mode.
 `docs/release-process.md` ("Promoting data, not just code") owns the rest of the `accounts` rule: which Beta logins the promotion leaves behind, and the allow-list every promoted account row is reduced to.
 
-The Operator Board reads `/tmp/ylabs-lane-a-promotion-dry-run.json` by default, or `PROMOTION_COPY_DRY_RUN_REPORT_PATH` when set. A blocker-free dry-run appears as `review_required`, not ready, until the restore point, rollback test, and smoke gates are also recorded.
+The Operator Board reads `/tmp/ylabs-lane-a-promotion-dry-run.json` by default, or `PROMOTION_COPY_DRY_RUN_REPORT_PATH` when set. A blocker-free dry-run appears as `review_required`, not ready, until operator review and the smoke gate are also recorded.
 
 Apply mode is blocked unless both production confirmations are present.
 It no longer requires or accepts a restore point; `docs/data-refresh-runbook.md` (Phase 4) owns why and how the script rolls back on its own:
@@ -299,7 +299,7 @@ SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
 ```
 
 The rebuild is mandatory after promotion because the production `researchentities` index must
-include the current filterable fields, including `entityStudentVisibilityTier`, before browse
+include the current filterable fields, including `studentVisibilityTier`, before browse
 traffic can use it. The rebuild command writes to Meili and therefore requires
 `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; its saved artifact includes
 target `environment`, `db`, and parsed `options` metadata for promotion review.

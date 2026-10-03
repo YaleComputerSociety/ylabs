@@ -144,7 +144,7 @@ When verifying, re-read the served surface.
 The detail DTO is an allowlist builder, so a new field is absent until it is added there.
 
 **Scoreboard.**
-The instrument for reading served state and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
+The instrument for reading served state and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
 Prefer it to a throwaway script.
 
 **Department research guidance.**
@@ -161,7 +161,7 @@ Development is the only environment where scrapers run, so a data fix is applied
 `MONGODBURL` names the database the current process talks to.
 
 **Promotion.**
-`promoteAcceptedBetaCopy` replaces fifteen whole collections at once, so one promotion delivers every pending fix together.
+`promoteAcceptedBetaCopy` replaces twelve whole collections at once by default, fourteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
 Promotion is not per-fix work and never gets its own issue.
 It is also not monotonic: Production can hold the better value.
 
@@ -176,7 +176,7 @@ A dry run applies no patch, so a promotion count from a dry run is `null` rather
 
 **`*Core.ts`.**
 A library, not a CLI.
-Sixteen such files live in `server/src/scripts/` because the repository has no shared home for them yet; the suffix is the tell that a file is imported rather than run.
+Over a hundred such files live in `server/src/scripts/` because the repository has no shared home for them yet; the suffix is the tell that a file is imported rather than run.
 They are misplaced, not dead.
 
 **Predicate (identifying by predicate).**

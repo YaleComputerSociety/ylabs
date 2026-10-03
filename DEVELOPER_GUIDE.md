@@ -56,8 +56,8 @@ These instructions assume a Unix-like shell. Mac developers can run them in Term
 
 ### Prerequisites
 
-- Node.js >= 20.9.0
-- Corepack, which ships with modern Node versions
+- Node.js at the major in `.node-version`
+- Corepack, installed separately because Node 25 and later no longer ship it
 - Yarn 4, activated through Corepack
 - Docker Desktop (for local Meilisearch)
 
@@ -68,6 +68,12 @@ On a brand new Unix/WSL environment, install the basic system packages first:
 ```bash
 sudo apt update
 sudo apt install -y curl git ca-certificates build-essential python3 make g++
+```
+
+On macOS, install the Xcode command line tools instead, which provide `git`, `make`, and a compiler:
+
+```bash
+xcode-select --install
 ```
 
 Use `nvm` for Node. Avoid `apt install nodejs`, which often installs an older Node version than this repo supports.
@@ -125,7 +131,7 @@ Your local `.env` should point to:
 
 - `MONGODBURL` → the `Development` database on Atlas. This is the one the server actually boots on: `initializeConnections` throws `MONGODBURL is required` without it. The `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, and `PRODUCTION_MONGODBURL` entries in the same file name the two ends of a cross-environment copy or comparison and are read by no request path, so setting only those leaves you with a server that cannot start.
 - `MEILISEARCH_HOST` → `http://localhost:7700`
-- `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
+- `MEILISEARCH_API_KEY` → `local_development_master_key`, the local Compose master key
 - No `MEILISEARCH_INDEX_PREFIX` (local uses the bare `researchentities` index)
 
 For the client, copy its example too:
@@ -164,7 +170,9 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 yarn meili:seed
 ```
 
-This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic.
+This rebuilds the local Research index from MongoDB.
+The rebuild builds every document into a fresh staging index, confirms its document count, and swaps it in, so search never serves an empty or partial index.
+For Beta and Production follow `docs/meilisearch-reindex-runbook.md`; there a rebuild refuses to run without `OPENAI_API_KEY` when the live index has a stored embedder.
 
 **`OPENAI_API_KEY` is optional for setup.** The rebuild configures a Meilisearch embedder only when that variable holds a real key; when it is unset, blank, or still a `<...>` placeholder, the rebuild removes any embedder already stored on the unprefixed local index and logs that search is keyword-only (a prefixed Beta or Production index keeps its stored embedder), so seeding succeeds either way and an index seeded earlier with a key follows the environment on the next seed. Without a key you get a fully working keyword index and no semantic search; with one you also get embeddings. Semantic search is not behind a boolean flag: `isResearchEntitySearchEmbedderConfigured` asks Meilisearch whether the embedder exists on the index, so the capability follows the seed rather than an environment setting. A newcomer can complete every step below without an OpenAI key.
 Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
@@ -282,7 +290,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 
 ### Operator board Gate Status - keeping it honest and current
 
-The admin operator board (the **Gate Status** panel at `/programs`) reads canonical gate scorecard
+The admin operator board (the **Gate Status** panel on the admin `/analytics` page) reads canonical gate scorecard
 JSON from fixed `/tmp` paths. It does not compute gates live; it shows whatever was last written
 there. Two rules keep it trustworthy:
 
@@ -414,9 +422,10 @@ Public detail endpoints (research entity by slug, opportunity by id) and `/api/c
 
 | Middleware                     | Check                                                                                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `localAuthBypass`              | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes                      |
 | `isAuthenticated`              | `req.user` has a valid bounded NetID                                                                               |
 | `isAdmin`                      | active `AdminGrant` for the NetID (`hasActiveAdminGrant`); `userType` does not authorize                          |
+
+The optional local/test-only bypass is not middleware: `localAuthBypassUser` in `server/src/passport.ts` injects `req.user` when `LOCAL_AUTH_BYPASS=true` and skips the CAS routes.
 
 ---
 
@@ -428,15 +437,11 @@ All mount under `/api`.
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `/research`       | y/labs search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search                                                      | Varies                                                 |
-| `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
 | `/users`          | Account profile update and saved-research / program-watch planning                        | Yes                                                    |
-| `/profiles`       | Public faculty profile reads                                                               | Authenticated                                          |
 | `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
 | `/config`         | Departments + research areas                                                              | No                                                     |
-| `/research-areas` | Custom research area creation                                                             | Admin for writes                                       |
 | `/admin`          | Admin operations                                                                          | Admin                                                  |
-| `/seed`           | Dev seeding routes                                                                        | Dev mode only                                          |
 
 ---
 
@@ -455,7 +460,9 @@ yarn test:server              # server suite only
 yarn test:client              # client suite only
 ```
 
-`yarn test` runs the two suites sequentially on purpose. Run in parallel they contend for the same Development data and fabricate failures that are not real.
+`yarn test` runs the two suites sequentially on purpose.
+Neither reaches a real database: the server suite is hermetic (`server/src/test/hermeticEnvironment.ts`) and the client suite runs under `jsdom`.
+Run in parallel, though, they starve each other's in-memory MongoDB instances and Vitest workers and fabricate timeouts that are not real.
 
 Per workspace, when you want watch mode or a single file:
 
@@ -468,7 +475,7 @@ npx tsc --noEmit -p server/tsconfig.json
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
-The suites are large: 675 server files (about 10,911 tests) and 104 client files (about 1,141 tests). On a loaded machine both produce timeout failures that are not real, against the in-memory MongoDB on the server side and vitest workers on the client side. Before believing a local failure, re-run the single file with `TMPDIR=/tmp npx vitest run <path>` from that workspace; if it passes alone it was resource starvation, and CI on Linux is the authority.
+The suites are large; `git ls-files 'server/*.test.ts' | wc -l` and `git ls-files 'client/*.test.ts' 'client/*.test.tsx' | wc -l` print the current file counts. On a loaded machine both produce timeout failures that are not real, against the in-memory MongoDB on the server side and vitest workers on the client side. Before believing a local failure, re-run the single file with `TMPDIR=/tmp npx vitest run <path>` from that workspace; if it passes alone it was resource starvation, and CI on Linux is the authority.
 
 `yarn serve:fresh` (a clean install, build, and serve) is a smoke check, not a test run. It was previously named `yarn test`, which is why that name now runs the suites instead.
 
