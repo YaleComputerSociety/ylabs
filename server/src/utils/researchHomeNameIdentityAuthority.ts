@@ -23,6 +23,12 @@ import { isNavigationMenuPhrase } from './titleHygiene';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
+const TRAILING_RESEARCH_GROUP_HEAD_RE = /\s(?:lab|labs|laborator(?:y|ies)|groups?)$/i;
+
+export function namesAResearchGroupRatherThanAPerson(value: unknown): boolean {
+  return TRAILING_RESEARCH_GROUP_HEAD_RE.test(textValue(value).replace(/[\s.]+$/, ''));
+}
+
 /**
  * A lab name written as one closed compound, which carries no left word boundary
  * for the word regex to find.

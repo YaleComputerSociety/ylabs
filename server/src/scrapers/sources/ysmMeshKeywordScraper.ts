@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { isPersonScopedResearchEntityShape } from '../../models/storedVocabularies';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -60,6 +61,8 @@ export interface YsmMeshCandidateEntity {
   slug?: string;
   name: string;
   contactName?: string;
+  entityType?: string;
+  kind?: string;
   profileUrls: string[];
   manuallyLockedFields?: string[];
 }
@@ -70,6 +73,8 @@ export interface YsmMeshCandidateEntityDoc {
   name?: string;
   displayName?: string;
   contactName?: string;
+  entityType?: string;
+  kind?: string;
   websiteUrl?: string;
   website?: string;
   sourceUrls?: string[];
@@ -339,6 +344,8 @@ export function candidateEntityFromDoc(doc: YsmMeshCandidateEntityDoc): YsmMeshC
     slug: doc.slug,
     name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
     contactName: textValue(doc.contactName),
+    entityType: textValue(doc.entityType) || undefined,
+    kind: textValue(doc.kind) || undefined,
     profileUrls,
     manuallyLockedFields: doc.manuallyLockedFields || [],
   };
@@ -467,6 +474,8 @@ async function defaultEntityFinder(
     name: 1,
     displayName: 1,
     contactName: 1,
+    entityType: 1,
+    kind: 1,
     websiteUrl: 1,
     website: 1,
     sourceUrls: 1,
@@ -602,6 +611,7 @@ export class YsmMeshKeywordScraper implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
     let profilesResolved = 0;
+    let organizationRowsSkipped = 0;
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
@@ -614,6 +624,10 @@ export class YsmMeshKeywordScraper implements IScraper {
 
     await mapWithConcurrency(candidates, concurrency, async (entity) => {
       try {
+        if (!isPersonScopedResearchEntityShape(entity)) {
+          organizationRowsSkipped += 1;
+          return;
+        }
         if (workPlannerPolicy) {
           if (!idValue(entity._id) && !entity.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
@@ -666,6 +680,7 @@ export class YsmMeshKeywordScraper implements IScraper {
       notes:
         `Attached governed MeSH research areas to ${entitiesObserved} YSM entities ` +
         `(${profilesResolved} resolved to an individual profile of ${candidates.length} scanned; ` +
+        `${organizationRowsSkipped} organization rows skipped because a profile describes one person; ` +
         `${keywordsEnumerated} MeSH keywords enumerated).`,
       metrics: { workPlanner: workPlannerMetrics },
     };

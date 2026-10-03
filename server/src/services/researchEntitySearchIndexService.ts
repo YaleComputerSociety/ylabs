@@ -39,6 +39,7 @@ import {
   servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
+  namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -423,7 +424,7 @@ export async function fetchResearchEntitySearchMemberNames(
       if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
 
       const name = cleanPersonName(member.name);
-      if (!name) continue;
+      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
 
       const fields = byEntityId.get(entityId) || emptyMemberNameFields();
       fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
