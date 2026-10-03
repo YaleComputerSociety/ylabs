@@ -71,6 +71,16 @@ Request-path reads use `getMeiliSearchIndex(name)` (the search key); writes, the
 Each role reads its own key and falls back to `MEILISEARCH_API_KEY` with a one-time warning in deployed runtimes (#4014); the key rights and the Render placement are in `docs/meilisearch-reindex-runbook.md#meilisearch-keys`.
 Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search within that bound instead of holding the request for the runtime's default fetch timeout of several minutes.
 
+### A Meilisearch stall is paid once per cooldown, not once per request (#4191)
+
+The 5-second bound alone made every request during a stall wait 5 seconds, because nothing remembered the failure.
+`server/src/utils/meiliAvailability.ts` holds a process-wide breaker: a timeout or connection failure (`MeilisearchRequestError`, `MeilisearchRequestTimeOutError`) marks Meilisearch unavailable for `MEILISEARCH_UNAVAILABLE_COOLDOWN_MS` (30 seconds), and every call through `withMeiliAvailabilityGuard` fails at once with `MeilisearchKnownUnavailableError` until it expires.
+An API error such as a `403` or an invalid filter does not open it, because Meilisearch answered.
+The request path in `researchGroupService.ts` wraps its index in the guard, so text search answers its `503` at once and the detail page drops the similar-research rail at once.
+A failed embedder check is also cached as `unknown` for `RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS` (30 seconds), against 5 minutes for `configured` and `absent`, so recovery is picked up within that window.
+Measured on 2026-10-03 against a throwaway paused Meilisearch with the Development corpus: a cold process answered three detail pages in 5.4, 5.3 and 5.3 seconds before the change and 5.4, 0.3 and 0.3 seconds after; a warm process answered three text searches with `503` in 5.1 seconds each before and 5.1, 0.1 and 0.1 seconds after; both served 200 again once the cooldown had passed.
+`server/src/services/__tests__/meilisearchStallFailsFastAfterFirstTimeout.integration.test.ts` pins the call counts through the mounted routes.
+
 ### A Meilisearch outage answers 503, not a Mongo search (#4187)
 
 When the primary Meilisearch query still throws after `searchWithFallbacks` has applied its recoverable degradations, `searchResearchGroupsViaMeili` throws `SearchUnavailableError`, and the error handler answers `503` with a `Retry-After` hint.

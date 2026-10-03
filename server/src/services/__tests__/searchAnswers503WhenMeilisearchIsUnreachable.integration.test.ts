@@ -28,6 +28,8 @@ import apiRouter from '../../routes';
 import { errorHandler } from '../../middleware/errorHandler';
 import { ResearchEntity } from '../../models/researchEntity';
 import { mongoOptions } from '../../db/connections';
+import { resetMeiliAvailability } from '../../utils/meiliAvailability';
+import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
 
 const DATABASE = 'search_answers_503_when_meilisearch_is_unreachable_test';
 const FAST_ANSWER_MS = 2000;
@@ -104,6 +106,8 @@ describe('a research search while Meilisearch is unreachable', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetMeiliAvailability();
+    invalidateResearchEntitySearchEmbedderCache();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     meili.search.mockReset();
     meili.search.mockRejectedValue(unreachable());

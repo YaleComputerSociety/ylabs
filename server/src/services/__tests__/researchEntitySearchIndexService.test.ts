@@ -12,6 +12,7 @@ import {
   fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
   invalidateResearchEntitySearchEmbedderCache,
+  RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS,
   isResearchEntitySearchEmbedderConfigured,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
@@ -1243,7 +1244,7 @@ describe('isResearchEntitySearchEmbedderConfigured', () => {
     expect(configured).toBe(false);
   });
 
-  it('does not cache a failed embedder check, so the next request asks again', async () => {
+  it('caches a failed embedder check briefly, then asks again once it expires', async () => {
     let calls = 0;
     const index = {
       getEmbedders: async () => {
@@ -1253,12 +1254,17 @@ describe('isResearchEntitySearchEmbedderConfigured', () => {
       },
     };
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-03T12:00:00Z') });
 
     try {
       expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(false);
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(false);
+      expect(calls).toBe(1);
+      vi.setSystemTime(Date.now() + RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS + 1);
       expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
       expect(calls).toBe(2);
     } finally {
+      vi.useRealTimers();
       consoleError.mockRestore();
     }
   });
@@ -1293,6 +1299,7 @@ describe('isResearchEntitySearchEmbedderConfigured', () => {
           },
         }),
       ).toBe('unknown');
+      invalidateResearchEntitySearchEmbedderCache();
       expect(await readResearchEntitySearchEmbedderState({ getEmbedders: async () => ({}) })).toBe(
         'absent',
       );
