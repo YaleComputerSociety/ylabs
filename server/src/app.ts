@@ -12,7 +12,6 @@ import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { createClientStaticAssets } from './middleware/clientStaticAssets';
@@ -23,6 +22,7 @@ import { sessionCookieName } from './utils/sessionCookie';
 import { SESSION_LIFETIME_MS } from './utils/sessionClaim';
 import { parseTrustedProxyCidrs } from './utils/trustedProxyCidrs';
 import { assertDeployedMeiliConnectionConfig } from './utils/meiliClient';
+import { resolveServerPackageRoot } from './utils/serverPackageRoot';
 import {
   ensureAnonymousRateLimitId,
   firstContactLimiter,
@@ -30,8 +30,7 @@ import {
   observeFirstContactVolume,
 } from './middleware/rateLimiters';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientDistPath = path.join(__dirname, '../../client/dist');
+const clientDistPath = path.join(resolveServerPackageRoot(import.meta.url), '..', 'client', 'dist');
 const API_BODY_LIMIT = '64kb';
 const API_URLENCODED_PARAMETER_LIMIT = 100;
 // GET/HEAD/OPTIONS paths the CSRF origin guard must still treat as

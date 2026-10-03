@@ -8,7 +8,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
 import {
@@ -16,14 +15,14 @@ import {
   resolveSafeJsonReportOutputPath,
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
+import { isDirectScriptInvocation } from '../scripts/directScriptInvocation';
 import { getSourceCoverage } from './sourceCoverageRegistry';
 import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 import { connectScriptMongo } from '../db/connections';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
+dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
 interface SourceSeed {
   name: string;
@@ -691,7 +690,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+if (isDirectScriptInvocation(import.meta.url, 'seedSources')) {
   main().catch(async (err) => {
     console.error(sanitizeLogValue(err));
     await mongoose.disconnect().catch(() => {});

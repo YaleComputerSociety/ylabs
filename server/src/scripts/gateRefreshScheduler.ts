@@ -14,13 +14,11 @@
  */
 import { spawn } from 'child_process';
 import type { EventEmitter } from 'events';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { captureServerWarning } from '../utils/errorTracking';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const __filenameLocal = fileURLToPath(import.meta.url);
-const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
+const SERVER_ROOT = resolveServerPackageRoot(import.meta.url);
 const MIN_GATE_REFRESH_INTERVAL_MINUTES = 5;
 const MAX_GATE_REFRESH_INTERVAL_MINUTES = 24 * 60;
 

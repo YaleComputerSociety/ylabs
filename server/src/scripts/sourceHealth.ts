@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ScrapeRun } from '../models/scrapeRun';
@@ -10,10 +9,9 @@ import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceH
 import { isDirectScriptInvocation } from './directScriptInvocation';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
+dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
 export interface SourceHealthCliOptions {
   days: number;
