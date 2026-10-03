@@ -963,6 +963,7 @@ When a `yale-college-fellowships-office` page states several dated deadlines, th
 The first application label still decides whether the page states a deadline at all, with its old nearest-date fallback; a later label only adds another cycle, and only with a date in its own sentence.
 Letting a later label find a deadline the first did not read the open date of an "Application Open/Deadline: <open> to <close>" range on 55 external-award pages; 35 other external-award pages already plan a 2019 date from their first label, which is a separate defect.
 A label whose words up to its date name another step (recommendation letters, notifications, decisions, interviews, an information session, an event) is not a deadline label.
+On a timeline laid out one step per block, a date in another block that carries a label of its own (a start date, a notification, an opening) belongs to that label, so the deadline label never borrows it; a page that writes each value before its label ("February 18, 2026 / Application deadline / March 2026 / Notifications sent / May 26, 2026 / Program start date") planned the program start as the deadline until #4172.
 The grants lane reads one structured Deadline Date field per fund page, so it has no choice among cycles to make.
 
 Every program lane reads a date through `parseProgramDate` in `scrapers/utils/programDeadline.ts` (#4215), which interprets it in America/New_York with the offset in force on that date.

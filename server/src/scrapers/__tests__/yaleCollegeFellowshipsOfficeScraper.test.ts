@@ -646,6 +646,37 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     });
   });
 
+  it('never takes a deadline from the label after it on a value-then-label timeline (#4172)', () => {
+    const timeline = (rows: string[]) =>
+      parseFellowshipCatalogPage(
+        `<main><h1>Fixture Undergraduate Research Fellowship</h1><div class="text">${rows
+          .map((row) => `<p>${row}</p>`)
+          .join('\n')}</div></main>`,
+        detailPageUrl,
+        new Date('2025-11-01T00:00:00Z'),
+      )[0];
+
+    const candidate = timeline([
+      '<span>December 5, 2025</span><br>Application open',
+      '<span>February 18, 2026, 7:00 pm EST via the Yale fellowship portal</span><br>Application deadline',
+      '<span>March 2026</span><br>Notifications sent',
+      '<span>May 26, 2026</span><br>Program start date',
+      '<span>July 24, 2026</span><br>Program end date',
+    ]);
+
+    expect(candidate).toMatchObject({
+      applicationOpenDate: new Date('2025-12-05T05:00:00.000Z'),
+      deadline: new Date('2026-02-19T00:00:00.000Z'),
+    });
+    expect(
+      timeline([
+        '<span>December 5, 2025</span><br>Application open',
+        '<span>Mid-February</span><br>Application deadline',
+        '<span>May 26, 2026</span><br>Program start date',
+      ])?.deadline,
+    ).toBeUndefined();
+  });
+
   it('associates labeled dates within their sentence before using direction', () => {
     const candidates = parseFellowshipCatalogPage(
       `

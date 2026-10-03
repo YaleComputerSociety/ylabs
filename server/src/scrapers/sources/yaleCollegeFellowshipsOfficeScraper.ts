@@ -812,6 +812,46 @@ interface DateNearLabel {
   inLabelSentence: boolean;
 }
 
+const DATE_BLOCK_BOUNDARY = '\u00b6';
+const DATE_BLOCK_SELECTOR =
+  'p, li, dd, dt, td, th, tr, h1, h2, h3, h4, h5, h6, div, section, article';
+
+function blockMarkedDateText(root: cheerio.Cheerio<any>): string {
+  const copy = root.clone();
+  copy
+    .find(DATE_BLOCK_SELECTOR)
+    .before(` ${DATE_BLOCK_BOUNDARY} `)
+    .after(` ${DATE_BLOCK_BOUNDARY} `);
+  return normalizeWhitespace(copy.text()).replace(
+    new RegExp(`${DATE_BLOCK_BOUNDARY}(?:\\s*${DATE_BLOCK_BOUNDARY})+`, 'g'),
+    DATE_BLOCK_BOUNDARY,
+  );
+}
+
+const TIMELINE_STEP_LABEL =
+  /\b(?:deadlines?|due|notif\w*|decisions?|announc\w*|interviews?|open(?:s|ing)?|clos(?:e|es|ed|ing)|start(?:s|ing)?|begin(?:s|ning)?|end(?:s|ing)?|recommend\w*|references?)\b/i;
+
+/**
+ * On a timeline laid out one step per block, a date in another block that carries a
+ * label of its own is that label's value, whichever side of it the date sits (#4172).
+ */
+function withoutDateOfAnotherBlockLabel(
+  match: RegExpMatchArray | undefined,
+  window: string,
+  side: 'before' | 'after',
+): RegExpMatchArray | undefined {
+  if (!match) return undefined;
+  const start = match.index ?? 0;
+  const end = start + match[0].length;
+  const between = side === 'before' ? window.slice(end) : window.slice(0, start);
+  if (!between.includes(DATE_BLOCK_BOUNDARY)) return match;
+  const blockStart = window.lastIndexOf(DATE_BLOCK_BOUNDARY, start) + 1;
+  const nextBoundary = window.indexOf(DATE_BLOCK_BOUNDARY, end);
+  const blockEnd = nextBoundary === -1 ? window.length : nextBoundary;
+  const dateBlock = `${window.slice(blockStart, start)} ${window.slice(end, blockEnd)}`;
+  return TIMELINE_STEP_LABEL.test(dateBlock) ? undefined : match;
+}
+
 function dateNearLabel(
   normalized: string,
   label: RegExpMatchArray,
@@ -828,8 +868,9 @@ function dateNearLabel(
   const datesBefore = Array.from(before.matchAll(datePattern));
   const after = normalized.slice(labelEnd, labelEnd + 120);
   datePattern.lastIndex = 0;
-  const closestBeforeMatch = datesBefore.at(-1);
-  const closestAfterMatch = datePattern.exec(after);
+  const closestBeforeMatch = withoutDateOfAnotherBlockLabel(datesBefore.at(-1), before, 'before');
+  const closestAfterMatch =
+    withoutDateOfAnotherBlockLabel(datePattern.exec(after) ?? undefined, after, 'after') ?? null;
   const sentenceBoundaryPattern = /[.!?](?:\s|$)/;
   const beforeIsInSentence =
     closestBeforeMatch !== undefined &&
@@ -1681,11 +1722,14 @@ function candidateFromDetailPage(
   );
   const applicationInformation = applicationSectionText($);
   const record = externalAwardRecord($, contentRoot, pageUrl, referenceDate);
-  const proseDateText = normalizeWhitespace(withoutRecordWindow(chromeFreeRoot).text());
+  const proseRoot = withoutRecordWindow(chromeFreeRoot);
+  const proseDateText = normalizeWhitespace(proseRoot.text());
   const deadlineStatement = record.deadline ? 'stated' : programDeadlineStatement(proseDateText);
   const deadline =
     record.deadline ??
-    (deadlineStatement === 'none' ? undefined : statedDeadline(proseDateText, referenceDate));
+    (deadlineStatement === 'none'
+      ? undefined
+      : statedDeadline(blockMarkedDateText(proseRoot), referenceDate));
   const applicationOpenDate = record.deadline
     ? record.applicationOpenDate
     : parseProgramDate(bestApplicationOpenText(proseDateText), 'opens', referenceDate);
