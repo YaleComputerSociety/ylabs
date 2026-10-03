@@ -196,6 +196,47 @@ export function checkNoRepeatedRowsAcrossPages(
   return buildInvariant(PAGE_DISTINCTNESS_ID, PAGE_DISTINCTNESS_TITLE, repeated === 0, detail);
 }
 
+const REPEATABLE_BROWSE_ORDER_ID = 'default-browse-order-is-repeatable';
+const REPEATABLE_BROWSE_ORDER_TITLE =
+  'Two walks of the default browse over an unchanged corpus serve the same rows in the same order';
+
+export function checkDefaultBrowseOrderIsRepeatable(
+  firstWalk: ReadonlyArray<readonly string[]>,
+  secondWalk: ReadonlyArray<readonly string[]>,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const first = firstWalk.flat();
+  const second = secondWalk.flat();
+  const length = Math.max(first.length, second.length);
+  let firstDivergentPosition = -1;
+  for (let position = 0; position < length; position += 1) {
+    if (first[position] !== second[position]) {
+      firstDivergentPosition = position;
+      break;
+    }
+  }
+  const detail = {
+    pagesWalked: firstWalk.length,
+    rowsCompared: length,
+    firstDivergentPosition,
+  };
+  if (firstDivergentPosition >= 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      REPEATABLE_BROWSE_ORDER_ID,
+      REPEATABLE_BROWSE_ORDER_TITLE,
+      'The corpus changed between the two walks, so a reordering may come from a rescored row rather than an unstable tiebreak',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(
+    REPEATABLE_BROWSE_ORDER_ID,
+    REPEATABLE_BROWSE_ORDER_TITLE,
+    firstDivergentPosition < 0,
+    detail,
+  );
+}
+
 export function checkTopicDropAttribution(
   tally: TopicAttributionTally,
   corpusBefore: CorpusFingerprint,

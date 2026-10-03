@@ -118,6 +118,29 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.sortTitleQualifier).toBe('ecology) graduate school)');
   });
 
+  it('indexes a browse tiebreak key that is fixed per row and independent of observation time', () => {
+    const indexed = (lastObservedAt: string) =>
+      buildResearchEntitySearchIndexDocument({
+        _id: 'entity-browse-tiebreak',
+        name: 'Nebula Imaging Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        lastObservedAt,
+      })?.browseTiebreakKey;
+    const otherRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-browse-tiebreak-other',
+      name: 'Nebula Imaging Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    })?.browseTiebreakKey;
+
+    expect(indexed('2026-01-01T00:00:00.000Z')).toMatch(/^[0-9a-f]{16}$/);
+    expect(indexed('2026-01-01T00:00:00.000Z')).toBe(indexed('2026-09-01T00:00:00.000Z'));
+    expect(otherRow).not.toBe(indexed('2026-01-01T00:00:00.000Z'));
+  });
+
   it('breaks a title tie in the order the suffixed headings read when one label prefixes another', () => {
     const qualifierFor = (department: string) =>
       buildResearchEntitySearchIndexDocument({
@@ -736,6 +759,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining([
+        'browseTiebreakKey',
         'lastObservedAt',
         'name',
         'sortTitle',
@@ -1954,6 +1978,7 @@ describe('index document field allowlist (#3944)', () => {
       'studentVisibilityTier',
       'sortTitle',
       'sortTitleQualifier',
+      'browseTiebreakKey',
     ]) {
       expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(field);
     }

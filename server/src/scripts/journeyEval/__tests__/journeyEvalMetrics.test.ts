@@ -3,6 +3,7 @@ import {
   attributeTopicDrops,
   buildRate,
   checkConstantReportedTotal,
+  checkDefaultBrowseOrderIsRepeatable,
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkQueryVariantServesTheBaseline,
@@ -158,6 +159,53 @@ describe('resolvePagesToWalk', () => {
   it('always walks at least one page', () => {
     expect(resolvePagesToWalk(0, 50)).toBe(1);
     expect(resolvePagesToWalk(3, 0)).toBe(1);
+  });
+});
+
+describe('checkDefaultBrowseOrderIsRepeatable', () => {
+  const movedCorpus: CorpusFingerprint = {
+    ...steadyCorpus,
+    latestUpdatedAt: '2026-09-25T18:05:00.000Z',
+  };
+
+  it('passes when both walks serve the same rows in the same order', () => {
+    const walk = [
+      ['a', 'b'],
+      ['c', 'd'],
+    ];
+    const result = checkDefaultBrowseOrderIsRepeatable(walk, walk, steadyCorpus, steadyCorpus);
+
+    expect(result.status).toBe('pass');
+    expect(result.detail.rowsCompared).toBe(4);
+  });
+
+  it('fails on a reordering over an unchanged corpus and names where it starts', () => {
+    const result = checkDefaultBrowseOrderIsRepeatable(
+      [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+      [
+        ['a', 'b'],
+        ['d', 'c'],
+      ],
+      steadyCorpus,
+      steadyCorpus,
+    );
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.firstDivergentPosition).toBe(2);
+  });
+
+  it('is inconclusive when the corpus moved between the walks', () => {
+    const result = checkDefaultBrowseOrderIsRepeatable(
+      [['a', 'b']],
+      [['b', 'a']],
+      steadyCorpus,
+      movedCorpus,
+    );
+
+    expect(result.status).toBe('inconclusive');
   });
 });
 

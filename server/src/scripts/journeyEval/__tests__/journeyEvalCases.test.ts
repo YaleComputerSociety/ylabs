@@ -252,3 +252,72 @@ describe('creative-practice-label-attribution case (#4519)', () => {
     expect(outcome.invariants[0].status).toBe('inconclusive');
   });
 });
+
+describe('default-browse-order-is-repeatable case', () => {
+  const defaultBrowseCase = journeyCases.find(
+    (candidate) => candidate.id === 'default-browse-order-is-repeatable',
+  )!;
+  const servedPage = (slugs: string[]) => ({
+    degraded: false,
+    researchEntities: slugs.map((slug) => ({
+      slug,
+      school: 'School of Medicine',
+      departments: ['Synthetic Physiology'],
+      entityType: 'LAB',
+    })),
+  });
+  const contextServing = (walks: string[][][]): JourneyEvalContext => {
+    let call = 0;
+    const pagesPerWalk = walks[0].length;
+    return {
+      browse: async ({ page }) => {
+        const walk = walks[Math.min(Math.floor(call / pagesPerWalk), walks.length - 1)];
+        call += 1;
+        return servedPage(walk[(page ?? 1) - 1]);
+      },
+      readStoredRows: async () => new Map(),
+      readCorpusFingerprint: async () => steadyCorpus,
+      readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
+      topicQueryJudgements: null,
+      window: 2,
+      facetValuesChecked: 0,
+      pagesChecked: pagesPerWalk,
+    };
+  };
+  const invariantsOf = async (walks: string[][][]) => {
+    const outcome = await defaultBrowseCase.run(contextServing(walks));
+    return {
+      outcome,
+      byId: Object.fromEntries(outcome.invariants.map((invariant) => [invariant.id, invariant])),
+    };
+  };
+
+  it('passes a fixed order and reports the first page split without gating on it', async () => {
+    const pages = [
+      ['row-a', 'row-b'],
+      ['row-c', 'row-d'],
+    ];
+    const { outcome, byId } = await invariantsOf([pages, pages]);
+
+    expect(byId['default-browse-order-is-repeatable'].status).toBe('pass');
+    expect(byId['no-row-repeats-across-pages'].status).toBe('pass');
+    expect(byId['default-browse-is-not-degraded'].status).toBe('pass');
+    expect(outcome.rates).toEqual([]);
+    expect(outcome.notes?.firstPageBySchool).toEqual({ 'School of Medicine': 2 });
+  });
+
+  it('fails when a second walk over an unchanged corpus reorders rows', async () => {
+    const { byId } = await invariantsOf([
+      [
+        ['row-a', 'row-b'],
+        ['row-c', 'row-d'],
+      ],
+      [
+        ['row-a', 'row-c'],
+        ['row-b', 'row-d'],
+      ],
+    ]);
+
+    expect(byId['default-browse-order-is-repeatable'].status).toBe('fail');
+  });
+});

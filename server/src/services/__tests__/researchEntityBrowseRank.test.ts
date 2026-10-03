@@ -193,4 +193,64 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(withCopiedCard).toBe(withNoCard);
     expect(withCopiedCard).toBeLessThan(withOwnCard);
   });
+
+  describe('served enrichment', () => {
+    const now = Date.now();
+    const daysFromNow = (days: number) => new Date(now + days * 86_400_000).toISOString();
+    const rank = (entity: Record<string, any>) =>
+      computeResearchEntityBrowseRank({ entity, leadMembers: attachedLead() });
+
+    it('rewards a served research website', () => {
+      const withWebsite = rank(completeEntity());
+      const withoutWebsite = rank({ ...completeEntity(), websiteUrl: undefined });
+      expect(withWebsite - withoutWebsite).toBe(__testing.ENRICHMENT_POINTS.website);
+    });
+
+    it('earns no website points for a link the serve guards withhold', () => {
+      const pressPage = rank({
+        ...completeEntity(),
+        websiteUrl: 'https://news.yale.edu/2024/01/01/lab-feature',
+      });
+      const noWebsite = rank({ ...completeEntity(), websiteUrl: undefined });
+      expect(pressPage).toBe(noWebsite);
+    });
+
+    it('rewards served methods and ignores a methods list the sanitizer empties', () => {
+      const base = rank(completeEntity());
+      expect(rank({ ...completeEntity(), methods: ['Electrophysiology'] }) - base).toBe(
+        __testing.ENRICHMENT_POINTS.methods,
+      );
+      expect(rank({ ...completeEntity(), methods: ['   '] })).toBe(base);
+    });
+
+    it('rewards a grant that is still running', () => {
+      const base = rank(completeEntity());
+      const running = rank({
+        ...completeEntity(),
+        recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(200) }],
+        recentGrantCount: 1,
+      });
+      expect(running - base).toBe(__testing.ENRICHMENT_POINTS.currentGrant);
+    });
+
+    it('earns nothing for a grant that has ended', () => {
+      const base = rank(completeEntity());
+      const ended = rank({
+        ...completeEntity(),
+        recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(-30) }],
+        recentGrantCount: 1,
+      });
+      expect(ended).toBe(base);
+    });
+
+    it('adds the same enrichment points to a lab and a faculty research row', () => {
+      const enrichmentGain = (entityType: string) =>
+        rank({ ...completeEntity(), entityType, methods: ['Electrophysiology'] }) -
+        rank({ ...completeEntity(), entityType, websiteUrl: undefined });
+      expect(enrichmentGain('FACULTY_RESEARCH_AREA')).toBe(enrichmentGain('LAB'));
+      expect(enrichmentGain('LAB')).toBe(
+        __testing.ENRICHMENT_POINTS.website + __testing.ENRICHMENT_POINTS.methods,
+      );
+    });
+  });
 });

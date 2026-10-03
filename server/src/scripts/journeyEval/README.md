@@ -91,6 +91,14 @@ A card that serves the label where the decision does not, or drops it where the 
 The share of cards labelled is a rate and never gates.
 Change the label inside `decideCreativePractice` in `server/src/utils/creativePracticeDescription.ts`, never at one surface, or this case reports the surfaces as disagreeing.
 
+## The default browse order is repeatable
+
+The `default-browse-order-is-repeatable` case walks the no-query browse twice and fails when the second walk serves a different order over an unchanged corpus (#4547).
+Default browse breaks `browseRankScore` ties on the indexed `browseTiebreakKey`, a fixed hash of the row id, because the `lastObservedAt` tiebreak served the sweep's write order and reshuffled pages while a sweep ran.
+A reordering while the corpus fingerprint moved is inconclusive, since a rescored row legitimately moves.
+The case also fails when either walk is degraded, which is what an index that has not had `browseTiebreakKey` pushed to its sortable attributes returns.
+The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours, and the grant term is known to lean toward NIH-funded rows.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

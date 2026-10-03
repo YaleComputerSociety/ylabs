@@ -127,6 +127,7 @@ import {
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
 } from './researchSearchPagination';
 import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyHeadings';
+import { BROWSE_TIEBREAK_KEY_ATTRIBUTE } from '../utils/researchEntityBrowseTiebreakKey';
 import {
   NOT_EMERITUS_LED,
   decideEmeritusWayIn,
@@ -993,10 +994,17 @@ const meiliSortEntries = (
 /**
  * An index whose settings predate a sortable attribute rejects the whole query, so
  * until `reindex:meili` pushes the settings the title sort falls back to the stored
- * `name` rather than to no order at all.
+ * `name` rather than to no order at all. The browse tiebreak degrades first and
+ * alone, back to `lastObservedAt`, so an index that already sorts on
+ * `browseRankScore` keeps it.
  */
-const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] =>
-  sortEntries
+const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] => {
+  if (sortEntries.some((entry) => entry.startsWith(`${BROWSE_TIEBREAK_KEY_ATTRIBUTE}:`))) {
+    return sortEntries.map((entry) =>
+      entry.startsWith(`${BROWSE_TIEBREAK_KEY_ATTRIBUTE}:`) ? 'lastObservedAt:desc' : entry,
+    );
+  }
+  return sortEntries
     .filter(
       (entry) =>
         !entry.startsWith('browseRankScore') &&
@@ -1007,6 +1015,7 @@ const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] =>
         ? `name:${entry.slice(SORT_TITLE_ATTRIBUTE.length + 1)}`
         : entry,
     );
+};
 
 /**
  * True when Meilisearch rejected the query because a requested sort attribute is
@@ -1569,11 +1578,13 @@ async function searchResearchGroupsForQuery(
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
     sortConfig.push(...meiliSortEntries(sort.sortBy, order));
   } else if (isBrowseAllQuery) {
-    // Default browse: surface the "best" research homes first — those with the
-    // strongest completeness + undergrad-access signal — then fall back to
-    // recency as a tiebreak. See services/researchEntityBrowseRank.ts.
+    // Default browse: surface the most complete, best-documented research first
+    // (services/researchEntityBrowseRank.ts), then break ties on a fixed per-row
+    // key. `lastObservedAt` was the tiebreak, but a sweep stamps nearly every row
+    // on the same day, so it served the sweep's write order and reshuffled pages
+    // mid-sweep (#4547).
     sortConfig.push('browseRankScore:desc');
-    sortConfig.push('lastObservedAt:desc');
+    sortConfig.push(`${BROWSE_TIEBREAK_KEY_ATTRIBUTE}:asc`);
   } else {
     // Text query: Meilisearch's `sort` ranking rule runs last, so this only
     // breaks ties between comparably-relevant results. It lets the type-aware

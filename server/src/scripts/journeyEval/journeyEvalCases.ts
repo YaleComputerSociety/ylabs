@@ -20,6 +20,7 @@ import {
   checkFacetAgreement,
   checkConstantReportedTotal,
   checkCreativePracticeLabelAttribution,
+  checkDefaultBrowseOrderIsRepeatable,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
@@ -395,6 +396,79 @@ const paginationServesDistinctRows: JourneyCase = {
         }),
       ],
       rates: [],
+    };
+  },
+};
+
+const countBy = (values: readonly string[]): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const value of values) counts[value] = (counts[value] ?? 0) + 1;
+  return counts;
+};
+
+const firstStringOr = (value: unknown, fallback: string): string => {
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === 'string' && first.trim() ? first.trim() : fallback;
+};
+
+const defaultBrowseOrderIsRepeatable: JourneyCase = {
+  id: 'default-browse-order-is-repeatable',
+  title: 'The default browse serves one fixed order a student can page through and come back to',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const walk = async () => {
+      const pages: string[][] = [];
+      const firstPageRows: Array<Record<string, unknown>> = [];
+      let degradedPages = 0;
+      for (let page = 1; page <= pagesToWalk; page += 1) {
+        const result = await context.browse({ page, pageSize: context.window });
+        if (result.degraded !== false) degradedPages += 1;
+        const rows = servedRows(result);
+        if (page === 1) firstPageRows.push(...rows);
+        pages.push(rows.map(rowKey).filter(Boolean));
+      }
+      return { pages, firstPageRows, degradedPages };
+    };
+    const firstWalk = await walk();
+    const secondWalk = await walk();
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        buildInvariant(
+          'default-browse-is-not-degraded',
+          'The default browse does not fall back to the observation-time tiebreak',
+          firstWalk.degradedPages + secondWalk.degradedPages === 0,
+          {
+            pagesWalked: pagesToWalk,
+            degradedPages: firstWalk.degradedPages + secondWalk.degradedPages,
+          },
+        ),
+        checkDefaultBrowseOrderIsRepeatable(
+          firstWalk.pages,
+          secondWalk.pages,
+          corpusBefore,
+          corpusAfter,
+        ),
+        checkNoRepeatedRowsAcrossPages(firstWalk.pages, corpusBefore, corpusAfter, {
+          pagesRequested: context.pagesChecked,
+          reachablePages,
+        }),
+      ],
+      rates: [],
+      notes: {
+        firstPageBySchool: countBy(
+          firstWalk.firstPageRows.map((row) => firstStringOr(row.school, '(none)')),
+        ),
+        firstPageByLeadingDepartment: countBy(
+          firstWalk.firstPageRows.map((row) => firstStringOr(row.departments, '(none)')),
+        ),
+        firstPageByEntityType: countBy(
+          firstWalk.firstPageRows.map((row) => firstStringOr(row.entityType, '(none)')),
+        ),
+      },
     };
   },
 };
@@ -917,6 +991,7 @@ export const journeyCases: readonly JourneyCase[] = [
   paginationServesDistinctRows,
   textQueryTotalIsStable,
   sortedBrowseKeepsOrder,
+  defaultBrowseOrderIsRepeatable,
   titleSortedBrowseFollowsCardTitle,
   topicQueryRelevance,
   undergradEvidenceQuotePrecision,
