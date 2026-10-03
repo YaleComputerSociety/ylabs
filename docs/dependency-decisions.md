@@ -143,8 +143,9 @@ It is suppressed in `.yarnrc.yml` by advisory id with that justification.
 Remove the suppression as soon as a patched release is published: `npm view http-cache-semantics version`.
 
 The same day GHSA-vfj7-8cjw-p6xm against `braces` `<=3.0.3` (advisory 1240992, high), a stack-exhaustion denial of service through deeply nested patterns, failed the all-environments audit, and 3.0.3 is also the latest release.
-It reaches only the client's build tooling, through `chokidar` and `micromatch`, which expand glob patterns written in this repository and never a pattern a user supplies, so it is suppressed on the same terms.
-Remove it once a patched release is published: `npm view braces version`.
+On this branch `braces` is in no lockfile: it reached only the client's build tooling, through `chokidar` and `micromatch`, and the tailwindcss 4 upgrade (#4438) removed both.
+It is still suppressed, because pull requests that branched before that upgrade still carry it, and there it expands glob patterns written in this repository and never a pattern a user supplies.
+Remove it once a patched release is published (`npm view braces version`) or once no open branch predates #4438, whichever comes first.
 
 ## 2026-09-22: One low advisory is patched in range, one is accepted (#2392)
 
