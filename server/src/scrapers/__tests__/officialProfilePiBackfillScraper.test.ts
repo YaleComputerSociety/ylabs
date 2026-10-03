@@ -1918,7 +1918,7 @@ describe('officialProfilePiBackfillScraper', () => {
           <link rel="canonical" href="${profileUrl}" />
           <script type="application/ld+json" data-schema="ProfilePage">
             {"@type": "ProfilePage", "mainEntity": {"@type": "Person",
-              "name": "Quinn Marlowfixture", "email": "quinn.marlowfixture@yale.edu",
+              "name": "Quinn Marlowfixture", "email": "quinn.example@yale.edu",
               "jobTitle": "Professor"}}
           </script>
         </head>${cardProfileHtml(
@@ -1934,7 +1934,7 @@ describe('officialProfilePiBackfillScraper', () => {
         sourceUrls: [profileUrl],
         leadUserProfileUrls: [profileUrl],
         leadUsers: [
-          { fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.marlowfixture@yale.edu' },
+          { fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.example@yale.edu' },
         ],
       });
       const emitted: ObservationInput[] = [];
