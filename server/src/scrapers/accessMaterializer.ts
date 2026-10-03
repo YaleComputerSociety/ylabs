@@ -7,6 +7,7 @@
 import mongoose from 'mongoose';
 import { attributedArchiveSet } from '../models/entityArchival';
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
+import { collapseLatestWins } from './observationStore';
 import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
@@ -25,6 +26,7 @@ import {
   isPlausibleUndergradEvidenceQuote,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
 } from './undergradEvidenceQuoteValidation';
+import { joinPageUrlRefusal, type JoinPageEntity } from './undergradJoinPageAdmission';
 import {
   CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
   RESEARCH_ENTITY_CONTACT_FIELDS,
@@ -405,6 +407,7 @@ function filterArtifactsByValidatedClaims(
 export function deriveAccessArtifactsFromObservations(
   researchEntityId: string,
   observations: AccessObservation[],
+  entity?: JoinPageEntity,
 ): DerivedAccessArtifacts {
   const byField = new Map<string, AccessObservation[]>();
   for (const obs of observations) {
@@ -535,8 +538,13 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  const joinPageObservations = (byField.get('joinPageUrl') || []).filter((obs) =>
-    firstUrlValue(obs.value),
+  // Collapsed before admission, so a lane's newer read that found no admissible join page
+  // (an empty value) replaces the page an older read named instead of standing beside it.
+  const joinPageObservations = collapseLatestWins(
+    byField.get('joinPageUrl') || [],
+    'researchEntity',
+  ).filter(
+    (obs) => firstUrlValue(obs.value) && !joinPageUrlRefusal(firstUrlValue(obs.value), entity),
   );
   if (joinPageObservations.length > 0 && positiveAccessEvidence.length > 0) {
     const score = maxConfidence(joinPageObservations);
@@ -743,7 +751,17 @@ export async function deriveAccessArtifactsForResearchGroup(
       ].filter((clause) => Object.keys(clause).length > 0),
     }).lean()) as unknown as AccessObservation[]);
 
-  const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
+  const entity = observations.some((obs) => obs.field === 'joinPageUrl')
+    ? ((await ResearchEntity.findOne(
+        { _id: researchEntityObjectId },
+        { entityType: 1, kind: 1, websiteUrl: 1 },
+      ).lean()) as JoinPageEntity | null)
+    : null;
+  const artifacts = deriveAccessArtifactsFromObservations(
+    researchEntityId,
+    observations,
+    entity ?? undefined,
+  );
 
   return { researchEntityId, artifacts, observations };
 }

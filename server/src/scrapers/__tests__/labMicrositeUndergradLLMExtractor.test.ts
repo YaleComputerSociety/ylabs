@@ -21,6 +21,8 @@ import {
   LAB_UNDERGRAD_RESPONSE_FORMAT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   extractionToObservations,
+  joinPageRecruitsOnlyNonUndergraduates,
+  laneJoinPageRefusal,
   pageContainingQuote,
   pagesWithinEntityScope,
   evidenceQuoteRecitationObservation,
@@ -358,7 +360,11 @@ describe('extractionToObservations quote grounding', () => {
     const obs = extractionToObservations('lab-q', 'https://x.example/', ext, fixedDate, {
       sourcePages: pages,
     });
-    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
+    expect(obs.map((o) => o.field).sort()).toEqual([
+      'currentUndergradCount',
+      'joinPageUrl',
+      'lastObservedAt',
+    ]);
   });
 
   it('counts only roster snippets that are on a fetched page', () => {
@@ -407,7 +413,11 @@ describe('extractionToObservations quote grounding', () => {
     const obs = extractionToObservations('lab-p', 'https://x.example/', ext, fixedDate, {
       sourcePages: pages,
     });
-    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
+    expect(obs.map((o) => o.field).sort()).toEqual([
+      'currentUndergradCount',
+      'joinPageUrl',
+      'lastObservedAt',
+    ]);
     expect(quoteFieldsNotOnPage(ext, pages)).toEqual(['evidenceQuote', 'contactInstructionsQuote']);
   });
 
@@ -970,7 +980,11 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
     // Only lastObservedAt
-    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
+    expect(obs.map((o) => o.field).sort()).toEqual([
+      'currentUndergradCount',
+      'joinPageUrl',
+      'lastObservedAt',
+    ]);
     expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
   });
 
@@ -1203,6 +1217,7 @@ describe('extractionToObservations', () => {
           url: 'https://x/',
           text: 'We welcome students. Undergraduates help collect data. Apply using the form on this page. Prior Python experience preferred.',
         },
+        { url: 'https://x.example/join', text: 'Join the lab. Undergraduates are welcome.' },
       ],
     });
     expect(obs.find((o) => o.field === 'joinPageUrl')!.value).toBe('https://x.example/join');
@@ -1438,6 +1453,49 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(callLLM).not.toHaveBeenCalled();
   });
 
+  it('reads a join page the model named but the crawl skipped, and refuses one that does not resolve', async () => {
+    const openings = `<html><body><h1>Openings</h1><p>If you are an undergraduate at Yale, please write to the PI with your CV.</p></body></html>`;
+    const runWithJoinPage = async (joinPageUrl: string) => {
+      const fetchPage = makeFetchPage({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+        'https://smith.example.com/openings': openings,
+      });
+      const scraper = newTestScraper({
+        fetchPage,
+        callLLM: vi.fn(
+          async (): Promise<LLMExtraction> => ({
+            openToUndergrads: 'yes',
+            currentUndergradCount: 0,
+            evidenceQuote: 'We welcome undergraduate researchers each semester.',
+            evidenceSource: 'explicit_text',
+            joinPageUrl,
+          }),
+        ),
+        labFinder: async () => [
+          {
+            _id: '1',
+            slug: 'smith-lab',
+            name: 'The Smith Lab',
+            websiteUrl: 'https://smith.example.com/',
+          },
+        ],
+        apiKey: 'sk-test',
+      });
+      const { ctx, emitted } = makeContext();
+      await scraper.run(ctx);
+      return { fetchPage, join: emitted.find((o) => o.field === 'joinPageUrl')?.value };
+    };
+
+    const read = await runWithJoinPage('https://smith.example.com/openings');
+    expect(read.fetchPage).toHaveBeenCalledWith('https://smith.example.com/openings');
+    expect(read.join).toBe('https://smith.example.com/openings');
+
+    const missing = await runWithJoinPage('https://smith.example.com/open-positions');
+    expect(missing.fetchPage).toHaveBeenCalledWith('https://smith.example.com/open-positions');
+    expect(missing.join).toBe('');
+  });
+
   it('fetches the home page, follows a discovered sub-page, and emits the right observations', async () => {
     const fetchPage = makeFetchPage({
       'https://smith.example.com/': HOME_HTML,
@@ -1504,6 +1562,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(fields).toEqual(
       [
         'currentUndergradCount',
+        'joinPageUrl',
         'lastObservedAt',
         'sourceContentHash',
         'undergradAccessEvidence',
@@ -2551,5 +2610,198 @@ describe('LabMicrositeUndergradLLMExtractor.run on a stale center-program citati
       }),
     );
     expect(result.metrics?.evidenceQuotesRecited).toBe(1);
+  });
+});
+
+describe('join pages that are not an undergraduate route (#4430)', () => {
+  const home = { url: 'https://examplelab.org/', text: 'Example Lab studies example systems.' };
+  const facultyRow = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+
+  it('refuses a join URL the lane never read, since the model is shown only read URLs', () => {
+    expect(laneJoinPageRefusal('https://examplelab.org/open-positions', [home])).toBe(
+      'join-page-not-read',
+    );
+  });
+
+  it('refuses a roster page that invites no one', () => {
+    const team = {
+      url: 'https://examplelab.org/team',
+      text: 'Current Members Avery Example Associate Research Scientist. Jordan Example first joined the lab during undergraduate studies.',
+    };
+    expect(laneJoinPageRefusal(team.url, [home, team])).toBe('join-page-invites-no-one');
+  });
+
+  it('reads a biography that mentions joining the lab as no invitation', () => {
+    const team = {
+      url: 'https://examplelab.org/team',
+      text: 'Welcome Research Team Contact. Current Members Avery Example, PhD 2023Before joining the Example Lab, Avery worked on imaging applications elsewhere.',
+    };
+    expect(laneJoinPageRefusal(team.url, [home, team])).toBe('join-page-invites-no-one');
+  });
+
+  it('refuses a join page that recruits only graduate students, postdocs and visiting scientists', () => {
+    const join = {
+      url: 'https://examplelab.org/join',
+      text: "Join our Team. We're currently on the lookout for motivated postgraduates, graduate students, post-doctorates and visiting scientists.",
+    };
+    expect(laneJoinPageRefusal(join.url, [home, join])).toBe(
+      'join-page-recruits-only-non-undergraduates',
+    );
+  });
+
+  it('refuses a study-recruitment page even when the lane read it', () => {
+    const participate = {
+      url: 'https://examplelab.org/participate',
+      text: 'Participate in our studies! We are recruiting parents and babies.',
+    };
+    expect(laneJoinPageRefusal(participate.url, [home, participate])).toBe(
+      'participant-recruitment-route',
+    );
+  });
+
+  it("refuses a sibling center's page outside the row's section of a shared host", () => {
+    const centerHome = {
+      url: 'https://school.yale.edu/example-center',
+      text: 'The Example Center studies diplomacy.',
+    };
+    const sibling = {
+      url: 'https://school.yale.edu/other-center/opportunities',
+      text: 'The Other Center accepts applications from undergraduate students for research awards.',
+    };
+    expect(laneJoinPageRefusal(sibling.url, [centerHome, sibling])).toBe(
+      'join-page-outside-the-entity-scope',
+    );
+  });
+
+  it("keeps a contact page on a lab's own host whose home is a sub-page", () => {
+    const labHome = {
+      url: 'https://examplelab.wordpress.com/about/',
+      text: 'About the Example Lab.',
+    };
+    const contact = {
+      url: 'https://examplelab.wordpress.com/contact/',
+      text: 'We are always interested in recruiting motivated undergraduate students, graduate students, and postdocs.',
+    };
+    expect(laneJoinPageRefusal(contact.url, [labHome, contact])).toBeNull();
+  });
+
+  it("refuses a center's training page reached from a faculty profile", () => {
+    const profile = {
+      url: 'https://medicine.yale.edu/cancer/profile/example-person/',
+      text: 'Example Person, MD. Research interests.',
+    };
+    const training = {
+      url: 'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/',
+      text: 'Training Opportunities. Internship for college undergraduates. Learn more and how to apply.',
+    };
+    expect(laneJoinPageRefusal(training.url, [profile, training], facultyRow)).toBe(
+      'programme-page-offered-as-a-person-route',
+    );
+  });
+
+  it('keeps a lab join page that invites undergraduates', () => {
+    const join = {
+      url: 'https://examplelab.org/join/',
+      text: 'Join Our Lab. We are always looking for motivated people. Undergraduate Students: please reach out with your CV.',
+    };
+    expect(laneJoinPageRefusal('https://examplelab.org/join', [home, join])).toBeNull();
+  });
+
+  it('keeps a join page that invites students without naming their level', () => {
+    const people = {
+      url: 'https://examplelab.org/people/',
+      text: 'People. Join our group: I am always looking for highly-motivated students and postdocs.',
+    };
+    expect(laneJoinPageRefusal(people.url, [home, people])).toBeNull();
+  });
+
+  it('keeps a join page that welcomes members at all levels', () => {
+    const positions = {
+      url: 'https://examplelab.org/positions',
+      text: 'Open positions. We are currently seeking new members at all levels! PhD students should contact the PI.',
+    };
+    expect(laneJoinPageRefusal(positions.url, [home, positions])).toBeNull();
+  });
+
+  it('reads navigation chrome that names patients and staff as no audience', () => {
+    expect(
+      joinPageRecruitsOnlyNonUndergraduates(
+        'About FacultyStaffStudentsResidents & FellowsPatients Join Us. Our lab welcomes trainees.',
+      ),
+    ).toBe(false);
+  });
+
+  it('emits joinPageUrl only for a read page that passes every arm', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduate Students: please reach out with your CV.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://examplelab.org/join',
+    };
+    const join = {
+      url: 'https://examplelab.org/join',
+      text: 'Join Our Lab. Undergraduate Students: please reach out with your CV.',
+    };
+    const kept = extractionToObservations('lab-join', home.url, ext, new Date(), {
+      sourcePages: [home, join],
+    });
+    expect(kept.find((o) => o.field === 'joinPageUrl')?.value).toBe(join.url);
+
+    const refused = extractionToObservations(
+      'lab-join',
+      home.url,
+      { ...ext, joinPageUrl: 'https://examplelab.org/open-positions' },
+      new Date(),
+      { sourcePages: [home, join] },
+    );
+    expect(refused.find((o) => o.field === 'joinPageUrl')?.value).toBe('');
+  });
+
+  it('withholds the empty join page when a linked sub-page failed to fetch', () => {
+    const obs = extractionToObservations(
+      'lab-join',
+      home.url,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+      },
+      new Date(),
+      { sourcePages: [home], readIsComplete: false },
+    );
+    expect(obs.find((o) => o.field === 'joinPageUrl')).toBeUndefined();
+  });
+});
+
+describe('join pages whose path does not decide their audience (#4430)', () => {
+  const home = { url: 'https://examplelab.org/', text: 'Example Lab studies example systems.' };
+
+  it('refuses a careers page that recruits graduate students, postdocs and technicians only', () => {
+    const careers = {
+      url: 'https://examplelab.org/career-opportunities/',
+      text: 'Career opportunities. The lab welcomes graduates interested in research. Graduate students interested in rotations should contact the PI. We are seeking highly motivated postdoctoral fellows. Research technician applications are welcome.',
+    };
+    expect(laneJoinPageRefusal(careers.url, [home, careers])).toBe(
+      'join-page-recruits-only-non-undergraduates',
+    );
+  });
+
+  it('keeps a lab jobs page that invites undergraduates to do research', () => {
+    const jobs = {
+      url: 'https://examplelab.org/jobs',
+      text: 'Jobs. Postdoctoral positions: a post-doctoral position is available. Yale graduate and undergraduate students who would like to do research in the laboratory should email the lab manager.',
+    };
+    expect(laneJoinPageRefusal(jobs.url, [home, jobs])).toBeNull();
+  });
+
+  it('keeps a volunteer research-assistant page that recruits Yale students', () => {
+    const volunteer = {
+      url: 'https://examplelab.org/volunteer',
+      text: 'Join the Lab. The lab is accepting volunteer research assistants for the fall. We recruit students from Yale as well as surrounding universities.',
+    };
+    expect(laneJoinPageRefusal(volunteer.url, [home, volunteer])).toBeNull();
   });
 });

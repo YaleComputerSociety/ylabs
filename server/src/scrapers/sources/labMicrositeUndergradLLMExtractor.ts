@@ -52,6 +52,11 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
+import {
+  joinPageUrlRefusal,
+  type JoinPageEntity,
+  type JoinPageUrlRefusal,
+} from '../undergradJoinPageAdmission';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
   personProfileSourceNamesADifferentPerson,
@@ -114,7 +119,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'roster-only-undergrad-count-v1';
+const OBSERVATION_DERIVATION_VERSION = 'roster-section-and-join-route-v2';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -707,6 +712,141 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
   return !isHistoricalUndergradEvidence(quote) && !namesNonYaleInstitution(quote);
 }
 
+const RECRUITING_SENTENCE = new RegExp(
+  [
+    'looking\\s+for',
+    'on\\s+the\\s+lookout\\s+for',
+    'seek(?:s|ing)?\\s+(?:a|an|new|motivated|talented|highly|undergrad\\w*|students?|post-?docs?|candidates?|applicants?|graduate)',
+    'recruit(?:s|ing)?',
+    'hiring',
+    'accepting',
+    'welcom(?:es|ing)',
+    'are\\s+welcome',
+    'welcome\\s+(?:to|applications|inquiries|students|undergrad\\w*|motivated|new|all)',
+    'invit(?:e|es|ing)',
+    'apply\\s+(?:to|for|by|online|here|now|through|via)',
+    'applications?\\s+(?:are|will|should|must|from|for|to|deadline|form|process|materials)',
+    'applicants?',
+    'openings?',
+    'positions?\\s+(?:are|is)\\s+(?:available|open)',
+    '(?<!(?:before|after|since)\\s)join(?:ing)?\\s+(?:us|our|the)',
+    'interested\\s+in\\s+(?:joining|working|becoming|doing|research)',
+    'get\\s+involved',
+    'reach\\s+out',
+    'prospective\\s+(?:students?|members?|applicants?|undergrad\\w*|graduate|ph\\.?d|post-?docs?|trainees?|lab\\s+members?)',
+    'please\\s+(?:write|e-?mail|contact|send)',
+    '(?:write|e-?mail|send)\\s+(?:to\\s+)?me',
+  ]
+    .map((cue) => `\\b${cue}\\b`)
+    .join('|'),
+  'i',
+);
+
+const NON_UNDERGRADUATE_AUDIENCE =
+  /\b(?:ph\.?\s?d\.?|doctoral|graduate\s+students?|grad\s+students?|post-?docs?|post-?doctora(?:l|tes?)|post-?graduates?|post-?bac\w*|staff|technicians?|(?:research|visiting)\s+scientists?|patients?|participants?|volunteers?|parents|families|residents|fellows|medical\s+students?|master'?s)\b/i;
+
+const UNDERGRADUATE_OR_OPEN_AUDIENCE =
+  /\b(?:undergrad\w*|yale\s+college|college\s+students?|high\s+school|(?:all|every)\s+levels?|anyone|everyone|trainees?)\b/i;
+
+const QUALIFIED_STUDENT_AUDIENCE =
+  /\b(?:graduate|grad|ph\.?\s?d\.?|doctoral|medical|master'?s|md|rotation|rotating|visiting)\s*$/i;
+
+function namesAnUnqualifiedStudentAudience(sentence: string): boolean {
+  return Array.from(sentence.matchAll(/\bstudents?\b/gi)).some(
+    (match) => !QUALIFIED_STUDENT_AUDIENCE.test(sentence.slice(0, match.index ?? 0)),
+  );
+}
+
+const recruitingSentences = (text: string | undefined): string[] =>
+  normalizeQuoteText(text || '')
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => RECRUITING_SENTENCE.test(sentence));
+
+/**
+ * Whether a join page recruits only audiences other than undergraduates (#4430). One
+ * served signal was a lab "Join our Team" page "on the lookout for motivated
+ * postgraduates, graduate students, post-doctorates and visiting scientists". Only
+ * recruiting sentences are read, so navigation chrome naming patients or staff is not
+ * an audience, and a page that mentions undergraduates anywhere is never refused.
+ */
+export function joinPageRecruitsOnlyNonUndergraduates(text: string | undefined): boolean {
+  const normalized = normalizeQuoteText(text || '');
+  if (!normalized || /\bundergrad|\byale\s+college\b/i.test(normalized)) return false;
+  const recruiting = recruitingSentences(normalized);
+  if (
+    recruiting.some(
+      (sentence) =>
+        UNDERGRADUATE_OR_OPEN_AUDIENCE.test(sentence) ||
+        namesAnUnqualifiedStudentAudience(sentence),
+    )
+  ) {
+    return false;
+  }
+  return recruiting.some((sentence) => NON_UNDERGRADUATE_AUDIENCE.test(sentence));
+}
+
+export type LaneJoinPageRefusal =
+  | JoinPageUrlRefusal
+  | 'join-page-not-read'
+  | 'join-page-outside-the-entity-scope'
+  | 'join-page-invites-no-one'
+  | 'join-page-recruits-only-non-undergraduates';
+
+const SHARED_INSTITUTIONAL_HOST_LABEL = /(?:lab|labs|group|project)/i;
+
+// A school or center host publishes many entities in sibling sections, so a page outside
+// the row's section belongs to another entity there; a lab's own host does not, and a
+// lab site whose home is `/about` still owns its `/contact` page.
+function isSharedInstitutionalHost(url: string): boolean {
+  try {
+    const labels = new URL(url).hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .split('.');
+    return (
+      labels.length === 3 &&
+      labels[1] === 'yale' &&
+      labels[2] === 'edu' &&
+      !SHARED_INSTITUTIONAL_HOST_LABEL.test(labels[0])
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why the join page the model named is not an undergraduate route for this row (#4430).
+ * The page must be one the lane read, which `run` ensures by fetching a named page the
+ * crawl skipped, so a URL that does not resolve is refused: three served signals cited
+ * such a URL, and each answered 404. On a shared school or center host the page must sit
+ * in the row's own section, the scope `pagesWithinEntityScope` applies to quotes, and it
+ * must invite someone: a roster page offered as the join page lists members and recruits
+ * no one.
+ */
+export function laneJoinPageRefusal(
+  joinPageUrl: string | null | undefined,
+  sourcePages: readonly PromptSourcePage[],
+  entity?: JoinPageEntity,
+): LaneJoinPageRefusal | null {
+  const urlRefusal = joinPageUrlRefusal(joinPageUrl, entity);
+  if (urlRefusal) return urlRefusal;
+  const identity = pageUrlIdentity(String(joinPageUrl));
+  const page = sourcePages.find((candidate) => pageUrlIdentity(candidate.url) === identity);
+  if (!page) return 'join-page-not-read';
+  if (
+    sourcePages[0] &&
+    isSharedInstitutionalHost(sourcePages[0].url) &&
+    !pagesWithinEntityScope(sourcePages).includes(page)
+  ) {
+    return 'join-page-outside-the-entity-scope';
+  }
+  if (recruitingSentences(page.text).length === 0) return 'join-page-invites-no-one';
+  if (joinPageRecruitsOnlyNonUndergraduates(page.text)) {
+    return 'join-page-recruits-only-non-undergraduates';
+  }
+  return null;
+}
+
 /**
  * Fail-closed recency + institution gate for `currentUndergradCount`. The raw
  * LLM integer is never trusted on its own because the roster it counts mixes
@@ -746,6 +886,9 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *     and passes the same recency/institution gate as currentUndergradCount, so
  *     a historical or non-Yale snippet never gets displayed as current evidence.
  *     Confidence 0.5.
+ *   - joinPageUrl: emitted on every read like currentUndergradCount, empty when the read
+ *     found no admissible join page, so a re-read replaces a join page an earlier read
+ *     named (#4430); withheld under the same incomplete-read rule.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
  */
 export function extractionToObservations(
@@ -759,6 +902,8 @@ export function extractionToObservations(
     sourceTexts?: string[];
     sourcePages?: PromptSourcePage[];
     entityIdentity?: ResearchEntityIdentity;
+    entityShape?: JoinPageEntity;
+    joinPages?: PromptSourcePage[];
     readIsComplete?: boolean;
   } = {},
 ): ObservationInput[] {
@@ -837,11 +982,20 @@ export function extractionToObservations(
     });
   }
 
-  if (extraction.joinPageUrl) {
+  const admissibleJoinPageUrl =
+    extraction.joinPageUrl &&
+    !laneJoinPageRefusal(
+      extraction.joinPageUrl,
+      [...(sourceContext.sourcePages ?? []), ...(sourceContext.joinPages ?? [])],
+      sourceContext.entityShape,
+    )
+      ? extraction.joinPageUrl
+      : '';
+  if (admissibleJoinPageUrl || sourceContext.readIsComplete !== false) {
     out.push({
       ...base,
       field: 'joinPageUrl',
-      value: extraction.joinPageUrl,
+      value: admissibleJoinPageUrl,
       confidenceOverride: 0.5,
     });
   }
@@ -1021,6 +1175,9 @@ export interface CandidateLab extends ResearchEntityIdentity {
   websiteUrl: string;
   archived?: boolean;
   manuallyLockedFields?: string[];
+  entityType?: string;
+  kind?: string;
+  storedWebsiteUrl?: string;
 }
 
 function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
@@ -1045,6 +1202,9 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     websiteUrl: usableWebsiteUrlFromDoc(doc),
     archived: !!doc.archived,
     manuallyLockedFields: doc.manuallyLockedFields || [],
+    entityType: doc.entityType,
+    kind: doc.kind,
+    storedWebsiteUrl: typeof doc.websiteUrl === 'string' ? doc.websiteUrl : undefined,
     displayName: doc.displayName,
     school: doc.school,
     schools: doc.schools,
@@ -1224,6 +1384,8 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
     sourceUrls: 1,
     archived: 1,
     manuallyLockedFields: 1,
+    entityType: 1,
+    kind: 1,
     // Read only so `personProfileSourceMatchesEntity` can tell this entity's own
     // person from a namesake at another Yale school before a crawled page's prose
     // becomes this row's description (#2570).
@@ -1273,6 +1435,22 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
     this.env = deps.env ?? process.env;
+  }
+
+  // The model can name a join page it only saw in navigation text; reading that page is
+  // what lets the join arms judge it, and a page that does not resolve is not a route.
+  private async readNamedJoinPage(
+    joinPageUrl: string | null | undefined,
+    readPages: readonly PromptSourcePage[],
+  ): Promise<{ page?: PromptSourcePage; metric?: ScraperFetchMetric } | null> {
+    if (!joinPageUrl || !/^https?:\/\//i.test(joinPageUrl)) return null;
+    const identity = pageUrlIdentity(joinPageUrl);
+    if (readPages.some((page) => pageUrlIdentity(page.url) === identity)) return null;
+    const measured = await measureRenderedFetch(joinPageUrl, 'http', () =>
+      this.fetchPage(joinPageUrl),
+    );
+    const text = measured.result ? htmlToPromptText(measured.result.html) : '';
+    return { metric: measured.metric, page: text ? { url: joinPageUrl, text } : undefined };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1504,6 +1682,8 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
         const sourcePages = [{ url: homePage.url, text: homeText }, ...subPages];
         quotesNotOnPage += quoteFieldsNotOnPage(extraction, sourcePages).length;
+        const joinPage = await this.readNamedJoinPage(extraction.joinPageUrl, sourcePages);
+        if (joinPage?.metric) fetchAttempts.push(joinPage.metric);
         let observations = extractionToObservations(
           lab.slug,
           sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
@@ -1518,7 +1698,13 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             ),
             sourceTexts: [homeText, ...subPages.map((page) => page.text)],
             sourcePages,
+            joinPages: joinPage?.page ? [joinPage.page] : [],
             entityIdentity: lab,
+            entityShape: {
+              entityType: lab.entityType,
+              kind: lab.kind,
+              websiteUrl: lab.storedWebsiteUrl,
+            },
             readIsComplete: !linkedSubPageUnread,
           },
         );
