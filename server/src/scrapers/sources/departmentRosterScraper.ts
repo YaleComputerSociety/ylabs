@@ -3248,16 +3248,18 @@ async function fetchDeptData(
 
   const body = new URLSearchParams(request);
   const agents = ssrfSafeAgents();
-  const res = await axios.post(safeDataUrlText, body, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(safeDataUrlText, body, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const data = res.data;
   if (useCache) await setCached(sourceName, cacheKey, data);
   return data;

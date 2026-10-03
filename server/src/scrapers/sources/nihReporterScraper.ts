@@ -42,6 +42,7 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -612,14 +613,16 @@ async function fetchPage({
     sort_field: 'project_start_date',
     sort_order: 'desc',
   };
-  const res = await axios.post(REPORTER_ENDPOINT, body, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(REPORTER_ENDPOINT, body, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    }),
+  );
   const payload: NihPage = {
     meta: res.data?.meta || { total: 0, offset, limit },
     results: (res.data?.results as NihGrant[]) || [],

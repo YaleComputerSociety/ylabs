@@ -19,6 +19,8 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
+import { hostnameForLimiter } from './utils/hostConcurrencyLimiter';
+import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
 import {
   startSsrfGuardedForwardProxy,
   type SsrfGuardedForwardProxy,
@@ -172,6 +174,7 @@ export interface ScraplingRenderedFetcherOptions {
   timeoutMs?: number;
   seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
   startForwardProxy?: () => Promise<RenderedFetchForwardProxy>;
+  retry?: RetryPolicyOptions;
 }
 
 export type RenderedFetchForwardProxy = Pick<
@@ -452,7 +455,7 @@ function createLiveScraplingRenderedFetcher(
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
   const startForwardProxy = options.startForwardProxy || startSsrfGuardedForwardProxy;
 
-  return async (request) => {
+  const renderOnce: RenderedFetcher = async (request) => {
     if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
     // SSRF guard: request.url originates from DB-stored / scraped values. Block private/metadata
     // hosts before handing the URL to the headless Python fetcher. Also fail closed if the seed
@@ -587,6 +590,17 @@ function createLiveScraplingRenderedFetcher(
       releaseHostSlot();
     }
   };
+
+  return (request) =>
+    retryOnRetryableResultStatus(
+      hostnameForLimiter(request.url),
+      () => renderOnce(request),
+      (result) => ({
+        status: result?.statusCode,
+        succeeded: renderedPageFailureReason(result) === null,
+      }),
+      options.retry,
+    );
 }
 
 function inferRenderedFetchOverrides(result: unknown): RenderedFetchMetricOverrides {

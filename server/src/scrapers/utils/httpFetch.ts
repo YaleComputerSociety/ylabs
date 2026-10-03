@@ -21,6 +21,7 @@ import {
   isBenchmarkReplayActive,
   refuseBenchmarkReplayNetwork,
 } from '../snapshotBenchmarkMode';
+import { recordThrottleRetryOutcome } from './throttleRetryStats';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
@@ -145,12 +146,18 @@ class RetryBackoffBudget {
   private retries = 0;
   private transportRetries = 0;
   private spentMs = 0;
+  private statusRefusals = 0;
 
   constructor(readonly policy: ResolvedRetryPolicy) {}
 
   async waitAfterStatusRefusal(attempt: number, retryAfterMs?: number): Promise<boolean> {
+    this.statusRefusals += 1;
     if (this.retries >= this.policy.maxRetries) return false;
     return this.wait(this.policy.statusRetryDelayMs(attempt, retryAfterMs));
+  }
+
+  settle(outcome: 'recovered' | 'exhausted'): void {
+    if (this.statusRefusals > 0) recordThrottleRetryOutcome(outcome, this.retries);
   }
 
   async waitAfterTransportFailure(attempt: number): Promise<boolean> {
@@ -312,10 +319,14 @@ async function fetchPageLive(
     try {
       result = await limiter.run(host, () => request(safeUrl, config));
     } catch (error) {
-      if (!(await backoff.waitAfterTransportFailure(attempt))) throw error;
+      if (!(await backoff.waitAfterTransportFailure(attempt))) {
+        backoff.settle('exhausted');
+        throw error;
+      }
       continue;
     }
     if (result.status >= 200 && result.status < 300) {
+      backoff.settle('recovered');
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
@@ -329,6 +340,7 @@ async function fetchPageLive(
     ) {
       continue;
     }
+    backoff.settle('exhausted');
     throw new HttpStatusError(result.status);
   }
 }
@@ -352,19 +364,50 @@ export async function retryOnRetryableStatus<T>(
   let backoff: RetryBackoffBudget | undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await send();
+      const value = await send();
+      backoff?.settle('recovered');
+      return value;
     } catch (error) {
       const rejection = httpStatusRejection(error);
-      if (!rejection) throw error;
+      if (!rejection) {
+        backoff?.settle('exhausted');
+        throw error;
+      }
       backoff ??= new RetryBackoffBudget(
         resolveRetryPolicy(
           options,
           hostnameForLimiter(rejection.config?.url, rejection.config?.baseURL),
         ),
       );
-      if (!backoff.policy.retryable.has(rejection.response.status)) throw error;
+      const retryable = backoff.policy.retryable.has(rejection.response.status);
       const retryAfterMs = parseRetryAfterMs(rejection.response.headers?.['retry-after']);
-      if (!(await backoff.waitAfterStatusRefusal(attempt, retryAfterMs))) throw error;
+      if (!retryable || !(await backoff.waitAfterStatusRefusal(attempt, retryAfterMs))) {
+        backoff.settle('exhausted');
+        throw error;
+      }
+    }
+  }
+}
+
+export interface RetryableResultOutcome {
+  status?: number;
+  succeeded: boolean;
+}
+
+export async function retryOnRetryableResultStatus<T>(
+  host: string | undefined,
+  send: () => Promise<T>,
+  classify: (result: T) => RetryableResultOutcome,
+  options: RetryPolicyOptions = {},
+): Promise<T> {
+  const backoff = new RetryBackoffBudget(resolveRetryPolicy(options, host));
+  for (let attempt = 0; ; attempt += 1) {
+    const result = await send();
+    const { status, succeeded } = classify(result);
+    const refused = !succeeded && status !== undefined && backoff.policy.retryable.has(status);
+    if (!refused || !(await backoff.waitAfterStatusRefusal(attempt))) {
+      backoff.settle(succeeded ? 'recovered' : 'exhausted');
+      return result;
     }
   }
 }

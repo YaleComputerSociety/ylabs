@@ -55,6 +55,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
@@ -328,13 +329,15 @@ async function defaultFetchPage(url: string): Promise<{ url: string; html: strin
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 15_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-    maxRedirects: 5,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 15_000,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+      maxRedirects: 5,
+    }),
+  );
   return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 

@@ -49,6 +49,7 @@ import {
 import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -316,11 +317,13 @@ async function fetchPage(
     rpp: String(PAGE_SIZE),
     printFields: PRINT_FIELDS,
   };
-  const res = await axios.get(NSF_API_URL, {
-    params,
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(NSF_API_URL, {
+      params,
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    }),
+  );
   const r = (res.data?.response ?? {}) as {
     award?: NsfAward[];
     metadata?: { totalCount?: number };

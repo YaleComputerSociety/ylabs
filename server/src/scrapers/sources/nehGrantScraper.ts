@@ -41,6 +41,7 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -374,15 +375,17 @@ async function fetchAwardSearchYear(
     if (cached) return cached.html;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
-    timeout: FETCH_TIMEOUT_MS,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-    responseType: 'text',
-    transformResponse: [(data) => data],
-    maxRedirects: 0,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(url, {
+      timeout: FETCH_TIMEOUT_MS,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+      responseType: 'text',
+      transformResponse: [(data) => data],
+      maxRedirects: 0,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+    }),
+  );
   const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');
   if (useCache) await setCached(sourceName, cacheKey, { html });
   return html;

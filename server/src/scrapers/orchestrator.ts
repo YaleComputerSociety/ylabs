@@ -27,6 +27,7 @@ import {
 } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
+import { withThrottleRetryFetchMetrics, withThrottleRetryScope } from './utils/throttleRetryStats';
 import type {
   IScraper,
   ScraperContext,
@@ -210,12 +211,16 @@ export class ScraperOrchestrator {
     });
 
     try {
-      const reused = await withSweepPageReuseScope(() =>
-        withHttpValidatorCacheScope(() => scraper.run(ctx)),
+      const throttled = await withThrottleRetryScope(() =>
+        withSweepPageReuseScope(() => withHttpValidatorCacheScope(() => scraper.run(ctx))),
       );
-      const result = withSweepPageReuseFetchMetrics(
-        withHttpCacheFetchMetrics(reused.value.value as ScraperResult, reused.value.stats),
-        reused.stats,
+      const reused = throttled.value;
+      const result = withThrottleRetryFetchMetrics(
+        withSweepPageReuseFetchMetrics(
+          withHttpCacheFetchMetrics(reused.value.value as ScraperResult, reused.value.stats),
+          reused.stats,
+        ),
+        throttled.stats,
       );
       const evidenceCoverageImpact =
         options.dryRun && options.dbReview

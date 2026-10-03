@@ -46,6 +46,7 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
 const AWARD_PUBLIC_URL_PREFIX = 'https://www.usaspending.gov/award/';
@@ -286,10 +287,12 @@ async function fetchAgencyPage(
     sort: 'Award Amount',
     order: 'desc',
   };
-  const res = await axios.post(USASPENDING_SEARCH_URL, body, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(USASPENDING_SEARCH_URL, body, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    }),
+  );
   const data = (res.data ?? {}) as {
     results?: UsaspendingAward[];
     page_metadata?: { hasNext?: boolean };

@@ -32,6 +32,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
 
@@ -392,16 +393,18 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 30000,
-    headers: {
-      'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
-      Accept: 'text/html,application/xhtml+xml',
-    },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(YALE_REU_PROGRAMS_SOURCE, cacheKey, html);
   return html;

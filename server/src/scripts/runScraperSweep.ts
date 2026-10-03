@@ -174,6 +174,8 @@ export interface ScraperSweepRunRow {
   fetchFailed?: number;
   fetchBlocked?: number;
   selectorBreakages?: number;
+  throttleRecovered?: number;
+  throttleExhausted?: number;
   materializationCreated?: number;
   materializationUpdated?: number;
   materializationArchived?: number;
@@ -288,6 +290,22 @@ export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[]
     .map((row) => row.sourceName);
 }
 
+export interface SweepThrottleRetrySummary {
+  recovered: number;
+  exhausted: number;
+  exhaustedSources: string[];
+}
+
+export function sweepThrottleRetrySummary(rows: ScraperSweepRunRow[]): SweepThrottleRetrySummary {
+  return {
+    recovered: rows.reduce((total, row) => total + (row.throttleRecovered ?? 0), 0),
+    exhausted: rows.reduce((total, row) => total + (row.throttleExhausted ?? 0), 0),
+    exhaustedSources: rows
+      .filter((row) => (row.throttleExhausted ?? 0) > 0)
+      .map((row) => row.sourceName),
+  };
+}
+
 export interface SweepPageReuseSummary extends SweepPageStoreStats {
   hosts: string[];
 }
@@ -312,6 +330,7 @@ export interface ScraperSweepSummary {
   notRun: number;
   producedNothing: number;
   producedNothingSources: string[];
+  throttleRetry: SweepThrottleRetrySummary;
   rows: ScraperSweepRunRow[];
   pageReuse?: SweepPageReuseSummary;
   postRun?: {
@@ -751,6 +770,8 @@ type ScraperSweepArtifactSummary = Pick<
   | 'fetchFailed'
   | 'fetchBlocked'
   | 'selectorBreakages'
+  | 'throttleRecovered'
+  | 'throttleExhausted'
   | 'materializationCreated'
   | 'materializationUpdated'
   | 'materializationArchived'
@@ -774,6 +795,8 @@ function safeArtifactSummary(artifactPath: string): ScraperSweepArtifactSummary 
     fetchFailed: numeric(artifact.coverage?.fetch?.failed),
     fetchBlocked: numeric(artifact.coverage?.fetch?.blocked),
     selectorBreakages: numeric(artifact.coverage?.fetch?.selectorBreakages),
+    throttleRecovered: numeric(artifact.coverage?.fetch?.throttleRecovered),
+    throttleExhausted: numeric(artifact.coverage?.fetch?.throttleExhausted),
     materializationCreated: numeric(artifact.materialization?.created),
     materializationUpdated: numeric(artifact.materialization?.updated),
     materializationArchived: numeric(artifact.materialization?.archived),
@@ -2208,6 +2231,7 @@ export async function runScraperSweep(
     notRun: rows.filter((row) => row.status === 'not-run').length,
     producedNothing: producedNothingSources.length,
     producedNothingSources,
+    throttleRetry: sweepThrottleRetrySummary(rows),
     rows,
     ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
