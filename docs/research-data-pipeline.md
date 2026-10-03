@@ -896,6 +896,7 @@ It states the absence only when the profile's lab slot carries no link at all (`
 Two outcomes of the profile read decide the attestation too: a profile refused by `profileBelongsToRosterPerson` records `refused`, and a profile that was never read, because its fetch failed or it links off Yale, withdraws the roster card's `empty`, because the profile is where the lab link usually lives and an unread page states nothing.
 #2385 records that dropping a wrong-person edge strands the real lab, which `observations:retarget-foreign-lab-websites` repairs rather than retracts.
 `yse-faculty-directory` qualifies for one case: it states `assertsNoValueFor: ['websiteUrl']` only when it withdrew a lab because the linked site is dead on a stored or probed verdict (#3452), so the `websiteUrl` it asserted before it knew stops being live; a refused link and an empty lab slot state nothing, because `extractLabUrl` can decline a link the page still carries.
+`official-profile-pi-backfill` qualifies for a re-read of the same profile that carries no lab-website slot and no trace of the stored link (#4544, described with that lane below).
 `ysm-atoz-index` does not qualify for the opposite reason: a delisted lab vanishes from the index entirely, so it emits no witness and no partial read ever occurs, which is `ysmLabDelistingReconciler`'s cohort.
 
 A field is only declarable when ingest cannot have dropped the value itself.
@@ -1810,6 +1811,7 @@ Explicit `View Lab Website` links on official Yale profiles are a stronger resea
 A lab-website card is the slot faculty fill with either their own lab or an organization they are affiliated with, so `official-profile-pi-backfill` asks the shared `classifyHarvestedResearchHomeName` authority which it is (#4509).
 A card the authority calls `AFFILIATED_ORGANIZATION` is admitted only when the profile text states the person leads it, as a title (`Director of the X Unit at ...`, `Director, Center for X and Y`, with `&` and `and` treated alike) or as a verb (`directs the X`); membership and deputy titles do not count.
 When the lane refuses a card for that reason, or because another row already owns the link, and the row is serving that link, it emits `refusedWebsiteUrl` for the link, so resolve withdraws the lane's own older `websiteUrl` and `website` instead of leaving them live behind a silent refusal (#3926).
+For a row already serving the link, a suppressed duplicate carrying the same site does not count as another owner, because that is a dedupe question rather than a refusal (#4544).
 
 The research-home mode re-reads the profiles behind the websites this lane set, not only rows with no website, so a stored link is re-asserted, refused or retracted instead of living forever once set (#4544).
 It may state that a stored website is gone (`assertsNoValueFor: ['websiteUrl', 'website']` on a `sourceUrls` witness) only when it re-read the same profile the website was observed from, that page carries no lab-website slot of any kind, and the stored link appears nowhere among its links.
