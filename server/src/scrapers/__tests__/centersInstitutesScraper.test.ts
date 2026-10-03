@@ -685,6 +685,64 @@ describe('fdsUsersGridExtractor', () => {
   });
 });
 
+describe('a title-derived role is scoped to the center being read (#4475)', () => {
+  const FIXTURE_UNIT = 'Fixture Institute for Synthetic Data';
+  const gridCard = (slug: string, name: string, jobTitle: string) =>
+    `<div class="grid__user"><a class="grid__user__link" href="/people/${slug}/"><h3 class="grid__user__title">${name}</h3></a><p class="grid__user__job-title">${jobTitle}</p></div>`;
+  const grid = [
+    gridCard('aa', 'Avery Synthetic', 'Executive Director'),
+    gridCard('bb', 'Blair Synthetic', 'Professor of Fixtures; Director of Undergraduate Studies'),
+    gridCard('cc', 'Casey Synthetic', 'Director, Institution for Synthetic Policy Studies'),
+    gridCard('dd', 'Devon Synthetic', 'Co-Director, Fixture Institute for Synthetic Data'),
+    gridCard(
+      'ee',
+      'Emery Synthetic',
+      'Professor; Co-Director, Yale Center for Placeholder Studies',
+    ),
+    gridCard('ff', 'Gale Synthetic', 'Professor of Fixtures; Director of the Institute'),
+    gridCard('gg', 'Harper Synthetic', 'Director of Research'),
+  ].join('');
+  const roles = (centerName?: string) =>
+    Object.fromEntries(
+      fdsUsersGridExtractor(`<html><body>${grid}</body></html>`, {
+        pageUrl: 'https://fixture.example.edu/people/',
+        centerName,
+      }).members.map((member) => [member.name, member.role]),
+    );
+
+  it('keeps a lead title that names no unit or names this center', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({
+      'Avery Synthetic': 'director',
+      'Devon Synthetic': 'co-director',
+    });
+  });
+
+  it('reads a directorship of the generically named center as this center', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Gale Synthetic': 'director' });
+  });
+
+  it('keeps a functional directorate of the center a roster member', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Harper Synthetic': 'core-faculty' });
+  });
+
+  it('reads a directorship of another unit as membership', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({
+      'Blair Synthetic': 'core-faculty',
+      'Casey Synthetic': 'core-faculty',
+      'Emery Synthetic': 'core-faculty',
+    });
+  });
+
+  it('applies to the listing extractors that carry no profile link too', () => {
+    const html = `<html><body><div class="teaser__content"><h2 class="teaser__heading">Finley Synthetic</h2><p class="teaser__text">Director of Graduate Studies, Fixture Department</p></div></body></html>`;
+    const [member] = wuTsaiExtractor(html, {
+      pageUrl: 'https://fixture.example.edu/people/',
+      centerName: FIXTURE_UNIT,
+    }).members;
+    expect(member.role).toBe('core-faculty');
+  });
+});
+
 describe('naturalCarbonCaptureExtractor', () => {
   it('keeps only cards under a faculty/leadership section heading', () => {
     const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
