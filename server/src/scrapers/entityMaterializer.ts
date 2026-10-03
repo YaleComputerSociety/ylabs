@@ -298,6 +298,7 @@ import {
 import {
   Researcher,
   isValidOrcid,
+  orcidProfileLinksAgreeWithIdentifier,
   researcherDisplayProfileSchema,
   type ResearcherDisplayProfile,
   type ResearcherProfileLink,
@@ -5794,6 +5795,34 @@ async function materializeUserIdentityToResearcher(
   fieldsWritten += orcidFieldsWritten + netidFieldsWritten;
   let conflicts = 0;
 
+  // A stored row can already hold an ORCID link its identifier does not back, because
+  // raw bulk writes skip the schema validator (#4501), and the validator rejects the
+  // whole save. So the planned link is always the one the final identifier backs.
+  const reconcileOrcidLinkWithIdentifier = (): void => {
+    const identifierOrcid: string | undefined = researcher.identifiers?.orcid;
+    const links: ResearcherProfileLink[] = researcher.profileLinks || [];
+    if (orcidProfileLinksAgreeWithIdentifier(links, identifierOrcid)) return;
+    const contradictedOrcidLinks = links
+      .filter((link) => link.kind === 'ORCID')
+      .map((link) => link.url);
+    researcher.profileLinks = [
+      ...links.filter((link) => link.kind !== 'ORCID'),
+      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []),
+    ];
+    fieldsWritten += 1;
+    conflicts += 1;
+    console.warn(
+      'Researcher ORCID profile link contradicts identifiers.orcid; planning the link the identifier backs:',
+      sanitizeLogValue({
+        researcherId: materializerDocumentId(researcher._id),
+        entityKey: identifier.entityKey,
+        identifierOrcid: identifierOrcid ?? null,
+        contradictedOrcidLinks,
+      }),
+    );
+  };
+  reconcileOrcidLinkWithIdentifier();
+
   const forgiveOrcidCollision = (): void => {
     researcher.set('identifiers.orcid', priorOrcid);
     researcher.profileLinks = [
@@ -5813,6 +5842,7 @@ async function materializeUserIdentityToResearcher(
         collidingOrcid: orcid,
       }),
     );
+    reconcileOrcidLinkWithIdentifier();
   };
 
   const forgiveNetidCollision = (): void => {

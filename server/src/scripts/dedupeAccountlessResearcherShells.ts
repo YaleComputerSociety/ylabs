@@ -20,6 +20,7 @@ import {
   roleAssignmentEdgeKey,
   rosterMembershipEdgeKey,
   RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
+  shellProfileLinkKindsReleasedWith,
   SHELL_FOLD_IDENTITIES,
   type ResearcherAttributeSnapshot,
   type RosterIdentityCandidate,
@@ -495,6 +496,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     }
     if (Object.keys(transferredUniqueIdentifierUnsets).length) {
       shellArchiveUpdate.$unset = transferredUniqueIdentifierUnsets;
+    }
+    const releasedLinkKinds = shellProfileLinkKindsReleasedWith(plan);
+    if (releasedLinkKinds.length) {
+      shellArchiveUpdate.$pull = { profileLinks: { kind: { $in: releasedLinkKinds } } };
     }
 
     researcherOps.push({

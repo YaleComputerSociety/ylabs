@@ -10,6 +10,7 @@ import {
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
   roleAssignmentEdgeKey,
+  shellProfileLinkKindsReleasedWith,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -253,6 +254,50 @@ describe('planResearcherAttributeUnion', () => {
       identifiers: { orcid: '9999-9999-9999-9999' },
     });
     expect(researcherAttributeUnionIsEmpty(secondPlan)).toBe(true);
+  });
+});
+
+describe('planResearcherAttributeUnion keeps the ORCID link with its identifier (#4501)', () => {
+  const canonicalOrcid = '9999-9000-9999-9005';
+  const shellOrcid = '9999-9001-9999-9010';
+  const orcidLink = (orcid: string) => ({ kind: 'ORCID', url: `https://orcid.org/${orcid}` });
+
+  it('never appends a shell ORCID link that names another ORCID than the canonical holds', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: { orcid: canonicalOrcid } },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: {} },
+    );
+
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
+  it('never appends a shell ORCID link when no ORCID will back it on the canonical', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: {} },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: {} },
+    );
+
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
+  it('moves the shell ORCID link together with the shell ORCID it gap-fills', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: {} },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: { orcid: shellOrcid } },
+    );
+
+    expect(plan.identifierGapFills).toEqual({ orcid: shellOrcid });
+    expect(plan.profileLinksToAppend).toEqual([orcidLink(shellOrcid)]);
+    expect(shellProfileLinkKindsReleasedWith(plan)).toEqual(['ORCID']);
+  });
+
+  it('releases no shell link when the shell keeps its ORCID', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [orcidLink(canonicalOrcid)], identifiers: { orcid: canonicalOrcid } },
+      { profileLinks: [orcidLink(canonicalOrcid)], identifiers: { orcid: canonicalOrcid } },
+    );
+
+    expect(shellProfileLinkKindsReleasedWith(plan)).toEqual([]);
   });
 });
 

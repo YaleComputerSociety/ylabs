@@ -1,3 +1,4 @@
+import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
@@ -316,6 +317,17 @@ function profileLinkKind(link: ResearcherProfileLinkLike): string | undefined {
   return typeof link.kind === 'string' ? link.kind : undefined;
 }
 
+function orcidLinkAgreesWith(link: ResearcherProfileLinkLike, orcid: string | undefined): boolean {
+  const url = typeof link.url === 'string' ? link.url : '';
+  return orcidProfileLinksAgreeWithIdentifier([{ kind: 'ORCID', url }], orcid);
+}
+
+export function shellProfileLinkKindsReleasedWith(
+  plan: Pick<ResearcherAttributeUnionPlan, 'identifierGapFills'>,
+): string[] {
+  return plan.identifierGapFills.orcid ? ['ORCID'] : [];
+}
+
 export interface ResearcherAttributeUnionPlan {
   profileLinksToAppend: ResearcherProfileLinkLike[];
   identifierGapFills: Record<string, string>;
@@ -332,19 +344,21 @@ export function planResearcherAttributeUnion(
     if (kind) claimedKinds.add(kind);
   }
 
-  const profileLinksToAppend: ResearcherProfileLinkLike[] = [];
-  for (const link of shell.profileLinks ?? []) {
-    const kind = profileLinkKind(link);
-    if (!kind || claimedKinds.has(kind)) continue;
-    claimedKinds.add(kind);
-    profileLinksToAppend.push(link);
-  }
-
   const identifierGapFills: Record<string, string> = {};
   for (const field of RESEARCHER_UNION_IDENTIFIER_FIELDS) {
     if (nonEmptyString(canonical.identifiers?.[field])) continue;
     const shellValue = nonEmptyString(shell.identifiers?.[field]);
     if (shellValue) identifierGapFills[field] = shellValue;
+  }
+
+  const mergedOrcid = nonEmptyString(canonical.identifiers?.orcid) ?? identifierGapFills.orcid;
+  const profileLinksToAppend: ResearcherProfileLinkLike[] = [];
+  for (const link of shell.profileLinks ?? []) {
+    const kind = profileLinkKind(link);
+    if (!kind || claimedKinds.has(kind)) continue;
+    if (kind === 'ORCID' && !orcidLinkAgreesWith(link, mergedOrcid)) continue;
+    claimedKinds.add(kind);
+    profileLinksToAppend.push(link);
   }
 
   const profileGapFills: Record<string, string> = {};
