@@ -3,6 +3,7 @@ import {
   enrichEntryFromOfficialProfile,
   profileEnrichmentFromHtml,
   rosterResearchEntityMint,
+  withoutAnotherRosterPersonsStatedLab,
 } from '../sources/departmentRosterScraper';
 import { labNameStatedForPerson } from '../utils/statedLabName';
 
@@ -133,6 +134,49 @@ describe('a lab name the profile does not state as the person own lab', () => {
         'Ada Fixture works with Dr. Otherperson, who directs the Cytoskeleton Dynamics Lab.',
       ),
     ).toBeUndefined();
+  });
+
+  it('does not adopt a lab led by someone who shares the person surname', () => {
+    expect(
+      statedFor('Her husband John Fixture directs the Spindle Mechanics Lab.'),
+    ).toBeUndefined();
+    expect(statedFor('Fixture directs the Spindle Mechanics Lab.')).toBe('Spindle Mechanics Lab');
+    expect(statedFor('Prof. Ada Fixture directs the Spindle Mechanics Lab.')).toBe(
+      'Spindle Mechanics Lab',
+    );
+  });
+
+  it('does not adopt a lab eponymous for another person on the roster', () => {
+    const rosterSurnames = new Set(['fixture', 'otherperson']);
+    const stated = statedFor('Dr. Fixture directs the Otherperson Lab.');
+    expect(stated).toBe('Otherperson Lab');
+    const entry = { name: 'Ada Fixture', statedLabName: stated };
+    expect(
+      withoutAnotherRosterPersonsStatedLab(entry, rosterSurnames).statedLabName,
+    ).toBeUndefined();
+    expect(
+      withoutAnotherRosterPersonsStatedLab(
+        { name: 'Ada Fixture', statedLabName: 'Fixture Lab' },
+        rosterSurnames,
+      ).statedLabName,
+    ).toBe('Fixture Lab');
+    expect(
+      withoutAnotherRosterPersonsStatedLab(
+        { name: 'Ada Fixture', statedLabName: 'Spindle Mechanics Lab' },
+        rosterSurnames,
+      ).statedLabName,
+    ).toBe('Spindle Mechanics Lab');
+  });
+
+  it('does not adopt a lab-shaped prefix of a longer facility name', () => {
+    expect(statedFor('Dr. Fixture directs the Proteomics Laboratory Core.')).toBeUndefined();
+    expect(
+      statedFor('Dr. Fixture directs the Flow Cytometry Lab Shared Resource.'),
+    ).toBeUndefined();
+    expect(statedFor('Dr. Fixture directs the Yale Laboratory Animal Resources.')).toBeUndefined();
+    expect(statedFor('Dr. Fixture directs the Spindle Mechanics Lab at Yale.')).toBe(
+      'Spindle Mechanics Lab',
+    );
   });
 
   it('states nothing when the page states two different labs', () => {

@@ -1,5 +1,6 @@
 import {
   NO_SURNAME_ROSTER,
+  claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
   namesASelfDeclaredLaboratory,
   personIdentityTokens,
@@ -7,9 +8,10 @@ import {
 
 const NAME_WORD = String.raw`[A-Z][\p{L}\p{N}'’&.-]*`;
 const NAME_CONNECTOR = String.raw`(?:of|and|for|in|on|&)`;
+const NAME_CONTINUES = String.raw`\s+(?:(?:of|and|for|&)\s+)?[A-Z]`;
 const SUBJECT = String.raw`((?:(?:Dr|Prof|Professor)\.?\s+)?${NAME_WORD}(?:\s+${NAME_WORD}){0,3})`;
 const LEADERSHIP_VERB = String.raw`(?:directs|leads|heads|runs|founded\s+and\s+(?:directs|leads)|is\s+the\s+(?:founding\s+)?(?:director|head|principal\s+investigator)\s+of)`;
-const LAB_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+(?:Lab|Laboratory))(?![\p{L}\p{N}])`;
+const LAB_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+(?:Lab|Laboratory))(?![\p{L}\p{N}]|${NAME_CONTINUES})`;
 
 const LEADERSHIP_STATEMENT_RE = new RegExp(
   String.raw`${SUBJECT}\s+(?:(?:also|currently|now)\s+)?${LEADERSHIP_VERB}\s+the\s+${LAB_NAME}`,
@@ -21,7 +23,10 @@ function subjectIsThePerson(subject: string, personName: string): boolean {
   const surname = personTokens[personTokens.length - 1];
   if (!surname) return false;
   const subjectTokens = personIdentityTokens(subject);
-  return subjectTokens[subjectTokens.length - 1] === surname;
+  return (
+    subjectTokens[subjectTokens.length - 1] === surname &&
+    subjectTokens.every((token) => personTokens.includes(token))
+  );
 }
 
 function isAdoptableStatedLabName(name: string, personName: string, pageUrl: string): boolean {
@@ -57,4 +62,17 @@ export function labNameStatedForPerson(args: {
     stated.set(name.toLowerCase(), name);
   }
   return stated.size === 1 ? [...stated.values()][0] : undefined;
+}
+
+export function statedLabNameClaimsAnotherPerson(args: {
+  statedLabName: string;
+  personName: string;
+  knownPersonSurnames: ReadonlySet<string>;
+}): boolean {
+  return claimsAnotherPersonsLab({
+    harvestedName: args.statedLabName,
+    websiteUrl: undefined,
+    identityTokens: personIdentityTokens(args.personName),
+    knownPersonSurnames: args.knownPersonSurnames,
+  });
 }

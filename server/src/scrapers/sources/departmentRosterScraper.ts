@@ -112,7 +112,7 @@ import {
 } from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
-import { labNameStatedForPerson } from '../utils/statedLabName';
+import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -3713,6 +3713,23 @@ function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
   return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
 }
 
+export function withoutAnotherRosterPersonsStatedLab(
+  entry: FacultyEntry,
+  rosterSurnames: ReadonlySet<string>,
+): FacultyEntry {
+  if (
+    !entry.statedLabName ||
+    !statedLabNameClaimsAnotherPerson({
+      statedLabName: entry.statedLabName,
+      personName: entry.name,
+      knownPersonSurnames: rosterSurnames,
+    })
+  ) {
+    return entry;
+  }
+  return { ...entry, statedLabName: undefined };
+}
+
 const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl', url);
 
 /**
@@ -4227,6 +4244,11 @@ export class DepartmentRosterScraper implements IScraper {
       // Enriched before anything is emitted, because whether a website is one person's
       // or a group's is a fact about the whole roster, not about one row.
       const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      const rosterSurnames: ReadonlySet<string> = new Set(
+        entries
+          .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
+          .filter((surname): surname is string => Boolean(surname)),
+      );
       for (const rawEntry of entries) {
         if (totalFaculty + enriched.length >= limit) {
           truncatedByLimit = true;
@@ -4235,14 +4257,17 @@ export class DepartmentRosterScraper implements IScraper {
         if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
           continue;
         }
-        const entry = withoutOffsiteInstitutionWebsite(
-          await enrichEntryFromOfficialProfile(
-            rawEntry,
-            this.name,
-            ctx.options.useCache,
-            this.htmlFetcher,
-            ctx.log,
+        const entry = withoutAnotherRosterPersonsStatedLab(
+          withoutOffsiteInstitutionWebsite(
+            await enrichEntryFromOfficialProfile(
+              rawEntry,
+              this.name,
+              ctx.options.useCache,
+              this.htmlFetcher,
+              ctx.log,
+            ),
           ),
+          rosterSurnames,
         );
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
         const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
