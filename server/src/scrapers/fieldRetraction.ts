@@ -222,9 +222,9 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
   },
   'official-profile-pi-backfill': {
     witnessFields: ['sourceUrls'],
-    retractableFields: ['websiteUrl'],
+    retractableFields: ['websiteUrl', 'website'],
     notes:
-      'Re-reads the profiles behind the websites it set and states assertsNoValueFor: [websiteUrl] only when it re-read the same profile the stored website was observed from, that page carries no lab-website slot of any kind, and the stored link appears nowhere among its links. Every refusal of a link the page still carries states nothing, and a read of a different profile never claims (#4544).',
+      'Re-reads the profiles behind the websites it set and states assertsNoValueFor: [websiteUrl, website] only when it re-read the same profile the stored website was observed from, that page carries no lab-website slot of any kind, and the stored link appears nowhere among its links. It retracts website beside websiteUrl because it asserts both from the same link and every reader serves websiteUrl || website. Every refusal of a link the page still carries states nothing, and a read of a different profile never claims (#4544).',
   },
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],

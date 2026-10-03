@@ -1815,12 +1815,12 @@ describe('officialProfilePiBackfillScraper', () => {
     };
     const row = { _id: '0123456789abcdef01234567', websiteUrl: 'https://fixturelab.example.org/' };
 
-    it('counts only a student-visible holder when the row already serves the link', async () => {
+    it('does not count a suppressed holder when the row already serves the link', async () => {
       const filters = findOneReturning(null);
       await expect(
         websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', row),
       ).resolves.toBe(false);
-      expect(filters[0].studentVisibilityTier).toEqual({ $in: ['student_ready'] });
+      expect(filters[0].studentVisibilityTier).toEqual({ $ne: 'suppressed' });
       expect(filters[0]._id).toEqual({ $ne: row._id });
     });
 
@@ -1858,6 +1858,65 @@ describe('officialProfilePiBackfillScraper', () => {
           entity,
         ),
       ).toBe(true);
+    });
+
+    it('attests when the only JSON-LD affiliation is a department', () => {
+      const jsonLd = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        name: 'Quinn Marlowfixture',
+        affiliation: [
+          {
+            '@type': 'Organization',
+            name: 'Internal Medicine',
+            url: 'https://medicine.yale.edu/internal-medicine/',
+          },
+        ],
+      });
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          `<html><head><script type="application/ld+json">${jsonLd}</script></head><body><main><h1>Quinn Marlowfixture</h1><p>Professor of medicine.</p></main></body></html>`,
+          profileUrl,
+          entity,
+        ),
+      ).toBe(true);
+    });
+
+    it('does not attest while a JSON-LD affiliation names a research home or the stored link', () => {
+      const withAffiliation = (affiliation: Record<string, string>) =>
+        `<html><head><script type="application/ld+json">${JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'Person',
+          name: 'Quinn Marlowfixture',
+          affiliation: [{ '@type': 'Organization', ...affiliation }],
+        })}</script></head><body><main><h1>Quinn Marlowfixture</h1></main></body></html>`;
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          withAffiliation({
+            name: 'Marlowfixture Laboratory',
+            url: 'https://medicine.yale.edu/lab/marlowfixture/',
+          }),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          withAffiliation({ name: 'Fixture Group', url: storedWebsite }),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest while the page still links the stored legacy website', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p><a href="https://legacyfixture.example.org/">Our group</a></p>'),
+          profileUrl,
+          { ...entity, website: 'https://legacyfixture.example.org/' },
+        ),
+      ).toBe(false);
     });
 
     it('does not attest while the page still links the stored website anywhere', () => {
@@ -1916,7 +1975,7 @@ describe('officialProfilePiBackfillScraper', () => {
         entityKey: entity.slug,
         field: 'sourceUrls',
         value: [profileUrl],
-        assertsNoValueFor: ['websiteUrl'],
+        assertsNoValueFor: ['websiteUrl', 'website'],
       });
     });
   });

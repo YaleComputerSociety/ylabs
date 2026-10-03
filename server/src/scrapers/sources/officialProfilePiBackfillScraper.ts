@@ -1612,6 +1612,27 @@ function rowStoresWebsite(entity: Record<string, any>, url: string): boolean {
 
 const LAB_WEBSITE_SLOT_LABEL_RE = /\b(?:view|visit)\s+(?:lab|group|research)\s+website\b/i;
 
+function affiliationIsALabWebsiteSlot(
+  value: unknown,
+  profileUrl: string,
+  storedIdentities: ReadonlySet<string>,
+): boolean {
+  const record =
+    value && typeof value === 'object' ? (value as Record<string, any>) : { name: value };
+  const rawUrl = textValue(record.url || record['@id']);
+  let url = '';
+  try {
+    url = rawUrl ? new URL(rawUrl, profileUrl).toString() : '';
+  } catch {
+    url = rawUrl;
+  }
+  if (url && storedIdentities.has(websiteIdentity(url))) return true;
+  const name = canonicalResearchHomeName(record.name);
+  return (
+    Boolean(name) && !genericOrganizationName(name) && Boolean(classifyResearchHome(name, url))
+  );
+}
+
 /**
  * The only state in which this lane may say a row's website is gone, kept apart from every
  * refusal path (#2647, #3153): it re-read the very profile the stored website was observed
@@ -1632,10 +1653,19 @@ export function profileAttestsItsLabWebsiteIsGone(
   }
   const storedIdentity = websiteIdentity(entity.websiteUrl);
   if (!storedIdentity) return false;
+  const storedIdentities = new Set(
+    [storedIdentity, websiteIdentity(entity.website)].filter(Boolean),
+  );
 
   const $ = cheerio.load(html);
   const profiles = jsonLdProfiles($);
-  if (affiliationValuesFromProfiles(profiles).length > 0) return false;
+  if (
+    affiliationValuesFromProfiles(profiles).some((value) =>
+      affiliationIsALabWebsiteSlot(value, profileUrl, storedIdentities),
+    )
+  ) {
+    return false;
+  }
   const surname = profilePersonSurname($, profiles);
   let carriesALabWebsiteSlot = false;
   $('a[href]').each((_i, el) => {
@@ -1648,7 +1678,7 @@ export function profileAttestsItsLabWebsiteIsGone(
     } catch {
       absolute = href;
     }
-    if (websiteIdentity(absolute) === storedIdentity) {
+    if (storedIdentities.has(websiteIdentity(absolute))) {
       carriesALabWebsiteSlot = true;
       return;
     }
@@ -1680,7 +1710,7 @@ export function emptyLabWebsiteSlotObservation(
     confidenceOverride: 0.96,
     field: 'sourceUrls',
     value: [sourceUrl],
-    assertsNoValueFor: ['websiteUrl'],
+    assertsNoValueFor: ['websiteUrl', 'website'],
   };
 }
 
@@ -3485,9 +3515,9 @@ export async function resolveExistingUserForIdentity(
 }
 
 /**
- * For a row that already serves the link, only a student-visible holder can own it: a
- * suppressed duplicate carrying the same site is a dedupe question, and withdrawing on it
- * stripped real lab sites from the visible row in the #4544 dry run.
+ * For a row that already serves the link, a suppressed holder cannot own it: a suppressed
+ * duplicate carrying the same site is a dedupe question, and withdrawing on it stripped
+ * real lab sites from the visible row in the #4544 dry run.
  */
 export async function websiteUrlOwnedByAnotherEntity(
   websiteUrl: string,
@@ -3500,7 +3530,7 @@ export async function websiteUrlOwnedByAnotherEntity(
     archived: { $ne: true },
     ...(mongoose.isValidObjectId(entityId) ? { _id: { $ne: entityId } } : {}),
     ...(rowStoresWebsite(entity, websiteUrl)
-      ? { studentVisibilityTier: { $in: [...publicStudentVisibilityTiers] } }
+      ? { studentVisibilityTier: { $ne: 'suppressed' } }
       : {}),
     $or: [{ websiteUrl: { $in: lookupUrls } }, { website: { $in: lookupUrls } }],
   })
