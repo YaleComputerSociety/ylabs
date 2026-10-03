@@ -148,9 +148,7 @@ const LabMemberCard = ({
             {roleLabel}
           </span>
           {user.emeritus && LEAD_ROLES.has(role) && (
-            <span
-              className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full bg-gold-soft px-1.5 py-0.5 font-medium text-[var(--yr-gold-deep)]`}
-            >
+            <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
               Emeritus
             </span>
           )}
