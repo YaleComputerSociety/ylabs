@@ -698,6 +698,32 @@ describe('the change set covers every field the run may write (#3822)', () => {
     ]);
   });
 
+  it('reports no grant change when a dry run plans the awards the row already stores', () => {
+    const plannedGrant = {
+      id: 'award-1',
+      agency: 'Example Agency',
+      title: 'Example Award',
+      startDate: new Date('2024-07-01T00:00:00.000Z'),
+      endDate: new Date('2027-06-30T00:00:00.000Z'),
+    };
+    const before = {
+      ...stored,
+      recentGrants: [
+        { ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() },
+      ],
+      recentGrantCount: 1,
+    };
+    const fields = rematerializeComparedFields([]);
+    const planned = rematerializeStateAfterPlan(
+      before,
+      { recentGrants: [plannedGrant], recentGrantCount: 1 },
+      {},
+      fields,
+    );
+
+    expect(rematerializeReportedChanges(before, planned, fields)).toEqual([]);
+  });
+
   it('counts an entity with no measured change as unchanged whatever the materializer planned', () => {
     const report = rematerializeEntityReportFromChanges({
       slug: 'example-lab',
