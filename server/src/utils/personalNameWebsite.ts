@@ -1,4 +1,5 @@
-const RESEARCH_UNIT_WORD = /(?:lab|labs|laboratory|group|research|center|centre|institute|program)/i;
+const RESEARCH_UNIT_WORD =
+  /(?:lab|labs|laboratory|group|research|center|centre|institute|program)/i;
 
 const foldedLetters = (value: string): string =>
   value
@@ -23,8 +24,11 @@ function personNameSpellings(personName: string): Set<string> {
 }
 
 const registrableLabel = (hostname: string): string => {
-  const labels = hostname.toLowerCase().replace(/^www\./, '').split('.');
-  return labels.length >= 2 ? labels[labels.length - 2] : labels[0] ?? '';
+  const labels = hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .split('.');
+  return labels.length >= 2 ? labels[labels.length - 2] : (labels[0] ?? '');
 };
 
 /**
