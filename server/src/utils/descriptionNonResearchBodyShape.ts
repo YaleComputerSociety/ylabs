@@ -16,6 +16,15 @@ const STATES_RESEARCH_OR_CARE =
 const RESEARCH_VOICE_OPENING =
   /^(?:studies|examines|investigates|analy[sz]es|develops|development of)\b/i;
 
+const lowerFirstLetter = (sentence: string): string =>
+  sentence.replace(/[A-Z]/, (letter) => letter.toLowerCase());
+
+const anySentenceStates = (text: string, statement: RegExp): boolean =>
+  sentencesOf(text).some(
+    (sentence) =>
+      RESEARCH_VOICE_OPENING.test(sentence) || statement.test(lowerFirstLetter(sentence)),
+  );
+
 const FACULTY_RANK = /\b(?:professor|associate professor|assistant professor)\b/i;
 
 const ADMINISTRATIVE_ROLE =
@@ -36,9 +45,7 @@ const MIN_TEACHING_ROLE_MENTIONS = 3;
  */
 export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
   const text = textValue(value);
-  if (!text || RESEARCH_VOICE_OPENING.test(text) || STATES_RESEARCH_OR_CARE.test(text)) {
-    return false;
-  }
+  if (!text || anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
   if (FACULTY_RANK.test(text) || creativePracticeEvidence(text).length > 0) return false;
   return (
     (text.match(ADMINISTRATIVE_ROLE) ?? []).length >= MIN_ADMINISTRATIVE_ROLE_MENTIONS ||
@@ -80,14 +87,18 @@ const INSTRUCTION_OFFERING =
 
 const MIN_INSTRUCTION_OFFERING_MENTIONS = 2;
 
+const STATES_RESEARCH =
+  /\b(?:research\w*|investigat\w*|experiment\w*|laborator\w*|scientists?|publish\w*|publications?)\b/;
+
 /**
  * An education program's description: the body's subject is the instruction it offers
  * ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course,
- * not a group a student could join.
+ * not a group a student could join. A research statement keeps the body, so a research core
+ * that also trains its users is not read as a course.
  */
 export function isInstructionOfferingText(value: unknown): boolean {
   const text = textValue(value);
-  if (!text) return false;
+  if (!text || anySentenceStates(text, STATES_RESEARCH)) return false;
   return (text.match(INSTRUCTION_OFFERING) ?? []).length >= MIN_INSTRUCTION_OFFERING_MENTIONS;
 }
 

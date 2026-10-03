@@ -53,6 +53,23 @@ describe('nonResearchBodyShape (#4528)', () => {
     }
   });
 
+  it('keeps a role biography whose research claim opens a later sentence', () => {
+    for (const body of [
+      `${lectorBiography} Investigates code-switching in bilingual children.`,
+      `${lectorBiography} Research in the lector's group concerns heritage speakers.`,
+    ]) {
+      expect(nonResearchBodyShape(body)).toBeNull();
+    }
+  });
+
+  it('keeps an instruction offering that also states research', () => {
+    expect(
+      nonResearchBodyShape(
+        'The imaging core provides training on confocal microscopes for researchers. Workshops cover sample preparation and image analysis.',
+      ),
+    ).toBeNull();
+  });
+
   it('does not read a department name as a research statement', () => {
     expect(
       nonResearchBodyShape(

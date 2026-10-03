@@ -15,6 +15,11 @@ Three body shapes passed the description quality bar and served as a row's descr
   The research test is lower case on purpose, so a department name ("Africana Studies") is not read as a statement that the person studies something.
 - **`third-party-page`**: another organization's page text, meaning a call for submissions with its usage terms, an event's own page, or a site's section blurbs ("Highlights of ...", "Lists of ...").
 - **`instruction-offering`**: an education program's description, whose subject is the instruction it offers ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course rather than a group a student could join.
+  A research statement (a research, investigation, experiment, laboratory, scientist or publication word) keeps the body, so a research core that also trains its users is not read as a course.
+  The wider research-or-care test is not used here, because an education program's own prose says "classes focus on".
+
+The research test reads every sentence with its first letter lowered, so a research claim that opens a later sentence ("Research in the group ...") keeps the body as well.
+`third-party-page` takes no research exemption, because its shapes are structural and the calibrated cases carry research words of their own (a funding agency's section text names research, and a call for artists says "interested in collaborating").
 
 Measured on Development on 2026-10-03 by walking all 3,470 served rows through `getResearchGroupDetail` and the browse route with the old and new code: 5 rows stop serving, because the serve path recomputes the bar and their only body is refused.
 All 5 were read and are wrong for the row: a language lector's teaching biography, a career office administrator's biography, an exhibition's event page, and one call for artists on two rows.
