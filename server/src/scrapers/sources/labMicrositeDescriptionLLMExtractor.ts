@@ -123,7 +123,7 @@ const MIN_LLM_PAGE_TEXT_CHARS = 120;
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
 // (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
 const LAB_NAME_CONFIDENCE = 0.95;
-export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v1';
+export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v2';
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
@@ -1421,7 +1421,9 @@ export function labNameIsStatedInPageHeadings(labName: string, html: string): bo
 /**
  * The page's own name, emitted whatever became of its description (#4370). The
  * description screens cannot run without a description, so the name has to be
- * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead.
+ * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead, and it
+ * has to name a laboratory or group: on a personal homepage the model returns the
+ * person's own name, which the title states too.
  */
 export function pageStatedLabNameObservations(
   extraction: Pick<DescriptionExtraction, 'name' | 'subject' | 'fullDescription'>,
@@ -1436,6 +1438,7 @@ export function pageStatedLabNameObservations(
   if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
   const labName = usefulLabName(extraction.name);
   if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
+  if (!namesASelfDeclaredLaboratory(labName)) return [];
   if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
   if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
