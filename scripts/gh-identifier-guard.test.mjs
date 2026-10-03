@@ -215,9 +215,9 @@ const makeFakeGh = () => {
   return { dir, log };
 };
 
-const runGuard = (guardPath, args, { input = '', binDir }) =>
+const runGuard = (guardPath, args, { input = '', binDir, cwd = os.tmpdir() }) =>
   spawnSync(process.execPath, [guardPath, ...args], {
-    cwd: os.tmpdir(),
+    cwd,
     input,
     encoding: 'utf8',
     env: {
@@ -280,6 +280,63 @@ test('forwards a clean body and its stdin to the real gh unchanged', () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.readFileSync(log, 'utf8'), `issue comment 1 -R ${GUARDED} -F -\n${CLEAN}`);
+});
+
+const makeForkCheckout = () => {
+  const repo = makeTempDirectory('gh-guard-fork-');
+  const run = (gitArgs) =>
+    spawnSync('git', gitArgs, {
+      cwd: repo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test@example.invalid',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test@example.invalid',
+      },
+    });
+  const commit = (message) => {
+    run(['commit', '--allow-empty', '-q', '-m', message]);
+    return run(['rev-parse', 'HEAD']).stdout.trim();
+  };
+  run(['init', '-q']);
+  run(['remote', 'add', 'origin', 'git@github.com:example-contributor/ylabs.git']);
+  run(['remote', 'add', 'upstream', `git@github.com:${GUARDED}.git`]);
+  return { repo, run, commit };
+};
+
+test('pr create --fill from a fork scans only the commits ahead of upstream', () => {
+  const { dir, log } = makeFakeGh();
+  const { repo, run, commit } = makeForkCheckout();
+  run(['update-ref', 'refs/remotes/origin/beta', commit('chore: initial')]);
+  run(['update-ref', 'refs/remotes/upstream/beta', commit(FLAGGED_COMMENT)]);
+  commit('fix: contributor change');
+
+  const result = runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['pr', 'create', '--fill', '--base', 'beta'],
+    { binDir: dir, cwd: repo },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(log, 'utf8'), 'pr create --fill --base beta\n');
+});
+
+test('pr create --fill fails closed when the base branch cannot be read', () => {
+  const { dir, log } = makeFakeGh();
+  const { repo, commit } = makeForkCheckout();
+  commit('fix: contributor change');
+
+  const result = runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['pr', 'create', '--fill', '--base', 'beta'],
+    { binDir: dir, cwd: repo },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /upstream\/beta\.\.HEAD and git could not read them/);
+  assert.equal(fs.existsSync(log), false);
 });
 
 test('fails closed when the scanner is missing, instead of posting unchecked', () => {
@@ -417,7 +474,18 @@ test('the shim names the missing guard, refuses posts, and passes other commands
   ]) {
     const result = runShim(shimDir, realGhDir, args);
     assert.equal(result.status, 1, args.join(' '));
-    assert.match(result.stderr, /is missing; re-run scripts\/install-gh-identifier-guard\.sh/);
+    assert.match(
+      result.stderr,
+      /are both missing; re-run scripts\/install-gh-identifier-guard\.sh/,
+    );
+    assert.ok(
+      result.stderr.includes(path.join(guardHome, 'gh-identifier-guard.mjs')),
+      result.stderr,
+    );
+    assert.ok(
+      result.stderr.includes(path.join(checkout, 'scripts', 'gh-identifier-guard.mjs')),
+      result.stderr,
+    );
   }
   assert.equal(fs.existsSync(log), false);
 

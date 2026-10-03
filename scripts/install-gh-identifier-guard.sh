@@ -64,7 +64,7 @@ for guard in \"${GUARD}\" \"${CHECKOUT_GUARD}\"; do
     GH_IDENTIFIER_GUARD_SHIM=\"\$0\" exec node \"\$guard\" \"\$@\"
   fi
 done
-echo \"gh guard: ${GUARD} is missing; re-run scripts/install-gh-identifier-guard.sh\" >&2
+echo \"gh guard: ${GUARD} and ${CHECKOUT_GUARD} are both missing; re-run scripts/install-gh-identifier-guard.sh\" >&2
 case \"\$1 \$2\" in
   api\\ *|'pr create'|'pr edit'|'pr comment'|'pr review'|'pr merge'|'pr close'|'pr reopen'|'issue create'|'issue edit'|'issue comment'|'issue close'|'issue reopen')
     echo \"gh guard: NOT run, because nothing can scan what it would post.\" >&2
