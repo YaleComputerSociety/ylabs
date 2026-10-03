@@ -17,7 +17,9 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
+  classifyHarvestedResearchHomeName,
   entityKeyNamesOnlyThisPerson,
+  NO_SURNAME_ROSTER,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
@@ -26,6 +28,7 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
 import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
+import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   canonicalLegacyResearchHomeUrl,
@@ -137,6 +140,7 @@ export interface OfficialProfileResearchHome {
   kind: 'center' | 'institute' | 'lab' | 'initiative';
   entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'INITIATIVE';
   score: number;
+  leadershipEvidenced: boolean;
 }
 
 const textValue = (value: unknown): string =>
@@ -1102,6 +1106,34 @@ function leadershipMentionsOrganization(text: string, name: string, rawName: str
   });
 }
 
+function organizationNameForLeadershipMatch(value: string): string {
+  return textValue(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/^(?:the|yale)\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Looser than `leadershipMentionsOrganization` on purpose, because a lab-website card has
+ * already named the organization and the only open question is whether the person runs it.
+ * Profiles state that as a title, a title with a trailing place ("Director of the X Unit at
+ * Yale School of Medicine") or a verb ("directs the X"), and spell "and" as "&" on one side
+ * only, and the strict test missed all three on the profiles that #4509 measured.
+ */
+export function profileTextStatesLeadershipOf(text: string, organizationName: string): boolean {
+  const name = organizationNameForLeadershipMatch(organizationName);
+  if (name.split(' ').length < 2) return false;
+  const normalizedText = organizationNameForLeadershipMatch(text);
+  const leadership =
+    '(?<!deputy )(?:co director|associate director|founding director|director|directs|directed|leads|founded|founder|head|chief|principal investigator)';
+  return new RegExp(
+    `\\b${leadership}(?: of| for| at| the| yale| and)* ${name.replace(/ /g, ' ')}\\b`,
+  ).test(normalizedText);
+}
+
 export function textEvidencesNamedLeadership(text: string, names: string[]): boolean {
   const leadershipTitle =
     '(?:co-director|associate\\s+director|principal\\s+investigator|director|pi|faculty\\s+lead|founder)';
@@ -1336,6 +1368,7 @@ function profileLinkedLabWebsitesFromHtml(
       url,
       ...classification,
       score: 20,
+      leadershipEvidenced: profileTextStatesLeadershipOf(evidenceText, name),
     });
   });
 
@@ -1376,7 +1409,7 @@ function linkedResearchHomesFromHtml(
     }
     if (score < 5) return;
 
-    homes.push({ name, rawName, url, ...classification, score });
+    homes.push({ name, rawName, url, ...classification, score, leadershipEvidenced: true });
   });
   return homes;
 }
@@ -1422,7 +1455,7 @@ export function extractOfficialProfileResearchHomes(
     }
     if (score < 5) continue;
 
-    addHome({ name, rawName, url, ...classification, score });
+    addHome({ name, rawName, url, ...classification, score, leadershipEvidenced: true });
   }
 
   for (const home of linkedResearchHomesFromHtml($, profileUrl)) {
@@ -1479,6 +1512,28 @@ function homeNamesAnotherPersonsLab(
 }
 
 /**
+ * A profile's lab-website slot is filled with the person's own lab or with an organization
+ * they are merely affiliated with, and the shared authority tells the two apart (#2234). An
+ * organization is still this row's research home when the profile shows the person leads it,
+ * which is the test every other link shape this lane reads already applies (#4509).
+ */
+function linksAnOrganizationThePersonDoesNotLead(
+  home: OfficialProfileResearchHome,
+  personName: unknown,
+): boolean {
+  if (home.leadershipEvidenced) return false;
+  return (
+    classifyHarvestedResearchHomeName({
+      harvestedName: home.name,
+      personName: textValue(personName),
+      websiteUrl: home.url,
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+      recordCitedUrls: [home.url],
+    }) === 'AFFILIATED_ORGANIZATION'
+  );
+}
+
+/**
  * Which arm refuses this home, or `null` when none does.
  *
  * Three arms answer three different questions, and a run that reports only "refused"
@@ -1491,6 +1546,7 @@ function homeNamesAnotherPersonsLab(
  * the two cannot drift.
  */
 export type ProfileLinkedHomeRefusal =
+  | 'affiliated-organization-without-leadership'
   | 'names-another-persons-lab'
   | 'institutional-home-on-a-grant-shell'
   | 'institutional-home-on-a-person-keyed-shell';
@@ -1501,6 +1557,9 @@ export function profileLinkedHomeRefusal(
   personName: unknown,
 ): ProfileLinkedHomeRefusal | null {
   if (!home) return null;
+  if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
+    return 'affiliated-organization-without-leadership';
+  }
   if (home.entityType === 'LAB') {
     return homeNamesAnotherPersonsLab(entity, home, personName)
       ? 'names-another-persons-lab'
@@ -1530,6 +1589,34 @@ export function isInstitutionalHomeMismatchedWithPersonScopedShell(
   personName: unknown,
 ): boolean {
   return profileLinkedHomeRefusal(entity, home, personName) !== null;
+}
+
+const LINK_WITHDRAWING_HOME_REFUSALS: ReadonlySet<string> = new Set([
+  'affiliated-organization-without-leadership',
+  'website-owned-by-another-entity',
+]);
+
+/**
+ * A refusal is a judgement about a link the page still carries, not an absence, so it is
+ * stated as evidence: resolve then withdraws this lane's own older `websiteUrl` for the
+ * row, and another lane's value still counts (#3926).
+ */
+export function refusedResearchHomeWebsiteObservation(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  profileUrl: string,
+): ObservationInput {
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  return {
+    entityType: 'researchEntity',
+    ...(entityId ? { entityId } : {}),
+    ...(entityKey ? { entityKey } : {}),
+    sourceUrl: normalizeOfficialProfileUrl(profileUrl),
+    confidenceOverride: 0.96,
+    field: REFUSED_WEBSITE_URL_FIELD,
+    value: home.url,
+  };
 }
 
 export function entityResearchHomeToObservations(
@@ -3657,6 +3744,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                   : profileLinkedHomeRefusal(entity, home, identity.displayName);
             if (homeRefusal) {
               homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
+              if (home && LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal)) {
+                observations.push(refusedResearchHomeWebsiteObservation(entity, home, profileUrl));
+              }
             } else if (identity && home) {
               observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
               homesAdopted += 1;

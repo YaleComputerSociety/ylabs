@@ -1803,6 +1803,10 @@ When no official profile bio exists, trusted personal or lab homepages may suppo
 
 Explicit `View Lab Website` links on official Yale profiles are a stronger research-home signal than broad profile affiliations. This path may accept a non-Yale lab domain when the official profile card itself labels the target as a lab website; the materialized lab name should use the profile person's name plus `Lab`, with credential suffixes such as `PhD` stripped. These lab-card links still must not be confused with profile chrome, academic-publication concept links, social/profile services, or broader center/department pages.
 
+A lab-website card is the slot faculty fill with either their own lab or an organization they are affiliated with, so `official-profile-pi-backfill` asks the shared `classifyHarvestedResearchHomeName` authority which it is (#4509).
+A card the authority calls `AFFILIATED_ORGANIZATION` is admitted only when the profile text states the person leads it, as a title (`Director of the X Unit at ...`, `Director, Center for X and Y`, with `&` and `and` treated alike) or as a verb (`directs the X`); membership and deputy titles do not count.
+When the lane refuses a card for that reason, or because another row already owns the link, it emits `refusedWebsiteUrl` for the link, so resolve withdraws the lane's own older `websiteUrl` instead of leaving it live behind a silent refusal (#3926).
+
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.
 
