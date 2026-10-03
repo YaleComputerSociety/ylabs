@@ -179,6 +179,24 @@ describe('the fund window on another lane row (#4412)', () => {
   });
 });
 
+describe('the fund full source description on another lane row (#4232)', () => {
+  const fundPass = (fundSpeaksForRow: boolean) =>
+    fellowshipFieldsWithheldBySourcePrecedence({
+      stored: { ...ownedRow, fullSourceDescription: 'Earlier fund page text.' },
+      staged: { fullSourceDescription: 'Rewritten fund page text.' },
+      resolved: { fullSourceDescription: { contributingSources: ['student-grants-database'] } },
+      fundSpeaksForRow,
+    });
+
+  it('lets a rewritten fund page replace the stored text', () => {
+    expect(fundPass(true)).toEqual([]);
+  });
+
+  it('keeps the stored text when the fund does not speak for the row', () => {
+    expect(fundPass(false)).toEqual(['fullSourceDescription']);
+  });
+});
+
 describe('the fellowship database as an official source (#4284)', () => {
   const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123';
 
