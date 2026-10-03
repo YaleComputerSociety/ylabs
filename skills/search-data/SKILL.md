@@ -577,7 +577,7 @@ The response carries `queryCorrection: { originalQuery, correctedQuery }`, the r
 The recorded search keeps the typed query and marks `spellingCorrected` in its metadata, so analytics still sees what the student typed.
 
 Measured on Development, 4,486 indexed documents, `--top-k 10`, before to after, settings fingerprint unchanged.
-These figures predate the served-only counts and the rule that a word the corpus carries is never rewritten, and have not been re-measured since:
+The harness figures were re-measured after the served-only counts and the never-rewrite-a-carried-word rule landed and did not move:
 
 | Metric | Before | After |
 | ------ | ------ | ----- |
@@ -587,12 +587,12 @@ These figures predate the served-only counts and the rule that a word the corpus
 | mean precision@10 / mean reciprocal rank | 0.922 / 0.967 | 0.922 / 0.967 |
 | findings | 55 | 18 |
 
-Through `POST /api/research/search`, over 62 common topic misspellings, the top 10 shared on average 5.79 of 10 rows with the correctly spelled query before and 10 of 10 after, and the first result matched in 29 and then 62 cases.
-Over 14 four-letter typos, drawn from those the prototype corrects to the intended word, the overlap went from 0 to 10, with 9 of them returning nothing before.
+Through `POST /api/research/search`, over 62 common topic misspellings, the top 10 shared on average 5.81 of 10 rows with the correctly spelled query before and 9.97 of 10 after, and the first result matched in 31 and then 62 cases.
+Over 14 four-letter typos, drawn from those the prototype corrects to the intended word, the overlap went from 0 to 9.21 and the first result matched in 13, with 9 of them returning nothing before.
 No correctly spelled control query and none of 150 sampled name words was rewritten.
 
 It is not perfect, and the notice exists for the failures.
-Over 1,190 held-out single-edit typos of corpus words the prototype recovered 93% and corrected 3.9% to a different real word; four-letter words recovered only 58%, because a short typo is often one edit from several words (`ocde` became `ocd`).
+Over 1,190 held-out single-edit typos of corpus words the rule recovered 93% (1,105) and corrected 3.9% to a different real word, against 1,107 before a carried word became unrewritable; four-letter words recovered only 58%, because a short typo is often one edit from several words (`ocde` became `ocd`).
 `minWordSizeForTypos.oneTypo: 4` was measured as the alternative and rejected: four-letter typo overlap rose only from 0.25 to 2.15 of 10, and correctly spelled short queries drifted.
 
 ## Data shape rules
