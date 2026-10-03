@@ -82,19 +82,46 @@ export const DEFAULT_RETRYABLE_STATUSES: ReadonlySet<number> = new Set([
 
 const sharedHostLimiter = new HostRateLimiter();
 
-export interface FetchPageWithPolicyOptions {
-  headers?: Record<string, string>;
-  timeoutMs?: number;
-  maxRedirects?: number;
+export interface RetryPolicyOptions {
   maxRetries?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
   retryableStatuses?: ReadonlySet<number>;
-  limiter?: HostRateLimiter;
   sleep?: (ms: number) => Promise<void>;
   jitter?: () => number;
+}
+
+export interface FetchPageWithPolicyOptions extends RetryPolicyOptions {
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  maxRedirects?: number;
+  limiter?: HostRateLimiter;
   request?: HttpRequestFn;
   assertUrl?: (url: string) => Promise<{ toString(): string }>;
+}
+
+interface ResolvedRetryPolicy {
+  maxRetries: number;
+  retryable: ReadonlySet<number>;
+  sleep: (ms: number) => Promise<void>;
+  backoffMs: (attempt: number) => number;
+  statusRetryDelayMs: (attempt: number, retryAfterMs: number | undefined) => number;
+}
+
+function resolveRetryPolicy(options: RetryPolicyOptions): ResolvedRetryPolicy {
+  const jitter = options.jitter ?? Math.random;
+  const base = options.baseBackoffMs ?? 500;
+  const maxBackoff = options.maxBackoffMs ?? 8_000;
+  const backoffMs = (attempt: number): number =>
+    Math.min(maxBackoff, base * 2 ** attempt + Math.floor(jitter() * base));
+  return {
+    maxRetries: options.maxRetries ?? 3,
+    retryable: options.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
+    sleep: options.sleep ?? realSleep,
+    backoffMs,
+    statusRetryDelayMs: (attempt, retryAfterMs) =>
+      retryAfterMs !== undefined ? Math.min(retryAfterMs, maxBackoff) : backoffMs(attempt),
+  };
 }
 
 function parseRetryAfterMs(header: unknown): number | undefined {
@@ -222,15 +249,8 @@ async function fetchPageLive(
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
   const request = options.request ?? defaultAxiosRequest;
-  const sleep = options.sleep ?? realSleep;
-  const jitter = options.jitter ?? Math.random;
-  const maxRetries = options.maxRetries ?? 3;
-  const retryable = options.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES;
-  const base = options.baseBackoffMs ?? 500;
-  const maxBackoff = options.maxBackoffMs ?? 8_000;
-
-  const backoffMs = (attempt: number): number =>
-    Math.min(maxBackoff, base * 2 ** attempt + Math.floor(jitter() * base));
+  const { maxRetries, retryable, sleep, backoffMs, statusRetryDelayMs } =
+    resolveRetryPolicy(options);
 
   const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
   const config: HttpRequestConfig = {
@@ -262,16 +282,42 @@ async function fetchPageLive(
       };
     }
     if (retryable.has(result.status) && attempt < maxRetries) {
-      const retryDelay =
-        result.retryAfterMs !== undefined
-          ? Math.min(result.retryAfterMs, maxBackoff)
-          : backoffMs(attempt);
-      await sleep(retryDelay);
+      await sleep(statusRetryDelayMs(attempt, result.retryAfterMs));
       continue;
     }
     throw new HttpStatusError(result.status);
   }
   throw lastError ?? new Error('fetchPageWithPolicy exhausted retries');
+}
+
+interface HttpStatusRejection {
+  response: { status: number; headers?: Record<string, unknown> };
+}
+
+function httpStatusRejection(error: unknown): HttpStatusRejection | undefined {
+  const response = (error as { response?: { status?: unknown } } | null)?.response;
+  return typeof response?.status === 'number' ? (error as HttpStatusRejection) : undefined;
+}
+
+// Only a status is retried, so a replay refusal or a timeout fails at once, and the final
+// rejection is rethrown unchanged so the caller's own failure handling still reads it.
+export async function retryOnRetryableStatus<T>(
+  send: () => Promise<T>,
+  options: RetryPolicyOptions = {},
+): Promise<T> {
+  const { maxRetries, retryable, sleep, statusRetryDelayMs } = resolveRetryPolicy(options);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await send();
+    } catch (error) {
+      const rejection = httpStatusRejection(error);
+      if (!rejection || !retryable.has(rejection.response.status) || attempt >= maxRetries) {
+        throw error;
+      }
+      const retryAfterMs = parseRetryAfterMs(rejection.response.headers?.['retry-after']);
+      await sleep(statusRetryDelayMs(attempt, retryAfterMs));
+    }
+  }
 }
 
 export interface PublicHttpHopResponse {

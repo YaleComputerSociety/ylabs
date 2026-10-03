@@ -42,7 +42,7 @@ import {
   type RosterMemberIdentityEvidence,
 } from '../utils/rosterMemberIdentityEvidence';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { fetchPageWithPolicy, retryOnRetryableStatus } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -1620,13 +1620,15 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;

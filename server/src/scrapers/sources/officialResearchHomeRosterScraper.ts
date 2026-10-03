@@ -9,6 +9,7 @@
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { createHash } from 'crypto';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
@@ -362,13 +363,15 @@ async function fetchRosterPage(url: string, useCache: boolean): Promise<string> 
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const response = await axios.get(safeUrl.toString(), {
-    timeout: 30_000,
-    maxRedirects: 5,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const response = await retryOnRetryableStatus(() =>
+    axios.get(safeUrl.toString(), {
+      timeout: 30_000,
+      maxRedirects: 5,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(response.data || '');
   if (useCache) await setCached(OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE, cacheKey, html);
   return html;

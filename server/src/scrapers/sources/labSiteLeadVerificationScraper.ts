@@ -12,6 +12,7 @@
  * own visibility re-gate (issue #2714).
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
@@ -149,14 +150,16 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
     if (cached?.html) return cached;
   }
   const agents = ssrfSafeAgents();
-  const response = await axios.get(cacheKey, {
-    timeout: FETCH_TIMEOUT_MS,
-    maxRedirects: 5,
-    responseType: 'text',
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const response = await retryOnRetryableStatus(() =>
+    axios.get(cacheKey, {
+      timeout: FETCH_TIMEOUT_MS,
+      maxRedirects: 5,
+      responseType: 'text',
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const page: FetchedPage = {
     html: String(response.data || ''),
     finalUrl: cacheKey,
