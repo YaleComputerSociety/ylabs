@@ -113,6 +113,9 @@ jobs:
       - name: Run data profile safety tests
         run: yarn test:data-profiles
 
+      - name: Run every scripts test suite
+        run: yarn test:scripts
+
       - name: Run client tests
         run: yarn --cwd client test:ci
 

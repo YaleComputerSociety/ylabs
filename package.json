@@ -72,6 +72,7 @@
     "test:server": "yarn --cwd server test",
     "test:client": "yarn --cwd client test:ci",
     "test:data-profiles": "node --test scripts/run-data-profile.test.mjs",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/gh-identifier-guard.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
     "security:identifiers": "node scripts/check-no-person-identifiers.mjs",
@@ -86,7 +87,7 @@
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "verify:fast": "yarn format:check && yarn lint && npx tsc --noEmit -p server/tsconfig.json && npx tsc --noEmit -p client/tsconfig.json && yarn --cwd server test:guards",
-    "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn --cwd client test:ci && yarn security:preflight"
+    "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn test:scripts && yarn --cwd client test:ci && yarn security:preflight"
   },
   "dependencies": {
     "concurrently": "^10.0.5",
