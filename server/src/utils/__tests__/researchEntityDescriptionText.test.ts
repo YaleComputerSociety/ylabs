@@ -1872,6 +1872,46 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it("names a person row's group as the person's own rather than as the person (#4444)", () => {
+    const person = {
+      name: 'Avery Quill',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'faculty_research_area',
+    };
+    const cases: Array<[string, string]> = [
+      [
+        'In our group, we build tools for imaging.',
+        "In Avery Quill's group, we build tools for imaging.",
+      ],
+      [
+        'Work in my laboratory focuses on cells.',
+        "Work in Avery Quill's laboratory focuses on cells.",
+      ],
+      [
+        'Publications from our lab have been highlighted.',
+        "Publications from Avery Quill's lab have been highlighted.",
+      ],
+      [
+        'In addition, my laboratory is building tools.',
+        "In addition, Avery Quill's laboratory is building tools.",
+      ],
+    ];
+    for (const [body, expected] of cases) {
+      expect(revoiceFirstPersonResearchLead(body, person)).toBe(expected);
+    }
+    const subjects: Array<[string, string]> = [
+      ['Our lab studies how cells sense force.', 'Avery Quill studies how cells sense force.'],
+      [
+        'In particular, our lab studies cell polarity.',
+        'In particular, Avery Quill studies cell polarity.',
+      ],
+      ['Details are on our lab’s website.', 'Details are on Avery Quill’s website.'],
+    ];
+    for (const [body, expected] of subjects) {
+      expect(revoiceFirstPersonResearchLead(body, person)).toBe(expected);
+    }
+  });
+
   it('keeps the possessive for a plural self noun on a lab row (#4044)', () => {
     const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
     expect(
