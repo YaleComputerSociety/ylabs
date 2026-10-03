@@ -47,6 +47,7 @@ import {
   personSurnamesFromDisplayNames,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { isPersonalNameDomainWebsite } from '../../utils/personalNameWebsite';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
@@ -456,14 +457,21 @@ export function facultyToResearchEntityObservations(
   // `websiteUrl`, and the name, kind, and `entityType` kept asserting the lab
   // (#3452). Withdrawal needs a positive verdict, never silence - see
   // `labUrlIsUnusableForResearchHome`.
-  const hasLab =
+  const linkIsOwnSite =
     linkedSite.isOwnResearchHome && !(profile.labUrl && labUrlIsUnusable(profile.labUrl));
+  // The slot is labelled for a lab whatever it links, so a person's own name-domain site
+  // under a non-identifying label names no lab: it is the person's website (#4552).
+  const linksPersonalWebsite =
+    linkIsOwnSite &&
+    !linkedSite.adoptableName &&
+    isPersonalNameDomainWebsite(profile.labUrl, profile.name);
+  const hasLab = linkIsOwnSite && !linksPersonalWebsite;
 
   const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab
     ? linkedSite.adoptableName || `${profile.name} Lab`
     : `${profile.name} Faculty Research`;
-  const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const sourceUrls = linkIsOwnSite ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
@@ -502,7 +510,7 @@ export function facultyToResearchEntityObservations(
   if (profile.departments.length > 0) {
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
-  if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  if (linkIsOwnSite) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
   else if (profile.labUrl) {
     obs.push({ ...base, field: REFUSED_WEBSITE_URL_FIELD, value: profile.labUrl });
   }
