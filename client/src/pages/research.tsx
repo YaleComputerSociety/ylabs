@@ -1319,6 +1319,12 @@ const Research = () => {
     () => clustersForEntities(searchResultResearchEntities),
     [clustersForEntities, searchResultResearchEntities],
   );
+  const programsHandoffApplies =
+    Boolean(programsHandoffQuery) && queryCarriesProgramsIntent(programsHandoffQuery);
+  const showsProgramsHandoff = programsHandoffApplies && activeClusters.length > 0;
+  const reservesProgramsHandoffSlot =
+    programsHandoffApplies && searchLoading && activeClusters.length === 0;
+  const showsProgramsHandoffSlot = showsProgramsHandoff || reservesProgramsHandoffSlot;
   const defaultClusters = useMemo(
     () => clustersForEntities(defaultResearchEntities),
     [clustersForEntities, defaultResearchEntities],
@@ -1937,13 +1943,15 @@ const Research = () => {
                   </div>
                 )}
 
-                {programsHandoffQuery &&
-                  activeClusters.length > 0 &&
-                  queryCarriesProgramsIntent(programsHandoffQuery) && (
-                    <div className="mt-4 yr-muted-surface rounded-card p-4">
-                      <ResearchProgramsHandoff query={programsHandoffQuery} />
-                    </div>
-                  )}
+                {showsProgramsHandoffSlot && (
+                  <div
+                    className={`mt-4 yr-muted-surface rounded-card p-4 ${
+                      reservesProgramsHandoffSlot ? 'invisible' : ''
+                    }`}
+                  >
+                    <ResearchProgramsHandoff query={programsHandoffQuery} />
+                  </div>
+                )}
 
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>

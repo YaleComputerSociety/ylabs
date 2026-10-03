@@ -22,6 +22,11 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
+import ResearchProfileSkeleton, {
+  researchProfileColumnClassName,
+  researchProfileGridClassName,
+  researchProfilePageClassName,
+} from '../components/labs/ResearchProfileSkeleton';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
@@ -907,15 +912,7 @@ const LabDetail = () => {
   }, [location.key, location.state, payload, slug]);
 
   if (loading && !payload) {
-    return (
-      <div
-        role="status"
-        aria-label="Loading research profile"
-        className="max-w-6xl mx-auto px-4 py-16 flex justify-center"
-      >
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand" />
-      </div>
-    );
+    return <ResearchProfileSkeleton />;
   }
 
   if (error && !payload) {
@@ -1123,12 +1120,9 @@ const LabDetail = () => {
   };
 
   return (
-    <div
-      className="mx-auto w-full max-w-(--breakpoint-2xl) px-4 py-6 sm:py-8 lg:px-8"
-      onClickCapture={handleDetailLinkOpen}
-    >
-      <div className="grid grid-cols-1 gap-6 lg:gap-8">
-        <div className="lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8">
+    <div className={researchProfilePageClassName} onClickCapture={handleDetailLinkOpen}>
+      <div className={researchProfileGridClassName}>
+        <div className={researchProfileColumnClassName}>
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
               kind="researchPlan"

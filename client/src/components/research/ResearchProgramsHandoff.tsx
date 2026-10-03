@@ -7,15 +7,17 @@ interface ResearchProgramsHandoffProps {
 }
 
 const ResearchProgramsHandoff = ({ query }: ResearchProgramsHandoffProps) => (
-  <p className="text-sm leading-relaxed text-muted">
-    Programs and fellowships cover getting started, summer research, and paid research.{' '}
+  <div className="text-sm leading-relaxed">
+    <p className="text-muted">
+      Programs and fellowships cover getting started, summer research, and paid research.
+    </p>
     <Link
       to={programsSearchHref(query)}
-      className="yr-focus-ring font-semibold text-brand underline underline-offset-2"
+      className="yr-link yr-focus-ring -mb-3 mt-1 flex min-h-11 w-fit items-center rounded-control font-semibold underline"
     >
       Search programs and fellowships for &lsquo;{query.trim()}&rsquo;
     </Link>
-  </p>
+  </div>
 );
 
 export default ResearchProgramsHandoff;
