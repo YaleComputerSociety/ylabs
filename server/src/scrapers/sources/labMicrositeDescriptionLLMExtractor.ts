@@ -76,7 +76,7 @@ import {
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
 import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
-import { groundMethods } from '../utils/methodGrounding';
+import { groundMethods, isMethodGroundedInText } from '../utils/methodGrounding';
 import {
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
@@ -1177,6 +1177,27 @@ export function usefulLabName(value: unknown): string {
   return text;
 }
 
+export function groundOfficialProseTopics(
+  extraction: Pick<DescriptionExtraction, 'topics' | 'subject'> | null,
+  pageText: string,
+  limit = 12,
+): string[] {
+  if (!extraction || !Array.isArray(extraction.topics)) return [];
+  if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
+  const seen = new Set<string>();
+  const grounded: string[] = [];
+  for (const raw of extraction.topics) {
+    const topic = textValue(raw);
+    if (!topic || isPageSectionHeadingTopic(topic)) continue;
+    const dedupeKey = topic.toLowerCase();
+    if (seen.has(dedupeKey) || !isMethodGroundedInText(topic, pageText)) continue;
+    seen.add(dedupeKey);
+    grounded.push(topic);
+    if (grounded.length >= limit) break;
+  }
+  return grounded;
+}
+
 export function groundDescriptionExtraction(
   extraction: DescriptionExtraction,
   pageText: string,
@@ -2074,7 +2095,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               {
                 fullDescription: officialProse.fullDescription,
                 shortDescription: officialProse.shortDescription || '',
-                topics: [],
+                topics: groundOfficialProseTopics(citedPageExtraction, pageText),
                 methods,
               },
               identity,
