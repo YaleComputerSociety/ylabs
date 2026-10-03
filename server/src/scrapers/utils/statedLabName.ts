@@ -11,10 +11,11 @@ const NAME_CONNECTOR = String.raw`(?:of|and|for|in|on|&)`;
 const NAME_CONTINUES = String.raw`\s+(?:(?:of|and|for|&)\s+)?[A-Z]`;
 const SUBJECT = String.raw`((?:(?:Dr|Prof|Professor)\.?\s+)?${NAME_WORD}(?:\s+${NAME_WORD}){0,3})`;
 const LEADERSHIP_VERB = String.raw`(?:directs|leads|heads|runs|founded\s+and\s+(?:directs|leads)|is\s+the\s+(?:founding\s+)?(?:director|head|principal\s+investigator)\s+of)`;
-const LAB_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+(?:Lab|Laboratory))(?![\p{L}\p{N}]|${NAME_CONTINUES})`;
+const LAB_NAME = String.raw`(${NAME_WORD}(?:\s+(?:${NAME_CONNECTOR}\s+)?${NAME_WORD}){0,5}?\s+(?:Lab|Laboratory))(?![\p{L}\p{N}])(${NAME_CONTINUES})?`;
+const HEAD_FIRST_LAB_NAME = String.raw`((?:Lab|Laboratory)\s+(?:of|for)\s+[A-Z])`;
 
 const LEADERSHIP_STATEMENT_RE = new RegExp(
-  String.raw`${SUBJECT}\s+(?:(?:also|currently|now)\s+)?${LEADERSHIP_VERB}\s+the\s+${LAB_NAME}`,
+  String.raw`${SUBJECT}\s+(?:(?:also|currently|now)\s+)?${LEADERSHIP_VERB}\s+the\s+(?:${LAB_NAME}|${HEAD_FIRST_LAB_NAME})`,
   'gu',
 );
 
@@ -55,10 +56,11 @@ export function labNameStatedForPerson(args: {
 }): string | undefined {
   const stated = new Map<string, string>();
   for (const match of args.text.matchAll(LEADERSHIP_STATEMENT_RE)) {
-    const [, subject, labName] = match;
+    const [, subject, labName, nameContinues, headFirstLabName] = match;
     if (!subjectIsThePerson(subject, args.personName)) continue;
+    if (nameContinues || headFirstLabName) return undefined;
     const name = labName.replace(/\s+/g, ' ').trim();
-    if (!isAdoptableStatedLabName(name, args.personName, args.pageUrl)) continue;
+    if (!isAdoptableStatedLabName(name, args.personName, args.pageUrl)) return undefined;
     stated.set(name.toLowerCase(), name);
   }
   return stated.size === 1 ? [...stated.values()][0] : undefined;

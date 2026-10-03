@@ -187,6 +187,25 @@ describe('a lab name the profile does not state as the person own lab', () => {
     ).toBeUndefined();
   });
 
+  it('states nothing when the second lab the person leads is a name this lane refuses', () => {
+    const first = 'Dr. Fixture directs the Spindle Mechanics Lab.';
+    expect(
+      statedFor(`${first} Dr. Fixture also directs the Brain Imaging Lab Group.`),
+    ).toBeUndefined();
+    expect(
+      statedFor(`${first} Dr. Fixture also directs the Neural Lab for Children.`),
+    ).toBeUndefined();
+    expect(
+      statedFor(`${first} Dr. Fixture also directs the Clinical Virology Laboratory.`),
+    ).toBeUndefined();
+    expect(
+      statedFor(`${first} Dr. Fixture also directs the Laboratory of Neural Circuits.`),
+    ).toBeUndefined();
+    expect(statedFor(`${first} Dr. Otherperson directs the Clinical Virology Laboratory.`)).toBe(
+      'Spindle Mechanics Lab',
+    );
+  });
+
   it('does not adopt a service facility or a bare head noun', () => {
     expect(statedFor('Dr. Fixture directs the Clinical Virology Laboratory.')).toBeUndefined();
     expect(statedFor('Dr. Fixture directs the Lab.')).toBeUndefined();
