@@ -1456,9 +1456,25 @@ const firstPersonLeadRevoiceRules = (
    * rows still addressed a student in the first person after the subject rules had run.
    *
    * Unanchored on purpose, which is safe only because the noun sets are closed.
+   *
+   * A person is not the group they run, so on a person-scoped row the object of a
+   * preposition keeps its noun and names the owner: "In our group, we build" serves
+   * "In Avery Quill's group" rather than "In Avery Quill". As a clause subject the
+   * collapse reads correctly ("In particular, Avery Quill studies") and stays, and
+   * so does a noun the source already possesses ("our lab's website").
    */
   [
-    new RegExp(`\\b(?:my|our)\\s+${ENTITY_SELF_NOUN}\\b`, 'gi'),
+    new RegExp(`\\b(?:my|our)\\s+(${ENTITY_SELF_NOUN})\\b(?!['’])`, 'gi'),
+    (_match: string, noun: string, offset: number, full: string) => {
+      const atSentenceStart = isAtSentenceStart(offset, full);
+      if (forms && !forms.namesTheRow && PREPOSITION_BEFORE_PATTERN.test(full.slice(0, offset))) {
+        return `${possessiveLead(forms, atSentenceStart, _match)} ${noun}`;
+      }
+      return nominativeLead(forms, atSentenceStart, _match);
+    },
+  ],
+  [
+    new RegExp(`\\b(?:my|our)\\s+${ENTITY_SELF_NOUN}(?=['’])`, 'gi'),
     (_match: string, offset: number, full: string) =>
       nominativeLead(forms, isAtSentenceStart(offset, full), _match),
   ],
@@ -1610,6 +1626,9 @@ const ENTITY_SELF_NOUN =
   '(?:lab|laboratory|labs|group|team|center|centre|program|programme|institute|facility|core)';
 
 const ENTITY_SELF_NOUN_WORD = new RegExp(`^${ENTITY_SELF_NOUN}$`, 'i');
+
+const PREPOSITION_BEFORE_PATTERN =
+  /\b(?:in|at|from|of|within|into|onto|to|with|by|for|on|upon|across|inside|outside|throughout|through|about|under|beyond|among|between|via|during|after|before|like|than|toward|towards|around|behind|alongside|near|including|join|joins|joined|joining)\s+$/i;
 
 function isSingularEntitySelfNoun(word: string): boolean {
   return ENTITY_SELF_NOUN_WORD.test(word) && !isPluralNoun(word);
