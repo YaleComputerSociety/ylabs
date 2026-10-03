@@ -18,7 +18,7 @@ const startReadinessServer = async (probes: ReadinessProbes): Promise<string> =>
 
 const succeeds = async () => undefined;
 const failsWithInternals = async () => {
-  throw new Error('connect ECONNREFUSED mongodb://operator:hunter2@db.internal:27017');
+  throw new Error('connect ECONNREFUSED mongodb://user:pass@db.internal:27017');
 };
 const neverAnswers = () => new Promise<never>(() => undefined);
 
@@ -46,7 +46,7 @@ describe('GET /api/ready', () => {
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(JSON.parse(body)).toStrictEqual({ mongo: false, search: true });
-    expect(body).not.toMatch(/ECONNREFUSED|hunter2|internal|27017/);
+    expect(body).not.toMatch(/ECONNREFUSED|user:pass|internal|27017/);
   });
 
   it('answers 503 naming search when Meilisearch health fails', async () => {
