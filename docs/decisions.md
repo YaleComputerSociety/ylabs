@@ -13,6 +13,7 @@ Three of the rows #4388 would newly serve were wrong for reasons the lead mint d
   `creativePracticeDescription.ts` gains a `design` kind (typefaces, type design, typography, lettering, graphic design, book design, brand and visual identities) and an `instrument` kind (a named instrument, brass, woodwinds), and its practitioner arm reads founding or directing a named studio, foundry, collective, ensemble, press, gallery or company.
   A practitioner presenting "his story and research at design conferences" is giving a talk about the practice, so that phrase is no longer a research statement.
   The two-kinds rule and every research exemption are unchanged, so a design historian, an acoustics study of the organ and a single design mention stay research.
+  The `role-biography` escape does not count either new kind, because organ, brass and brand identity have ordinary meanings outside the arts, so an administrative biography that mentions an organ transplant program is still refused.
 - **A practice biography with no research is not a description.**
   `isPracticeBiographyWithoutResearch` in `descriptionNonResearchBodyShape.ts` reads a body that says where a clinician or a lawyer practises and what they treat or whom they represent, and states no research, publication or teaching, and the quality bar flags it `practice-biography`.
   Clinical practice is neither research nor creative practice, so a row whose only body is this names nothing a student could join.

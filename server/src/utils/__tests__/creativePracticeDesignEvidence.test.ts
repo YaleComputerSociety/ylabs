@@ -53,9 +53,9 @@ describe('decideCreativePractice design and instrument evidence (#4551)', () => 
       'Her research examines the acoustics of the organ in historic churches.',
       'A historian of typography whose monograph traces the history of the printed letter.',
     ]) {
-      expect(
-        decideCreativePractice({ ...ART_SCHOOL_ONLY, fullDescription }).creativePractice,
-      ).toBe(false);
+      expect(decideCreativePractice({ ...ART_SCHOOL_ONLY, fullDescription }).creativePractice).toBe(
+        false,
+      );
     }
   });
 });
