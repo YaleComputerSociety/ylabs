@@ -18,6 +18,7 @@ import {
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
+import { pressFeatureDescriptionShape } from './descriptionPressFeatureShape';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -1430,6 +1431,12 @@ export function fullDescriptionWouldMaterialize(
   return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
 }
 
+function pressFeatureShapeFlag(text: string): DescriptionQualityFlag | null {
+  const shape = pressFeatureDescriptionShape(text);
+  if (!shape) return null;
+  return shape === 'publication-list' ? 'paper-fragment' : 'source-news-fragment';
+}
+
 function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
@@ -1494,6 +1501,8 @@ function computeFullDescriptionQuality(
   ) {
     flags.push('paper-fragment');
   }
+  const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
+  if (pressFeatureFlag) flags.push(pressFeatureFlag);
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
@@ -1833,6 +1842,8 @@ function computeShortDescriptionQuality(
   ) {
     flags.push('paper-fragment');
   }
+  const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
+  if (pressFeatureFlag) flags.push(pressFeatureFlag);
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
