@@ -250,3 +250,93 @@ describe('selectDuplicateProgramCopies on a shared fund page', () => {
     ).toEqual([['a', 'b']]);
   });
 });
+
+describe('selectDuplicateProgramCopies on one program page two lanes cite (#4175)', () => {
+  const PROGRAM_PAGE = 'https://www.example.edu/undergraduate/fixture-research-internship-program/';
+  const FORM = 'https://forms.example.com/fixture-internship';
+  const OTHER_DESCRIPTION =
+    'Department guidance for undergraduates looking for a faculty research placement in the fixture department during the academic year.';
+
+  it('joins two lanes whose copies cite one program page and one form whatever the scheme', () => {
+    expect(
+      redundant(
+        copy('a', {
+          title: 'Research Internship Program',
+          description: '',
+          sourceUrl: PROGRAM_PAGE,
+          applicationLink: FORM,
+        }),
+        copy('b', {
+          title: 'Fixture Department Research Internship Program',
+          description: OTHER_DESCRIPTION,
+          sourceName: 'department-undergrad-research',
+          sourceUrl: PROGRAM_PAGE.replace('https://www.', 'http://'),
+          applicationLink: FORM.replace('https://', 'http://'),
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+  });
+
+  it('keeps the database record when the copies share only the program page (#4289)', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Undergraduate Fellowships', sourceUrl: PROGRAM_PAGE }),
+        copy('b', {
+          title: 'Fixture Institute Undergraduate Fellowships',
+          description: OTHER_DESCRIPTION,
+          sourceName: 'student-grants-database',
+          sourceUrl: PROGRAM_PAGE,
+        }),
+      ),
+    ).toEqual([['a', 'b']]);
+  });
+
+  it('leaves copies apart when their titles name different programs on one page', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Council Summer Grant', sourceUrl: PROGRAM_PAGE }),
+        copy('b', {
+          title: 'Fixture Studies Travel Fellowship',
+          description: OTHER_DESCRIPTION,
+          sourceName: 'student-grants-database',
+          sourceUrl: PROGRAM_PAGE,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('joins nothing on a page or a form one lane cites for several rows', () => {
+    const LISTING = 'https://funding.example.edu/find-funding/all-fellowships';
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Foundation Fellowship', sourceUrl: LISTING }),
+        copy('b', {
+          title: 'Fixture Foundation Travel Fellowship',
+          description: OTHER_DESCRIPTION,
+          sourceName: 'student-grants-database',
+          sourceUrl: LISTING,
+        }),
+        copy('c', {
+          title: 'Another Fixture Award',
+          description:
+            'A third fixture award listed on the same funding index page for graduating seniors.',
+          sourceName: 'student-grants-database',
+          sourceUrl: LISTING,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('never joins one lane copies on a shared page alone', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Fellowship', sourceUrl: PROGRAM_PAGE }),
+        copy('b', {
+          title: 'Fixture Fellowship Summer Session',
+          description: OTHER_DESCRIPTION,
+          sourceUrl: PROGRAM_PAGE,
+        }),
+      ),
+    ).toEqual([]);
+  });
+});

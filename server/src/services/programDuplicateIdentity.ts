@@ -134,6 +134,42 @@ function titlesNameOneFund(a: unknown, b: unknown): boolean {
   return !!shorter && ` ${longer} `.includes(` ${shorter} `);
 }
 
+function titleWordsOneFund(a: unknown, b: unknown): boolean {
+  const [shorter, longer] = [titleKeyWithoutAsides(a), titleKeyWithoutAsides(b)]
+    .map((key) => new Set(key.split(' ').filter(Boolean)))
+    .sort((x, y) => x.size - y.size);
+  if (shorter.size === 0) return false;
+  return [...shorter].every((word) => longer.has(word));
+}
+
+function programPageIdentity(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  if (recordSpecificApplicationPortalIdentity(value)) return '';
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+  const path = url.pathname.toLowerCase().replace(/\/+$/, '');
+  if (!path) return '';
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  return `${host}${path}${url.search.toLowerCase()}`;
+}
+
+// Two lanes that each mint a row from one program's own page, or from one application form,
+// describe one program, even when their titles and descriptions differ (#4175). A page or form
+// one lane cites for several rows is a listing or a common application, which distinct funds
+// share (#4279), so it joins nothing.
+function onePageAcrossLanes(
+  programs: readonly ProgramDuplicateCandidate[],
+  copies: readonly number[],
+): boolean {
+  const lanes = copies.map((index) => programs[index].sourceName || '');
+  return new Set(lanes).size === lanes.length;
+}
+
 function groupIndexes(
   programs: readonly ProgramDuplicateCandidate[],
   keysOf: (program: ProgramDuplicateCandidate) => string[],
@@ -183,6 +219,18 @@ export function selectDuplicateProgramCopies(
     forEachPair(copies, (a, b) => {
       if (titlesNameOneFund(programs[a].title, programs[b].title)) join(a, b);
     });
+  }
+
+  for (const pageOf of [
+    (program: ProgramDuplicateCandidate) => [programPageIdentity(program.sourceUrl)],
+    (program: ProgramDuplicateCandidate) => [programPageIdentity(program.applicationLink)],
+  ]) {
+    for (const copies of groupIndexes(programs, pageOf)) {
+      if (!onePageAcrossLanes(programs, copies)) continue;
+      forEachPair(copies, (a, b) => {
+        if (titleWordsOneFund(programs[a].title, programs[b].title)) join(a, b);
+      });
+    }
   }
 
   const funds = new Map<number, ProgramDuplicateCandidate[]>();
