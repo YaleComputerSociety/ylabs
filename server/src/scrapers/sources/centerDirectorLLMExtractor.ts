@@ -304,8 +304,9 @@ async function defaultPriorReadFinder(
   centerEntityKey: string,
   currentScrapeRunId: string,
 ): Promise<NamedCenterDirector | null> {
-  const excludeRun = mongoose.Types.ObjectId.isValid(currentScrapeRunId)
-    ? { scrapeRunId: { $ne: new mongoose.Types.ObjectId(currentScrapeRunId) } }
+  const currentRunObjectId = normalizeCenterDirectorObjectId(currentScrapeRunId);
+  const excludeRun = currentRunObjectId
+    ? { scrapeRunId: { $ne: new mongoose.Types.ObjectId(currentRunObjectId) } }
     : {};
   const row = (await Observation.findOne({
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
