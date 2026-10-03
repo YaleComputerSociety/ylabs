@@ -454,6 +454,27 @@ describe('a contact direction in fund prose (#4177)', () => {
     );
   });
 
+  it.each([
+    'Applicants must email a one-page proposal answering the questions below.',
+    'Proposals must be sent to the committee with additional information about the budget.',
+  ])('keeps a requirement that only mentions questions beside a send verb: %s', (requirement) => {
+    const fund = fundWith({ eligibility: requirement });
+
+    expect(fund.eligibility).toBe(requirement);
+    expect(witnessOf(fund)?.assertsNoValueFor ?? []).not.toContain('eligibility');
+  });
+
+  it.each([
+    'Questions about eligibility should be directed to the program coordinator.',
+    'Send any questions to the program coordinator.',
+    'For further information, reach out to the program coordinator.',
+    'Contact the program coordinator with any questions.',
+  ])('drops a sentence that directs an enquiry: %s', (direction) => {
+    const fund = fundWith({ eligibility: `<p>Open to juniors.</p><p>${direction}</p>` });
+
+    expect(fund.eligibility).toBe('Open to juniors.');
+  });
+
   it('leaves a section with no contact direction exactly as it reads', () => {
     const fund = fundWith({
       eligibility: '<p>Open to juniors.</p><p>Seniors may apply.</p>',
