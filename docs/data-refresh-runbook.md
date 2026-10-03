@@ -369,7 +369,7 @@ Local scraping and materialization can intentionally change Development after th
 Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears the non-mirror Development collections that hold stale scrape residue.
 
 It never clears Development's own measurement history.
-`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, and the analytics event log.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, the weekly sweep run records, and the analytics event log.
 Beta never mirrors any of them, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
 `scrape_job_locks` is the one unmirrored collection the refresh still clears, because a lease is state rather than history and expires anyway.
 The dry-run and apply artifacts report both sides: read `localCollectionsClearedOnApply` for what goes and `localCollectionsPreservedOnApply` for what stays.
