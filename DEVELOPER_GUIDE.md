@@ -60,6 +60,7 @@ These instructions assume a Unix-like shell. Mac developers can run them in Term
 - Corepack, installed separately because Node 25 and later no longer ship it
 - Yarn 4, activated through Corepack
 - Docker Desktop (for local Meilisearch)
+- The GitHub CLI, `gh`, with the guard shim ahead of it on `PATH`: run `scripts/install-gh-identifier-guard.sh` once, and `command -v gh` must then print `~/.local/bin/gh`. The installer fails when another `gh` comes first, which is the default on macOS until `~/.local/bin` is put first in your shell profile.
 
 ### 1. Fresh machine setup
 

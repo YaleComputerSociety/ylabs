@@ -17,12 +17,11 @@ const bodyFlagIndex = args.indexOf('--body-file');
 const bodyFile = bodyFlagIndex === -1 ? null : args[bodyFlagIndex + 1];
 const label = args.includes('--label') ? args[args.indexOf('--label') + 1] : 'body';
 
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  encoding: 'utf8',
-  shell: false,
-}).trim();
-
 const readTrackedFiles = () => {
+  const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    encoding: 'utf8',
+    shell: false,
+  }).trim();
   const candidates = execFileSync(
     'git',
     ['ls-files', '--cached', '--others', '--exclude-standard'],

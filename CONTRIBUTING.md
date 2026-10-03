@@ -133,8 +133,28 @@ yarn security:identifiers:body <file>
 
 The `gh` identifier guard enforces this before posting: it runs the same scan on every `gh` issue, pull request, comment, and API body for this organisation and refuses a flagged one, so the text never reaches GitHub.
 `scripts/new-agent-worktree.sh` installs it; on any other checkout run `scripts/install-gh-identifier-guard.sh` once.
+The installer copies the guard to `~/.local/share/ylabs-gh-guard`, so deleting the checkout later does not break `gh`, and it fails unless its shim is the first `gh` on `PATH`.
+A pull request body written in the GitHub web UI is never scanned, so scan it yourself first.
 There is no after-the-fact bot, so a host without the guard has only your own scan.
 See [docs/person-identifier-convention.md](docs/person-identifier-convention.md).
+
+## Contributing from a fork
+
+You do not need write access to start.
+Fork the repository, then:
+
+```bash
+git clone https://github.com/<you>/ylabs.git && cd ylabs
+git remote add upstream https://github.com/YaleComputerSociety/ylabs.git
+git fetch upstream
+scripts/new-agent-worktree.sh <branch-name>
+```
+
+`scripts/new-agent-worktree.sh` installs the `gh` guard and branches from `upstream/beta` whenever an `upstream` remote exists, so the branch starts from this repository rather than from your fork's possibly stale `beta`.
+The guard scans a body whenever any remote of the checkout belongs to this organisation, so a fork checkout is guarded too.
+Push the branch to your fork and open the pull request against `YaleComputerSociety/ylabs` `beta`, for example with `gh pr create --repo YaleComputerSociety/ylabs --base beta`.
+A maintainer approves the first CI run for a first-time contributor; after that `test-and-build` and `student-journey-smoke` run on every push, and neither uses repository secrets.
+A maintainer reviews and merges it.
 
 ## Merge
 

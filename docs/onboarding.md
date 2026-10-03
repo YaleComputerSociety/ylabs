@@ -70,6 +70,9 @@ yarn dev:client            # http://localhost:3000 renders the directory
 
 Then log in at `http://localhost:4000/api/dev-login` and confirm `/research` returns cards with real text.
 
+Install the `gh` identifier guard with `scripts/install-gh-identifier-guard.sh` and confirm `command -v gh` prints `~/.local/bin/gh`.
+The installer exits non-zero when another `gh` is earlier on `PATH`, because then nothing scans what you post.
+
 You need Development MongoDB credentials from a maintainer.
 There is no local-only data path, so an empty app is not a setup you can debug your way out of.
 
@@ -211,7 +214,7 @@ They are worth reading once now and again the first time a number surprises you.
 
 Do these before their first day, because each one blocks them entirely.
 
-- [ ] GitHub write access to the repository.
+- [ ] GitHub write access to the repository, which is optional: a newcomer can start from a fork (see `CONTRIBUTING.md`), and write access is granted after a first merged change.
 - [ ] Development MongoDB credentials. Do not hand out Beta or Production.
 - [ ] `OPENAI_API_KEY` if they will touch search or any LLM extraction lane.
 - [ ] Confirm whether they need Yale network access. Scraper and data work reaches Yale sources, which is what the `fleet:data` label marks; serve-time work does not.

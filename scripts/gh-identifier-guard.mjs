@@ -69,11 +69,32 @@ const git = (gitArgs) => {
   }
 };
 
+const branchCommitMessages = (base) => {
+  const baseRemote = git(['remote', 'get-url', 'upstream']) ? 'upstream' : 'origin';
+  const range = `${baseRemote}/${base}..HEAD`;
+  try {
+    return execFileSync('git', ['log', '--format=%B', range], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    console.error(
+      `gh guard: NOT posted, because --fill would publish the commits in ${range} and git could not read them.` +
+        `\nFetch ${baseRemote} or pass --title and --body instead.`,
+    );
+    process.exit(1);
+  }
+};
+
 const plan = planGuard(args, {
   envRepo: process.env.GH_REPO,
   originUrl: git(['remote', 'get-url', 'origin']),
+  remoteUrls: git(['config', '--get-regexp', '^remote\\..*\\.url$'])
+    .split('\n')
+    .map((line) => line.split(/\s+/)[1])
+    .filter(Boolean),
   readBodyFile: (file) => (file === '-' ? readStdinOnce() : fs.readFileSync(file, 'utf8')),
-  branchCommitMessages: (base) => git(['log', '--format=%B', `origin/${base}..HEAD`]),
+  branchCommitMessages,
 });
 
 if (plan.action === 'passthrough') runRealGh();
