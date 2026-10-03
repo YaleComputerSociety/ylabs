@@ -3,6 +3,7 @@ import {
   assessResearchEntityDescriptionQuality,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import { asResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
@@ -255,12 +256,13 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
 
 export interface SynthesisCandidateFields extends LabSynthesisSourceFields {
   shortDescription?: unknown;
+  entityType?: unknown;
 }
 
 export function isSynthesisCandidate(entity: SynthesisCandidateFields): boolean {
   const full = sanitizeDescriptionText(entity.fullDescription).text;
   const short = sanitizeDescriptionText(entity.shortDescription).text;
-  const fullClass = classifyFullDescription(full);
+  const fullClass = classifyFullDescription(full, asResearchEntityType(entity.entityType));
   const shortEqualsFull =
     short.length > 0 && full.length > 0 && short.toLowerCase() === full.toLowerCase();
   return fullClass !== 'genuine' || shortEqualsFull;

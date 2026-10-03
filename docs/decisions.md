@@ -5,6 +5,33 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-03: Role Biographies, Another Organization's Page Text And Education Programs Are Not A Description (#4528)
+
+Three body shapes passed the description quality bar and served as a row's description although none describes the row's research or practice.
+`nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names them, and the quality bar reads each as its own flag for both the body and the card, so the serve path, the materializer's candidate ranking and the gate all refuse the same text.
+
+- **`role-biography`**: a teaching-only or administrative biography that states no research, no creative practice and no clinical work, such as a career office director, a language lector or a diversity office lead.
+  Any research or care word, a faculty rank, or one kind of creative practice evidence keeps the body, because refusing a real research biography costs the row.
+  The research test is lower case on purpose, so a department name ("Africana Studies") is not read as a statement that the person studies something.
+- **`third-party-page`**: another organization's page text, meaning a call for submissions with its usage terms, an event's own page, or a site's section blurbs ("Highlights of ...", "Lists of ...").
+- **`instruction-offering`**: an education program's description, whose subject is the instruction it offers ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course rather than a group a student could join.
+  A research statement (a research, investigation, experiment, laboratory, scientist or publication word) keeps the body, so a research core that also trains its users is not read as a course.
+  The wider research-or-care test is not used here, because an education program's own prose says "classes focus on".
+  Only a `LAB` row is refused for it: a core facility's or a center's training and workshops are its own service, so those rows keep the body.
+
+The research test reads every sentence with only its first letter lowered, so a research claim that opens a later sentence ("Research in the group ...") keeps the body as well.
+`third-party-page` takes no research exemption, because its shapes are structural and the calibrated cases carry research words of their own (a funding agency's section text names research, and a call for artists says "interested in collaborating").
+
+Measured on Development on 2026-10-03 by walking all 3,470 served rows through `getResearchGroupDetail` and the browse route with the old and new code: 5 rows stop serving, because the serve path recomputes the bar and their only body is refused.
+All 5 were read and are wrong for the row: a language lector's teaching biography, a career office administrator's biography, an exhibition's event page, and one call for artists on two rows.
+No other served body or card changed.
+Of the 32 rows #4388 would newly serve, 3 are refused and all 3 are wrong: an education program filed as a lab, a funding agency's site section text, and a diversity office director's biography.
+
+The predicates err toward keeping a body, and the residue is recorded rather than chased.
+Four administrative biographies in an arts school stay served as research because each names a theatre or performance context or a research word; one person-scoped row serves an education center's mission statement, which the organization-subject rule (#2911) does not read as another organization's subject; and one design educator's biography mentions research at conferences.
+
+This is a stored-data change as well as a serve-time one: browse and detail stop serving the refused bodies on deploy, and the stored tier follows once the gate re-runs on Development.
+
 ## 2026-10-03: Arts-Practice Faculty Rows Are Served And Labelled Creative Practice (#4519)
 
 Owner decision: a faculty row whose own evidence describes creative practice rather than research is served, not withheld, and it is labelled "Creative practice" instead of research.
