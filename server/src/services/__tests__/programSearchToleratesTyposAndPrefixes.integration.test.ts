@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { Fellowship } from '../../models/fellowship';
 import { searchFellowships } from '../fellowshipService';
 import { resetProgramSearchSpellingVocabularyForTests } from '../programSearchSpellingVocabulary';
+import { setResearchSearchSpellingVocabularyForTests } from '../researchSearchSpellingVocabulary';
+import { buildSearchSpellingVocabulary } from '../searchQuerySpellingCorrection';
 
 const program = (title: string, description: string, overrides: Record<string, unknown> = {}) => ({
   title,
@@ -54,7 +56,12 @@ describe('program search tolerates misspellings and unfinished words (#4537)', (
     await memoryServer?.stop();
   });
 
-  beforeEach(() => resetProgramSearchSpellingVocabularyForTests());
+  beforeEach(() => {
+    resetProgramSearchSpellingVocabularyForTests();
+    setResearchSearchSpellingVocabularyForTests(buildSearchSpellingVocabulary([]));
+  });
+
+  afterEach(() => setResearchSearchSpellingVocabularyForTests(null));
 
   it('serves a misspelled word the programs the correct spelling serves, and says so', async () => {
     const corrected = await searchFellowships({ query: 'sophmore' });
@@ -74,6 +81,15 @@ describe('program search tolerates misspellings and unfinished words (#4537)', (
 
     expect(result.total).toBe(0);
     expect(result.queryCorrection).toBeUndefined();
+  });
+
+  it('searches the typed spelling while the research vocabulary is not loaded', async () => {
+    setResearchSearchSpellingVocabularyForTests(null);
+
+    const result = await searchFellowships({ query: 'sophmore' });
+
+    expect(result.queryCorrection).toBeUndefined();
+    expect(result.total).toBe(0);
   });
 
   it('matches a word the student has not finished typing', async () => {

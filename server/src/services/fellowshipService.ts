@@ -3,7 +3,11 @@
  */
 import { escapeRegex } from '../utils/regex';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
-import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
+import {
+  correctProgramSearchQuerySpelling,
+  PROGRAM_QUERY_STOP_WORDS,
+  PROGRAM_SEARCH_SPELLING_FIELDS,
+} from './programSearchSpellingVocabulary';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -863,29 +867,8 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
-const PROGRAM_WORD_PREFIX_FIELDS = [
-  'title',
-  'summary',
-  'description',
-  'eligibility',
-  'competitionType',
-  'applicationInformation',
-  'additionalInformation',
-  'purpose',
-  'studentFacingCategory',
-];
 const PROGRAM_WORD_PREFIX_MIN_LENGTH = 2;
-const PROGRAM_WORD_PREFIX_STOP_WORDS = new Set([
-  'an',
-  'and',
-  'for',
-  'in',
-  'of',
-  'on',
-  'or',
-  'the',
-  'to',
-]);
+const PROGRAM_WORD_PREFIX_STOP_WORDS: ReadonlySet<string> = new Set(PROGRAM_QUERY_STOP_WORDS);
 
 // MongoDB `$text` matches whole stemmed words only, so a student typing into the live search
 // box sees nothing until the word is finished: `Com` matched no program while 87 carry a word
@@ -898,7 +881,7 @@ export const programQueryWordPrefixClauses = (query: string): Record<string, unk
         !PROGRAM_WORD_PREFIX_STOP_WORDS.has(token),
     )
     .map((token) => ({
-      $or: PROGRAM_WORD_PREFIX_FIELDS.map((field) => ({
+      $or: PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => ({
         [field]: { $regex: `(?:^|[^a-z0-9])${escapeRegex(token)}`, $options: 'i' },
       })),
     }));

@@ -27,7 +27,7 @@ export const PROGRAM_SEARCH_SPELLING_FIELDS = [
 export const PROGRAM_SEARCH_SPELLING_TTL_MS = 10 * 60 * 1000;
 const RESEARCH_WORD_MIN_DOCUMENTS = 3;
 
-const PROGRAM_QUERY_STOP_WORDS = ['a', 'an', 'and', 'for', 'in', 'of', 'on', 'or', 'the', 'to'];
+export const PROGRAM_QUERY_STOP_WORDS = ['a', 'an', 'and', 'for', 'in', 'of', 'on', 'or', 'the', 'to'];
 
 const PROGRAM_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [...PROGRAM_QUERY_ALIAS_PHRASES, ...PROGRAM_QUERY_STOP_WORDS].flatMap(
@@ -121,16 +121,16 @@ export const resetProgramSearchSpellingVocabularyForTests = (): void => {
 // unfinished rather than misspelled and is left to the word-prefix match: `fres` is the start of
 // `freshman`, not a typo for `fees`.
 const programProtectedTerms = (
-  programs: SearchSpellingVocabulary | null,
+  programs: SearchSpellingVocabulary,
+  research: SearchSpellingVocabulary,
 ): SearchSpellingProtectedTerms => {
-  const research = getResearchSearchSpellingVocabulary();
-  const programWords = programs ? sortedWords(programs, 1) : [];
-  const researchWords = research ? sortedWords(research, RESEARCH_WORD_MIN_DOCUMENTS) : [];
+  const programWords = sortedWords(programs, 1);
+  const researchWords = sortedWords(research, RESEARCH_WORD_MIN_DOCUMENTS);
   return {
     has: (term: string) =>
       PROGRAM_PROTECTED_QUERY_TERMS.has(term) ||
-      (research?.documentFrequency.get(term) ?? 0) >= RESEARCH_WORD_MIN_DOCUMENTS ||
-      Boolean(research?.nameTerms.has(term)) ||
+      (research.documentFrequency.get(term) ?? 0) >= RESEARCH_WORD_MIN_DOCUMENTS ||
+      research.nameTerms.has(term) ||
       startsALongerWord(programWords, term) ||
       startsALongerWord(researchWords, term),
   };
@@ -140,6 +140,13 @@ export const correctProgramSearchQuerySpelling = async (
   query: string,
 ): Promise<CorrectedSearchQuery> => {
   if (!query.trim()) return { query, corrections: [] };
+  const research = getResearchSearchSpellingVocabulary();
+  if (!research) return { query, corrections: [] };
   const vocabulary = await getProgramSearchSpellingVocabulary();
-  return correctSearchQuerySpelling(query, vocabulary, programProtectedTerms(vocabulary));
+  if (!vocabulary) return { query, corrections: [] };
+  return correctSearchQuerySpelling(
+    query,
+    vocabulary,
+    programProtectedTerms(vocabulary, research),
+  );
 };
