@@ -5,6 +5,7 @@ import {
   DESCRIPTION_EXTRACTION_PROMPT_HASH,
   LabMicrositeDescriptionLLMExtractor,
   type CallDescriptionLLMFn,
+  LAB_NAME_EMISSION_CONTRACT,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import {
@@ -98,6 +99,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
       CARD_SYNTHESIS_PROMPT_HASH,
+      LAB_NAME_EMISSION_CONTRACT,
     );
     const loadHashSpy = vi
       .spyOn(contentHashGate, 'loadStoredContentHash')
@@ -287,6 +289,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
       CARD_SYNTHESIS_PROMPT_HASH,
+      LAB_NAME_EMISSION_CONTRACT,
     );
     const fetchPage = vi.fn().mockResolvedValue({
       url: 'https://medicine.yale.edu/lab/ashford/',
@@ -449,6 +452,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
       CARD_SYNTHESIS_PROMPT_HASH,
+      LAB_NAME_EMISSION_CONTRACT,
     );
     vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(priorCardModelHash);
 
@@ -495,6 +499,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
         DEFAULT_MODEL,
         'gpt-5-mini-next',
         CARD_SYNTHESIS_PROMPT_HASH,
+        LAB_NAME_EMISSION_CONTRACT,
       ),
     );
     expect(hashObs?.value).not.toBe(priorCardModelHash);
