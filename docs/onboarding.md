@@ -53,7 +53,14 @@ Writing a field directly is the illegitimate third option, because the next reso
 ## Day 1: get it running
 
 Follow [DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md#local-development-setup).
-You are done when all four of these hold:
+Start and seed the local search index first, because without it search falls back to a degraded path:
+
+```bash
+yarn meili:up
+yarn meili:seed
+```
+
+You are done when all four of these hold, the last of them checked in a browser:
 
 ```bash
 yarn meili:health          # {"status":"available"}
@@ -81,8 +88,10 @@ The definition of `student_ready` reads like bureaucracy until you have seen a p
 Finish by taking a measurement, so you learn the instrument before you need it:
 
 ```bash
-yarn --cwd server research-entity:served-scoreboard
+yarn --cwd server research-entity:served-scoreboard --baseline <path.json>
 ```
+
+The baseline is the slug-set file a maintainer keeps outside the repository; ask for it, and read `docs/served-corpus-scoreboard.md` for the full form.
 
 It renders a fixed set of rows through the real serve path and prints the served text.
 Whenever you want to know what a student sees, this rather than a database query is the answer.
@@ -139,7 +148,7 @@ You should know the real state of the guardrails rather than discovering it.
 Expect the tree to move under you, and rebase often.
 
 **The test suite is the real safety net, and it is good.**
-The suites execute 779 files and about 12,052 tests: 675 files and 10,911 tests on the server, 104 files and 1,141 tests on the client.
+The suites run about a thousand test files; `git ls-files 'server/*.test.ts' 'client/*.test.ts' 'client/*.test.tsx' | wc -l` prints the current count.
 Two reverts and three hotfixes in 90 days across all that traffic.
 Trust it, extend it, and do not merge around it.
 
@@ -181,7 +190,7 @@ They are worth reading once now and again the first time a number surprises you.
 - **Stored is not served.** Stored topics outnumber served topics, and a repaired field can still be served from a stale index. Take a number from the route, not from the model.
 - **An exit code is not verification.** Neither is a script's own counter. Re-read the served surface.
 - **A dry run applies no patch.** A promotion count from a dry run is `null`, not `0`.
-- **Two full suites in parallel fabricate failures.** They contend for the same Development data. `yarn test` runs them sequentially for this reason.
+- **Two full suites in parallel fabricate failures.** Neither touches a real database, but together they starve each other's in-memory MongoDB instances and Vitest workers into timeouts. `yarn test` runs them sequentially for this reason.
 - **A consistency audit cannot find a consistently wrong row.** If every source agrees on the wrong value, agreement is not evidence.
 - **Re-scraping does not retract a dead URL.** Removing an assertion needs a revocation, not another scrape.
 - **A 404 from an API can mean "wrong endpoint", not "absent".** `GET /branches/beta/protection` returns `404 Branch not protected` on this repository, which reads as "there is no protection" and is false: protection is configured as rulesets, which that endpoint does not report. The negative answer was authoritative-looking and wrong. When an absence surprises you, confirm you are asking the instrument that would know.

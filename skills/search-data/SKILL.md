@@ -545,5 +545,5 @@ The blast radius is confined to queries containing a catalog phrase: `machine le
   The archives that predate it are unattributed history and are never backfilled, because nothing records who made them: on Development on 2026-09-30, 3,659 of 7,776 signals and 601 of 612 relationship edges where `archived` is true have no `archivedReason`, absent or empty.
 - If a schema change affects Research search, update the relevant index config and rebuild path.
 - Add a backfill script in `server/src/scripts/` when existing data needs transformation.
-- Migration scripts run with `npx tsx --transpile-only <script>.ts`.
+- Run a migration script through its `server/package.json` key, which invokes `tsx <script>.ts`.
 - Verify index settings and sortable/filterable attributes when adding fields used for search, filtering, or ordering.

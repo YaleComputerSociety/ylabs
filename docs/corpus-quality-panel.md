@@ -108,7 +108,7 @@ Tightening a description flag shows up here as a dip, with no parallel heuristic
 ## The collection is environment-local
 
 `corpus_quality_snapshots` is listed in `scripts/mirrorCollectionPolicy.ts` and must never join `COPY_COLLECTIONS` in `promoteAcceptedBetaCopy.ts`.
-A promotion replaces whole collections with an unguarded `deleteMany({})`, so carrying this one would erase the history it exists to keep, and would attribute one environment's measurements to another.
+A promotion replaces whole collections through a staged collection swap, so carrying this one would replace the target's history with Beta's and erase the history it exists to keep, and would attribute one environment's measurements to another.
 Two tests pin that.
 
 Staying out of the mirror is not by itself protection.
@@ -148,4 +148,4 @@ The series starts at its first snapshot.
 The 2026-08-31 hand-read in `docs/served-corpus-scoreboard.md` cannot be backfilled into it: that artifact holds served copy for 100 slugs, not corpus-wide ratios, so the earlier ratios are unrecoverable rather than merely unrecorded.
 
 The panel also reads one environment, whichever database the process is connected to.
-Cross-environment drift is a different question; `yarn --cwd server research-entity:served-scoreboard` reads all three.
+Cross-environment drift is a different question; `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>` reads all three.

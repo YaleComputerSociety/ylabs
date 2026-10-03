@@ -18,10 +18,9 @@ Yale research includes labs, centers, institutes, faculty projects, digital huma
 ## Student-facing surfaces
 
 - **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like faculty research.
-- **Planning Context**: optional practical evidence for plausible homes, including access, timing, formalization possibilities, and explicit constraints when sources support them.
+- **Entity pages**: factual detail for one lab, center, or faculty research profile, including its lead, official links, topics, and any source-backed signals such as timing or explicit constraints.
 
-Keep Ways In as an internal model embedded in y/labs rather than spinning it into a separate product surface.
-Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
+Use the plain directory language in `docs/glossary.md`; the retired framings it lists are not student-facing vocabulary.
 Do not manufacture a `Signal` for every lab or expose model complexity that does not improve a student decision.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.

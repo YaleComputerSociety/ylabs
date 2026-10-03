@@ -145,9 +145,10 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 Exported from `server/src/middleware/`:
 
 - `validateObjectId(paramName?)`
+- `validateResearchEntityId(paramName?)`
 - `validateNetid(paramName?)`
 - `requireFields(fields[])`
-- `validatePagination()`
+- `validatePagination` (plain middleware, not a factory)
 - `validateQuery(allowedParams[])`
 
 ## Security middleware
@@ -302,13 +303,14 @@ Custom errors in `server/src/utils/errors.ts`:
 
 | Error | Status |
 |-------|--------|
+| `BadRequestError` | 400 |
 | `NotFoundError` | 404 |
 | `ObjectIdError` | 404 |
 | `IncorrectPermissionsError` | 403 |
+| `SearchUnavailableError` | 503, with `Retry-After` |
 
-The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, and everything else to 500.
-Development responses include full details.
-Production responses are generic.
+The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.
+Response bodies are generic in every environment, except that a `BadRequestError` returns its own thrown message; outside deployed runtimes the stack is logged, never returned.
 
 ## Sensitive areas
 

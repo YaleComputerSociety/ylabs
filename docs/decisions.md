@@ -513,7 +513,7 @@ If it cannot, it is layer 3 however mechanical the derivation.
 
 ### Two boundaries the census found, without which the next one over-reports
 
-**A mint is not a field write.** `ensureResearchEntityForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
+**A mint is not a field write.** `findOrCreateForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
 There is no field to back, because there is no row until the insert, so "convert the write to an observation" is the wrong question about it.
 The assertion belongs to whichever lane caused the mint, and the insert is the row coming into existence rather than a claim about it.
 This is a fourth category beside evidence-shaped, operator-shaped and derived-bookkeeping, and without it a census flags every insert in the tree.
@@ -1070,7 +1070,7 @@ Measured effect on Development, one fixed row set read through the real gate pla
 588 rows moved from a chip summary or a blank card to their own prose, and none moved the other way.
 61 rows moved from `operator_review` to `student_ready`, and the single row that moved the other way did so on a `duplicate_risk` reason a concurrent writer added.
 Held rows carrying a description-family reason fell from 925 to 824.
-Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard`.
+Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`.
 
 ## 2026-09-22: Browse Separates Research Types On `entityType`, Not On A New Org Taxonomy (#2195)
 

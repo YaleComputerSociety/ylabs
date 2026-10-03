@@ -16,7 +16,7 @@ This file claimed a single shadow token and a serif heading stack.
 Both were false in `src/`, one of them from the day it was written, while the brand-color rule held because it is the only one with a CI guard.
 So every visual rule here either carries an executable guard or gets deleted.
 A documented rule with no guard does not describe the product, it describes an intention, and the gap widens silently.
-The three guards are `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`, all in `src/__tests__/`.
+The guards are the `*Guard.test.ts(x)` files in `src/__tests__/`, starting with `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`.
 
 **Judge a change on rendered pixels, not on computed style or a class count.**
 A blanket serif rule on `h1` through `h4` passed every static check and was visibly wrong: it turned a section kicker into a giant serif banner and inflated small sidebar labels.
@@ -251,7 +251,7 @@ Prefer these over ad hoc styling.
 Do not use a `ring-brand-soft` ring for focus.
 A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, where `brand-soft` measures 1.13:1 against the canvas and reads as no focus indicator at all.
 - Secondary button: `brand` text on `brand-soft` or panel fill with a `line` border.
-- Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
+- Cards and panels: `panel` surface, `line` border, `shadow-yr-raised` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
 - A sort control is `SortMenu` from `src/components/shared/SortMenu.tsx`, a select-only combobox: Enter, Space, and the arrow keys open it on the current option, `aria-activedescendant` names the highlighted option, and Escape closes it with focus kept on the trigger.

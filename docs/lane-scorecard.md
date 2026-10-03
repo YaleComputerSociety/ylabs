@@ -99,7 +99,7 @@ The panel reads the output fingerprint and the code version together, because a 
 - New fingerprint with no recorded code version on either side: the change cannot be attributed.
 
 A live-model band is never stored, so it never appears here; read it from `--live-model`.
-Engine benchmark snapshots join the panel when #3589 lands, keyed by `benchmarkId` and `stage` beside the lane rows.
+Engine benchmark snapshots are stored in `engine_benchmark_snapshots` by `engineBenchmark.ts`, keyed by `benchmarkId` and `stage`, but no panel reads them yet.
 
 ## Reading a row
 

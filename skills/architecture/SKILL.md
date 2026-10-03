@@ -189,11 +189,9 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
 | `/users`          | `users.ts`          | Auth required.                                      |
-| `/profiles`       | `profiles.ts`       | Varies.                                             |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
 | `/admin`          | `admin.ts`          | Admin.                                              |
-| `/seed`           | `seed.ts`           | Local development runtime only.                     |
 
 ## Key services
 
@@ -206,11 +204,11 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `researchEntitySearchIndexService.ts`                                                                                                       | Meilisearch index sync and query.                                    |
 | `meiliSyncService.ts`                                                                                                                       | Syncs ResearchEntity upserts into the Meilisearch index.             |
 | `signalService.ts`                                                                                                                          | Source-backed access read layer.                                     |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
+| `adminOperatorBoardService.ts` / `adminGrantService.ts`                                                                                    | Operator board and admin grants.                                     |
+| `sourceHealthService.ts`                                                                                                                    | Scraper/source health.                                               |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
 | `programClassifier.ts`                                                                                                                      | Program classification.                                              |
-| `yaliesService.ts` / `courseTableService.ts`                                                                                               | External integrations.                                               |
+| `yaliesService.ts`                                                                                                                          | External integrations.                                               |
 
 ## Naming conventions
 
@@ -250,6 +248,5 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | -------------- | ------------------------------------------------------ | ---------------------------------------------- |
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
 | Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
-| CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
 | OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

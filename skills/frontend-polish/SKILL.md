@@ -154,22 +154,13 @@ Take a number from the build (`yarn --cwd client build` prints per-chunk raw and
 ## Upstream drift, measured 2026-09-26
 
 This file tracks the Vercel Web Interface Guidelines (`vercel.com/design/guidelines`).
-Upstream has grown since this was written, and the items below are in the current guidelines, absent from this file, and measured against `client/src` on the date above.
-Each is a real gap rather than a copy of the upstream list.
+Upstream has grown since this was written, and the items below are in the current guidelines and absent from this file.
+The first two are gaps a re-measurement against `client/src` on 2026-10-02 still finds; #3522 closed the `touch-action`, tap-highlight, `scroll-margin-top`, wordmark `translate="no"`, and `color-scheme` gaps, so they are no longer listed.
 
-- **A spinner needs an anti-flicker delay**: show after roughly 150 to 300ms, then stay for 300 to 500ms.
-Neither `LoadingSpinner` nor `InfiniteScrollLoadingDots` has one, so a fast response makes the spinner flash.
+- **A loader needs an anti-flicker delay**: show after roughly 150 to 300ms, then stay for 300 to 500ms.
+`LoadingSpinner` has one, and `InfiniteScrollLoadingDots` still does not.
 - **In-progress and follow-up labels end in a real ellipsis character**, not three periods.
-29 user-visible strings use `...`, including `Searching...`, `Submitting...`, and `Saving...`, against 2 uses of `…` in the whole client.
-- **`touch-action: manipulation`** suppresses the double-tap zoom delay on mobile, and **`webkit-tap-highlight-color`** controls the tap flash.
-Neither appears anywhere.
-- **`scroll-margin-top`** on any heading an anchor targets, or the heading lands under a sticky header.
-There are 5 `href="#..."` anchors and no `scroll-margin`.
-- **`translate="no"`** on brand names, code tokens, and identifiers, or browser translation mangles them.
-The `y/labs` wordmark and the slug and netid strings carry none.
-- **`color-scheme`** so scrollbars and native controls render correctly.
-Not set. This product is light-only, so the value is small but not zero.
-- **Bind units and short names with `&nbsp;`** so they do not break across lines. No uses.
+Three placeholders and one label still use `...`: the `CombinedFilterDropdown` search field and its "Type to search more" follow-up label, and two operator fields in `AdminFellowshipsTable` and `AdminFellowshipEditModal`.
 - **Upstream now prefers APCA over WCAG 2 for contrast judgements.**
 The contrast work in this repo used WCAG 2 ratios throughout, which is the stricter and more conservative choice, so this is a note rather than a defect.
 - **A hover, active, or focus state should exceed the resting state's contrast.**
@@ -184,7 +175,7 @@ The card buttons in `BrowseCard` and `BrowseListItem` open a modal, which is cor
 - Trust-tier chips and "Show weakest profiles first" are behind `{isAdmin && ...}`, so operator vocabulary is not exposed to students.
 - The undergraduate access signal is designed and implemented on the card, with label mapping, priority ordering, and elevated styling.
 Whether it ever renders is a corpus-coverage question, tracked in `skills/interaction-design/SKILL.md` §8.
-- 44px targets and `:focus-visible` rings are enforced repo-wide by `focusRingGuard` and `client/DESIGN.md` §4.
+- `:focus-visible` rings are enforced repo-wide by `focusRingGuard`, 44px targets by `pressedStateGuard`, and both are specified in `client/DESIGN.md` §4.
 
 Reference: the Vercel Web Interface Guidelines (`vercel.com/design/guidelines`) are the upstream source for this bar.
 Re-check them when this file is next substantially edited, and record the date, because the drift above accumulated silently.

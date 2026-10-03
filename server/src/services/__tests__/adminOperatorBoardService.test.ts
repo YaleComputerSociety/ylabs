@@ -1337,7 +1337,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(derivePromotionCopyGate(artifact)).toMatchObject({
       status: 'review_required',
-      note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+      note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
       excludedSyntheticUsers: 2,
       collectionCategoryCount: 1,
     });

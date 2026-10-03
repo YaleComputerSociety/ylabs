@@ -26,6 +26,8 @@ Two things are worth knowing before you start, because both have cost people an 
 Sanity check that you are actually up:
 
 ```bash
+yarn meili:up         # start local Meilisearch
+yarn meili:seed       # build the local index from Development
 yarn meili:health     # {"status":"available"}
 yarn dev:server       # then http://localhost:4000/api/dev-login
 yarn dev:client       # then http://localhost:3000
@@ -54,7 +56,7 @@ scripts/new-agent-worktree.sh fix/short-description
 ```
 
 The helper branches from `beta`, installs dependencies in isolation, and reserves a free client dev-server port.
-The primary checkout at `~/Personal/ylabs` is for review and integration only.
+The primary checkout is for review and integration only.
 Two people or agents sharing one checkout will switch branches under each other and serve the wrong code.
 Do not symlink `node_modules` between worktrees while running dev servers, because they share Vite's `node_modules/.vite` cache and clobber each other.
 
@@ -84,12 +86,12 @@ yarn test:server   # server only
 yarn test:client   # client only
 ```
 
-`yarn test` runs the two suites **sequentially** and that is deliberate: run in parallel they contend for the same Development data and fabricate failures that are not real.
+`yarn test` runs the two suites **sequentially** and that is deliberate: neither suite reaches a real database, because the server suite is hermetic and the client suite runs under `jsdom`, but run in parallel they starve each other's in-memory MongoDB instances and Vitest workers and fabricate timeouts that are not real.
 
 `yarn verify` runs the full CI sequence locally.
 `yarn serve:fresh` does a clean install, build, and serve, which is a smoke check rather than a test.
 
-The suites are big: 675 server files (about 10,911 tests) and 104 client files (about 1,141 tests).
+The suites are big: `git ls-files 'server/*.test.ts' | wc -l` and `git ls-files 'client/*.test.ts' 'client/*.test.tsx' | wc -l` print the current file counts, several hundred on the server and well over a hundred on the client.
 On a loaded laptop that size turns into failures that are not real, so learn to recognise them before you go debugging one.
 
 **A local timeout is usually starvation, not a defect.**
@@ -107,7 +109,7 @@ CI on Linux is the authority on whether a test really fails.
 Close other work before running a full suite, and prefer running only the suite you touched.
 
 None of the above verifies served output.
-When a change is meant to improve what students see, re-read the served surface with `yarn --cwd server research-entity:served-scoreboard`.
+When a change is meant to improve what students see, re-read the served surface with `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, described in `docs/served-corpus-scoreboard.md`.
 An exit code is not verification and neither is a script's own counter.
 
 ## Open the pull request
@@ -161,7 +163,7 @@ git worktree prune
 
 A stored-data fix does not close its issue on merge.
 Close it once Development is fixed and verified.
-Do not open an issue to track a promotion: one promotion replaces fifteen whole collections and delivers every pending fix together.
+Do not open an issue to track a promotion: one promotion replaces twelve whole collections by default and delivers every pending fix together.
 
 ## Where to look things up
 
