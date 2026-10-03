@@ -4834,6 +4834,9 @@ function hasRequiredFieldsForCreate(
   if (isResearchEntityObservationType(entityType)) {
     return !!insert.name;
   }
+  if (entityType === 'fellowship') {
+    return !!insert.title;
+  }
   return true;
 }
 

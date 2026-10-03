@@ -253,6 +253,18 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     expect(await Fellowship.countDocuments({})).toBe(1);
   });
 
+  it('a retirement re-read after its row is archived mints nothing and fails nothing (#4174)', async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await Fellowship.updateOne({ sourceKey: OFFICE_KEY }, { $set: { archived: true } });
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-04-01T00:00:00Z');
+
+    const outcome = await materializeEntity('fellowship', { entityKey: FUND_KEY });
+
+    expect(outcome.skipped).toBe('missing-required-fields');
+    expect(await Fellowship.countDocuments({})).toBe(1);
+    expect((await officeRow())?.archived).toBe(true);
+  });
+
   it('a live fund never revives a row its owning lane archived (#4174)', async () => {
     await seedOfficeRow([FUND_PAGE]);
     await observe(OFFICE_KEY, OFFICE, OFFICE_PAGE, { archived: true }, '2026-03-02T00:00:00Z');
