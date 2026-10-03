@@ -22,5 +22,7 @@ export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
 
 export function facultyResearchAreaSlugForPersonName(personName: string): string {
   const personSlug = slugify(personName);
-  return personSlug ? `${FACULTY_RESEARCH_AREA_SLUG_PREFIX}${personSlug}`.slice(0, SLUG_MAX_LENGTH) : '';
+  return personSlug
+    ? `${FACULTY_RESEARCH_AREA_SLUG_PREFIX}${personSlug}`.slice(0, SLUG_MAX_LENGTH)
+    : '';
 }
