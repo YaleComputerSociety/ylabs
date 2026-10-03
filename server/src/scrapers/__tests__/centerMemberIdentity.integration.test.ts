@@ -409,6 +409,39 @@ describe(
       expect(await liveEdgesOf(shell._id)).toHaveLength(1);
     });
 
+    it('ends the edge of a listing that names a lab and mints no person for it (#4360)', async () => {
+      const labListingUrl = 'https://fixture-center.example.edu/quillon-lab';
+      const labListing: CenterMember = {
+        name: 'Quillon Lab',
+        role: 'core-faculty',
+        profileUrl: labListingUrl,
+      };
+      const labShell = (
+        await Researcher.create({ displayName: 'Quillon Lab', profileLinks: [], archived: false })
+      )._id as mongoose.Types.ObjectId;
+      const labEdge = await edgeOn(labShell, 'CORE_FACULTY', {
+        rosterProvenance: {
+          sourceName: SOURCE_NAME,
+          profileUrl: labListingUrl,
+          membershipKey: `official-profile:${labListingUrl}|core-faculty`,
+          observedAt: LONG_AGO,
+        },
+      });
+
+      await runLane({ [centerProfileUrl('Casey')]: profilePage() }, [labListing, member('Casey')]);
+
+      expect((await edgeById(labEdge))?.state).toBe('HISTORICAL');
+      expect(await Researcher.countDocuments({ displayName: 'Quillon Lab' })).toBe(1);
+      expect(await researchersNamed('Casey')).toBe(1);
+      const served = await servedNames();
+      expect(served).toContain('Casey Synthetic');
+      expect(served).not.toContain('Quillon Lab');
+
+      await runLane({ [centerProfileUrl('Casey')]: profilePage() }, [labListing, member('Casey')]);
+      expect(await Researcher.countDocuments({ displayName: 'Quillon Lab' })).toBe(1);
+      expect(await liveEdgesOf(labShell)).toHaveLength(0);
+    });
+
     it('adopts the holder edge of an unlisted role and retires it after two complete reads', async () => {
       const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
       const staleLead = await edgeOn(avery, 'DIRECTOR');

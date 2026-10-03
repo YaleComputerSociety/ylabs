@@ -1413,6 +1413,19 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
     expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
   });
 
+  it('indexes no member whose listed name is a lab rather than a person (#4360)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Quillon Lab', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Ferrow Laboratory', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Marlow Quillon', 'CORE_FACULTY', 'UNKNOWN');
+
+    const fields = (await fetchResearchEntitySearchMemberNames([{ _id: entityId }])).get(
+      entityId.toString(),
+    );
+
+    expect(fields?.professorNames).toEqual(['Marlow Quillon']);
+  });
+
   it('names a lead whose edge state is unknown, as the detail page serves it (#3745)', async () => {
     const entityId = new mongoose.Types.ObjectId();
     await seedMember(entityId, 'Unknown State Lead', 'PI', 'UNKNOWN');

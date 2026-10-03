@@ -80,6 +80,7 @@ import {
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElse,
   isExternalScholarlyPlatformLinkLabelName,
+  namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   loadKnownPersonSurnameRoster,
@@ -180,6 +181,11 @@ import {
   withoutForeignContactObservations,
 } from './rowKeyedContactEvidence';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+import {
+  storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
+  withoutPersonProfileTopicsOnOrganizationRow,
+} from './personProfileTopicScreen';
 import {
   REFUSED_WEBSITE_URL_FIELD,
   isLaneWithdrawnWebsiteUrl,
@@ -2512,7 +2518,7 @@ const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
 async function endMisattributedProfileUrlHolderEdges(
   researchEntityId: string,
   plan: RosterMemberCanonicalPlan,
-  personId: mongoose.Types.ObjectId,
+  personId?: mongoose.Types.ObjectId,
 ): Promise<number> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   const provenance = plan.facts.rosterProvenance;
@@ -2521,7 +2527,7 @@ async function endMisattributedProfileUrlHolderEdges(
   if (!entityObjectId || !sourceName || !membershipKey) return 0;
   const ended = await RoleAssignment.updateMany(
     {
-      personId,
+      ...(personId ? { personId } : {}),
       'target.kind': 'RESEARCH_ENTITY',
       'target.id': entityObjectId,
       'rosterProvenance.sourceName': sourceName,
@@ -2831,6 +2837,19 @@ async function materializeRosterMember(
       created: false,
       resolved,
       skipped: 'missing-required-fields',
+    };
+  }
+  if (!researcher && namesAResearchGroupRatherThanAPerson(listedName)) {
+    if (!options.dryRun) await endMisattributedProfileUrlHolderEdges(researchEntityId, plan);
+    return {
+      entityType: 'researchGroupMember',
+      entityId: materializerDocumentId(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'listed-name-names-a-research-group',
     };
   }
   if (identity.misattributedProfileUrlHolderId && !options.dryRun) {
@@ -3843,15 +3862,26 @@ function isGeneratedResearchEntitySlug(value: unknown): boolean {
   return slug.startsWith('faculty-research-area-') || slug.startsWith('dept-');
 }
 
-async function resolveUniquePiLinkedResearchEntityByPersonName(
+interface PiLinkedResearchEntityCandidate {
+  _id: unknown;
+  name?: unknown;
+  slug?: string;
+  entityType?: unknown;
+  kind?: unknown;
+  studentVisibilityTier?: unknown;
+  fullDescription?: unknown;
+  createdAt?: unknown;
+}
+
+async function piLinkedResearchEntityCandidatesByPersonName(
   Model: mongoose.Model<any, any, any, any>,
   personName: string,
-): Promise<any | null> {
-  if (!personName) return null;
+): Promise<PiLinkedResearchEntityCandidate[]> {
+  if (!personName) return [];
 
   const researcherIdString = await findUniqueResearcherIdByPersonName(personName);
   const researcherId = toMaterializerObjectId(researcherIdString);
-  if (!researcherId) return null;
+  if (!researcherId) return [];
   const assignments = await RoleAssignment.find({
     personId: researcherId,
     'target.kind': 'RESEARCH_ENTITY',
@@ -3868,19 +3898,35 @@ async function resolveUniquePiLinkedResearchEntityByPersonName(
         .filter(Boolean),
     ),
   );
-  if (candidateIds.length === 0) return null;
+  if (candidateIds.length === 0) return [];
 
+  return Model.find({
+    _id: { $in: candidateIds },
+    archived: { $ne: true },
+  })
+    .select('_id name slug entityType kind studentVisibilityTier fullDescription createdAt')
+    .lean();
+}
+
+async function resolveUniquePiLinkedResearchEntityByPersonName(
+  Model: mongoose.Model<any, any, any, any>,
+  personName: string,
+): Promise<any | null> {
+  const candidates = await piLinkedResearchEntityCandidatesByPersonName(Model, personName);
+  return uniqueNonGeneratedPiLinkedResearchEntity(Model, personName, candidates);
+}
+
+async function uniqueNonGeneratedPiLinkedResearchEntity(
+  Model: mongoose.Model<any, any, any, any>,
+  personName: string,
+  candidates: PiLinkedResearchEntityCandidate[],
+): Promise<any | null> {
+  if (candidates.length === 0) return null;
   const parts = personName.split(/\s+/).filter(Boolean);
   const compatibleNames = piCompatibleResearchEntityNames(
     parts.slice(0, -1).join(' '),
     parts[parts.length - 1],
   );
-  const candidates = await Model.find({
-    _id: { $in: candidateIds },
-    archived: { $ne: true },
-  })
-    .select('_id name slug')
-    .lean();
   const nonGeneratedCandidates = candidates.filter(
     (candidate: any) => !isGeneratedResearchEntitySlug(candidate.slug),
   );
@@ -3934,6 +3980,49 @@ function uniqueStringArray(...groups: Array<unknown>): string[] {
   return Array.from(values);
 }
 
+function deptRosterFoldPreferenceKey(candidate: PiLinkedResearchEntityCandidate): string[] {
+  const createdAt = new Date(candidate.createdAt as string | number | Date).getTime();
+  return [
+    candidate.studentVisibilityTier === 'student_ready' ? '0' : '1',
+    isFacultyResearchAreaKey(candidate.slug) ? '0' : '1',
+    textValue(candidate.fullDescription) ? '0' : '1',
+    String(Number.isFinite(createdAt) ? createdAt : Number.MAX_SAFE_INTEGER).padStart(16, '0'),
+    textValue(candidate.slug),
+  ];
+}
+
+function compareDeptRosterFoldPreference(
+  left: PiLinkedResearchEntityCandidate,
+  right: PiLinkedResearchEntityCandidate,
+): number {
+  const leftKey = deptRosterFoldPreferenceKey(left);
+  const rightKey = deptRosterFoldPreferenceKey(right);
+  for (let index = 0; index < leftKey.length; index += 1) {
+    if (leftKey[index] !== rightKey[index]) return leftKey[index] < rightKey[index] ? -1 : 1;
+  }
+  return 0;
+}
+
+export function preferredGeneratedFoldTarget(
+  candidates: PiLinkedResearchEntityCandidate[],
+): PiLinkedResearchEntityCandidate | null {
+  if (candidates.some((candidate) => !isGeneratedResearchEntitySlug(candidate.slug))) return null;
+  const personRows = candidates.filter((candidate) => isPersonScopedResearchEntityShape(candidate));
+  if (personRows.length === 0) return null;
+  return [...personRows].sort(compareDeptRosterFoldPreference)[0];
+}
+
+async function deptRosterShellFoldTarget(personName: string): Promise<any | null> {
+  const candidates = await piLinkedResearchEntityCandidatesByPersonName(ResearchEntity, personName);
+  const nonGenerated = await uniqueNonGeneratedPiLinkedResearchEntity(
+    ResearchEntity,
+    personName,
+    candidates,
+  );
+  if (nonGenerated) return nonGenerated;
+  return preferredGeneratedFoldTarget(candidates);
+}
+
 /**
  * A department-roster observation mints a `dept-<dept>-<person>` shell per
  * appointment. Left alone, these never enter the identity-keyed dedupe lane
@@ -3964,10 +4053,7 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   const personName = personNameFromDeptRosterEntityName(shell.name);
   if (!personName) return { folded: false };
 
-  const canonical = await resolveUniquePiLinkedResearchEntityByPersonName(
-    ResearchEntity,
-    personName,
-  );
+  const canonical = await deptRosterShellFoldTarget(personName);
   const canonicalId = normalizeMaterializerObjectId(canonical?._id);
   if (!canonicalId || canonicalId === String(shell._id)) return { folded: false };
 
@@ -8203,6 +8289,14 @@ export async function materializeEntity(
     }
   }
 
+  if (isResearchEntityObservationType(entityType) && entityDoc) {
+    obs = withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc);
+    researchAreaEvidenceObservations = withoutPersonProfileTopicsOnOrganizationRow(
+      researchAreaEvidenceObservations,
+      entityDoc,
+    );
+  }
+
   const accessPassObservations =
     mergedInKeys.length > 0 || foreignContactWithheld ? (obs as AccessObservation[]) : undefined;
   if (options.accessSignalsOnly && isResearchEntityObservationType(entityType) && entityIdString) {
@@ -8464,7 +8558,8 @@ export async function materializeEntity(
     }));
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
-    (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows));
+    (storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
+      (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
   const projection = await projectFromLog(entityType, {
     resolved,
