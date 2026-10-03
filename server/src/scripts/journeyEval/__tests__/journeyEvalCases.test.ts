@@ -259,12 +259,7 @@ describe('default-browse-order-is-repeatable case', () => {
   )!;
   const servedPage = (slugs: string[]) => ({
     degraded: false,
-    researchEntities: slugs.map((slug) => ({
-      slug,
-      school: 'School of Medicine',
-      departments: ['Synthetic Physiology'],
-      entityType: 'LAB',
-    })),
+    researchEntities: slugs.map((slug) => ({ slug })),
   });
   const contextServing = (walks: string[][][]): JourneyEvalContext => {
     let call = 0;
@@ -292,7 +287,7 @@ describe('default-browse-order-is-repeatable case', () => {
     };
   };
 
-  it('passes a fixed order and reports the first page split without gating on it', async () => {
+  it('passes a fixed order', async () => {
     const pages = [
       ['row-a', 'row-b'],
       ['row-c', 'row-d'],
@@ -303,7 +298,6 @@ describe('default-browse-order-is-repeatable case', () => {
     expect(byId['no-row-repeats-across-pages'].status).toBe('pass');
     expect(byId['default-browse-is-not-degraded'].status).toBe('pass');
     expect(outcome.rates).toEqual([]);
-    expect(outcome.notes?.firstPageBySchool).toEqual({ 'School of Medicine': 2 });
   });
 
   it('fails when a second walk over an unchanged corpus reorders rows', async () => {

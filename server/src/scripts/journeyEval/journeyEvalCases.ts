@@ -400,17 +400,6 @@ const paginationServesDistinctRows: JourneyCase = {
   },
 };
 
-const countBy = (values: readonly string[]): Record<string, number> => {
-  const counts: Record<string, number> = {};
-  for (const value of values) counts[value] = (counts[value] ?? 0) + 1;
-  return counts;
-};
-
-const firstStringOr = (value: unknown, fallback: string): string => {
-  const first = Array.isArray(value) ? value[0] : value;
-  return typeof first === 'string' && first.trim() ? first.trim() : fallback;
-};
-
 const defaultBrowseOrderIsRepeatable: JourneyCase = {
   id: 'default-browse-order-is-repeatable',
   title: 'The default browse serves one fixed order a student can page through and come back to',
@@ -420,16 +409,13 @@ const defaultBrowseOrderIsRepeatable: JourneyCase = {
     const corpusBefore = await context.readCorpusFingerprint();
     const walk = async () => {
       const pages: string[][] = [];
-      const firstPageRows: Array<Record<string, unknown>> = [];
       let degradedPages = 0;
       for (let page = 1; page <= pagesToWalk; page += 1) {
         const result = await context.browse({ page, pageSize: context.window });
         if (result.degraded !== false) degradedPages += 1;
-        const rows = servedRows(result);
-        if (page === 1) firstPageRows.push(...rows);
-        pages.push(rows.map(rowKey).filter(Boolean));
+        pages.push(servedRows(result).map(rowKey).filter(Boolean));
       }
-      return { pages, firstPageRows, degradedPages };
+      return { pages, degradedPages };
     };
     const firstWalk = await walk();
     const secondWalk = await walk();
@@ -458,17 +444,6 @@ const defaultBrowseOrderIsRepeatable: JourneyCase = {
         }),
       ],
       rates: [],
-      notes: {
-        firstPageBySchool: countBy(
-          firstWalk.firstPageRows.map((row) => firstStringOr(row.school, '(none)')),
-        ),
-        firstPageByLeadingDepartment: countBy(
-          firstWalk.firstPageRows.map((row) => firstStringOr(row.departments, '(none)')),
-        ),
-        firstPageByEntityType: countBy(
-          firstWalk.firstPageRows.map((row) => firstStringOr(row.entityType, '(none)')),
-        ),
-      },
     };
   },
 };
