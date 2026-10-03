@@ -8062,6 +8062,19 @@ export async function materializeEntity(
     }
   }
 
+  if (isResearchEntityObservationType(entityType) && entityDoc?.archived === true) {
+    return {
+      entityType,
+      entityId: materializerDocumentId(entityDoc._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'archived-research-entity',
+    };
+  }
+
   if (programTyped && !entityDoc) {
     const healedEntityType = healedEntityTypeForRetiredProgramObservations(
       obs,

@@ -86,7 +86,7 @@
       ],
       "properties": {
         "sourceEnvironment": { "const": "production" },
-        "sourceDatabaseName": { "const": "Production" },
+        "sourceDatabaseName": { "const": "Prod" },
         "targetDatabaseName": { "const": "ProductionCopy" },
         "completedAt": { "type": "string", "format": "date-time" },
         "verifiedBy": { "type": "string", "minLength": 3 }

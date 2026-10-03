@@ -100,7 +100,7 @@ function manifestFor(inventoryBuffer, environment = 'beta') {
   if (environment === 'production-copy') {
     manifest.restoreVerification = {
       sourceEnvironment: 'production',
-      sourceDatabaseName: 'Production',
+      sourceDatabaseName: 'Prod',
       targetDatabaseName: 'ProductionCopy',
       completedAt: '2026-07-28T01:45:00.000Z',
       verifiedBy: 'restore reviewer',
@@ -122,6 +122,18 @@ test('validates Beta evidence bound to the exact aggregate-only inventory bytes'
       sourceCommit: SOURCE_COMMIT,
       inventory: sha256AndBytes(inventoryBuffer),
     },
+  );
+});
+
+test('binds the restore to the real Prod database and refuses the legacy Production name', () => {
+  const inventoryBuffer = Buffer.from(
+    `${JSON.stringify(inventoryReport('production-copy'), null, 2)}\n`,
+  );
+  const legacy = manifestFor(inventoryBuffer, 'production-copy');
+  legacy.restoreVerification.sourceDatabaseName = 'Production';
+  assert.throws(
+    () => validateModelInventoryRecoveryManifest(legacy, inventoryBuffer),
+    /must bind Prod to ProductionCopy/,
   );
 });
 
