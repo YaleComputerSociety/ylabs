@@ -192,6 +192,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
 | `/admin`          | `admin.ts`          | Admin.                                              |
+| `/ready`          | `ready.ts`          | Public; uncached readiness probe for monitoring.    |
 
 ## Key services
 
