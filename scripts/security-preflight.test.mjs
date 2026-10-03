@@ -5337,14 +5337,20 @@ test('auth principals are normalized before user lookup and session hydration', 
   assert.match(passportSource, /const principal = publicAuthSessionUser\(user\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(source\.netId\)/);
   assert.match(passportSource, /done\(new Error\('Invalid authentication principal'\)\)/);
-  assert.match(passportSource, /done\(null, principal\)/);
+  assert.match(
+    passportSource,
+    /done\(null, \{ \.\.\.principal, \.\.\.mintSessionClaim\(account\?\.sessionVersion\) \}\)/,
+  );
   assert.match(passportSource, /function coerceStoredSessionPrincipal\(stored: unknown\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(stored\)/);
   assert.match(
     passportSource,
     /const account = await withMongoReconnect\(\(\) => validateAccount\(principal\.netId\)\)/,
   );
-  assert.match(passportSource, /if \(!account \|\| account\.archived\)/);
+  assert.match(
+    passportSource,
+    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\.sessionVersion\)\)/,
+  );
   assert.match(passportSource, /done\(null, null\)/);
   assert.doesNotMatch(passportSource, /done\(null, user\.netId\)/);
   assert.doesNotMatch(
