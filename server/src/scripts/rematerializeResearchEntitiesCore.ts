@@ -286,9 +286,24 @@ export interface RematerializeFieldChange {
   after: unknown;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+// Mongoose re-mints a subdocument `_id` on every write, so it carries no content.
+function withoutSubdocumentId(entry: unknown): unknown {
+  if (!isPlainObject(entry)) return entry;
+  const { _id: _ignored, ...content } = entry;
+  return content;
+}
+
 function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) return value.map((entry) => normalizeForComparison(entry));
+  if (Array.isArray(value)) {
+    return value.map((entry) => withoutSubdocumentId(normalizeForComparison(entry)));
+  }
   return value;
 }
 

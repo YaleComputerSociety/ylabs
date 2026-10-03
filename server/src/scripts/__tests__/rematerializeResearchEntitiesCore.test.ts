@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Types } from 'mongoose';
 import {
   MATERIALIZER_DERIVED_FIELD_GROUPS,
   withDerivedMaterializerFields,
@@ -844,5 +845,30 @@ describe('the access-signals mode (#3921, #3928)', () => {
       retiredByKey: { 'signal:REACH_OUT_PLAUSIBLE': 2 },
       revivedByKey: { 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': 1 },
     });
+  });
+});
+
+describe('rematerializeReportedChanges on grant subdocuments (#4418)', () => {
+  const grant = (title: string) => ({
+    _id: new Types.ObjectId(),
+    id: 'R01XX000001',
+    title,
+    agency: 'NIH',
+  });
+
+  it('reports no change when a rewrite re-mints only the subdocument ids', () => {
+    const before = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+    const reloaded = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+
+    expect(
+      rematerializeReportedChanges(before, reloaded, ['recentGrants', 'recentGrantCount']),
+    ).toEqual([]);
+  });
+
+  it('still reports a grant whose content changed', () => {
+    const before = { recentGrants: [grant('Example Award')] };
+    const reloaded = { recentGrants: [grant('Renamed Award')] };
+
+    expect(rematerializeReportedChanges(before, reloaded, ['recentGrants'])).toHaveLength(1);
   });
 });
