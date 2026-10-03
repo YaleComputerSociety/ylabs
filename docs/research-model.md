@@ -270,7 +270,11 @@ Dropping the now-orphaned `users` collection is the only remaining step and stay
 Accepted operator inputs should prefer ORCID over Yale netid.
 ORCID may enrich or disambiguate an existing Yale-confirmed `Researcher` (`Researcher.identifiers.orcid`), but ORCID must not create a Yale person record by itself.
 `identifiers.orcid` carries a unique sparse index, so an ORCID belongs to exactly one `Researcher` row: a scraped or directory-sourced ORCID that another `Researcher` already holds yields to that existing holder, and the enrichment target keeps the identity it already had instead of the write failing the whole source run.
-An ORCID identifier and its `ORCID` `profileLinks[]` entry always move together, so a stored ORCID link never points at a different ORCID than `identifiers.orcid`.
+An ORCID identifier and its `ORCID` `profileLinks[]` entry move together, and the schema validator rejects a save whose ORCID link names an ORCID `identifiers.orcid` does not hold, including a link with no identifier at all.
+The validator does not run on raw bulk writes, so two writers enforce the pairing themselves (#4501).
+`researchers:dedupe-accountless-shells` moves a shell's ORCID link with the ORCID it transfers, pulls it off the archived shell, and never appends a shell ORCID link the canonical record's resulting ORCID does not back.
+The directory materializer plans the ORCID link from the final `identifiers.orcid`, after any ORCID collision is forgiven, so a stored row that already holds a contradicting link gets the link its identifier backs, or none, and the contradiction is counted as a materialization conflict and logged instead of failing the key.
+Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link held it without `identifiers.orcid`, all of them archived dedupe shells, and none held a link naming a different ORCID from a present identifier.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.

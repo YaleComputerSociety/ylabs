@@ -206,11 +206,10 @@ function hasBoundedUniqueProfileKinds(values: readonly ResearcherProfileLink[]):
   );
 }
 
-function orcidProfileMatchesIdentifier(
-  this: unknown,
-  values: readonly ResearcherProfileLink[],
+export function orcidProfileLinksAgreeWithIdentifier(
+  values: readonly Pick<ResearcherProfileLink, 'kind' | 'url'>[],
+  identifierOrcid: string | undefined,
 ): boolean {
-  const { identifiers } = this as { identifiers?: { orcid?: string } };
   const link = values.find(({ kind }) => kind === 'ORCID');
   if (!link) return true;
 
@@ -218,7 +217,15 @@ function orcidProfileMatchesIdentifier(
   const profileOrcid = url ? orcidFromUrl(url) : undefined;
   if (profileOrcid === undefined) return true;
 
-  return identifiers?.orcid !== undefined && profileOrcid === identifiers.orcid.toUpperCase();
+  return identifierOrcid !== undefined && profileOrcid === identifierOrcid.toUpperCase();
+}
+
+function orcidProfileMatchesIdentifier(
+  this: unknown,
+  values: readonly ResearcherProfileLink[],
+): boolean {
+  const { identifiers } = this as { identifiers?: { orcid?: string } };
+  return orcidProfileLinksAgreeWithIdentifier(values, identifiers?.orcid);
 }
 
 export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(

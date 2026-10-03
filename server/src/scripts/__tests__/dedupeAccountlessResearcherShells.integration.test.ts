@@ -257,6 +257,51 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
   });
 
+  it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
+    const orcid = '9999-9999-9999-9994';
+    const orcidLink = {
+      kind: 'ORCID',
+      purpose: 'SCHOLARLY',
+      url: `https://orcid.org/${orcid}`,
+      verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      healthStatus: 'UNKNOWN',
+    };
+    const canonicalOnly = new mongoose.Types.ObjectId();
+    const orcidShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: canonicalOnly,
+        displayName: 'Rosa Vega',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+      {
+        _id: orcidShell,
+        displayName: 'Rosa Vega',
+        archived: false,
+        identifiers: { orcid },
+        profileLinks: [orcidLink],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(1);
+
+    const canonical = await db.collection('researchers').findOne({ _id: canonicalOnly });
+    const shell = await db.collection('researchers').findOne({ _id: orcidShell });
+    expect(canonical!.identifiers).toMatchObject({ orcid });
+    expect(canonical!.profileLinks.map((link: { url: string }) => link.url)).toEqual([
+      orcidLink.url,
+    ]);
+    expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+    expect(shell!.profileLinks).toEqual([]);
+    expect(Researcher.hydrate(canonical!).validateSync()).toBeUndefined();
+    expect(Researcher.hydrate(shell!).validateSync()).toBeUndefined();
+  });
+
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
     const netidCanonical = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
