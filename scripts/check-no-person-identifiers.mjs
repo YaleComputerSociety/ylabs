@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   candidateIdentifierScanPaths,
   findDirectoryDumpFindings,
+  findFixtureAddressFindings,
   findPersonIdentifierFindings,
   formatFindings,
   hasBlockingFindings,
@@ -69,7 +70,22 @@ if (bodyFile) {
   process.exit(0);
 }
 
-const dumpFindings = findDirectoryDumpFindings(readTrackedFiles());
+const trackedFiles = readTrackedFiles();
+const dumpFindings = findDirectoryDumpFindings(trackedFiles);
+const fixtureFindings = findFixtureAddressFindings(trackedFiles);
+
+if (fixtureFindings.length > 0) {
+  console.error('Test fixtures carrying personal-shaped yale.edu addresses found:');
+  for (const finding of fixtureFindings) {
+    console.error(
+      `- ${finding.path}: ${finding.distinctAddresses} distinct personal-shaped addresses`,
+    );
+  }
+  console.error(
+    '\nReplace each with a synthetic address on example.invalid, or end its local part in a' +
+      ' reserved synthetic marker. See docs/person-identifier-convention.md.',
+  );
+}
 
 if (dumpFindings.length > 0) {
   console.error('Committed directory dumps of personal contact data found:');
@@ -80,7 +96,8 @@ if (dumpFindings.length > 0) {
     );
   }
   console.error('\nAGENTS.md forbids personal data in committed artifacts.');
-  process.exit(1);
 }
 
-console.log('No committed directory dumps of personal contact data found.');
+if (dumpFindings.length > 0 || fixtureFindings.length > 0) process.exit(1);
+
+console.log('No committed directory dumps or fixture addresses of personal contact data found.');

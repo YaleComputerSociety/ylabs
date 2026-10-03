@@ -5,10 +5,12 @@ import test from 'node:test';
 import {
   DIRECTORY_DUMP_THRESHOLD,
   findDirectoryDumpFindings,
+  findFixtureAddressFindings,
   findPersonIdentifierFindings,
   formatFindings,
   hasBlockingFindings,
   isDirectoryDumpCandidate,
+  isFixtureAddressCandidate,
   isRegisteredName,
   SYNTHETIC_FIXTURE_SURNAMES,
   SYNTHETIC_NETID_RE,
@@ -513,6 +515,8 @@ test('ignores source files, which the body and review path already cover', () =>
   assert.equal(isDirectoryDumpCandidate('docs/research-model.md'), false);
   assert.equal(isDirectoryDumpCandidate('faculty_data.json'), true);
   assert.equal(isDirectoryDumpCandidate('data/roster.csv'), true);
+  assert.equal(isDirectoryDumpCandidate('data/people.html'), true);
+  assert.equal(isDirectoryDumpCandidate('data/people.xml'), true);
 });
 
 test('pins the synthetic fixture roster, so widening it is a deliberate change', () => {
@@ -576,4 +580,62 @@ test('a netid outside the synthetic shape is flagged by the body scan', () => {
   for (const flagged of ['netid: qmb4821', 'netid: zz1234', 'netid: ab9912', 'netid: zzab99']) {
     assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(flagged))), ['yale-netid'], flagged);
   }
+});
+
+const FIXTURE_PAGE = 'server/src/scrapers/__tests__/fixtures/division/people.html';
+
+test('flags one personal-shaped address in a captured fixture page, below the dump threshold', () => {
+  for (const path of [
+    FIXTURE_PAGE,
+    'server/src/scrapers/__tests__/fixtures/people.htm',
+    'client/src/__fixtures__/feed.xml',
+    'server/src/test/fixtures/notes.txt',
+    'server/src/scrapers/__tests__/roster.json',
+  ]) {
+    const content = '<a href="mailto:quilla.tobias@physics.yale.edu">Curator</a>';
+    assert.deepEqual(
+      findFixtureAddressFindings([{ path, content }]),
+      [{ path, rule: 'fixture-personal-address', distinctAddresses: 1 }],
+      path,
+    );
+  }
+});
+
+test('counts distinct personal-shaped addresses in a fixture, case-insensitively', () => {
+  const content = [
+    'quilla.tobias@yale.edu',
+    'Quilla.Tobias@yale.edu',
+    'tobias.quilla@med.yale.edu',
+  ].join(' ');
+  const [finding] = findFixtureAddressFindings([{ path: FIXTURE_PAGE, content }]);
+  assert.equal(finding.distinctAddresses, 2);
+});
+
+test('leaves synthetic, role, and placeholder addresses in fixtures alone', () => {
+  const content = [
+    'quilla.tobias@example.invalid',
+    'curator@yale.edu',
+    'first.last@yale.edu',
+    'quilla.fixture@yale.edu',
+    'quilla.marrowbane@yale.edu',
+  ].join(' ');
+  assert.deepEqual(findFixtureAddressFindings([{ path: FIXTURE_PAGE, content }]), []);
+});
+
+test('still flags a marker word that is not the final segment of a fixture address', () => {
+  const content = 'fixture.tobias@yale.edu';
+  assert.equal(findFixtureAddressFindings([{ path: FIXTURE_PAGE, content }]).length, 1);
+});
+
+test('the fixture arm reads fixture and test paths only, which the dump arm skips', () => {
+  assert.equal(isFixtureAddressCandidate(FIXTURE_PAGE), true);
+  assert.equal(isFixtureAddressCandidate('data/people.html'), false);
+  assert.equal(isFixtureAddressCandidate('server/src/scrapers/__tests__/scraper.test.ts'), false);
+  const content = 'quilla.tobias@yale.edu';
+  assert.deepEqual(findFixtureAddressFindings([{ path: 'data/people.html', content }]), []);
+});
+
+test('an explicit exemption with a stated reason suppresses the fixture arm', () => {
+  const content = 'identifier-exempt: captured public page under review\nquilla.tobias@yale.edu';
+  assert.deepEqual(findFixtureAddressFindings([{ path: FIXTURE_PAGE, content }]), []);
 });

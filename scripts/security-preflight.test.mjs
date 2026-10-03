@@ -1,5 +1,6 @@
 import nodeAssert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -161,41 +162,78 @@ test('Yarn git dependency allowlist is narrow', () => {
   assert.doesNotMatch(yarnrc, /npmMinimalAgeGate: 0/);
 });
 
+const DENIED_IDENTIFIER_MAX_TOKENS = 4;
+const DENIED_IDENTIFIER_DIGEST_PREFIX = 'ylabs-denied-identifier:';
+
+const digestDeniedIdentifier = (value) =>
+  createHash('sha256').update(`${DENIED_IDENTIFIER_DIGEST_PREFIX}${value}`).digest('hex');
+
+const deniedIdentifierSpans = (source, deniedDigests) => {
+  const tokens = [...source.matchAll(/[A-Za-z0-9]+/g)].map((match) => [
+    match.index,
+    match.index + match[0].length,
+  ]);
+  const offsets = [];
+  tokens.forEach(([start], index) => {
+    for (let width = 1; width <= DENIED_IDENTIFIER_MAX_TOKENS; width += 1) {
+      const last = tokens[index + width - 1];
+      if (!last) break;
+      if (deniedDigests.has(digestDeniedIdentifier(source.slice(start, last[1])))) {
+        offsets.push(start);
+        break;
+      }
+    }
+  });
+  return offsets;
+};
+
+test('the denied-identifier matcher reports a multi-token value only as a whole run of tokens', () => {
+  const deniedDigests = new Set([
+    '32393c67da8ea854db76ef5aec157bc6c12d07786d0993edaba4f3bb2003a3a3',
+  ]);
+  const prefix = 'Curator: ';
+  const source = `${prefix}Example Q. Placeholder, see ExampleQ Placeholders.`;
+
+  assert.deepEqual(deniedIdentifierSpans(source, deniedDigests), [prefix.length]);
+  assert.deepEqual(deniedIdentifierSpans('Example Q. Placeholders', deniedDigests), []);
+});
+
 test('test fixtures do not contain known real Yale identifiers', () => {
-  const denied = [
-    'Toma_Tebaldi',
-    'Toma Tebaldi',
-    'yongli-zhang',
-    'anna-arnal-estape',
-    'james-e-hansen',
-    'eric-winer',
-    'Eric P. Winer',
-    'christopher-whitlow',
-    'paul-bloom',
-    'alison-galvani',
-    'lucila-ohno-machado',
-    'john-tsang',
-    'Mehran M. Sadeghi',
-    'Cardiovascular Molecular Imaging Laboratory',
-    'Nadya Dimitrova',
-    'nadya-dimitrova',
-    'Sofia, Bulgaria',
-    'a-higginschen',
-    'lawrence-guan',
-    'br574',
-    'dglahn',
-    'jp2492',
-    'jdp52',
-    'dtm27',
-    't-zhu',
-    'Deb Vargas',
-    'deb-vargas',
-    'deb.vargas',
-    'Fatima El-Tayeb',
-    'fatima-el-tayeb',
-  ];
+  const deniedDigests = new Set([
+    '0be956b84d239431818d981d565833751eadfc8243c528738702bbd01645276a',
+    '12d498aa448ffcc14222d415548d2669f1edb79848ece97d504b67f19dc4d41d',
+    '186cd266eb859fcc2e6af68a26bf7f60f490448f847a15e9cae95e95b6f3435f',
+    '2036a72a78ffafb6cf935aaf65f75d21d790799fe472373a365b5f3ee3e59992',
+    '3eb7ef1eec43cf4bdff95b843d08e9b9aabf3c54222caf2986a0796923b4bc6b',
+    '45dec25df55868a59526bcbeba67b54f1087c88adebaff4edb557f01b844baec',
+    '4ca85e3db3374d1821520be2fe2f51299f35c560b679158965458570e0312f62',
+    '5710b1112278fa0030ca32b4a197a192db29e2cecb34015e3049c1f078898283',
+    '5915afab6d504ccfc04ea57914523002b8d48ac7284c77244856d956d99f868f',
+    '5a5977ef469b8bf0a1990d5506cfbcf213a8a6ba8a8ce1a58717b3fb9d5aef71',
+    '6678bf6a4c5c9caf867bd62759425fb87911ac3ed7af0240638aaac6afc2bc6c',
+    '700e70f60c14782e7d06e8b1f3f950a28da9a59af1905ae6f21af056b95ce809',
+    '71ca453f7e22a56d4f3c47ca34ca006474ac0ad1d5ff3fb2e76d5205c41020c9',
+    '746ae06138628c7fd484d50103a48ee7daf454d9ec41dd0b5d6d782586a6aca9',
+    '78a4fc65456f0c0d3ae296b21579fc6b529a8bcfe0a475000b84b31d2c21049b',
+    '86bdb694eb5c17dce8aef27dc4763b1d9b0396b6a9c21ea3b68c39946d0b6426',
+    '8981918b1affbab2e57deada29a905edfe9a58a0372b4328ff74f12b2b7fd440',
+    '8b1ca1d8c0d6bc1e46896c768ab1400f0fe2b06de7f897640dab0eecd1bdc06d',
+    'adf8f3154475b4b7389c5b491edd8bf544039ead0b5054aeb2aaf535f238d58e',
+    'b235f8806ae681e86446c879b0f788480ff0225866a509f5c6d47f12d6b72bae',
+    'b2536216e3af1863fd19abb07751fec354a2820f2ee3b03e6ebf7d63192385c5',
+    'b671f9c3f7becfc0451bfe50d362213db4b97428e37f9af5b8544aba773c916c',
+    'bd1e89d06ed3ec582d64eecee82dcf9887212951badc6690e78fbdcf5c3a3b2a',
+    'c34f5837a7f2ee3d2c4052cf7f1f1e71f67ea321719cbd9a8f9cfce9c81751ba',
+    'c60f217237615f8e100b2c7df498e921a0e4efcd12656d5792134d8340a3b842',
+    'd2600b890e8cd8b4cb9397b8d97ab5470963e060bece325fc44f2a731ecf2118',
+    'e27df19f288d77589219c11ac58592459062730ac850bf309d74deb8580a6564',
+    'eadd6b20bdddcb50d7727fbfed4e53d5117c2f7bfc355e45412ab4c30778b3d1',
+    'ed9a1b2c67defa3f0721740ecdaa9e4c9c3ac2ca5f0ef13a500beb6085e63eee',
+    'fa75c97500bfe10b1c082cb43c3d81e57f15f7bc5474d1797a6f9e26be6e783b',
+  ]);
   const roots = ['../server/src', '../client/src'];
-  const testFilePattern = /(__tests__|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
+  const testFilePattern =
+    /(__tests__|__fixtures__|\/fixtures\/|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs|json|ndjson|csv|tsv|html?|xml|txt)$/;
 
   const files = [];
   const visit = (dir) => {
@@ -212,13 +250,12 @@ test('test fixtures do not contain known real Yale identifiers', () => {
   for (const root of roots) visit(root);
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    for (const value of denied) {
-      assert.equal(
-        source.includes(value),
-        false,
-        `${file} contains real Yale identifier fixture: ${value}`,
-      );
-    }
+    const deniedSpans = deniedIdentifierSpans(source, deniedDigests);
+    assert.deepEqual(
+      deniedSpans,
+      [],
+      `${file} contains a denylisted real Yale identifier at offsets ${deniedSpans.join(', ')}`,
+    );
     // The four ORCIDs this list used to name are gone, superseded by a shape rule rather
     // than kept as a second authority that drifts: each was checksum-valid and inside
     // ORCID's allocated space, so the rule below catches all four and every value like
@@ -6729,69 +6766,72 @@ test('scraper tests do not contain known real profile fixture identifiers', () =
   const source = files
     .map((file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8'))
     .join('\n');
-  const realFixtureIdentifiers = [
-    'joseph-santos-sacchi',
-    'drew-small',
-    'jacob-hacker',
-    'paul-freedman',
-    'allen-bale',
-    'sara-sanchez-alonso',
-    'rajiv-radhakrishnan',
-    'michael-cappello',
-    'kei-cheung',
-    'daniel-wiznia',
-    'annie-harper',
-    'berna-sozen',
-    'elizabeth-connors',
-    'dana-peters',
-    'deb-vargas',
-    'fatima-el-tayeb',
-    'robert-kerns',
-    'ania-jastreboff',
-    'catherine-buck',
-    'rohan-khera',
-    'leonard-kaczmarek',
-    'morgan-lemma',
-    'mika-hampson',
-    'ari-escamilla',
-    'abhishek-bhattacharjee',
-    'gerald-shulman',
-    'julia-adams',
-    'abraham-silberschatz',
-    'richard-bribiescas',
-    'david-cameron',
-    'joanne-brown',
-    'Abhishek Bhattacharjee',
-    'Jacob Hacker',
-    'Paul Freedman',
-    'Allen Bale',
-    'Sara Sanchez Alonso',
-    'Rajiv Radhakrishnan',
-    'Michael Cappello',
-    'Kei Cheung',
-    'Daniel Wiznia',
-    'Annie Harper',
-    'Berna Sozen',
-    'Elizabeth Connors',
-    'Dana Peters',
-    'Deb Vargas',
-    'Fatima El-Tayeb',
-    'Robert Kerns',
-    'Ania Jastreboff',
-    'Catherine Buck',
-    'Rohan Khera',
-    'Leonard Kaczmarek',
-    'Morgan Lemma',
-    'Mika Hampson',
-    'Ari Escamilla',
-    'Drew Small',
-    'Gerald Shulman',
-    'Julia Adams',
-  ];
+  const deniedDigests = new Set([
+    '06d9805305ce2f3c269beadb2fd179f32cfeeac63f3a8b0aecf861ced2260094',
+    '06ef54159ecdb11c5cb6e0c2212a933f68935d3c8dcfe5e7098101952e37e3d7',
+    '120dbb6aa090fbefd54e51b043cec727a76620535719d518b1373b6d7a9d580d',
+    '12d498aa448ffcc14222d415548d2669f1edb79848ece97d504b67f19dc4d41d',
+    '12ff6dfcffca651d47ac4ae7da92ce139f2e4537b15c27cc13733156a507fd62',
+    '1d9c8c48a43cdf19af7441ec1b0fa6d833e7e6fd1e240d55117306d90eb81cd8',
+    '1ee70049e2380085f675a7ec99f0fb59b7acafd7acdd6efde40f961136a46d28',
+    '22cb546ed4488a6618dbc671101cfc1b01c620f3d464d1046eaed37bd6cafbe0',
+    '2511d6a93cd19a3a7fec5affbff413bd62ec0827bc0912807e840b1aff829a34',
+    '275872698ac278b12ecbfc6e8149ad7ea805b62d467ca50bb50ce627dfc6ac1d',
+    '29d37a4b9bc48492eb088e98aca0983dd3bc160cc31220a773eab01e15b30d10',
+    '37eb4b8d6a9b957d8abe6a44ac2c686e36e5156fdde8457092a9790f845ab691',
+    '3ba4cb518fbe101fc1a43f31a7769b702af7afa57f53356ca8fcc07e26f09c1e',
+    '40de2d169a6393e164af2773815676f9c18b22f1c44a266ea19d61f4846a6f8c',
+    '422c17e8df4738f01e97c32f750590421e4034e788eef706734d2806a5003471',
+    '436ba88c70c53b78e1085326af1db60210b122e8038f5d086267eaf0d9a11d69',
+    '43ff5aa4e90916232a63830dbfd55c4ebadd75e925620cc746782753c540b94f',
+    '45c69465aa989319d6db893b25afdd54c5507922aa7d2e93e0a1f63913b0e22f',
+    '4ae1fca78aeeaa95dc5eeb193ae69e4a043793b75dc02a41efb72b9c4a5ef085',
+    '4df356ed494343949c4ca83b41c690fff3e7885042fc630f12c1eb21c84f7563',
+    '5a5977ef469b8bf0a1990d5506cfbcf213a8a6ba8a8ce1a58717b3fb9d5aef71',
+    '5a613b0b9255ca235ee7b40c138566a73cb719b01700137cfd70e7cb41eaf6c3',
+    '62afd3c58e3020e667ef3a7656a31a50c0857ddea0115f57c4425b848fcd952a',
+    '647a289e52c572e291dfbbb1c05c402880252b122ca4d5db8bf21a9929c6c677',
+    '694ba4413453d8b9c268f1b1b74315b8e7b51941e984d5c08c5415f258ef3451',
+    '6c645f5aa4e0df57ed1d87e5eca4ccf6e8bc563a5242daab4421322e85cf360c',
+    '78faefd0144061a2e06e7296158a309d37bbcb9761b4f6167e3b47b16047a005',
+    '84ddd8df4e00bbc5dbe31dcd68521473b74f63c892c872eab6a86276ddebc765',
+    '850179c8594dd079ba7f336f21bc7908bddec869d76f76912478f0005936ab43',
+    '867d2208f6c07a0fb0c3404bed58b6c262e97012a1868020f8032cd878e39990',
+    '87e8d7b675e2a277729b55a4f275aad484061750b1ea640c9cbc2b5b33c6e246',
+    '90a7e5eb036a137e6093932fdd6d90aa6839994f7bdcecc1f7ef8414caa480d6',
+    '92f438e873df20eee62a9a55001b2e49f470914f01a4bf1b5d224186a04dbfb9',
+    '96770af25d2d63b143f14b8deaa715ec17a92f19675d7204fed74b4709d4efbc',
+    '9b002454452b291989a527c8307467042b44643fc29b066c4ced1dcee25bf24e',
+    'a8505ce781baadcd50659e6036db1731a6e50e2b504c475fa82ec804d7e965c3',
+    'a96c683af71c4e64cbb0e00a811978765529ad105bb608864c174acf716631e5',
+    'adf8f3154475b4b7389c5b491edd8bf544039ead0b5054aeb2aaf535f238d58e',
+    'b0b9a672927004cd20ebfab21dc062ba689001e960b61df6a55d5580efaebb61',
+    'b2536216e3af1863fd19abb07751fec354a2820f2ee3b03e6ebf7d63192385c5',
+    'b44ee22f43805f8682ffe80d97fdacda12f50086f8d27d8722cce833b0b4ffb3',
+    'b7be98ea28c30679a16c769c9d787f08d7b2a5fcc2cf216d34fe9a7ed0fd31e5',
+    'b88c9289c2e9345f2aa1ac55d39cc99d474c6342ac2b2ea4eac139aeb2c49833',
+    'bc305846f0e39c79c2c9ba67dfe293067d6f56934baee225b863bf054b495639',
+    'c208261930c08d8f582865f828cafe5b3888e32295794ba67461e79830a282cc',
+    'c29be31652486069f5b029ff0a807505532d0fa03a0dfa673fb4094fe51d2412',
+    'c7f9d3cca6f9c5d4618b91d91afdeaabd2ab8cb0435022fe8bc41da05002d12c',
+    'cb0f71f74d19384bb9b6e905660e125ca2c1c6194119c3d829f114c8cce4ebb5',
+    'd00566f8104d4170118dec433264d08b9b5ebb613c886adb530d794b452ff7f8',
+    'd24e37350a0a8f46bbf223fb5d15727a5484d0fdf4cada52087b2f3807771a81',
+    'daa2e63041b878b422def98530d341698a9ae8f1db2589137b80d525d9b4cf41',
+    'dbafb4a38ad2cd2505e44de2b7e52a2a2caa885dba8bc1ab3bdfc78b845f4d04',
+    'df0161d111991e47d60b6d41a06bda37e293c1b1e5412d5658dd8ea7773f8fc7',
+    'e3e82c8a36050b3dac48a5d88942b4db1710a91e4e35087ad53b23a3efa2f9b4',
+    'eb956d7d11007fb3001c14e157deac8609a14e8bf26fa1d88c14112fa544df37',
+    'f977e0b4bd556018f7b3f10b8b1acf5098513db7db14c210d9c11c99449a2727',
+    'fbff79ffe9925aab0f74c4855297c8a6ed84dd45b7a0876839c9a8ce982beda0',
+  ]);
 
-  for (const identifier of realFixtureIdentifiers) {
-    assert.doesNotMatch(source, new RegExp(identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
+  const deniedSpans = deniedIdentifierSpans(source, deniedDigests);
+  assert.deepEqual(
+    deniedSpans,
+    [],
+    `scraper tests contain a denylisted real profile identifier at offsets ${deniedSpans.join(', ')}`,
+  );
 });
 
 test('source-acquisition report errors sanitize raw exception messages', () => {
