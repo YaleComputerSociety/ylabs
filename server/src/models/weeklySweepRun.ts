@@ -24,6 +24,10 @@ const timing = {
   durationMs: { type: Number, required: false },
 };
 
+function requiredOnceFinished(this: { status?: string }): boolean {
+  return this.status !== 'running';
+}
+
 const modeField = { type: String, enum: weeklySweepModes, required: true };
 
 const storageReadingSchema = new mongoose.Schema(
@@ -109,20 +113,20 @@ const codeDriftSchema = new mongoose.Schema(
 const weeklySweepRunSchema = new mongoose.Schema(
   {
     startedAt: { type: Date, required: true },
-    finishedAt: { type: Date, required: true },
-    durationMs: { type: Number, required: true },
+    finishedAt: { type: Date, required: requiredOnceFinished },
+    durationMs: { type: Number, required: requiredOnceFinished },
     renderLimit: {
-      limitMs: { type: Number, required: true },
-      withinLimit: { type: Boolean, required: true },
-      headroomMs: { type: Number, required: true },
+      limitMs: { type: Number, required: requiredOnceFinished },
+      withinLimit: { type: Boolean, required: requiredOnceFinished },
+      headroomMs: { type: Number, required: requiredOnceFinished },
     },
     environment: { type: String, required: true },
     databaseName: { type: String, required: true },
     codeSha: { type: String, required: false },
     status: { type: String, enum: weeklySweepRunStatuses, required: true },
-    exitCode: { type: Number, required: true },
+    exitCode: { type: Number, required: requiredOnceFinished },
     preflight: {
-      ok: { type: Boolean, required: true },
+      ok: { type: Boolean, required: requiredOnceFinished },
       heldLockSources: { type: [String], default: [] },
       storageBefore: { type: storageReadingSchema, required: false },
       storageAfter: { type: storageReadingSchema, required: false },
@@ -141,7 +145,11 @@ const weeklySweepRunSchema = new mongoose.Schema(
       exhaustedSources: { type: [String], default: [] },
     },
     corpusSnapshot: {
-      status: { type: String, enum: weeklySweepCorpusSnapshotStatuses, required: true },
+      status: {
+        type: String,
+        enum: weeklySweepCorpusSnapshotStatuses,
+        required: requiredOnceFinished,
+      },
       exitCode: { type: Number, required: false },
     },
     error: { type: String, required: false },

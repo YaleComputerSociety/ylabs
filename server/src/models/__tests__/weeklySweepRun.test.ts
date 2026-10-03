@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { WEEKLY_SWEEP_RUN_COLLECTION, WeeklySweepRun } from '../weeklySweepRun';
-import { buildWeeklySweepRunRecord } from '../../scripts/weeklyDevelopmentSweepCore';
+import {
+  buildWeeklySweepRunRecord,
+  buildWeeklySweepRunStartRecord,
+} from '../../scripts/weeklyDevelopmentSweepCore';
 import { NEVER_COPY_COLLECTIONS } from '../../scripts/mirrorCollectionPolicy';
 import { sweepSummaryFixture } from '../../scripts/__tests__/fixtures/weeklySweepSummaryFixture';
 
@@ -25,6 +28,30 @@ describe('WeeklySweepRun', () => {
     expect(run.validateSync()).toBeUndefined();
     expect(run.sources.map((source) => source.sourceName)).toEqual(['source-a', 'source-b']);
     expect(run.stages[0]?.durationMs).toBe(900_000);
+  });
+
+  it('accepts the row a job inserts as it starts, before any outcome exists', () => {
+    const run = new WeeklySweepRun(
+      buildWeeklySweepRunStartRecord({
+        startedAt: new Date('2026-10-04T07:00:00Z'),
+        databaseName: 'Development',
+        codeSha: 'abc123',
+      }),
+    );
+    expect(run.validateSync()).toBeUndefined();
+    expect(run.status).toBe('running');
+  });
+
+  it('refuses a finished row that is missing its end time and outcome', () => {
+    const error = new WeeklySweepRun({
+      ...record(),
+      finishedAt: undefined,
+      durationMs: undefined,
+      exitCode: undefined,
+    }).validateSync();
+    expect(Object.keys(error?.errors ?? {})).toEqual(
+      expect.arrayContaining(['finishedAt', 'durationMs', 'exitCode']),
+    );
   });
 
   it('indexes runs by start time for the newest-first read', () => {

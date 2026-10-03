@@ -26,6 +26,7 @@ import {
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
   buildWeeklySweepRunRecord,
+  buildWeeklySweepRunStartRecord,
   findSweepSummaryPath,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
@@ -147,29 +148,55 @@ function takeCorpusSnapshot(): WeeklySweepCorpusSnapshotRecord {
   return { status: exitCode === 0 ? 'written' : 'failed', exitCode };
 }
 
-async function persistWeeklySweepRun(
-  input: Omit<Parameters<typeof buildWeeklySweepRunRecord>[0], 'databaseName' | 'finishedAt'>,
-): Promise<boolean> {
+async function writeWeeklySweepRun<T>(
+  write: (databaseName: string) => Promise<T>,
+): Promise<T | null> {
   try {
     await connectScriptMongo(process.env.MONGODBURL!);
     try {
-      const record = buildWeeklySweepRunRecord({
-        ...input,
-        finishedAt: new Date(),
-        databaseName: mongoose.connection.db?.databaseName ?? '',
-      });
-      const created = await WeeklySweepRun.create(record);
-      console.log(
-        `[weekly-sweep] recorded run ${String(created._id)} as ${record.status} in weekly_sweep_runs`,
-      );
-      return true;
+      return await write(mongoose.connection.db?.databaseName ?? '');
     } finally {
       await mongoose.disconnect();
     }
   } catch (error) {
     console.error(`[weekly-sweep] could not record the run: ${sanitizeLogValue(error)}`);
-    return false;
+    return null;
   }
+}
+
+function recordWeeklySweepRunStarted(
+  input: Omit<Parameters<typeof buildWeeklySweepRunStartRecord>[0], 'databaseName'>,
+): Promise<mongoose.Types.ObjectId | null> {
+  return writeWeeklySweepRun(async (databaseName) => {
+    const created = await WeeklySweepRun.create(
+      buildWeeklySweepRunStartRecord({ ...input, databaseName }),
+    );
+    console.log(
+      `[weekly-sweep] recorded run ${String(created._id)} as running in weekly_sweep_runs`,
+    );
+    return created._id;
+  });
+}
+
+async function recordWeeklySweepRunFinished(
+  runId: mongoose.Types.ObjectId,
+  input: Omit<Parameters<typeof buildWeeklySweepRunRecord>[0], 'databaseName' | 'finishedAt'>,
+): Promise<boolean> {
+  const recorded = await writeWeeklySweepRun(async (databaseName) => {
+    const record = buildWeeklySweepRunRecord({
+      ...input,
+      finishedAt: new Date(),
+      databaseName,
+    });
+    const run = await WeeklySweepRun.findById(runId).orFail();
+    run.overwrite(record);
+    await run.save();
+    console.log(
+      `[weekly-sweep] recorded run ${String(runId)} as ${record.status} in weekly_sweep_runs`,
+    );
+    return true;
+  });
+  return recorded ?? false;
 }
 
 export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number> {
@@ -193,6 +220,8 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   }
 
   const startedAt = new Date();
+  const runId = await recordWeeklySweepRunStarted({ startedAt, codeSha });
+  if (!runId) return 1;
   let preflightRecord: WeeklySweepPreflightRecord = {
     ok: false,
     heldLockSources: [],
@@ -214,7 +243,7 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     exitCode = 1;
     console.error(`[weekly-sweep] failed: ${error}`);
   }
-  const recorded = await persistWeeklySweepRun({
+  const recorded = await recordWeeklySweepRunFinished(runId, {
     startedAt,
     codeSha,
     exitCode,

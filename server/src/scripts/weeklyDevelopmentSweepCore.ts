@@ -438,6 +438,22 @@ export function weeklySweepRunStatus(
   return exitCode === 0 && !error ? 'succeeded' : 'failed';
 }
 
+export interface WeeklySweepRunStartRecord {
+  startedAt: Date;
+  environment: 'development';
+  databaseName: string;
+  codeSha: string | null;
+  status: 'running';
+}
+
+export function buildWeeklySweepRunStartRecord(input: {
+  startedAt: Date;
+  databaseName: string;
+  codeSha: string | null;
+}): WeeklySweepRunStartRecord {
+  return { ...input, environment: 'development', status: 'running' };
+}
+
 export interface WeeklySweepRunRecordInput {
   startedAt: Date;
   finishedAt: Date;

@@ -98,7 +98,9 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 5. Runs `development-full`, then `fellowship-development-full`, one after the other and each with `--restart`, because they share the per-host fetch budget and the storage quota.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when either mode failed or wrote no summary.
 7. After both modes succeed, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per weekly run.
-8. Writes one `weekly_sweep_runs` row in Development, whether the run succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if that write fails, because an unrecorded run cannot be audited.
+8. Records the run in one `weekly_sweep_runs` row in Development, whether it succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if either write fails, because an unrecorded run cannot be audited.
+The row is inserted with status `running`, `startedAt` and `codeSha` before step 3, and the job refuses to start if that insert fails.
+It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
 
 `--dry-run` in place of the confirmation runs steps 1 to 4 read-only, prints the two sweep commands without running them, and writes no row.
 Steps 1 and 2 also write no row, because a run refused there has not proven it holds a Development connection.
@@ -109,7 +111,7 @@ Each weekly run leaves one row in Development's `weekly_sweep_runs` collection (
 The row flattens both modes' `summary.json` into queryable fields rather than storing it whole:
 
 - `startedAt`, `finishedAt`, `durationMs`, and `renderLimit`, which holds Render's 12-hour limit, whether the run fit, and the headroom left.
-- `codeSha`, `status` (`succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
+- `codeSha`, `status` (`running`, `succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
 - `preflight`: the held lock sources, storage before and after the fetch-cache drop as `usedMb`, `quotaMb`, `headroomMb` and `minHeadroomMb`, and whether the cache was dropped.
 - `modes`: per mode, its wall time, source counts, post-run status and duration, and throttle totals.
 - `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle recovered and exhausted, and materialization errors.
@@ -130,7 +132,7 @@ yarn --cwd server scrape:sweep:weekly-runs --compare --limit 6
 yarn --cwd server scrape:sweep:weekly-runs --limit 1 --json
 ```
 
-The default view prints the last five runs, each with its total time against the 12-hour limit, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
+The default view prints the last five runs, each with its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
 `--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run, so a regression shows as a growing number.
 `--json` prints the stored rows.
 

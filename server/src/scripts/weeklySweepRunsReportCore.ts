@@ -1,4 +1,4 @@
-import type { WeeklySweepRunRecord } from './weeklyDevelopmentSweepCore';
+import { RENDER_CRON_RUN_LIMIT_MS, type WeeklySweepRunRecord } from './weeklyDevelopmentSweepCore';
 
 export const DEFAULT_WEEKLY_SWEEP_RUNS_LIMIT = 5;
 
@@ -104,7 +104,13 @@ function formatStorage(run: StoredWeeklySweepRun): string | null {
   return `storage: ${before.usedMb}/${before.quotaMb} MB before${dropped}${afterText}`;
 }
 
-export function formatWeeklySweepRun(run: StoredWeeklySweepRun): string {
+function formatElapsed(run: StoredWeeklySweepRun, now: Date): string {
+  if (run.status === 'running') {
+    const elapsedMs = now.getTime() - new Date(run.startedAt).getTime();
+    return elapsedMs > RENDER_CRON_RUN_LIMIT_MS
+      ? `never finished: started ${formatDuration(elapsedMs)} ago, past the ${formatDuration(RENDER_CRON_RUN_LIMIT_MS)} limit, so it was stopped before it could record its end`
+      : `still running, ${formatDuration(elapsedMs)} so far of ${formatDuration(RENDER_CRON_RUN_LIMIT_MS)}`;
+  }
   const limit = run.renderLimit;
   const headroom =
     limit && typeof limit.headroomMs === 'number'
@@ -112,8 +118,12 @@ export function formatWeeklySweepRun(run: StoredWeeklySweepRun): string {
         ? ` of ${formatDuration(limit.limitMs)} (${formatDuration(limit.headroomMs)} headroom)`
         : ` OVER the ${formatDuration(limit.limitMs)} limit by ${formatDuration(-limit.headroomMs)}`
       : '';
+  return `took ${formatDuration(run.durationMs)}${headroom}`;
+}
+
+export function formatWeeklySweepRun(run: StoredWeeklySweepRun, now = new Date()): string {
   const lines = [
-    `${formatStarted(run.startedAt)}  ${run.status}  code ${run.codeSha ? run.codeSha.slice(0, 9) : 'unknown'}  took ${formatDuration(run.durationMs)}${headroom}`,
+    `${formatStarted(run.startedAt)}  ${run.status}  code ${run.codeSha ? run.codeSha.slice(0, 9) : 'unknown'}  ${formatElapsed(run, now)}`,
   ];
   for (const mode of run.modes ?? []) lines.push(`  ${formatMode(mode)}`);
   const storage = formatStorage(run);
@@ -148,9 +158,9 @@ export function formatWeeklySweepRun(run: StoredWeeklySweepRun): string {
   return lines.join('\n');
 }
 
-export function formatWeeklySweepRuns(runs: StoredWeeklySweepRun[]): string {
+export function formatWeeklySweepRuns(runs: StoredWeeklySweepRun[], now = new Date()): string {
   if (runs.length === 0) return 'No weekly sweep runs recorded in weekly_sweep_runs.';
-  return runs.map(formatWeeklySweepRun).join('\n\n');
+  return runs.map((run) => formatWeeklySweepRun(run, now)).join('\n\n');
 }
 
 function stepDurations(run: StoredWeeklySweepRun): Map<string, number> {

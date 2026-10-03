@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildWeeklySweepRunRecord } from '../weeklyDevelopmentSweepCore';
+import {
+  buildWeeklySweepRunRecord,
+  buildWeeklySweepRunStartRecord,
+} from '../weeklyDevelopmentSweepCore';
 import {
   DEFAULT_WEEKLY_SWEEP_RUNS_LIMIT,
   formatDuration,
@@ -101,6 +104,25 @@ describe('formatWeeklySweepRun', () => {
   it('flags a run that overran the Render limit', () => {
     expect(formatWeeklySweepRun(runOn('2026-10-11', 120, 13))).toContain(
       'OVER the 12h00m limit by 1h00m',
+    );
+  });
+
+  const startedRun = () =>
+    buildWeeklySweepRunStartRecord({
+      startedAt: new Date('2026-10-11T07:00:00Z'),
+      databaseName: 'Development',
+      codeSha: 'abcdef1234567890',
+    });
+
+  it('reports a run stopped at the Render limit as never finished', () => {
+    const text = formatWeeklySweepRun(startedRun(), new Date('2026-10-11T19:30:00Z'));
+    expect(text).toContain('2026-10-11 07:00 UTC  running  code abcdef123  never finished');
+    expect(text).toContain('started 12h30m ago, past the 12h00m limit');
+  });
+
+  it('reports a run still inside the Render limit as running', () => {
+    expect(formatWeeklySweepRuns([startedRun()], new Date('2026-10-11T10:00:00Z'))).toContain(
+      'still running, 3h00m so far of 12h00m',
     );
   });
 

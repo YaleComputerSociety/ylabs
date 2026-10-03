@@ -88,7 +88,7 @@ export type ScrapeRunStatus = (typeof scrapeRunStatuses)[number];
 export const weeklySweepModes = ['development-full', 'fellowship-development-full'] as const;
 export type WeeklySweepMode = (typeof weeklySweepModes)[number];
 
-export const weeklySweepRunStatuses = ['succeeded', 'failed', 'refused'] as const;
+export const weeklySweepRunStatuses = ['running', 'succeeded', 'failed', 'refused'] as const;
 export type WeeklySweepRunStatus = (typeof weeklySweepRunStatuses)[number];
 
 export const weeklySweepCorpusSnapshotStatuses = ['written', 'failed', 'skipped'] as const;
