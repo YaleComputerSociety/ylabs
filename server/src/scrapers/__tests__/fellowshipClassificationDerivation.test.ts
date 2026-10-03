@@ -76,3 +76,49 @@ describe('planFellowshipClassification department internships (#4089)', () => {
     );
   });
 });
+
+describe('planFellowshipClassification reads prose past the stored cap (#4232)', () => {
+  const head = Array.from(
+    { length: 40 },
+    (_, index) =>
+      `Recipient cohort ${index + 1} presents findings from archival fieldwork at the spring forum.`,
+  ).join(' ');
+  const observedDescription = `${head} Each application must include the approval of a faculty advisor who will supervise the research project.`;
+  const stored = {
+    title: 'Fixture College Senior Research Grant',
+    description: `${head.slice(0, 1990).replace(/\s+\S*$/, '')}…`,
+  };
+
+  it('finds an adviser requirement the stored copy cut off', () => {
+    const plan = planFellowshipClassification({
+      stored,
+      observedValues: { description: observedDescription },
+    });
+    expect(plan.classification.requiresMentorBeforeApply).toBe(true);
+  });
+
+  it('reads the stored copy alone when no source observed more of it', () => {
+    expect(planFellowshipClassification({ stored }).classification.requiresMentorBeforeApply).toBe(
+      false,
+    );
+  });
+
+  it('keeps reading the stored copy of a locked field', () => {
+    const plan = planFellowshipClassification({
+      stored,
+      lockedFields: ['description'],
+      observedValues: { description: observedDescription },
+    });
+    expect(plan.classification.requiresMentorBeforeApply).toBe(false);
+  });
+
+  it('ignores an observed text the stored copy does not begin', () => {
+    const plan = planFellowshipClassification({
+      stored,
+      observedValues: {
+        description: `A different paragraph entirely. ${observedDescription}`,
+      },
+    });
+    expect(plan.classification.requiresMentorBeforeApply).toBe(false);
+  });
+});

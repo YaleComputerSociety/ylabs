@@ -15,6 +15,7 @@ export interface ProgramClassificationInput {
   applicationInformation?: string;
   eligibility?: string;
   additionalInformation?: string;
+  fullSourceDescription?: string;
   purpose?: string[];
   termOfAward?: string[];
   sourceUrl?: string;
@@ -188,7 +189,9 @@ const MENTOR_NOT_REQUIRED_SENTENCE =
  * different sentence about a letter of reference.
  */
 export function mentorRequirementSentence(input: ProgramClassificationInput): string | undefined {
-  return proseForProgram(input)
+  return [proseForProgram(input), normalizeText(input.fullSourceDescription)]
+    .filter(Boolean)
+    .join(' ')
     .split(/(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/)
     .find(
       (sentence) =>

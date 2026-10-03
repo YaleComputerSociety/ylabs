@@ -988,6 +988,7 @@ Both admin fellowship editors write through the same rules: they edit a New York
 
 A fellowship lane observes facts only and never emits a `classifyProgram` field (`programKind`, `programCategory`, `entryMode`, `studentFacingCategory`, `bestNextStep`, and the rest).
 The projection derives them from the resolved facts on every resolve (`scrapers/fellowshipClassificationDerivation.ts`, #3904), so a classifier fix reaches stored rows on the next materialize, and a test asserts the derived label through `classificationFromObservedFacts` rather than reading it off a lane's observations.
+The mentor-requirement check reads more than the served prose (#4232): the grants lane stores the fund page's whole Description section as `fullSourceDescription`, which is never served, and where a stored prose field is the head of a longer observed text the check also reads that whole text, so a requirement stated past the stored cap or outside the Brief Description still sets `requiresMentorBeforeApply`; every other classifier arm keeps reading the copy a student sees.
 
 A fellowship lane withdraws a value it no longer asserts by saying the page has none, on the `sourceKey` observation that witnesses its read: `assertsNoValueFor: [field]`, built by `fellowshipAbsenceAssertion` (`scrapers/fellowshipFieldAbsence.ts`, #4230).
 Silence retracts nothing, so a fetch failure, a page the lane could not parse, and a read that simply found no value all leave the stored value standing.

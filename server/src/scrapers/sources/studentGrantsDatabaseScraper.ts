@@ -94,6 +94,7 @@ export interface StudentGrantsFund {
   url: string;
   description?: string;
   applicationInformation?: string;
+  fullSourceDescription?: string;
   eligibility?: string;
   eligibilityStatesOnlyContactDirections?: boolean;
   restrictionsToUseOfAward?: string;
@@ -224,6 +225,15 @@ function sectionTextWithoutContactDirections($: cheerio.CheerioAPI, id: string):
 
 function sanitizedProse(text: string | undefined, maxLength: number): string | undefined {
   return text ? sanitizeStoredCatalogDescription(text, maxLength) || undefined : undefined;
+}
+
+/**
+ * The fund page's own Description section, which states requirements its Brief
+ * Description leaves out, such as an adviser who must approve the project (#4232). It is
+ * stored whole for the classifier and never served.
+ */
+function fundFullSourceDescription($: cheerio.CheerioAPI): string | undefined {
+  return sectionProse($, 'lblDescription', Number.POSITIVE_INFINITY);
 }
 
 function sectionProse($: cheerio.CheerioAPI, id: string, maxLength: number): string | undefined {
@@ -369,6 +379,7 @@ export function parseFundDetailPage(
     title,
     url,
     description: sectionProse($, 'lblBriefDescription', 2000),
+    fullSourceDescription: fundFullSourceDescription($),
     applicationInformation: sectionProse($, 'lblApplicationInformation', 2000),
     eligibility: sanitizedProse(eligibility.text, 500),
     eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
@@ -403,6 +414,7 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     description: fund.description || '',
     eligibility: fund.eligibility || '',
     applicationInformation: fund.applicationInformation || '',
+    fullSourceDescription: fund.fullSourceDescription || '',
     restrictionsToUseOfAward: fund.restrictionsToUseOfAward || '',
     awardAmount: fund.awardAmount || '',
     deadline: fund.deadline?.toISOString() || '',
@@ -482,6 +494,7 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('title', fund.title),
     observation('description', fund.description),
     observation('applicationInformation', fund.applicationInformation),
+    observation('fullSourceDescription', fund.fullSourceDescription),
     observation('eligibility', fund.eligibility),
     observation('restrictionsToUseOfAward', fund.restrictionsToUseOfAward),
     observation('awardAmount', fund.awardAmount),
