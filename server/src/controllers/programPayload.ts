@@ -1,4 +1,5 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { withoutContactDirections } from '../utils/contactDirection';
 import {
   sanitizeCatalogDescription,
   stripRedactionPlaceholders,
@@ -114,7 +115,8 @@ export type ProgramReaderFieldGuard =
   | 'departmentResearchGuidance'
   | 'publicHttpUrl'
   | 'isUnhelpfulProgramUrl'
-  | 'publicProgramDescription';
+  | 'publicProgramDescription'
+  | 'contactDirection';
 
 export interface ServedProgramReaderField<Value> {
   value: Value | undefined;
@@ -146,8 +148,18 @@ export const servedProgramApplicationLink = (program: any): ServedProgramReaderF
 };
 
 export const servedProgramEligibility = (program: any): ServedProgramReaderField<unknown> => {
-  const eligibility = publicProgramDescription(program?.eligibility);
-  return hasStoredText(program?.eligibility) && !hasStoredText(eligibility)
+  const stored = program?.eligibility;
+  if (hasStoredText(stored)) {
+    const withoutContact = withoutContactDirections([stored]);
+    if (withoutContact.droppedSentences > 0 && !withoutContact.text) {
+      return { value: '', withheldBy: 'contactDirection' };
+    }
+    if (withoutContact.droppedSentences > 0) {
+      return servedValue(publicProgramDescription(withoutContact.text));
+    }
+  }
+  const eligibility = publicProgramDescription(stored);
+  return hasStoredText(stored) && !hasStoredText(eligibility)
     ? { value: eligibility, withheldBy: 'publicProgramDescription' }
     : servedValue(eligibility);
 };

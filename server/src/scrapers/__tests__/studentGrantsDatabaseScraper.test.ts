@@ -405,6 +405,108 @@ describe('the application route a fund page names (#4216)', () => {
   });
 });
 
+describe('a contact direction in fund prose (#4177)', () => {
+  const fundWith = (options: Parameters<typeof fundDetailHtml>[0]) =>
+    parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+  const witnessOf = (fund: ReturnType<typeof fundWith>) =>
+    fundToObservations(fund).find((obs) => obs.field === 'sourceKey');
+
+  it('stores no eligibility and says so when the section only says who to ask', () => {
+    const fund = fundWith({
+      eligibility:
+        'Specific questions about projects should be addressed to Quill Fixture, senior administrative assistant for the program (<a href="mailto:quill.fixture@example.org">quill.fixture@example.org</a>).',
+    });
+
+    expect(fund.eligibility).toBeUndefined();
+    expect(fundToObservations(fund).map((obs) => obs.field)).not.toContain('eligibility');
+    expect(witnessOf(fund)?.assertsNoValueFor).toContain('eligibility');
+  });
+
+  it('keeps the requirements and drops the contact direction beside them', () => {
+    const fund = fundWith({
+      eligibility:
+        '<p>Open only to sophomores and juniors in the residential college.</p><p>No previous recipients will be considered.</p><p>Contact Information:For questions about this application, please contact Quill Fixture.</p>',
+    });
+
+    expect(fund.eligibility).toBe(
+      'Open only to sophomores and juniors in the residential college. No previous recipients will be considered.',
+    );
+    expect(fund.eligibility).not.toContain('Fixture');
+    expect(witnessOf(fund)?.assertsNoValueFor ?? []).not.toContain('eligibility');
+  });
+
+  it('drops a contact direction from the other prose sections too', () => {
+    const fund = fundWith({
+      applicationInformation:
+        'Submit a proposal and a budget.<br>For more information, please contact Quill Fixture.',
+    });
+
+    expect(fund.applicationInformation).toBe('Submit a proposal and a budget.');
+  });
+
+  it('keeps a requirement that only mentions emailing someone', () => {
+    const fund = fundWith({
+      eligibility: 'Recipients must email a final report to the dean within one month.',
+    });
+
+    expect(fund.eligibility).toBe(
+      'Recipients must email a final report to the dean within one month.',
+    );
+  });
+
+  it.each([
+    'Applicants must email a one-page proposal answering the questions below.',
+    'Proposals must be sent to the committee with additional information about the budget.',
+  ])('keeps a requirement that only mentions questions beside a send verb: %s', (requirement) => {
+    const fund = fundWith({ eligibility: requirement });
+
+    expect(fund.eligibility).toBe(requirement);
+    expect(witnessOf(fund)?.assertsNoValueFor ?? []).not.toContain('eligibility');
+  });
+
+  it.each([
+    'Questions about eligibility should be directed to the program coordinator.',
+    'Send any questions to the program coordinator.',
+    'For further information, reach out to the program coordinator.',
+    'Contact the program coordinator with any questions.',
+  ])('drops a sentence that directs an enquiry: %s', (direction) => {
+    const fund = fundWith({ eligibility: `<p>Open to juniors.</p><p>${direction}</p>` });
+
+    expect(fund.eligibility).toBe('Open to juniors.');
+  });
+
+  it('states no eligibility when the section only labels a contact and asks for questions', () => {
+    const fund = fundWith({
+      eligibility:
+        '<p>Contact: Quill Fixture, Program Coordinator.</p><p>Questions? Email Quill Fixture.</p>',
+    });
+
+    expect(fund.eligibility).toBeUndefined();
+    expect(witnessOf(fund)?.assertsNoValueFor).toContain('eligibility');
+  });
+
+  it.each(['Call for proposals opens in May.', 'Emailed reports are due in May.'])(
+    'keeps a requirement that only opens with a contact word: %s',
+    (requirement) => {
+      expect(fundWith({ eligibility: requirement }).eligibility).toBe(requirement);
+    },
+  );
+
+  it('leaves a section with no contact direction exactly as it reads', () => {
+    const fund = fundWith({
+      eligibility: '<p>Open to juniors.</p><p>Seniors may apply.</p>',
+    });
+
+    expect(fund.eligibility).toBe('Open to juniors.Seniors may apply.');
+  });
+
+  it('claims nothing about an eligibility section the page leaves empty', () => {
+    expect(witnessOf(fundWith({ eligibility: '' }))?.assertsNoValueFor ?? []).not.toContain(
+      'eligibility',
+    );
+  });
+});
+
 describe('the year of study a fund page admits (#4216)', () => {
   const yearOfStudyFor = (options: Parameters<typeof fundDetailHtml>[0]) =>
     parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!.yearOfStudy;

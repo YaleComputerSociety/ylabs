@@ -221,6 +221,44 @@ describe('publicProgramForReader redaction placeholder hygiene (#671/#774)', () 
   });
 });
 
+describe('a contact direction served as eligibility (#4177)', () => {
+  it('withholds an eligibility that only says who to ask, whichever lane stored it', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58520',
+      title: 'Example Research Fellowship',
+      sourceName: 'yale-college-fellowships-office',
+      eligibility:
+        'Specific questions about projects should be addressed to Quill Fixture, senior administrative assistant for the program.',
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('');
+  });
+
+  it('serves the requirements and drops the contact direction beside them', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58521',
+      title: 'Example Research Fellowship',
+      eligibility:
+        'Open only to sophomores and juniors.Contact Information:For questions about this application, please contact Quill Fixture.',
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
+  });
+
+  it.each([
+    'Open only to sophomores and juniors. Contact: Quill Fixture, Program Coordinator,.',
+    'Open only to sophomores and juniors. Questions? Email Quill Fixture.',
+  ])('drops a stored contact direction whose email was already stripped: %s', (eligibility) => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58522',
+      title: 'Example Research Fellowship',
+      eligibility,
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
+  });
+});
+
 describe('publicProgramForReader read-time redaction ordering (#774)', () => {
   it('does not leave a token when a raw email is redacted at read time in the summary', () => {
     const payload = publicProgramForReader({

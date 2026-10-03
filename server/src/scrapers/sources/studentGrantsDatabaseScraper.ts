@@ -59,6 +59,7 @@ import {
   sourceKeyForFund,
 } from '../fellowshipFundFacets';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import { withoutContactDirections } from '../../utils/contactDirection';
 import {
   FUND_PROSE_BLOCK_BREAK,
   fundProseLinkMarker,
@@ -94,6 +95,7 @@ export interface StudentGrantsFund {
   description?: string;
   applicationInformation?: string;
   eligibility?: string;
+  eligibilityStatesOnlyContactDirections?: boolean;
   restrictionsToUseOfAward?: string;
   awardAmount?: string;
   deadline?: Date;
@@ -193,9 +195,39 @@ function sectionText($: cheerio.CheerioAPI, id: string): string | undefined {
   return text || undefined;
 }
 
-function sectionProse($: cheerio.CheerioAPI, id: string, maxLength: number): string | undefined {
+function sectionBlocks($: cheerio.CheerioAPI, id: string): string[] {
+  const section = fundDetailElement($, id).clone();
+  section.find('h1, script, style, noscript').remove();
+  section.find('br').replaceWith(` ${FUND_PROSE_BLOCK_BREAK} `);
+  section.find(PROSE_BLOCK_SELECTOR).append(` ${FUND_PROSE_BLOCK_BREAK} `);
+  return extractElementTextWithBlockSeparators(section[0])
+    .split(FUND_PROSE_BLOCK_BREAK)
+    .map(cleanText)
+    .filter(Boolean);
+}
+
+interface FundSectionProse {
+  text?: string;
+  statesOnlyContactDirections: boolean;
+}
+
+function sectionTextWithoutContactDirections($: cheerio.CheerioAPI, id: string): FundSectionProse {
   const text = sectionText($, id);
+  if (!text) return { statesOnlyContactDirections: false };
+  const withoutContact = withoutContactDirections(sectionBlocks($, id));
+  if (withoutContact.droppedSentences === 0) return { text, statesOnlyContactDirections: false };
+  return {
+    text: withoutContact.text || undefined,
+    statesOnlyContactDirections: !withoutContact.text,
+  };
+}
+
+function sanitizedProse(text: string | undefined, maxLength: number): string | undefined {
   return text ? sanitizeStoredCatalogDescription(text, maxLength) || undefined : undefined;
+}
+
+function sectionProse($: cheerio.CheerioAPI, id: string, maxLength: number): string | undefined {
+  return sanitizedProse(sectionTextWithoutContactDirections($, id).text, maxLength);
 }
 
 // The Global Region facet lists each country as its own "-- Country (Subregion)" item
@@ -330,6 +362,7 @@ export function parseFundDetailPage(
     ELIGIBILITY_PROSE_SECTION_IDS.map((id) => eligibilityProse($, id)),
     yearOfStudyFilter,
   );
+  const eligibility = sectionTextWithoutContactDirections($, 'lblSpecialEligibilityRequirements');
 
   return {
     sourceKey: sourceKeyForFund(fund.url),
@@ -337,7 +370,8 @@ export function parseFundDetailPage(
     url,
     description: sectionProse($, 'lblBriefDescription', 2000),
     applicationInformation: sectionProse($, 'lblApplicationInformation', 2000),
-    eligibility: sectionProse($, 'lblSpecialEligibilityRequirements', 500),
+    eligibility: sanitizedProse(eligibility.text, 500),
+    eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
     restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward', 500),
     awardAmount: awardAmountText($),
     deadline,
@@ -400,16 +434,18 @@ function fundLinks(fund: StudentGrantsFund, applicationLink: string | undefined)
 /**
  * The fields this read states the fund has none of (#4230).
  *
- * Both are a conclusion the page forces rather than a gap: a route named with no link
- * says the fund page is not where a student applies, and prose naming a level the
- * stored vocabulary cannot express says the filter's values do not describe who may
- * apply. A fund-page route, a linked route, and a year of study the prose or filter
+ * Each is a conclusion the page forces rather than a gap: a route named with no link
+ * says the fund page is not where a student applies, prose naming a level the stored
+ * vocabulary cannot express says the filter's values do not describe who may apply,
+ * and an eligibility section holding only contact directions states no requirement
+ * (#4177). A fund-page route, a linked route, and a year of study the prose or filter
  * settles all state a value, so they claim nothing.
  */
 function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
   return [
     ...(fund.applicationRoute.kind === 'elsewhere-unlinked' ? ['applicationLink'] : []),
     ...(fund.yearOfStudyResolution === 'unreconcilable' ? ['yearOfStudy'] : []),
+    ...(fund.eligibilityStatesOnlyContactDirections && !fund.eligibility ? ['eligibility'] : []),
   ];
 }
 
@@ -437,6 +473,7 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
       ...fellowshipAbsenceAssertion(STUDENT_GRANTS_DATABASE_SOURCE, statedAbsent, [
         ...(applicationLink ? ['applicationLink'] : []),
         ...(fund.yearOfStudy.length > 0 ? ['yearOfStudy'] : []),
+        ...(fund.eligibility ? ['eligibility'] : []),
       ]),
     },
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),
