@@ -1029,12 +1029,63 @@ describe('planEvidenceGovernedSignalChanges', () => {
       [
         live('signal:CURRENT_UNDERGRADS', '64f0000000000000000000a2'),
         live('signal:APPLICATION_FORM_EXISTS:JOIN_PAGE', '64f0000000000000000000a6'),
-        live('signal:NOT_CURRENTLY_AVAILABLE', '64f0000000000000000000a7'),
         {
           ...live('signal:REACH_OUT_PLAUSIBLE', '64f0000000000000000000a3'),
           suppression: { reason: 'operator review' },
         },
       ],
+    );
+    expect(plan.retired).toEqual([]);
+  });
+
+  it('governs every other materializer key by its own evidence fields (#3920)', () => {
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(),
+      [verdict('no', LATER, 'newer-no')],
+      [
+        live('signal:NOT_CURRENTLY_AVAILABLE', '64f0000000000000000000a7'),
+        live('signal:PAST_UNDERGRADS', '64f0000000000000000000a8'),
+      ],
+    );
+    expect(plan.retired).toEqual([
+      { signalId: '64f0000000000000000000a7', derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE' },
+    ]);
+  });
+
+  it('retires a signal whose cited evidence was withdrawn even when the read holds none of its fields (#3920)', () => {
+    const withdrawn = '64f0000000000000000000e1';
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(),
+      [verdict('yes', LATER, '64f0000000000000000000e9')],
+      [
+        {
+          ...live('signal:PAST_UNDERGRADS', '64f0000000000000000000a8'),
+          source: { evidenceIds: [withdrawn] },
+        },
+        {
+          ...live('signal:FELLOWSHIP_COMPATIBLE', '64f0000000000000000000a9'),
+          source: { evidenceIds: [] },
+        },
+      ],
+      { live: new Set(), retired: new Set([withdrawn]) },
+    );
+    expect(plan.retired).toEqual([
+      { signalId: '64f0000000000000000000a8', derivationKey: 'signal:PAST_UNDERGRADS' },
+    ]);
+  });
+
+  it('keeps a signal whose cited evidence is live under a key this read did not reach (#3920)', () => {
+    const elsewhere = '64f0000000000000000000e2';
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(),
+      [verdict('no', LATER, '64f0000000000000000000e9')],
+      [
+        {
+          ...live('signal:REACH_OUT_PLAUSIBLE'),
+          source: { evidenceIds: [elsewhere] },
+        },
+      ],
+      { live: new Set([elsewhere]), retired: new Set() },
     );
     expect(plan.retired).toEqual([]);
   });
