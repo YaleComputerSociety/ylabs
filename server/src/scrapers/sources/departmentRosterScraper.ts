@@ -4023,14 +4023,16 @@ function entryToResearchEntityObservationsUnscreened(
   // `labUrlIsUnusableForResearchHome`.
   const isExplicitLab =
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
-  if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
+  const profileCitationUrl = officialProfileCitationUrl(entry);
+  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
+  if (!isExplicitLab && !statedLabName && dept.emitPersonalResearchEntities === false) return [];
 
   const evidence = rosterResearchHomeEvidence(entry);
   const { groundedDescription, topics } = evidence;
-  const profileCitationUrl = officialProfileCitationUrl(entry);
   const labLessCitationUrl = entry.labUrl ? '' : profileCitationUrl;
   const hasLabLessResearchEvidence =
-    Boolean(labLessCitationUrl) && (Boolean(groundedDescription) || topics.length > 0);
+    Boolean(labLessCitationUrl) &&
+    (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
   if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
 
   const cleanedName = normalizeName(entry.name);
@@ -4046,7 +4048,6 @@ function entryToResearchEntityObservationsUnscreened(
     entityKey: slug,
     sourceUrl: labLessCitationUrl || sourceUrl,
   };
-  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
   const identityObservations: ObservationInput[] = statedLabName
     ? [
         { field: 'name', value: statedLabName },
