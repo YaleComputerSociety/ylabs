@@ -34,6 +34,8 @@ import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
   sourceUrlForExtraction,
+  splitRosterUndergraduates,
+  ROSTER_ALUMNI_PROGRAM_NAME,
   candidateLabFromResearchEntityDoc,
   selectLabsToProcess,
   type CandidateLab,
@@ -370,22 +372,23 @@ describe('extractionToObservations quote grounding', () => {
   });
 
   it('counts only roster snippets that are on a fetched page', () => {
+    const withRoster = [
+      ...pages,
+      { url: 'https://x.example/people', text: 'People Riley Example, Yale College' },
+    ];
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 2,
-      currentUndergradEvidenceQuotes: [
-        'Undergraduates help with field work.',
-        'Jane Doe, Yale College',
-      ],
+      currentUndergradEvidenceQuotes: ['Riley Example, Yale College', 'Jane Doe, Yale College'],
       evidenceQuote: 'Undergraduates help with field work.',
       evidenceSource: 'members_section',
       joinPageUrl: null,
     };
     const obs = extractionToObservations('lab-r', 'https://x.example/', ext, fixedDate, {
-      sourcePages: pages,
+      sourcePages: withRoster,
     });
     expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(1);
-    expect(quoteFieldsNotOnPage(ext, pages)).toEqual(['currentUndergradEvidenceQuotes[1]']);
+    expect(quoteFieldsNotOnPage(ext, withRoster)).toEqual(['currentUndergradEvidenceQuotes[1]']);
   });
 
   it('zeroes a rosterless count whose backing quote is on no fetched page', () => {
@@ -3032,5 +3035,151 @@ describe("a department's own undergraduate research programme as a join page (#4
         departments: ['Global Affairs'],
       }),
     ).toBe('join-page-outside-the-entity-scope');
+  });
+});
+
+describe('roster pages back current and past undergraduate counts (#4430)', () => {
+  const observedAt = new Date('2026-10-03T00:00:00Z');
+  const home = {
+    url: 'https://examplelab.org/',
+    text: 'Example Lab studies example systems. We welcome undergraduate researchers.',
+  };
+  const join = {
+    url: 'https://examplelab.org/join-us',
+    text: 'Join us! We welcome undergraduates interested in example systems. Please email the PI.',
+  };
+  const people = (body: string) => ({ url: 'https://examplelab.org/people', text: body });
+  const extraction = (quotes: string[], evidenceQuote = join.text): LLMExtraction => ({
+    openToUndergrads: 'yes',
+    currentUndergradCount: quotes.length,
+    currentUndergradEvidenceQuotes: quotes,
+    evidenceQuote,
+    evidenceSource: 'explicit_text',
+    joinPageUrl: null,
+  });
+  const read = (ext: LLMExtraction, sourcePages: { url: string; text: string }[]) => {
+    const observations = extractionToObservations('example-lab', join.url, ext, observedAt, {
+      sourcePages,
+    });
+    return {
+      current: observations.find((o) => o.field === 'currentUndergradCount'),
+      past: observations.find((o) => o.field === 'pastUndergradAdvisees'),
+    };
+  };
+
+  it('counts current undergraduates on a roster page and cites that page', () => {
+    const roster = people(
+      'People Principal Investigator Example PI Undergraduate Students Riley Example Yale College 2027 Avery Sample Yale College 2028',
+    );
+    const { current, past } = read(
+      extraction(['Riley Example Yale College 2027', 'Avery Sample Yale College 2028']),
+      [home, roster, join],
+    );
+    expect(current).toMatchObject({ value: 2, sourceUrl: roster.url });
+    expect(past).toBeUndefined();
+  });
+
+  it('turns an alumni-only roster into past hosting, never a current count', () => {
+    const roster = people(
+      'People Principal Investigator Example PI Graduate Students Casey Placeholder Alumni Undergraduate: Riley Example Avery Sample',
+    );
+    const { current, past } = read(extraction(['Undergraduate: Riley Example', 'Avery Sample']), [
+      home,
+      roster,
+    ]);
+    expect(current?.value).toBe(0);
+    expect(past).toMatchObject({
+      sourceUrl: roster.url,
+      value: [{ programName: ROSTER_ALUMNI_PROGRAM_NAME, count: 2 }],
+    });
+  });
+
+  it('refuses a count read from a join or home page that lists no people', () => {
+    const { current, past } = read(
+      extraction([
+        'We welcome undergraduates interested in example systems.',
+        'We welcome undergraduate researchers.',
+      ]),
+      [home, join],
+    );
+    expect(current?.value).toBe(0);
+    expect(past).toBeUndefined();
+  });
+
+  it('splits a mixed roster into current members and alumni', () => {
+    const roster = people(
+      'Lab Members Undergraduate Researchers Riley Example Avery Sample Former Members Quinn Fixture (undergraduate, 2019-2021) Morgan Fixture (undergraduate)',
+    );
+    const split = splitRosterUndergraduates(
+      extraction([
+        'Riley Example',
+        'Avery Sample',
+        'Quinn Fixture (undergraduate, 2019-2021)',
+        'Morgan Fixture (undergraduate)',
+      ]),
+      [home, roster],
+    );
+    expect(split).toEqual({
+      current: { count: 2, sourceUrl: roster.url },
+      past: { count: 2, sourceUrl: roster.url },
+    });
+  });
+
+  it('counts a roster line the model listed twice once, and a bare heading not at all', () => {
+    const roster = people(
+      'People Undergraduate Research Assistants Riley Example Read More Avery Sample Read More',
+    );
+    const { current } = read(
+      extraction([
+        'Undergraduate Research Assistants',
+        'Riley Example',
+        'Avery Sample',
+        'Riley Example',
+      ]),
+      [home, roster],
+    );
+    expect(current).toMatchObject({ value: 2, sourceUrl: roster.url });
+  });
+
+  it('reads a closed month-and-year range as an alumnus', () => {
+    const roster = people(
+      'Group members Riley Example; Undergraduate student (01/2024-09/2025); Yale College',
+    );
+    const split = splitRosterUndergraduates(
+      extraction(['Riley Example; Undergraduate student (01/2024-09/2025); Yale College']),
+      [home, roster],
+    );
+    expect(split.current).toBeNull();
+    expect(split.past?.count).toBe(1);
+  });
+
+  it('matches a roster line whose zero-width spaces the model returned as NUL characters', () => {
+    const roster = people('Team Riley Example\u200b\u200b B.S. in Physics, Yale (Expected 2027)');
+    const split = splitRosterUndergraduates(
+      extraction(['Riley Example\u0000\u0000 B.S. in Physics, Yale (Expected 2027)']),
+      [home, roster],
+    );
+    expect(split.current).toEqual({ count: 1, sourceUrl: roster.url });
+  });
+
+  it('does not read a filter tab strip naming Alumni as the heading of the current roster', () => {
+    const roster = people(
+      'People Principal Investigator Example PI Postdoctoral Researchers Graduate Students Undergraduate Students Alumni Postdoctoral Researchers Casey Placeholder Graduate Students Quinn Fixture Undergraduate Students Riley Example Undergraduate Students Alumni - Undergraduate Students Avery Sample 2016-2018',
+    );
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Riley Example', [roster])).toBe(false);
+    expect(rosterSnippetSitsUnderAHistoricalHeading('Avery Sample', [roster])).toBe(true);
+  });
+
+  it('keeps an alumni heading that contact redaction would swallow', () => {
+    const page = {
+      url: 'https://examplelab.org/group-members',
+      text: 'Group members Example PI E-mail: pi@examplelab.orgAlumni Riley Example; Undergraduate student; Yale College',
+    };
+    expect(
+      rosterSnippetSitsUnderAHistoricalHeading(
+        'Riley Example; Undergraduate student; Yale College',
+        [page],
+      ),
+    ).toBe(true);
   });
 });
