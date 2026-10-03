@@ -628,12 +628,13 @@ describe('Programs page', () => {
     expect(setQueryString).toHaveBeenCalledWith('summer funding');
   });
 
-  it('leaves the search alone when the URL carries no handed-off query', async () => {
+  it('starts from an empty search when the URL carries no handed-off query', async () => {
     const setQueryString = vi.fn();
     renderPage([baseFellowship()], { setQueryString });
 
     await screen.findByText('Summer Research Fellowship');
-    expect(setQueryString).not.toHaveBeenCalled();
+    expect(setQueryString).toHaveBeenCalledTimes(1);
+    expect(setQueryString).toHaveBeenCalledWith('');
   });
 
   it('keeps keyboard focus on the program search after Enter and Escape', async () => {

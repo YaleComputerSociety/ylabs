@@ -413,10 +413,14 @@ const Fellowships = () => {
     adminEditItem: adminEditFellowship,
   } = state;
 
-  const handedOffQuery = searchParams.get(PROGRAMS_QUERY_PARAM);
+  const [handedOffQuery] = useState(() => searchParams.get(PROGRAMS_QUERY_PARAM) ?? '');
   useEffect(() => {
-    if (handedOffQuery === null) return;
     setQueryString(handedOffQuery);
+  }, [handedOffQuery, setQueryString]);
+
+  const urlCarriesHandedOffQuery = searchParams.has(PROGRAMS_QUERY_PARAM);
+  useEffect(() => {
+    if (!urlCarriesHandedOffQuery) return;
     setSearchParams(
       (params) => {
         params.delete(PROGRAMS_QUERY_PARAM);
@@ -424,7 +428,7 @@ const Fellowships = () => {
       },
       { replace: true },
     );
-  }, [handedOffQuery, setQueryString, setSearchParams]);
+  }, [urlCarriesHandedOffQuery, setSearchParams]);
 
   useEffect(() => {
     if (!isModalOpen) restartUndoWindow();
