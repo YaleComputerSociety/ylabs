@@ -20,6 +20,7 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
+import { SESSION_LIFETIME_MS } from './utils/sessionClaim';
 import { parseTrustedProxyCidrs } from './utils/trustedProxyCidrs';
 import { assertDeployedMeiliConnectionConfig } from './utils/meiliClient';
 import {
@@ -180,7 +181,7 @@ const app = express()
       keys: [sessionSecret],
       // 30 days: long enough that students aren't silently logged out
       // mid-semester workflows, short enough to bound stale sessions.
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: SESSION_LIFETIME_MS,
       httpOnly: true,
       secure: requiresSecureSessionCookie(),
       path: '/',

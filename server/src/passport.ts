@@ -8,8 +8,10 @@ import { Strategy } from 'passport-cas';
 import {
   lastKnownAccountUserType,
   recordAccountLogin,
+  revokeAccountSessions,
   validateAccount,
 } from './services/accountService';
+import { isSessionClaimLive, mintSessionClaim, storedSessionClaim } from './utils/sessionClaim';
 import type { AccountProfile } from './models/account';
 import { lookupYalieByNetid } from './services/yaliesService';
 import { isFacultyTitle } from './utils/facultyTitle';
@@ -533,23 +535,28 @@ passport.serializeUser(function (user: any, done) {
     done(new Error('Invalid authentication principal'));
     return;
   }
-  done(null, principal);
+  withMongoReconnect(() => validateAccount(principal.netId)).then(
+    (account) => done(null, { ...principal, ...mintSessionClaim(account?.sessionVersion) }),
+    (error: unknown) => done(error),
+  );
 });
 
 // Runs on every authenticated request, so login-time classification
 // (Yalies) must not run here; the signed session carries the
 // classified principal and only the dynamic admin grant is re-applied. A
-// missing or archived Account deserializes to unauthenticated.
+// missing or archived Account, a session revoked by a later sign-out, or one
+// older than the session lifetime deserializes to unauthenticated.
 passport.deserializeUser(async (stored: unknown, done) => {
   try {
     authDebug('Deserializing user');
     const principal = coerceStoredSessionPrincipal(stored);
-    if (!principal) {
+    const claim = storedSessionClaim(stored);
+    if (!principal || !claim) {
       done(null, null);
       return;
     }
     const account = await withMongoReconnect(() => validateAccount(principal.netId));
-    if (!account || account.archived) {
+    if (!account || account.archived || !isSessionClaimLive(claim, account.sessionVersion)) {
       done(null, null);
       return;
     }
@@ -819,6 +826,7 @@ const logoutRouteHandler = async (
       },
     });
     authDebug(`Logout analytics event ${logoutOutcome}`);
+    await withMongoReconnect(() => revokeAccountSessions(user.netId));
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Account, type AccountProfile } from '../models/account';
 import { Researcher } from '../models/researcher';
+import { normalizedSessionVersion } from '../utils/sessionClaim';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,6 +35,7 @@ export interface AccountRecordView {
   status: string;
   archived: boolean;
   lastLoginAt?: Date;
+  sessionVersion: number;
 }
 
 const normalizeNetid = (value: unknown): string | null => {
@@ -55,6 +57,7 @@ const toAccountView = (account: any): AccountRecordView => ({
   status: String(account.status ?? 'ACTIVE'),
   archived: account.archived === true,
   lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : undefined,
+  sessionVersion: normalizedSessionVersion(account.sessionVersion),
 });
 
 export const validateAccount = async (netid: unknown): Promise<AccountRecordView | null> => {
@@ -62,6 +65,12 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   if (!normalizedNetid) return null;
   const account = await Account.findOne({ netid: normalizedNetid }).lean();
   return account ? toAccountView(account) : null;
+};
+
+export const revokeAccountSessions = async (netid: unknown): Promise<void> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) return;
+  await Account.updateOne({ netid: normalizedNetid }, { $inc: { sessionVersion: 1 } });
 };
 
 export const lastKnownAccountUserType = async (netid: unknown): Promise<string | undefined> => {
