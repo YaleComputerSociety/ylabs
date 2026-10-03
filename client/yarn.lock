@@ -1153,11 +1153,11 @@ __metadata:
   linkType: hard
 
 "@types/node@npm:26":
-  version: 26.6.3
-  resolution: "@types/node@npm:26.6.3"
+  version: 26.6.4
+  resolution: "@types/node@npm:26.6.4"
   dependencies:
     undici-types: "npm:~8.9.0"
-  checksum: 10c0/51070287167d157d246a5ad83e6ead93aa310bbd9cc880ecd1f244a00c2a31491620f997fbbb6ba4ce164388694827999ec68c1d16c3fb64c1037056e64613c7
+  checksum: 10c0/094e7362df9200ba4c2da09131ca3b5d1aa51535a268a24e4ee2546d9c5a323d1d30cbdaaaa3db7ef8b2387572d1f9edabb11538ab7a09d3bca33ae5cddc2b1b
   languageName: node
   linkType: hard
 
@@ -1475,7 +1475,7 @@ __metadata:
     axe-core: "npm:^4.10.3"
     axios: "npm:^1.20.0"
     jsdom: "npm:^30.1.1"
-    postcss: "npm:^8.5.15"
+    postcss: "npm:^8.5.28"
     react: "npm:^19.3.0"
     react-dom: "npm:^19.3.0"
     react-router-dom: "npm:^7.18.4"
@@ -2736,14 +2736,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:8.5.23":
-  version: 8.5.23
-  resolution: "postcss@npm:8.5.23"
+"postcss@npm:8.5.28":
+  version: 8.5.28
+  resolution: "postcss@npm:8.5.28"
   dependencies:
-    nanoid: "npm:^3.3.16"
+    nanoid: "npm:^3.3.18"
     picocolors: "npm:^1.1.1"
     source-map-js: "npm:^1.2.1"
-  checksum: 10c0/ed714e635b330bb42666ecdd0c0b4f30224ded15b0b0052d6bc2b92832f2cf17d1c1141359453f96f0a84f8fbf4c405a74df187f559163b8f31131b2535455aa
+  checksum: 10c0/9fe44215a6628d89c8a75184b92f5b2f77e16f9e5b13b39b9009bb7e8e6eccddf82c8854bae922db1f17ace6ef3445073fe38abff513caeb03e5285b1b55620a
   languageName: node
   linkType: hard
 
