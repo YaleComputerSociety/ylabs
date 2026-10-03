@@ -1,5 +1,5 @@
 import nodeAssert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -76,6 +76,36 @@ after(() => {
     `these security policies executed zero assertions and therefore pass by construction, not by checking anything: ${vacuous.join('; ')}. Either repoint the policy at the code that replaced what it pinned, or delete it.`,
   );
 });
+
+const serverDirectory = fileURLToPath(new URL('../server/', import.meta.url));
+const serverTsx = path.join(serverDirectory, 'node_modules', '.bin', 'tsx');
+
+const runServerGuard = (moduleRelativePath, body, input) => {
+  const moduleUrl = new URL(`../server/${moduleRelativePath}`, import.meta.url).href;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-guard-'));
+  const script = path.join(directory, 'evaluate.mts');
+  try {
+    fs.writeFileSync(
+      script,
+      [
+        `import * as guard from ${JSON.stringify(moduleUrl)};`,
+        'const input = JSON.parse(process.argv[2]);',
+        `const output = ((guard, input) => { ${body} })(guard, input);`,
+        'process.stdout.write(JSON.stringify(output));',
+      ].join('\n'),
+    );
+    const result = spawnSync(serverTsx, [script, JSON.stringify(input)], {
+      cwd: serverDirectory,
+      encoding: 'utf8',
+    });
+    if (result.status !== 0) {
+      throw new Error(`guard evaluation failed for ${moduleRelativePath}: ${result.stderr}`);
+    }
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
 
 const packageJson = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -460,38 +490,73 @@ test('shared pagination validation rejects object and array query controls befor
 });
 
 test('log sanitizer redacts common token, secret, and header forms', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/utils/logSanitizer.ts', import.meta.url),
-    'utf8',
+  const cases = [
+    ['Authorization: Bearer abc.def-ghi', 'Authorization: [secret-redacted]', 'abc.def-ghi'],
+    ['sent Bearer abc.def-ghi upstream', 'sent Bearer [token-redacted] upstream', 'abc.def-ghi'],
+    ['sent Basic dXNlcjpwYXNz upstream', 'sent Basic [token-redacted] upstream', 'dXNlcjpwYXNz'],
+    [
+      'key sk-proj-ABCDEFGHIJKLMNOPQRST failed',
+      'key sk-[secret-redacted] failed',
+      'ABCDEFGHIJKLMNOPQRST',
+    ],
+    [
+      'key sk-ABCDEFGHIJKLMNOPQRST failed',
+      'key sk-[secret-redacted] failed',
+      'ABCDEFGHIJKLMNOPQRST',
+    ],
+    ['Cookie: session=abc123; other=def', 'Cookie: [secret-redacted]', 'abc123'],
+    ['Set-Cookie: session=abc123; Path=/', 'Set-Cookie: [secret-redacted]', 'abc123'],
+    ['X-Seed-Token: seed-value', 'X-Seed-Token: [secret-redacted]', 'seed-value'],
+    ['X-Csrf-Token: csrf-value', 'X-Csrf-Token: [secret-redacted]', 'csrf-value'],
+    ['GET /cb?ticket=ST-123&next=/', 'GET /cb?ticket=[secret-redacted]&next=/', 'ST-123'],
+    ['api_key=raw-key here', 'api_key=[secret-redacted] here', 'raw-key'],
+    ['clientSecret=raw-secret', 'clientSecret=[secret-redacted]', 'raw-secret'],
+    ['{"accessToken":"raw-access"}', '{"accessToken":"[secret-redacted]"}', 'raw-access'],
+    ["{'refreshToken': 'raw-refresh'}", "{'refreshToken': '[secret-redacted]'}", 'raw-refresh'],
+    ['idToken: raw-id, next', 'idToken: [secret-redacted], next', 'raw-id'],
+    ['{"csrfToken":"a\\"b"}', '{"csrfToken":"[secret-redacted]"}', 'a\\"b'],
+    ['{"setCookie":"s=1"}', '{"setCookie":"[secret-redacted]"}', 's=1'],
+    ['{"password":"hunter2"}', '{"password":"[secret-redacted]"}', 'hunter2'],
+    ['{"sessionSecret":"s3"}', '{"sessionSecret":"[secret-redacted]"}', '"s3"'],
+    ['{"casTicket":"ST-9"}', '{"casTicket":"[secret-redacted]"}', 'ST-9'],
+    ['mongodb://user:pass@host/db', 'mongodb://[credentials-redacted]@host/db', 'user:pass'],
+    ['E11000 dup key: { email: "a@b.co" }', 'E11000 dup key: [key-redacted]', 'a@b.co'],
+    ['contact jdoe@example.edu now', 'contact [email redacted] now', 'jdoe@'],
+    ['call 555-010-0000 now', 'call [phone redacted] now', '555-010'],
+  ];
+  const outputs = runServerGuard(
+    'src/utils/logSanitizer.ts',
+    'return input.map((value) => guard.sanitizeLogValue(value));',
+    cases.map(([input]) => input),
   );
+  cases.forEach(([input, expected, secret], index) => {
+    assert.ok(
+      outputs[index].includes(expected) && !outputs[index].includes(secret),
+      `sanitizeLogValue leaked ${secret} from ${input}: ${outputs[index]}`,
+    );
+  });
 
-  assert.match(source, /const BEARER_TOKEN_RE/);
-  assert.match(source, /const BASIC_TOKEN_RE/);
-  assert.match(source, /const OPENAI_KEY_RE/);
-  assert.match(source, /const SECRET_FIELD_NAME_PATTERN/);
-  assert.match(source, /accessToken/);
-  assert.match(source, /refreshToken/);
-  assert.match(source, /idToken/);
-  assert.match(source, /csrfToken/);
-  assert.match(source, /clientSecret/);
-  assert.match(source, /setCookie/);
-  assert.match(source, /x\[_-\]\?seed\[_-\]\?token/);
-  assert.match(source, /const SECRET_HEADER_RE/);
-  assert.match(source, /const TOKEN_ASSIGNMENT_RE/);
-  assert.match(source, /authorization\|cookie\|set-cookie/);
-  assert.match(source, /const SECRET_QUOTED_FIELD_RE/);
-  assert.match(source, /const SECRET_BARE_FIELD_RE/);
-  assert.match(source, /MAX_SANITIZED_LOG_VALUE_LENGTH = 12000/);
-  assert.match(source, /TRUNCATED_LOG_SUFFIX = '\[log-truncated\]'/);
-  assert.match(source, /const truncateSanitizedLogValue = \(value: string\): string => \{/);
-  assert.match(source, /api\[_-\]\?key/);
-  assert.match(source, /const sanitized = raw/);
-  assert.match(source, /\.replace\(BASIC_TOKEN_RE, '\$1\[token-redacted\]'\)/);
-  assert.match(source, /\.replace\(OPENAI_KEY_RE, 'sk-\[secret-redacted\]'\)/);
-  assert.match(source, /\.replace\(SECRET_HEADER_RE, '\$1: \[secret-redacted\]'\)/);
-  assert.match(source, /\.replace\(SECRET_QUOTED_FIELD_RE, '\$1\$2\[secret-redacted\]\$2'\)/);
-  assert.match(source, /\.replace\(SECRET_BARE_FIELD_RE, '\$1\[secret-redacted\]'\)/);
-  assert.match(source, /return truncateSanitizedLogValue\(sanitized\)/);
+  const [structured, oversized, exact] = runServerGuard(
+    'src/utils/logSanitizer.ts',
+    [
+      'return [',
+      '  guard.sanitizeLogValue(input.structured),',
+      '  guard.sanitizeLogValue(input.oversized),',
+      '  guard.sanitizeLogValue(input.exact),',
+      '];',
+    ].join(' '),
+    {
+      structured: { apiKey: 'raw-api', nested: { authorization: 'Bearer raw-bearer' } },
+      oversized: `apiKey=raw-api ${'x'.repeat(13000)}`,
+      exact: 'y'.repeat(12000),
+    },
+  );
+  assert.doesNotMatch(structured, /raw-api|raw-bearer/);
+  assert.match(structured, /\[secret-redacted\]/);
+  assert.equal(oversized.length, 12000 + '[log-truncated]'.length);
+  assert.ok(oversized.endsWith('[log-truncated]'));
+  assert.ok(oversized.startsWith('apiKey=[secret-redacted]'));
+  assert.equal(exact, 'y'.repeat(12000));
 });
 
 test('global error handler does not log stack traces in deployed runtimes', () => {
@@ -1245,7 +1310,12 @@ const ghRecorderStub = (openIssue) => {
   return { stubDir, calls };
 };
 
-const runKeepAliveAlert = async ({ result, lastStatus = '500', attempts = '3', openIssue = '' }) => {
+const runKeepAliveAlert = async ({
+  result,
+  lastStatus = '500',
+  attempts = '3',
+  openIssue = '',
+}) => {
   const { stubDir, calls } = ghRecorderStub(openIssue);
   try {
     const run = await runScript('./keep-alive-alert.sh', {
@@ -1347,7 +1417,11 @@ test('the keep-alive probe publishes its last status and attempt count as step o
 test('the keep-alive alert job is the only job that may write issues', () => {
   const workflow = yaml.load(keepAliveWorkflow);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
-  assert.equal(workflow.jobs.ping.permissions, undefined, 'the probe job keeps the read-only default');
+  assert.equal(
+    workflow.jobs.ping.permissions,
+    undefined,
+    'the probe job keeps the read-only default',
+  );
   const alert = workflow.jobs.alert;
   assert.ok(alert, 'keep-alive must have an alert job (ylabs#4143)');
   assert.deepEqual(alert.permissions, { contents: 'read', issues: 'write' });
@@ -3388,33 +3462,67 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
 });
 
 test('Mongo sanitizer rejects operator-shaped requests and bounds recursive traversal', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/middleware/sanitizeMongo.ts', import.meta.url),
-    'utf8',
-  );
+  const deep = (depth) => (depth === 0 ? 'leaf' : { child: deep(depth - 1) });
+  const wideObject = (count) =>
+    Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, i]));
+  const rejected = { status: 400, body: { error: 'Invalid request payload' }, nextCalled: false };
+  const cases = [
+    [{ body: { $where: 'sleep(1)' } }, rejected],
+    [{ body: { filter: { $gt: '' } } }, rejected],
+    [{ body: { 'profile.role': 'admin' } }, rejected],
+    [{ body: { 'items[0]': 'x' } }, rejected],
+    [{ body: { 'items]': 'x' } }, rejected],
+    [{ body: JSON.parse('{"__proto__":{"admin":true}}') }, rejected],
+    [{ body: { constructor: { prototype: { admin: true } } } }, rejected],
+    [{ body: { prototype: 'x' } }, rejected],
+    [{ query: { $ne: 'x' } }, rejected],
+    [{ body: { list: [{ $or: [] }] } }, rejected],
+    [{ body: { list: Array.from({ length: 201 }, () => 1) } }, rejected],
+    [{ body: wideObject(201) }, rejected],
+    [{ body: deep(34) }, rejected],
+  ];
+  const accepted = [
+    { body: { name: 'safe', tags: ['a', 'b'], nested: { ok: 1 } } },
+    { body: { list: Array.from({ length: 200 }, () => 1) } },
+    { body: wideObject(200) },
+    { body: deep(31) },
+    { query: { q: 'machine learning' } },
+  ];
+  const evaluate = [
+    'return input.map((request) => {',
+    '  const outcome = { status: undefined, body: undefined, nextCalled: false };',
+    '  const res = { status(code) { outcome.status = code; return res; }, json(payload) { outcome.body = payload; return res; } };',
+    '  const req = { body: request.body, query: request.query ?? {} };',
+    '  guard.sanitizeMongo(req, res, () => { outcome.nextCalled = true; });',
+    '  return { ...outcome, cleaned: req.body };',
+    '});',
+  ].join(' ');
 
-  assert.match(source, /const MAX_SANITIZE_DEPTH = 32/);
-  assert.match(source, /const MAX_SANITIZE_ARRAY_ITEMS = 200/);
-  assert.match(source, /const MAX_SANITIZE_OBJECT_KEYS = 200/);
-  assert.match(source, /if \(depth > MAX_SANITIZE_DEPTH\) return undefined/);
-  assert.match(source, /value\.slice\(0, MAX_SANITIZE_ARRAY_ITEMS\)\.map/);
-  assert.match(source, /Object\.keys\(value\)\.slice\(0, MAX_SANITIZE_OBJECT_KEYS\)/);
-  assert.match(source, /key\.startsWith\('\$'\)/);
-  assert.match(source, /key\.includes\('\.'\)/);
-  assert.match(source, /key\.includes\('\['\)/);
-  assert.match(source, /key\.includes\('\]'\)/);
-  assert.match(source, /PROTOTYPE_POLLUTION_KEYS\.has\(key\)/);
-  assert.match(source, /const hasUnsafeMongoShape = \(value: unknown, depth = 0\): boolean => \{/);
-  assert.match(source, /if \(value\.length > MAX_SANITIZE_ARRAY_ITEMS\) return true/);
-  assert.match(source, /if \(keys\.length > MAX_SANITIZE_OBJECT_KEYS\) return true/);
-  assert.match(source, /keys\.some\(\(key\) => isUnsafeMongoKey\(key\) \|\| hasUnsafeMongoShape/);
-  assert.match(
-    source,
-    /if \(hasUnsafeMongoShape\(req\.body\) \|\| hasUnsafeMongoShape\(req\.query\)\)/,
+  const rejectedOutputs = runServerGuard(
+    'src/middleware/sanitizeMongo.ts',
+    evaluate,
+    cases.map(([request]) => request),
   );
-  assert.match(source, /return res\.status\(400\)\.json\(\{ error: 'Invalid request payload' \}\)/);
-  assert.match(source, /const cleaned = scrub\(val, depth \+ 1\)/);
-  assert.match(source, /if \(cleaned !== undefined\) out\[key\] = cleaned/);
+  cases.forEach(([request, expected], index) => {
+    const { status, body, nextCalled } = rejectedOutputs[index];
+    assert.deepEqual(
+      { status, body, nextCalled },
+      expected,
+      `sanitizeMongo let through: ${JSON.stringify(request).slice(0, 120)}`,
+    );
+  });
+
+  const acceptedOutputs = runServerGuard('src/middleware/sanitizeMongo.ts', evaluate, accepted);
+  accepted.forEach((request, index) => {
+    const outcome = acceptedOutputs[index];
+    assert.equal(
+      outcome.nextCalled,
+      true,
+      `sanitizeMongo rejected: ${JSON.stringify(request).slice(0, 120)}`,
+    );
+    assert.equal(outcome.status, undefined);
+    if (request.body) assert.deepEqual(outcome.cleaned, request.body);
+  });
 });
 
 test('required body field validation ignores inherited prototype properties', () => {
@@ -4837,39 +4945,6 @@ test('analytics event storage redacts user-entered contact details', () => {
   );
 
   assert.match(source, /redactDirectContactInfo/);
-  assert.match(source, /MAX_ANALYTICS_TEXT_LENGTH/);
-  assert.match(source, /MAX_ANALYTICS_ARRAY_ITEMS/);
-  assert.match(source, /MAX_ANALYTICS_OBJECT_KEYS/);
-  assert.match(source, /MAX_ANALYTICS_USER_TYPE_LENGTH = 40/);
-  assert.match(source, /ANALYTICS_METADATA_KEY_RE = \/\^\[A-Za-z0-9_-\]\{1,80\}\$\//);
-  assert.match(source, /ANALYTICS_OBJECT_ID_RE = \/\^\[a-fA-F0-9\]\{24\}\$\//);
-  assert.match(
-    source,
-    /ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>\(Object\.values\(AnalyticsEventType\)\)/,
-  );
-  assert.match(
-    source,
-    /const sanitizeAnalyticsEventType = \(value: unknown\): AnalyticsEventType \| undefined =>/,
-  );
-  assert.match(source, /const eventType = sanitizeAnalyticsEventType\(params\.eventType\)/);
-  assert.match(source, /if \(!eventType\) \{\s*return 'invalid';\s*\}/);
-  assert.match(source, /ANALYTICS_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(source, /ANALYTICS_NON_USER_NETIDS = new Set\(\['anonymous', 'unknown'\]\)/);
-  assert.match(source, /const netid = normalizeAnalyticsEventNetid\(params\.netid\)/);
-  assert.match(source, /const userType = sanitizeAnalyticsUserType\(params\.userType\)/);
-  assert.match(
-    source,
-    /const sanitizeAnalyticsObjectId = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /sanitizeAnalyticsMetadataKey/);
-  assert.match(
-    source,
-    /trimmed === '__proto__'\s*\|\|\s*trimmed === 'constructor'\s*\|\|\s*trimmed === 'prototype'/,
-  );
-  assert.match(source, /trimmed\.length > MAX_ANALYTICS_METADATA_KEY_LENGTH/);
-  assert.match(source, /!ANALYTICS_METADATA_KEY_RE\.test\(trimmed\)/);
-  assert.doesNotMatch(source, /replace\(\/\^\\\$\+\/, '_'\)\.replace\(\/\\\.\/g, '_'\)/);
-  assert.match(source, /sanitizeAnalyticsMetadata/);
   assert.match(source, /searchQuery:\s*sanitizeAnalyticsText\(params\.searchQuery\)/);
   assert.match(
     source,
@@ -4878,9 +4953,47 @@ test('analytics event storage redacts user-entered contact details', () => {
   assert.match(source, /metadata:\s*sanitizeAnalyticsMetadata\(params\.metadata\)/);
   assert.match(source, /const fellowshipId = sanitizeAnalyticsObjectId\(params\.fellowshipId\)/);
   assert.doesNotMatch(source, /eventType:\s*normalizedParams\.eventType/);
-  assert.match(source, /if \(fellowshipId\) eventPayload\.fellowshipId = fellowshipId/);
   assert.doesNotMatch(source, /params\.listingId/);
   assert.doesNotMatch(source, /eventPayload\.listingId/);
+
+  const reportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-analytics-'));
+  const reportFile = path.join(reportDirectory, 'report.json');
+  try {
+    spawnSync(
+      path.join(serverDirectory, 'node_modules', '.bin', 'vitest'),
+      [
+        'run',
+        'src/services/__tests__/analyticsService.test.ts',
+        '--reporter=json',
+        `--outputFile=${reportFile}`,
+      ],
+      { cwd: serverDirectory, encoding: 'utf8' },
+    );
+    const report = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+    const statusByTitle = new Map(
+      report.testResults
+        .flatMap((file) => file.assertionResults)
+        .map((result) => [result.title, result.status]),
+    );
+    for (const behaviouralCase of [
+      'redacts direct contact details before persisting analytics text and metadata',
+      'bounds analytics text and metadata before persistence',
+      'drops over-long metadata keys and bounds the stored user type',
+      'rejects malformed analytics actor netids before persistence',
+      'rejects malformed analytics event types before persistence',
+      'sanitizes analytics actor fields before persistence and skips non-user buckets for user updates',
+      'drops malformed analytics entity ids before persistence',
+      'reports a malformed event type or actor as invalid rather than failed',
+    ]) {
+      assert.equal(
+        statusByTitle.get(behaviouralCase),
+        'passed',
+        `analytics storage behaviour did not pass: ${behaviouralCase}`,
+      );
+    }
+  } finally {
+    fs.rmSync(reportDirectory, { recursive: true, force: true });
+  }
 });
 
 test('public ResearchEntity DTO recursively redacts direct-contact text', () => {

@@ -1183,6 +1183,23 @@ describe('logEvent', () => {
     expect(JSON.stringify(created)).not.toContain('hidden@example.edu');
   });
 
+  it('drops over-long metadata keys and bounds the stored user type', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'u'.repeat(41),
+      searchQuery: 'reach jdoe [at] example [dot] edu',
+      metadata: { ['k'.repeat(80)]: 'kept', ['k'.repeat(81)]: 'dropped' },
+    });
+
+    const created = mocks.analyticsCreate.mock.calls[0][0];
+    expect(created.userType).toBe('u'.repeat(40));
+    expect(created.searchQuery).toBe('reach [email redacted]');
+    expect(created.metadata).toEqual({ ['k'.repeat(80)]: 'kept' });
+  });
+
   it('rejects malformed analytics actor netids before persistence', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
