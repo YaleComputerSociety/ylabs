@@ -3097,6 +3097,35 @@ describe('join routes a hand-read found standing in for an application page (#45
     });
   });
 
+  it("records the join page's own invitation beside a verdict quoted from elsewhere", () => {
+    const join = {
+      url: 'https://examplelab.org/join-the-lab',
+      text: 'Join the Lab. Undergraduate research assistants commit to the lab for two semesters and attend the weekly lab meeting.',
+    };
+    const people = {
+      url: 'https://examplelab.org/people',
+      text: 'People. Undergraduate Students and Staff. Jordan Example.',
+    };
+    const observations = extractionToObservations(
+      'example-lab',
+      home.url,
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: 'Undergraduate Students and Staff',
+        evidenceSource: 'members_section',
+        joinPageUrl: join.url,
+      },
+      new Date(),
+      { sourcePages: [home, people, join], entityShape: labRow },
+    );
+    expect(observations.find((o) => o.field === 'undergradAccessEvidence')?.value).toMatchObject({
+      joinPageUrl: join.url,
+      joinPageInvitation:
+        'Undergraduate research assistants commit to the lab for two semesters and attend the weekly lab meeting.',
+    });
+  });
+
   it("falls back to the row's profile when the model named its department's jobs page", () => {
     const profile = {
       url: 'https://earth.yale.edu/profile/avery-example',

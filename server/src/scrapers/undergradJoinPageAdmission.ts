@@ -403,10 +403,32 @@ export const normalizeJoinRouteText = (text: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-export const recruitingSentences = (text: string | undefined): string[] =>
+const MAX_SENTENCE_CHARS = 400;
+const SENTENCE_WINDOW_CHARS = 200;
+
+// Page text arrives with its markup collapsed, so a navigation bar and the copy after it can
+// read as one run-on sentence; a long one is read as a window around each cue instead.
+function sentenceWindows(sentence: string, cue: RegExp): string[] {
+  if (sentence.length <= MAX_SENTENCE_CHARS) return [sentence];
+  return Array.from(sentence.matchAll(new RegExp(cue.source, 'gi')), (match) =>
+    sentence
+      .slice(
+        Math.max(0, (match.index ?? 0) - SENTENCE_WINDOW_CHARS),
+        (match.index ?? 0) + match[0].length + SENTENCE_WINDOW_CHARS,
+      )
+      .trim(),
+  );
+}
+
+const textSentences = (text: string | undefined): string[] =>
   normalizeJoinRouteText(text || '')
     .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => RECRUITING_SENTENCE.test(sentence));
+    .filter(Boolean);
+
+export const recruitingSentences = (text: string | undefined): string[] =>
+  textSentences(text)
+    .filter((sentence) => RECRUITING_SENTENCE.test(sentence))
+    .flatMap((sentence) => sentenceWindows(sentence, RECRUITING_SENTENCE));
 
 const UNDERGRADUATE_AUDIENCE =
   /\bundergrad|\byale\s+college\b|\bcollege\s+students?\b|\bbachelor(?:'?s)?\b(?!'?s?\s+degree)/i;
@@ -452,9 +474,25 @@ export const textRecruitsAnUndergraduateAudience = (text: string | undefined): b
 export const joinRouteNamesAnUndergraduateAudience = (text: string | undefined): boolean =>
   textNamesUndergraduates(text) || textRecruitsAnUndergraduateAudience(text);
 
-/** The text a page of each kind needs before it is an undergraduate join route (#4543). */
-export function joinRouteTextAdmits(kind: JoinRouteKind, text: string | undefined): boolean {
-  if (kind === 'home-or-profile') return textInvitesUndergraduates(text);
-  if (kind === 'member-listing') return textRecruitsAnUndergraduateAudience(text);
-  return joinRouteNamesAnUndergraduateAudience(text);
+/**
+ * The sentence that makes a page of this kind an undergraduate join route, or null (#4543).
+ * The lane records it beside its access verdict, so the materializer judges the join page on
+ * the page's own words and not only on the one quote the model chose.
+ */
+export function joinRouteInvitation(kind: JoinRouteKind, text: string | undefined): string | null {
+  const recruiting = recruitingSentences(text);
+  if (kind === 'home-or-profile') {
+    return recruiting.find((sentence) => UNDERGRADUATE_AUDIENCE.test(sentence)) ?? null;
+  }
+  const recruits = recruiting.find(recruitsAnUndergraduateAudience);
+  if (recruits || kind === 'member-listing') return recruits ?? null;
+  return (
+    textSentences(text)
+      .filter((sentence) => UNDERGRADUATE_AUDIENCE.test(sentence))
+      .flatMap((sentence) => sentenceWindows(sentence, UNDERGRADUATE_AUDIENCE))[0] ?? null
+  );
 }
+
+/** Whether the text a page of this kind carries makes it an undergraduate join route. */
+export const joinRouteTextAdmits = (kind: JoinRouteKind, text: string | undefined): boolean =>
+  joinRouteInvitation(kind, text) !== null;

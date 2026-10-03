@@ -56,6 +56,7 @@ import { publicResearchEntityDescriptionText } from '../../utils/researchEntityD
 import {
   isOwnDepartmentUndergraduateResearchProgramme,
   joinPageUrlRefusal,
+  joinRouteInvitation,
   joinRouteKind,
   joinRouteTextAdmits,
   joinRouteUrlRefusal,
@@ -949,6 +950,20 @@ export function laneJoinPageRefusal(
 }
 
 /**
+ * The sentence on an admitted join page that invites undergraduates, recorded beside the
+ * access verdict so the materializer can judge the page on its own words (#4543).
+ */
+export function joinRouteInvitationOnPage(
+  joinPageUrl: string,
+  pages: readonly PromptSourcePage[],
+  entity?: JoinPageEntity,
+): string | null {
+  const identity = pageUrlIdentity(joinPageUrl);
+  const page = pages.find((candidate) => pageUrlIdentity(candidate.url) === identity);
+  return page ? joinRouteInvitation(joinRouteKind(page.url, entity), page.text) : null;
+}
+
+/**
  * The join route a read emits: the page the model named when it is admissible, and
  * otherwise the home page or profile carrying the read's own access quote when that quote
  * invites undergraduates by name, as a profile saying "undergraduates interested in joining
@@ -1127,6 +1142,23 @@ export function extractionToObservations(
     sourceUrl,
   };
   const out: ObservationInput[] = [];
+  const joinCandidatePages = [
+    ...(sourceContext.sourcePages ?? []),
+    ...(sourceContext.joinPages ?? []),
+  ];
+  const admissibleJoinPageUrl = admissibleJoinRoute(
+    extraction,
+    evidenceQuote,
+    joinCandidatePages,
+    sourceContext.entityShape,
+  );
+  const joinPageInvitation = admissibleJoinPageUrl
+    ? joinRouteInvitationOnPage(
+        admissibleJoinPageUrl,
+        joinCandidatePages,
+        sourceContext.entityShape,
+      )
+    : null;
 
   if (extraction.openToUndergrads === 'yes' && evidenceQuote) {
     out.push({
@@ -1138,6 +1170,12 @@ export function extractionToObservations(
         evidenceQuote: extraction.evidenceQuote,
         sourceUrls,
         quoteSourceUrl: evidenceQuote.sourceUrl,
+        ...(joinPageInvitation
+          ? {
+              joinPageUrl: admissibleJoinPageUrl,
+              joinPageInvitation: redactDirectContactInfo(joinPageInvitation).slice(0, 500),
+            }
+          : {}),
       },
       confidenceOverride: 0.5,
     });
@@ -1191,12 +1229,6 @@ export function extractionToObservations(
     });
   }
 
-  const admissibleJoinPageUrl = admissibleJoinRoute(
-    extraction,
-    evidenceQuote,
-    [...(sourceContext.sourcePages ?? []), ...(sourceContext.joinPages ?? [])],
-    sourceContext.entityShape,
-  );
   if (admissibleJoinPageUrl || sourceContext.readIsComplete !== false) {
     out.push({
       ...base,

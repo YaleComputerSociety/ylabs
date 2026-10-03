@@ -419,13 +419,27 @@ interface AccessQuotePage {
   quote: string;
 }
 
-function accessQuotePage(obs: AccessObservation): AccessQuotePage {
-  const value = (obs.value || {}) as { quoteSourceUrl?: unknown };
-  return {
-    sourceName: obs.sourceName,
-    url: toHttpUrl(value.quoteSourceUrl) || toHttpUrl(obs.sourceUrl),
-    quote: undergradAccessEvidenceQuote(obs.value),
+// The lane records the sentence that admitted its join page beside the verdict, so the page
+// is judged on its own words as well as on the one quote the model chose.
+function accessQuotePages(obs: AccessObservation): AccessQuotePage[] {
+  const value = (obs.value || {}) as {
+    quoteSourceUrl?: unknown;
+    joinPageUrl?: unknown;
+    joinPageInvitation?: unknown;
   };
+  const pages = [
+    {
+      sourceName: obs.sourceName,
+      url: toHttpUrl(value.quoteSourceUrl) || toHttpUrl(obs.sourceUrl),
+      quote: undergradAccessEvidenceQuote(obs.value),
+    },
+  ];
+  const invitation = firstString(value.joinPageInvitation);
+  const joinPageUrl = toHttpUrl(value.joinPageUrl);
+  if (invitation && joinPageUrl) {
+    pages.push({ sourceName: obs.sourceName, url: joinPageUrl, quote: invitation });
+  }
+  return pages;
 }
 
 /**
@@ -443,12 +457,12 @@ function accessQuotePage(obs: AccessObservation): AccessQuotePage {
  */
 function joinRouteCitation(
   obs: AccessObservation,
-  accessQuotePages: readonly AccessQuotePage[],
+  rowQuotePages: readonly AccessQuotePage[],
   entity?: JoinPageEntity,
 ): string | undefined {
   const joinPageUrl = firstUrlValue(obs.value);
   if (!joinPageUrl) return undefined;
-  const quotePages = accessQuotePages.filter(
+  const quotePages = rowQuotePages.filter(
     (page) => page.sourceName === obs.sourceName && page.quote,
   );
   if (!joinRouteUrlRefusal(joinPageUrl, entity)) {
@@ -615,9 +629,9 @@ export function deriveAccessArtifactsFromObservations(
 
   // Collapsed before admission, so a lane's newer read that found no admissible join page
   // (an empty value) replaces the page an older read named instead of standing beside it.
-  const accessQuotePages = positiveAccessEvidence.map(accessQuotePage);
+  const quotePages = positiveAccessEvidence.flatMap(accessQuotePages);
   const joinRoutes = collapseLatestWins(byField.get('joinPageUrl') || [], 'researchEntity')
-    .map((obs) => ({ obs, citation: joinRouteCitation(obs, accessQuotePages, entity) }))
+    .map((obs) => ({ obs, citation: joinRouteCitation(obs, quotePages, entity) }))
     .filter((route): route is { obs: AccessObservation; citation: string } =>
       Boolean(route.citation),
     );

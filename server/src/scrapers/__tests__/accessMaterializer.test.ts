@@ -824,6 +824,35 @@ describe('deriveAccessArtifactsFromObservations', () => {
       expect(application(signals)?.sourceUrl).toBe(profile);
     });
 
+    it('admits a join page on the invitation the lane recorded from it, whatever quote the model chose', () => {
+      const joinUrl = 'https://examplelab.yale.edu/join-the-lab';
+      const verdict = obs({
+        _id: 'obs-access',
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'members_section',
+          evidenceQuote: 'Undergraduate Students and Staff',
+          quoteSourceUrl: 'https://examplelab.yale.edu/people',
+          joinPageUrl: joinUrl,
+          joinPageInvitation:
+            'Undergraduate research assistants commit to the lab for two semesters.',
+        },
+        sourceName: LANE,
+        confidence: 0.5,
+      });
+      expect(application(derive([verdict, join(joinUrl, joinUrl)], labRow))?.sourceUrl).toBe(
+        joinUrl,
+      );
+      const withoutInvitation = obs({
+        ...verdict,
+        value: { ...(verdict.value as object), joinPageInvitation: undefined },
+      });
+      expect(
+        application(derive([withoutInvitation, join(joinUrl, joinUrl)], labRow)),
+      ).toBeUndefined();
+    });
+
     it("keeps a department's own undergraduate research page on that department's faculty row", () => {
       const programme =
         'https://physics.yale.edu/undergraduate-academics/undergraduate-research-opportunities';
