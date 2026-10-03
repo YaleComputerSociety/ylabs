@@ -102,15 +102,18 @@ A refusal from the guard means rewrite by predicate and re-run, never call the r
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
-- Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --repo YaleComputerSociety/ylabs`.
+- Merge through the queue: `gh pr merge <n> --auto --repo YaleComputerSociety/ylabs`.
+The queue rebases the PR onto the current `beta` plus every PR queued ahead of it, runs `test-and-build` and `student-journey-smoke` on that exact commit, and squashes it only if both pass, so a PR tested against a stale base can no longer land red (#4512).
+The squash commit takes the PR title and body, so the PR title is the commit subject.
 Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
-Delete the remote branch with `git push origin --delete <branch>` instead.
-- `--admin` is load-bearing here rather than a shortcut, and the reason is worth knowing so it is not "cleaned up". Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
-`require CI on beta` requires `test-and-build` and `student-journey-smoke`, requires **one approving review**, and blocks force pushes; `protect main (production)` additionally requires `release-hold` and allows merge commits only.
-A sole maintainer cannot approve their own PR, so without the Admin bypass nothing merges at all.
-- What `--admin` may and may not be used for: the review requirement and the watchdog's bot flow, yes.
-To get past a red `test-and-build` or `student-journey-smoke`, never; fix the check or report the blocker.
-The bypass is unconditional, so the flag really will override a failing suite, which makes the restraint the contract rather than the configuration.
+Once `gh pr view <n> --json state` reads `MERGED`, delete the remote branch with `git push origin --delete <branch>`; deleting it while the PR is still queued closes the PR.
+- Never pass `--admin`, and do not try to get around a refusal.
+Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` and the squash merge queue, and has no bypass actors, so nothing reaches `beta` around the queue.
+`require review on beta` requires **one approving review**.
+GitHub does not honour a ruleset bypass when enqueuing, so the `Admin Author Approval` workflow approves a PR whose author holds the Admin repository role; every other contributor's PR waits for a human review.
+`protect main (production)` additionally requires `release-hold` and allows merge commits only.
+- A red check in the queue drops the PR out of it; fix the check or report the blocker, then enqueue again.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git -C ~/Personal/ylabs worktree remove <path>`, prune stale entries with `git worktree prune`, and confirm `git -C ~/Personal/ylabs branch --show-current` still prints `beta`.
 - Asking after the fact whether a merge was gated is an **ancestry** question, never an equality one, and the report that answers it lives in the watchdog repository rather than here (#2452).

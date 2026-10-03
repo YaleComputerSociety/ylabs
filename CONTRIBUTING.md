@@ -161,22 +161,29 @@ A maintainer reviews and merges it.
 
 Merge when CI is green and the pull request is mergeable on its current head.
 
-`beta` is protected by the `require CI on beta` ruleset, which requires `test-and-build` and `student-journey-smoke` to pass, requires one approving review, and blocks force pushes.
+`beta` is protected by two rulesets.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` and a squash merge queue, blocks force pushes, and has no bypass actors.
+`require review on beta` requires one approving review.
+The `Admin Author Approval` workflow supplies it for a pull request whose author holds the Admin repository role, because a sole maintainer cannot approve their own pull request and the merge queue ignores ruleset bypasses.
 `release-hold` applies only to pull requests into `main`.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
-gh pr merge <n> --squash --admin --repo YaleComputerSociety/ylabs
+gh pr merge <n> --auto --repo YaleComputerSociety/ylabs
+gh pr view <n> --repo YaleComputerSociety/ylabs --json state --jq .state
 git push origin --delete <branch>
 ```
 
+Delete the branch only once the state reads `MERGED`; deleting it while the pull request is still queued closes it.
+
 Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
 
-**Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
+`--auto` puts the pull request in the merge queue once its checks pass.
+The queue rebases it onto the current `beta` plus everything queued ahead of it, reruns both checks on that exact commit, and squashes it with the pull request title and body only if they pass.
+A red check drops it out of the queue: fix the check, or report the blocker, and enqueue it again.
 
-The Admin role bypasses the ruleset unconditionally, which is what `--admin` uses.
-It exists because a sole maintainer cannot approve their own pull request, and because the release watchdog's bot flow depends on it.
-If you have it, use it for the review requirement and never to get past a failing `test-and-build`: fix the check, or report the blocker.
+**Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
+Nobody bypasses the queue or the checks, so do not pass `--admin`.
 
 Confirm the linked issue auto-closed, then clean up:
 

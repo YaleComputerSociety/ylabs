@@ -161,8 +161,9 @@ Protection here is implemented as GitHub **rulesets**, not as classic branch pro
 That distinction matters the moment you go looking: `GET /repos/.../branches/beta/protection` returns `404 Branch not protected` even though `beta` is protected, because that endpoint only reports the classic kind.
 Read `gh api repos/YaleComputerSociety/ylabs/rulesets` instead.
 
-`require CI on beta` governs `beta`.
-It requires `test-and-build` and `student-journey-smoke` to pass, requires a pull request with **one approving review**, and blocks force pushes.
+Two rulesets govern `beta`.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` to pass in a squash merge queue, blocks force pushes, and has no bypass actors, so nothing lands on `beta` without passing both on the exact commit that lands.
+`require review on beta` requires a pull request with **one approving review**.
 
 `protect main (production)` governs `main`, and is stricter.
 It requires `test-and-build`, `student-journey-smoke`, and `release-hold`, allows only merge commits rather than squashes, and demands an extra approval for unattributed changes.
@@ -171,10 +172,10 @@ So as a new contributor you cannot merge your own work, by design.
 Someone has to review it.
 Plan for that rather than being surprised by it at the end.
 
-The Admin repository role bypasses both rulesets unconditionally, which is why every pull request merged to date shows no approving review and why the protocol reaches for `gh pr merge --admin`.
-That is not sloppiness: a sole maintainer cannot approve their own pull request, so the bypass is what makes a one-person team able to ship at all.
-It also keeps the release watchdog's bot flow working.
-If you have admin, the restraint is yours to supply: the flag really will override a failing `test-and-build`, so use it for the review requirement and not to get past a red check.
+A pull request authored by someone with the Admin repository role is approved automatically by the `Admin Author Approval` workflow, and nothing else on `beta` is relaxed for them.
+That is not sloppiness: a sole maintainer cannot approve their own pull request, and the merge queue ignores ruleset bypasses, so the automatic approval is what makes a one-person team able to ship at all.
+It cannot get a pull request past a failing check, because the merge queue and its required checks have no bypass actors (#4512).
+On `main` the Admin role still bypasses `protect main (production)`, so the restraint there is yours to supply.
 
 `release-hold` is deliberately **not** required on `beta`: it is the promotion hold and only runs on pull requests into `main`.
 Person identifiers in issue and pull request bodies are refused before posting by the `gh` identifier guard that `scripts/new-agent-worktree.sh` installs, not by a check.
@@ -220,6 +221,6 @@ Do these before their first day, because each one blocks them entirely.
 - [ ] `OPENAI_API_KEY` if they will touch search or any LLM extraction lane.
 - [ ] Confirm whether they need Yale network access. Scraper and data work reaches Yale sources, which is what the `fleet:data` label marks; serve-time work does not.
 - [ ] Pick their first task yourself, and pick a serve-time one. Every currently open issue is deep data-quality work written in internal vocabulary, so an unlabelled tracker is not a starting point.
-- [ ] Decide whether they get the Admin repository role, and default to no. Admin bypasses both rulesets unconditionally, so it hands a newcomer the power to merge past a failing `test-and-build`. Without it the `require CI on beta` ruleset does its job.
-- [ ] Commit to reviewing their pull requests. `require CI on beta` needs one approving review, and a contributor without admin genuinely cannot merge without you. This is the rule that turns "I will look at it eventually" into a blocked newcomer.
+- [ ] Decide whether they get the Admin repository role, and default to no. Admin gets a newcomer's own pull requests approved automatically and bypasses `protect main (production)`, so it hands them the power to merge their own unreviewed work and to promote past a failing check on `main`.
+- [ ] Commit to reviewing their pull requests. `require review on beta` needs one approving review, and a contributor without admin genuinely cannot merge without you. This is the rule that turns "I will look at it eventually" into a blocked newcomer.
 - [ ] Decide the review rule for their first changes. Zero-review works for a maintainer holding the model in their head; it does not work for a newcomer's first stored-data change, which can merge green and deliver nothing at all.

@@ -26,11 +26,12 @@ Without that file the deployed major was decided outside the repository, by the 
 ## The post-merge signal on beta
 
 `CI` and `E2E Smoke` run on pushes to `beta`, not only on pull requests.
-The `beta` ruleset deliberately does not require branches to be up to date (#3425), so each pull request is tested against the base it last saw rather than against the squash commit that lands.
-The push run is what tests the commit that is actually on `beta`, and it is the signal that catches a semantic conflict between two individually green pull requests (#1151, #1153, #3913).
+The merge gate is the squash merge queue on `beta` (#4512).
+The queue runs both workflows on the exact squash commit that will land, on top of every pull request queued ahead of it, so a semantic conflict between two individually green pull requests is caught before it reaches `beta` rather than after (#1151, #1153, #3913).
+The `beta` ruleset still does not require branches to be up to date (#3425), because the queue does that rebase itself.
 
-A push run is a post-merge signal, not a merge gate.
-The required contexts still come from the pull request runs, and the rulesets are unchanged.
+A push run is a post-merge safety net, not a merge gate.
+It catches anything that reaches `beta` outside the queue, which the rulesets should make impossible.
 
 A red push run on `beta` blocks promotion.
 Fix it before opening a promotion pull request, because `beta` is the source of every promotion and a red `beta` otherwise surfaces as a failure on the next unrelated pull request.
