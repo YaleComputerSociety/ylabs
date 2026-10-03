@@ -3188,3 +3188,110 @@ describe('LabDetail for research led by emeritus faculty (#4431)', () => {
     expect(screen.queryByText('Emeritus')).toBeNull();
   });
 });
+
+describe('LabDetail for a creative practice profile (#4519)', () => {
+  const PRACTICE_WEBSITE_URL = 'https://practice.example.test/';
+  const practiceLead = {
+    role: 'pi' as const,
+    user: {
+      netid: 'fixture.practice',
+      fname: 'Sloane',
+      lname: 'Fixturewood',
+      displayName: 'Sloane Fixturewood',
+      title: 'Professor in the Practice of Violin',
+      primary_department: 'Music',
+      profileUrls: { official: 'https://music.example.test/people/fixture-practice' },
+    },
+  };
+
+  it('labels the practice and drops every research and lab claim from its summary', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        websiteUrl: PRACTICE_WEBSITE_URL,
+        sourceUrls: [PRACTICE_WEBSITE_URL],
+        creativePractice: true,
+      },
+      members: [practiceLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Creative practice').length).toBeGreaterThan(0);
+    expect(screen.getByText('Practice summary')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'What this creative practice covers' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Visit website' }).getAttribute('href')).toBe(
+      PRACTICE_WEBSITE_URL,
+    );
+    expect(screen.queryByText('Research summary')).toBeNull();
+    expect(screen.queryByText('What this lab studies')).toBeNull();
+    expect(screen.queryByText(/Principal Investigator/)).toBeNull();
+    expect(screen.getAllByText('Faculty').length).toBeGreaterThan(0);
+  });
+
+  it('names an emeritus-led practice as faculty and practice, never a lab or research', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        websiteUrl: PRACTICE_WEBSITE_URL,
+        sourceUrls: [PRACTICE_WEBSITE_URL],
+        creativePractice: true,
+        emeritusLed: true,
+        wayInWithheld: true,
+      },
+      members: [{ ...practiceLead, user: { ...practiceLead.user, emeritus: true } }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const notice = screen.getByRole('note', { name: 'Current activity' });
+    expect(notice.textContent).toContain(
+      'Emeritus faculty: check the official page for current activity.',
+    );
+    expect(notice.textContent).toContain('y/labs has no record that this practice is active now');
+    expect(notice.textContent).not.toMatch(/Emeritus lab|Emeritus faculty research|this research/);
+  });
+
+  it('keeps a director lead and its heading a director on a labelled row', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: ['Music'],
+        creativePractice: true,
+      },
+      members: [{ ...practiceLead, role: 'director' as const }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Director').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Faculty')).toBeNull();
+    expect(screen.queryByText(/Principal Investigator/)).toBeNull();
+  });
+
+  it('keeps the research wording on a row the server did not label', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, kind: 'lab', entityType: 'LAB' },
+      members: [practiceLead],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Creative practice')).toBeNull();
+    expect(screen.getByText('Research summary')).toBeTruthy();
+  });
+});

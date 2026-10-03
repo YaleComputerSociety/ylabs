@@ -146,6 +146,16 @@ describe('research-home detail accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('has no serious or critical axe violations on a creative practice profile', async () => {
+    const { container } = renderLabDetail({
+      ...richPayload,
+      group: { ...richPayload.group, creativePractice: true },
+    });
+    await screen.findByText(ENTITY_NAME);
+    expect(screen.getByText('Practice summary')).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
   it('has no serious or critical axe violations for an anonymous visitor', async () => {
     const { container } = renderLabDetail(richPayload, { isAuthenticated: false });
     await screen.findByText(ENTITY_NAME);

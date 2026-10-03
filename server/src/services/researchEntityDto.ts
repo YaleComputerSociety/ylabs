@@ -55,6 +55,12 @@ import {
 import { isCurrentFundingField, servedCurrentFunding } from './servedCurrentFunding';
 import { withMemoizedDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { servedEmeritusWayInFlags, type EmeritusWayInDecision } from './emeritusLeadWayIn';
+import {
+  decideCreativePractice,
+  servedCreativePracticeFlag,
+  type CreativePracticeDecision,
+} from '../utils/creativePracticeDescription';
+import { decideCreativePracticeCard } from './creativePracticeCard';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
@@ -99,6 +105,7 @@ export interface PublicResearchEntitySummaryDto {
   entityType?: string;
   departments: string[];
   blurb?: string;
+  creativePractice?: true;
 }
 
 export function publicResearchEntityId(group: Record<string, any>): string {
@@ -217,6 +224,29 @@ export function decideServedResearchEntityTopics(
     .slice(MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS)
     .map((area) => ({ area: String(area), guard: 'servedCopyArrayBound' as const }));
   return { ...topics, withheld: [...overBound, ...topics.withheld] };
+}
+
+function creativePracticeOfServedCopy(
+  group: Record<string, any>,
+  served: Record<string, any>,
+): Readonly<CreativePracticeDecision> {
+  return decideCreativePractice({
+    entityType: group.entityType,
+    kind: group.kind,
+    fullDescription: served.fullDescription,
+    shortDescription: served.shortDescription,
+    departments: group.departments,
+    school: group.school,
+  });
+}
+
+// The journey harness attributes the served `creativePractice` flag by calling this on the
+// same served source, so a second reading of the label elsewhere reads there as a drift.
+export function decideServedResearchEntityCreativePractice(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): Readonly<CreativePracticeDecision> {
+  return creativePracticeOfServedCopy(group, servedCopyAndTopics(group, leadMemberNames).served);
 }
 
 function publicMethodsArray(value: unknown, researchAreas: string[]): string[] {
@@ -407,7 +437,13 @@ export function toPublicResearchEntitySummaryDto(
     group.entityType === undefined
       ? mapResearchGroupKindToEntityType(group.kind)
       : group.entityType;
-  const blurb = servedResearchEntityCardDescription(served, summaryEntityType).slice(0, 280);
+  const creativePractice = creativePracticeOfServedCopy(group, served);
+  const researchBlurb = servedResearchEntityCardDescription(served, summaryEntityType);
+  const blurb = (
+    creativePractice.creativePractice
+      ? decideCreativePracticeCard(researchBlurb, served.fullDescription).card
+      : researchBlurb
+  ).slice(0, 280);
 
   return {
     id: publicResearchEntityId(group),
@@ -422,6 +458,7 @@ export function toPublicResearchEntitySummaryDto(
         : publicTextString(group.entityType),
     departments: publicDepartmentArray(group.departments),
     ...(blurb ? { blurb } : {}),
+    ...servedCreativePracticeFlag(creativePractice),
   };
 }
 
@@ -498,7 +535,11 @@ function derivePublicResearchEntityDto(
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
   const { served, topics } = servedCopyAndTopics(group, options.leadMemberNames);
-  const servedCard = servedResearchEntityCardDescription(served, entityType);
+  const creativePractice = creativePracticeOfServedCopy(group, served);
+  const researchCard = servedResearchEntityCardDescription(served, entityType);
+  const servedCard = creativePractice.creativePractice
+    ? decideCreativePracticeCard(researchCard, served.fullDescription).card
+    : researchCard;
   const hostOwnerIdentity = {
     name: served.name ?? group.name,
     displayName: served.displayName ?? group.displayName,
@@ -602,6 +643,7 @@ function derivePublicResearchEntityDto(
   }
 
   if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
+  Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
   // The browse card is the same line `shortDescription` above carries, because both
   // are `servedResearchEntityCardDescription`. Resolving it from the stored short and

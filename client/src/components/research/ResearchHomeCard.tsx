@@ -11,7 +11,12 @@ import {
 import ArrowRightIcon from '../shared/ArrowRightIcon';
 import SlashBreakableText from '../shared/SlashBreakableText';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
-import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
+import {
+  CREATIVE_PRACTICE_KIND_LABEL,
+  isCreativePracticeEntity,
+  leadRoleLabelForEntity,
+  sanitizeResearchEntityCopy,
+} from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
 import {
@@ -35,11 +40,9 @@ const countLabel = (count: number, singular: string, plural: string): string =>
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
-const titleCaseContactRole = (role?: string): string => {
-  const trimmed = (role || '').trim();
-  if (!trimmed) return 'Principal investigator';
-  return formatTitleCaseLabel(trimmed);
-};
+const DEFAULT_CONTACT_ROLE = 'Principal investigator';
+
+const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Undergrad evidence': 'Has hosted undergraduate researchers',
@@ -152,8 +155,11 @@ const ResearchHomeCard = ({
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
-  const leadRole = titleCaseContactRole(leadEntity?.contactRole);
+  const contactRole = servedContactRole(leadEntity?.contactRole);
+  const leadRole =
+    leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
+  const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
@@ -246,6 +252,11 @@ const ResearchHomeCard = ({
         )}
 
         <div className="flex flex-wrap gap-1.5">
+          {isCreativePractice && (
+            <span className="yr-pill yr-pill-compact border-line-warm bg-parchment px-2 py-0.5 text-ink-soft">
+              {CREATIVE_PRACTICE_KIND_LABEL}
+            </span>
+          )}
           {isEmeritusLed && (
             <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
               Led by emeritus faculty

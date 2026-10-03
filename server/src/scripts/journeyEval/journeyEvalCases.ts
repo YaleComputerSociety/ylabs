@@ -1,4 +1,5 @@
 import {
+  decideServedResearchEntityCreativePractice,
   decideServedResearchEntityTopics,
   researchEntityListServedSource,
 } from '../../services/researchEntityDto';
@@ -18,6 +19,7 @@ import {
   checkExpectedNoResults,
   checkFacetAgreement,
   checkConstantReportedTotal,
+  checkCreativePracticeLabelAttribution,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
@@ -35,8 +37,10 @@ import {
   resolvePagesToWalk,
   scoreQueryRelevance,
   scoreUndergradEvidenceJudgements,
+  tallyCreativePracticeLabels,
   tallySurvivorWebsites,
   type CorpusFingerprint,
+  type CreativePracticeLabelObservation,
   type FacetAgreementObservation,
   type InvariantResult,
   type QueryEvidenceClass,
@@ -278,6 +282,53 @@ const topicDropAttribution: JourneyCase = {
           'Topic drops the served topic guards account for',
           tally.attributedToGuard,
           tally.dropped,
+        ),
+      ],
+      notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
+    };
+  },
+};
+
+const creativePracticeLabelAttribution: JourneyCase = {
+  id: 'creative-practice-label-attribution',
+  title: 'The creative practice label on a browse card is the served-copy decision',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const result = await context.browse({ page: 1, pageSize: context.window });
+    const rows = servedRows(result);
+    const stored = await context.readStoredRows(rows.map(rowKey).filter(Boolean));
+    const leadNames = context.readLeadMemberNames
+      ? await context.readLeadMemberNames([...stored.values()])
+      : { byEntityId: new Map<string, readonly string[]>(), unavailable: false };
+
+    const observations: CreativePracticeLabelObservation[] = [];
+    for (const row of rows) {
+      const storedRow = stored.get(rowKey(row));
+      if (!storedRow) continue;
+      const leadMemberNames = leadNames.byEntityId.get(String(storedRow._id ?? ''));
+      const decision = decideServedResearchEntityCreativePractice(
+        researchEntityListServedSource(storedRow, leadMemberNames, leadNames.unavailable),
+        leadMemberNames,
+      );
+      observations.push({
+        served: row.creativePractice === true,
+        decided: decision.creativePractice,
+        servedVersionMatchesStored:
+          epochMillis(row.lastObservedAt) === epochMillis(storedRow.lastObservedAt),
+      });
+    }
+
+    const tally = tallyCreativePracticeLabels(observations);
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [checkCreativePracticeLabelAttribution(tally, corpusBefore, corpusAfter)],
+      rates: [
+        buildRate(
+          'browse-cards-labelled-creative-practice',
+          'Browse cards labelled creative practice',
+          tally.labelled,
+          tally.comparable,
         ),
       ],
       notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
@@ -861,6 +912,7 @@ const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
+  creativePracticeLabelAttribution,
   facetCountAgreement,
   paginationServesDistinctRows,
   textQueryTotalIsStable,

@@ -24,6 +24,7 @@ interface LabMembersListProps {
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
   resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
+  resolveLeadRoleLabel?: (role: LabMemberRole) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -79,6 +80,7 @@ const LabMemberCard = ({
   pillEligibleLabels,
   entityDepartments,
   profileUrl,
+  resolveLeadRoleLabel,
 }: {
   user: LabMember['user'];
   role: LabMemberRole;
@@ -87,6 +89,7 @@ const LabMemberCard = ({
   pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
+  resolveLeadRoleLabel?: (role: LabMemberRole) => string | undefined;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
@@ -98,7 +101,9 @@ const LabMemberCard = ({
     { pillEligibleLabels, entityDepartments },
   );
   const isMisattributedLead = LEAD_ROLES.has(role) && cannotOwnResearchHome(user.title);
-  const roleLabel = isMisattributedLead ? NEUTRAL_NON_OWNER_ROLE_LABEL : ROLE_LABELS[role];
+  const roleLabel = isMisattributedLead
+    ? NEUTRAL_NON_OWNER_ROLE_LABEL
+    : (resolveLeadRoleLabel?.(role) ?? ROLE_LABELS[role]);
   const rolePillClassName = isMisattributedLead
     ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
@@ -219,6 +224,7 @@ const LabMembersList = ({
   singleColumn = false,
   entityDepartments = [],
   resolveMemberProfileUrl,
+  resolveLeadRoleLabel,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
@@ -267,6 +273,7 @@ const LabMembersList = ({
             pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
+            resolveLeadRoleLabel={resolveLeadRoleLabel}
           />
         );
       })}
