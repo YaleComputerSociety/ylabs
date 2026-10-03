@@ -3787,8 +3787,11 @@ interface ProfileBackedFacultyResearchAreaMemberDeps {
 async function heldLeadPersonId(researchEntityId: string): Promise<string | undefined> {
   const targetId = toMaterializerObjectId(researchEntityId);
   if (!targetId) return undefined;
-  const held = (await RoleAssignment
-    .findOne({ 'target.kind': 'RESEARCH_ENTITY', 'target.id': targetId, role: 'PI' })
+  const held = (await RoleAssignment.findOne({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': targetId,
+    role: 'PI',
+  })
     .select('personId')
     .lean()) as { personId?: unknown } | null;
   return held ? normalizeMaterializerObjectId(held.personId) || '' : undefined;
