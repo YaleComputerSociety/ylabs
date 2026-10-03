@@ -438,12 +438,15 @@ function defaultMaterializerCardSynthesizer(
  * `applyResearchEntityOrgUnitCanonicalization` recomputes `schools` from `school`
  * plus `departments` and `orgAffiliationLabels` from `departments`, so a scope that
  * wrote `departments` alone would leave the stored `schools` facet describing the
- * old departments. Each closure is symmetric because every member is a legal
+ * old departments. `aggregateResearchEntityGrantEvidence` derives the four grant
+ * fields from one award union, so a count written without its list would disagree.
+ * Each closure is symmetric because every member is a legal
  * `--only-fields` value (#2536).
  */
 export const MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
   ['entityType', 'kind'],
   ['school', 'schools', 'departments', 'orgAffiliationLabels'],
+  ['recentGrants', 'recentGrantPeriods', 'recentGrantCount', 'fundingAgencies'],
 ];
 
 export function withDerivedMaterializerFields(fields: readonly string[]): string[] {

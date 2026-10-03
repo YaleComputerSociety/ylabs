@@ -497,6 +497,20 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     expect(args.onlyFields).toEqual(['undergradEvidenceQuote']);
   });
 
+  it('can scope a pass to topics and the grant fields together (#4418)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=researchAreas,recentGrants,recentGrantPeriods,recentGrantCount,fundingAgencies',
+    ]);
+    expect(args.onlyFields).toEqual([
+      'researchAreas',
+      'recentGrants',
+      'recentGrantPeriods',
+      'recentGrantCount',
+      'fundingAgencies',
+    ]);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });
@@ -506,6 +520,15 @@ describe('withDerivedMaterializerFields', () => {
   it('writes a derived pair together whichever half the operator scoped', () => {
     expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
     expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('writes the whole grant closure whichever grant field the operator scoped', () => {
+    expect(withDerivedMaterializerFields(['recentGrantCount']).sort()).toEqual([
+      'fundingAgencies',
+      'recentGrantCount',
+      'recentGrantPeriods',
+      'recentGrants',
+    ]);
   });
 
   it('writes the whole org-unit closure whichever member the operator scoped', () => {

@@ -86,6 +86,10 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'orgAffiliationLabels',
   'undergradEvidenceQuote',
   'studentVisibilityTier',
+  'recentGrants',
+  'recentGrantPeriods',
+  'recentGrantCount',
+  'fundingAgencies',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
