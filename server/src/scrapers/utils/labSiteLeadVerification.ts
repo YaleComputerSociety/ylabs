@@ -589,6 +589,14 @@ export function contestedSurnamesAmong(leads: readonly LabSiteLeadCandidate[]): 
   return contested;
 }
 
+function normalizedUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
+}
+
 export function buildLabSiteLeadVerification(
   leads: readonly LabSiteLeadCandidate[],
   reading: LabSiteReading,
@@ -614,7 +622,9 @@ export function buildLabSiteLeadVerification(
   return {
     state: rollUpVerificationState(judgements),
     checkedUrl,
-    ...(checkedUrl !== reading.website ? { requestedUrl: reading.website } : {}),
+    ...(normalizedUrl(checkedUrl) !== normalizedUrl(reading.website)
+      ? { requestedUrl: reading.website }
+      : {}),
     ...(typeof reading.httpStatusCode === 'number'
       ? { httpStatusCode: reading.httpStatusCode }
       : {}),

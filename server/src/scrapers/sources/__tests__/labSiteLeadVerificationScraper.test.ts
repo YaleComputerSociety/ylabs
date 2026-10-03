@@ -130,4 +130,43 @@ describe('lab-site lead verification records where a redirect landed (#4027)', (
     expect(verification.checkedUrl).toBe('https://moved.example.edu/new-lab/');
     expect(verification.requestedUrl).toBe('https://served.example.edu/lab/');
   });
+
+  it('records no requested URL when the landing page only normalized the stored one', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      status: 200,
+      data: '<html><body><h1>Synthetic Lab</h1></body></html>',
+    });
+
+    const reading = await readLabSite('https://Served.Example.edu', false);
+    expect(reading?.visitedUrls).toEqual(['https://served.example.edu/']);
+
+    const verification = buildLabSiteLeadVerification(
+      [],
+      {
+        website: 'https://Served.Example.edu',
+        visitedUrls: reading!.visitedUrls,
+        html: reading!.html,
+        httpStatusCode: reading!.httpStatusCode,
+      },
+      new Date('2026-10-03T00:00:00Z'),
+    );
+
+    expect(verification.checkedUrl).toBe('https://served.example.edu/');
+    expect(verification).not.toHaveProperty('requestedUrl');
+  });
+
+  it('keeps the requested URL on the stored lead verification', () => {
+    const entity = new ResearchEntity({
+      leadVerification: {
+        state: 'unreachable',
+        checkedUrl: 'https://moved.example.edu/new-lab/',
+        requestedUrl: 'https://served.example.edu/lab/',
+        observedAt: new Date('2026-10-03T00:00:00Z'),
+      },
+    });
+
+    expect(entity.toObject().leadVerification?.requestedUrl).toBe(
+      'https://served.example.edu/lab/',
+    );
+  });
 });
