@@ -4,10 +4,7 @@
  * because a requirement such as "Recipients must email a final report" or "must email a
  * proposal answering the questions below" uses a contact verb and an enquiry word too.
  */
-import {
-  normalizeHygieneWhitespace,
-  partitionSentencesForFiltering,
-} from '../../utils/descriptionHygiene';
+import { normalizeHygieneWhitespace, partitionSentencesForFiltering } from './descriptionHygiene';
 
 const EMAIL_ADDRESS = /(?:mailto:)?[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gi;
 const EMAIL_PLACEHOLDER = '\u2063email\u2063';

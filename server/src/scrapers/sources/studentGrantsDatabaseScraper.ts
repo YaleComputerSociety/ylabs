@@ -59,7 +59,7 @@ import {
   sourceKeyForFund,
 } from '../fellowshipFundFacets';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
-import { withoutContactDirections } from '../utils/fundContactDirection';
+import { withoutContactDirections } from '../../utils/contactDirection';
 import {
   FUND_PROSE_BLOCK_BREAK,
   fundProseLinkMarker,
