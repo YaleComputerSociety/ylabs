@@ -101,6 +101,9 @@ describe('funnel save stage and degraded searches over a real store', () => {
       search('stud01', 0, 'marine ecology', { resultCount: 6 }),
       profileOpen('stud01', 1),
       search('stud02', 0, 'marine ecology', { resultCount: 2 }),
+      search('stud07', 0, 'marine ecology', { resultCount: 4 }),
+      profileOpen('stud07', 1),
+      search('stud08', 0, 'marine ecology', { resultCount: 4 }),
     ];
     await AnalyticsEvent.collection.insertMany(healthy);
     const before = await getSearchQualityAnalytics();
@@ -117,7 +120,7 @@ describe('funnel save stage and degraded searches over a real store', () => {
     const after = await getSearchQualityAnalytics();
     const afterQueries = await getSearchQueryAnalytics();
 
-    expect(after.totalSearches).toBe(6);
+    expect(after.totalSearches).toBe(8);
     expect(after.degradedSearches).toBe(4);
     expect(after.engagedSearches).toBe(before.engagedSearches);
     expect(after.returnedButIgnoredSearches).toBe(before.returnedButIgnoredSearches);
@@ -129,6 +132,8 @@ describe('funnel save stage and degraded searches over a real store', () => {
     expect(averageFor(after.byQueryAndEntityType)).toBe(4);
     expect(averageFor(afterQueries.queries)).toBe(averageFor(beforeQueries.queries));
     expect(averageFor(afterQueries.queries)).toBe(4);
+    expect(after.avgResultsPerSearch).toBe(before.avgResultsPerSearch);
+    expect(after.avgResultsPerSearch).toBe(4);
   });
 
   it('keeps the fallback result counts out of a zero-result query average', async () => {

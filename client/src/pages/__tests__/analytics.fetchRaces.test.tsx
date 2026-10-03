@@ -100,13 +100,14 @@ const userPage = (users: unknown[], offset: number, total = 60) => ({
   offset,
 });
 
-const drilldown = (row: typeof ROW_A, eventQuery: string) => ({
+const drilldown = (row: typeof ROW_A, fellowshipTitle: string) => ({
   user: row,
   events: [
     {
       id: `${row.netid}-event`,
-      eventType: 'search',
-      searchQuery: eventQuery,
+      eventType: 'fellowship_view',
+      fellowshipId: `${row.netid}-fellowship`,
+      fellowshipTitle,
       timestamp: '2026-05-17T09:00:00.000Z',
     },
   ],
@@ -217,7 +218,7 @@ describe('Analytics admin fetches ignore superseded responses', () => {
       drilldown(ROW_A, 'alpha query'),
     );
     await waitFor(() => {
-      expect(scope.getByText('Query: alpha query')).toBeTruthy();
+      expect(scope.getByText('Fellowship: alpha query')).toBeTruthy();
     });
 
     fireEvent.click(scope.getByText('fixb002'));
@@ -226,7 +227,7 @@ describe('Analytics admin fetches ignore superseded responses', () => {
     expect(aside.getByRole('heading', { name: 'Sample Beta' })).toBeTruthy();
     expect(aside.getByText(/22 events/)).toBeTruthy();
     expect(aside.queryByText(/11 events/)).toBeNull();
-    expect(aside.queryByText('Query: alpha query')).toBeNull();
+    expect(aside.queryByText('Fellowship: alpha query')).toBeNull();
     expect(aside.getByText('Loading recent events…')).toBeTruthy();
   });
 
@@ -240,7 +241,7 @@ describe('Analytics admin fetches ignore superseded responses', () => {
       drilldown(ROW_A, 'alpha query'),
     );
     await waitFor(() => {
-      expect(scope.getByText('Query: alpha query')).toBeTruthy();
+      expect(scope.getByText('Fellowship: alpha query')).toBeTruthy();
     });
 
     fireEvent.click(
@@ -249,7 +250,7 @@ describe('Analytics admin fetches ignore superseded responses', () => {
 
     const aside = within(userSection().querySelector('aside') as HTMLElement);
     expect(aside.getByRole('heading', { name: 'Sample Alpha' })).toBeTruthy();
-    expect(aside.getByText('Query: alpha query')).toBeTruthy();
+    expect(aside.getByText('Fellowship: alpha query')).toBeTruthy();
     expect(aside.queryByText('Loading recent events…')).toBeNull();
   });
 
@@ -277,8 +278,8 @@ describe('Analytics admin fetches ignore superseded responses', () => {
 
     const aside = within(userSection().querySelector('aside') as HTMLElement);
     expect(aside.getByRole('heading', { name: 'Sample Beta' })).toBeTruthy();
-    expect(aside.getByText('Query: beta query')).toBeTruthy();
-    expect(aside.queryByText('Query: alpha query')).toBeNull();
+    expect(aside.getByText('Fellowship: beta query')).toBeTruthy();
+    expect(aside.queryByText('Fellowship: alpha query')).toBeNull();
     expect(aside.queryByText('Loading recent events…')).toBeNull();
   });
 

@@ -118,20 +118,56 @@ const sanitizeAnalyticsMetadata = (value: unknown, depth = 0): unknown => {
   return undefined;
 };
 
+const SEARCH_CONTENT_EVENT_TYPES = new Set<AnalyticsEventType>([
+  AnalyticsEventType.SEARCH,
+  AnalyticsEventType.RESEARCH_SEARCH,
+  AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+]);
+
+export const MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY = 3;
+
+const queryGroupIsShown = { $gte: ['$uniqueSearchers', MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY] };
+
+export interface SuppressedQueryGroups {
+  queryGroups: number;
+  searches: number;
+  zeroResultQueryGroups: number;
+  zeroResultSearches: number;
+}
+
+const EMPTY_SUPPRESSED_QUERY_GROUPS: SuppressedQueryGroups = {
+  queryGroups: 0,
+  searches: 0,
+  zeroResultQueryGroups: 0,
+  zeroResultSearches: 0,
+};
+
+const suppressedQueryGroupSummaryStages = [
+  { $match: { $expr: { $not: [queryGroupIsShown] } } },
+  {
+    $group: {
+      _id: null,
+      queryGroups: { $sum: 1 },
+      searches: { $sum: '$totalSearches' },
+      zeroResultQueryGroups: { $sum: { $cond: [{ $gt: ['$zeroResultSearches', 0] }, 1, 0] } },
+      zeroResultSearches: { $sum: '$zeroResultSearches' },
+    },
+  },
+  { $project: { _id: 0 } },
+];
+
 const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   const eventType = sanitizeAnalyticsEventType(event?.eventType) || AnalyticsEventType.VISITOR;
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
-  const searchQuery = sanitizeAnalyticsText(event?.searchQuery);
-  const searchDepartments = sanitizeAnalyticsStringArray(event?.searchDepartments);
-  const metadata = sanitizeAnalyticsMetadata(event?.metadata);
+  const metadata = SEARCH_CONTENT_EVENT_TYPES.has(eventType)
+    ? undefined
+    : sanitizeAnalyticsMetadata(event?.metadata);
 
   return {
     id: normalizeAnalyticsStoredObjectIdString(event?._id) || '',
     eventType,
     userType: sanitizeAnalyticsUserType(event?.userType),
     ...(fellowshipId ? { fellowshipId } : {}),
-    ...(searchQuery !== undefined ? { searchQuery } : {}),
-    ...(searchDepartments !== undefined ? { searchDepartments } : {}),
     ...(metadata !== undefined ? { metadata } : {}),
     timestamp: event?.timestamp instanceof Date ? event.timestamp : new Date(event?.timestamp || 0),
   };
@@ -160,7 +196,6 @@ export interface AnalyticsUserSummary {
   userType: string;
   fname?: string;
   lname?: string;
-  email?: string;
   totalEvents: number;
   logins: number;
   searches: number;
@@ -192,8 +227,6 @@ export interface AnalyticsUserEvent {
   userType: string;
   fellowshipId?: string;
   fellowshipTitle?: string;
-  searchQuery?: string;
-  searchDepartments?: string[];
   metadata?: any;
   timestamp: Date;
 }
@@ -222,6 +255,9 @@ export interface SearchQualityAnalytics {
   zeroResultSearches: number;
   zeroResultRate: number;
   uniqueSearchers: number;
+  avgResultsPerSearch: number;
+  minDistinctSearchersToShowQuery: number;
+  suppressedQueries: SuppressedQueryGroups;
   byQueryAndEntityType: SearchQualityQueryAnalytics[];
   topZeroResultQueries: SearchQualityQueryAnalytics[];
   highSearchLowResults: HighSearchLowResultsAction[];
@@ -230,16 +266,6 @@ export interface SearchQualityAnalytics {
   returnedButIgnoredSearches: number;
   engagementRate: number;
   attributionWindowMinutes: number;
-}
-
-export interface SearchQuerySearcherAnalytics {
-  netid: string;
-  userType: string;
-  fname?: string;
-  lname?: string;
-  email?: string;
-  searchCount: number;
-  lastSearchedAt?: Date;
 }
 
 export interface SearchQueryAnalyticsRow {
@@ -251,12 +277,13 @@ export interface SearchQueryAnalyticsRow {
   zeroResultSearches: number;
   avgResultCount: number;
   lastSearchedAt?: Date;
-  searchers: SearchQuerySearcherAnalytics[];
 }
 
 export interface SearchQueryAnalytics {
   queries: SearchQueryAnalyticsRow[];
   limit: number;
+  minDistinctSearchersToShowQuery: number;
+  suppressedQueries: SuppressedQueryGroups;
 }
 
 export interface FunnelAnalytics {
@@ -713,7 +740,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         netid: 1,
         userType: 1,
         displayName: 1,
-        email: 1,
         totalEvents: 1,
         logins: 1,
         searches: 1,
@@ -1063,6 +1089,18 @@ const zeroResultQueryGroupStages = [
   { $match: { zeroResultSearches: { $gt: 0 } } },
 ];
 
+const averageResultsOverSearchesThatReachedTheCorpus = (
+  queries: Pick<SearchQualityQueryAnalytics, 'avgResultCount' | 'searchesThatReachedTheCorpus'>[],
+): number => {
+  const searches = queries.reduce((sum, query) => sum + query.searchesThatReachedTheCorpus, 0);
+  if (searches === 0) return 0;
+  const results = queries.reduce(
+    (sum, query) => sum + query.avgResultCount * query.searchesThatReachedTheCorpus,
+    0,
+  );
+  return results / searches;
+};
+
 const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
@@ -1235,16 +1273,26 @@ const computeSearchQualityAnalytics = async (
         ],
         byQueryAndEntityType: [
           ...queryGroupStages,
+          { $match: { $expr: queryGroupIsShown } },
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
         ],
+        averageResultsBasis: [
+          ...queryGroupStages,
+          { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
+          { $limit: 100 },
+          { $project: { avgResultCount: 1, searchesThatReachedTheCorpus: 1 } },
+        ],
+        suppressedQueries: [...queryGroupStages, ...suppressedQueryGroupSummaryStages],
         topZeroResultQueries: [
           ...zeroResultQueryGroupStages,
+          { $match: { $expr: queryGroupIsShown } },
           { $sort: { zeroResultSearches: -1, totalSearches: -1, query: 1 } },
           { $limit: 10 },
         ],
         highSearchLowResults: [
           ...zeroResultQueryGroupStages,
+          { $match: { $expr: queryGroupIsShown } },
           { $match: { searchesThatReachedTheCorpus: { $gte: 2 } } },
           {
             $addFields: {
@@ -1285,6 +1333,12 @@ const computeSearchQualityAnalytics = async (
         ? Number((overall.zeroResultSearches / searchesThatReachedTheCorpus).toFixed(4))
         : 0,
     uniqueSearchers: overall.uniqueSearchers,
+    avgResultsPerSearch: averageResultsOverSearchesThatReachedTheCorpus(
+      (result?.averageResultsBasis ?? []) as SearchQualityQueryAnalytics[],
+    ),
+    minDistinctSearchersToShowQuery: MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
+    suppressedQueries: (result?.suppressedQueries?.[0] ??
+      EMPTY_SUPPRESSED_QUERY_GROUPS) as SuppressedQueryGroups,
     byQueryAndEntityType,
     topZeroResultQueries,
     highSearchLowResults,
@@ -1369,7 +1423,6 @@ export const getSearchQueryAnalytics = async (
     {
       $project: {
         netid: { $ifNull: ['$netid', 'unknown'] },
-        userType: { $ifNull: ['$userType', 'unknown'] },
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
         filterSummary: searchFilterSummaryExpression,
         surface: { $ifNull: ['$metadata.entityType', 'unknown'] },
@@ -1399,7 +1452,6 @@ export const getSearchQueryAnalytics = async (
           surface: '$surface',
           netid: '$netid',
         },
-        userType: { $last: '$userType' },
         searchCount: { $sum: 1 },
         zeroResultSearches: {
           $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
@@ -1409,54 +1461,19 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: { $max: '$timestamp' },
       },
     },
-    ...accountByNetidLookupStages('_id.netid'),
-    ...researcherByAccountLookupStages('account._id'),
-    {
-      $project: {
-        _id: 0,
-        query: '$_id.query',
-        filterSummary: '$_id.filterSummary',
-        surface: '$_id.surface',
-        netid: '$_id.netid',
-        userType: '$userType',
-        displayName: '$researcher.displayName',
-        email: '$account.email',
-        searchCount: 1,
-        zeroResultSearches: 1,
-        resultCountTotal: 1,
-        searchesThatReachedTheCorpus: 1,
-        lastSearchedAt: 1,
-      },
-    },
-    {
-      $sort: {
-        query: 1,
-        filterSummary: 1,
-        surface: 1,
-        searchCount: -1,
-        lastSearchedAt: -1,
-        netid: 1,
-      },
-    },
     {
       $group: {
-        _id: { query: '$query', filterSummary: '$filterSummary', surface: '$surface' },
+        _id: {
+          query: '$_id.query',
+          filterSummary: '$_id.filterSummary',
+          surface: '$_id.surface',
+        },
         totalSearches: { $sum: '$searchCount' },
         zeroResultSearches: { $sum: '$zeroResultSearches' },
         resultCountTotal: { $sum: '$resultCountTotal' },
         searchesThatReachedTheCorpus: { $sum: '$searchesThatReachedTheCorpus' },
         uniqueSearchers: { $sum: 1 },
         lastSearchedAt: { $max: '$lastSearchedAt' },
-        searchers: {
-          $push: {
-            netid: '$netid',
-            userType: '$userType',
-            displayName: '$displayName',
-            email: '$email',
-            searchCount: '$searchCount',
-            lastSearchedAt: '$lastSearchedAt',
-          },
-        },
       },
     },
     {
@@ -1478,24 +1495,37 @@ export const getSearchQueryAnalytics = async (
           ],
         },
         lastSearchedAt: 1,
-        searchers: { $slice: ['$searchers', 8] },
       },
     },
     {
-      $sort: {
-        totalSearches: -1,
-        zeroResultSearches: -1,
-        lastSearchedAt: -1,
-        query: 1,
-        filterSummary: 1,
-        surface: 1,
+      $facet: {
+        queries: [
+          { $match: { $expr: queryGroupIsShown } },
+          {
+            $sort: {
+              totalSearches: -1,
+              zeroResultSearches: -1,
+              lastSearchedAt: -1,
+              query: 1,
+              filterSummary: 1,
+              surface: 1,
+            },
+          },
+          { $limit: limit },
+        ],
+        suppressedQueries: suppressedQueryGroupSummaryStages,
       },
     },
-    { $limit: limit },
   ];
 
-  const queries = (await AnalyticsEvent.aggregate(pipeline)) as SearchQueryAnalyticsRow[];
-  return { queries, limit };
+  const [result] = await AnalyticsEvent.aggregate(pipeline);
+  return {
+    queries: (result?.queries ?? []) as SearchQueryAnalyticsRow[],
+    limit,
+    minDistinctSearchersToShowQuery: MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
+    suppressedQueries: (result?.suppressedQueries?.[0] ??
+      EMPTY_SUPPRESSED_QUERY_GROUPS) as SuppressedQueryGroups,
+  };
 };
 
 export const getFunnelAnalytics = async (
@@ -1824,6 +1854,14 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
             $group: {
               _id: '$searchQuery',
               count: { $sum: 1 },
+              uniqueSearchers: { $addToSet: '$netid' },
+            },
+          },
+          {
+            $match: {
+              $expr: {
+                $gte: [{ $size: '$uniqueSearchers' }, MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY],
+              },
             },
           },
           { $sort: { count: -1 } },

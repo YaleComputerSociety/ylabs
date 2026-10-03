@@ -8,7 +8,6 @@ import { asyncHandler } from '../middleware/errorHandler';
 import {
   AnalyticsSortDirection,
   AnalyticsUserSort,
-  SearchQualityQueryAnalytics,
   MAX_USER_ANALYTICS_SEARCH_LENGTH,
   getAnalytics,
   getActionNeededAnalytics,
@@ -315,18 +314,6 @@ router.get(
   }),
 );
 
-const averageResultsOverSearchesThatReachedTheCorpus = (
-  queries: SearchQualityQueryAnalytics[],
-): number => {
-  const searches = queries.reduce((sum, query) => sum + query.searchesThatReachedTheCorpus, 0);
-  if (searches === 0) return 0;
-  const results = queries.reduce(
-    (sum, query) => sum + query.avgResultCount * query.searchesThatReachedTheCorpus,
-    0,
-  );
-  return results / searches;
-};
-
 router.get(
   '/search-quality',
   isAuthenticated,
@@ -338,9 +325,6 @@ router.get(
       searchesWithResults: Math.max(
         analytics.totalSearches - analytics.degradedSearches - analytics.zeroResultSearches,
         0,
-      ),
-      avgResultsPerSearch: averageResultsOverSearchesThatReachedTheCorpus(
-        analytics.byQueryAndEntityType,
       ),
       topQueries: analytics.topQueries.map((query) => ({
         ...query,

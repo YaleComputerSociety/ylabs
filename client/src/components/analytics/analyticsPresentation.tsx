@@ -165,15 +165,6 @@ export const formatSearchQueryLabel = (row: { query?: string; filterSummary?: st
 export const formatFullName = (fname?: string, lname?: string): string =>
   [fname, lname].filter(Boolean).join(' ');
 
-export const formatSearcherName = (searcher: {
-  fname?: string;
-  lname?: string;
-  netid: string;
-}): string => {
-  const name = formatFullName(searcher.fname, searcher.lname);
-  return name ? `${searcher.netid} (${name})` : searcher.netid;
-};
-
 export const actionPriorityClass = (priority?: string): string => {
   if (priority === 'high') {
     return 'border-red-200 bg-red-50 text-red-700';

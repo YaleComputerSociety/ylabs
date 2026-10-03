@@ -7,6 +7,7 @@ import {
   getSearchQualityAnalytics,
   getSearchQueryAnalytics,
   invalidateAnalyticsCaches,
+  MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
 } from '../analyticsService';
 
 // Seeding and aggregating over a real replica set outruns the default per-test
@@ -283,6 +284,10 @@ describe('search-quality attribution single-pass equivalence', () => {
         metadata: { entityType: 'research_entity', resultCount: 3 },
       }),
       event('stud05', AnalyticsEventType.RESEARCH_SAVE, 62),
+      event('stud05', AnalyticsEventType.SEARCH, 120, {
+        searchQuery: 'materials',
+        metadata: { entityType: 'research_entity', resultCount: 0 },
+      }),
     ]);
   };
 
@@ -303,7 +308,17 @@ describe('search-quality attribution single-pass equivalence', () => {
         expect(searchesThatReachedTheCorpus).toBe(row.totalSearches);
         return row;
       }),
-    ).toEqual(legacy.byQueryAndEntityType);
+    ).toEqual(
+      legacy.byQueryAndEntityType.filter(
+        (row: { uniqueSearchers: number }) =>
+          row.uniqueSearchers >= MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
+      ),
+    );
+    expect(current.byQueryAndEntityType.length).toBeGreaterThan(0);
+    expect(
+      current.byQueryAndEntityType.reduce((sum, row) => sum + row.totalSearches, 0) +
+        current.suppressedQueries.searches,
+    ).toBe(legacyOverall.totalSearches);
   });
 
   it('credits a research search with the profile open that followed it inside the window', async () => {
@@ -363,16 +378,20 @@ describe('search-quality attribution single-pass equivalence', () => {
     await AnalyticsEvent.insertMany([
       search('stud01', 'outage topic', { resultCount: 0, degraded: true }),
       search('stud02', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud04', 'outage topic', { resultCount: 0, degraded: true }),
       search('stud01', 'coverage gap', { resultCount: 0, degraded: false }),
       search('stud02', 'coverage gap', { resultCount: 0 }),
+      search('stud04', 'coverage gap', { resultCount: 0 }),
       search('stud03', 'neuroscience', { resultCount: 4, degraded: false }),
+      search('stud05', 'neuroscience', { resultCount: 4 }),
+      search('stud06', 'neuroscience', { resultCount: 4 }),
     ]);
 
     const quality = await getSearchQualityAnalytics();
-    expect(quality.totalSearches).toBe(5);
-    expect(quality.degradedSearches).toBe(2);
-    expect(quality.zeroResultSearches).toBe(2);
-    expect(quality.zeroResultRate).toBe(Number((2 / 3).toFixed(4)));
+    expect(quality.totalSearches).toBe(9);
+    expect(quality.degradedSearches).toBe(3);
+    expect(quality.zeroResultSearches).toBe(3);
+    expect(quality.zeroResultRate).toBe(0.5);
     expect(quality.topZeroResultQueries.map((query) => query.query)).toEqual(['coverage gap']);
 
     const actionNeeded = await getActionNeededAnalytics();
@@ -384,7 +403,7 @@ describe('search-quality attribution single-pass equivalence', () => {
     );
     expect(zeroResultsByQuery).toMatchObject({
       'outage topic': 0,
-      'coverage gap': 2,
+      'coverage gap': 3,
       neuroscience: 0,
     });
   });
