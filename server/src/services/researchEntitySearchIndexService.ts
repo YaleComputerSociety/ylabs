@@ -727,7 +727,7 @@ export async function readResearchEntitySearchEmbedderState(
       sanitizeLogValue(error),
     );
     embedderStateCache = 'unknown';
-    embedderStateCacheAt = now;
+    embedderStateCacheAt = Date.now();
     return 'unknown';
   }
 

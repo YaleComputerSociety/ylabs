@@ -8,7 +8,7 @@ const UNREACHABLE_ERROR_NAMES = new Set([
 export class MeilisearchKnownUnavailableError extends Error {
   readonly name = 'MeilisearchKnownUnavailableError';
 
-  constructor(readonly retryAfterMs: number) {
+  constructor() {
     super(`Meilisearch was unreachable within the last ${MEILISEARCH_UNAVAILABLE_COOLDOWN_MS}ms`);
   }
 }
@@ -26,16 +26,14 @@ export const isMeiliUnreachableError = (error: unknown): boolean => {
 
 let unavailableUntil = 0;
 
-export const meiliKnownUnavailableForMs = (now: number = Date.now()): number =>
-  Math.max(0, unavailableUntil - now);
+const isMeiliKnownUnavailable = (): boolean => Date.now() < unavailableUntil;
 
 export const resetMeiliAvailability = (): void => {
   unavailableUntil = 0;
 };
 
 export const withMeiliAvailability = async <T>(call: () => Promise<T>): Promise<T> => {
-  const remainingMs = meiliKnownUnavailableForMs();
-  if (remainingMs > 0) throw new MeilisearchKnownUnavailableError(remainingMs);
+  if (isMeiliKnownUnavailable()) throw new MeilisearchKnownUnavailableError();
   try {
     const value = await call();
     unavailableUntil = 0;
