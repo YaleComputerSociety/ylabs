@@ -3782,16 +3782,12 @@ interface ResolvedRelationshipMaterializationDeps {
 
 interface ProfileBackedFacultyResearchAreaMemberDeps {
   researcherModel?: Pick<typeof Researcher, 'findById'>;
-  roleAssignmentModel?: Pick<typeof RoleAssignment, 'findOne'>;
 }
 
-async function heldLeadPersonId(
-  roleAssignmentModel: Pick<typeof RoleAssignment, 'findOne'>,
-  researchEntityId: string,
-): Promise<string | undefined> {
+async function heldLeadPersonId(researchEntityId: string): Promise<string | undefined> {
   const targetId = toMaterializerObjectId(researchEntityId);
   if (!targetId) return undefined;
-  const held = (await roleAssignmentModel
+  const held = (await RoleAssignment
     .findOne({ 'target.kind': 'RESEARCH_ENTITY', 'target.id': targetId, role: 'PI' })
     .select('personId')
     .lean()) as { personId?: unknown } | null;
@@ -4019,10 +4015,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     return { synced: false, created: false, skipped: 'not-faculty-research-area' };
   }
 
-  const heldLead = await heldLeadPersonId(
-    deps.roleAssignmentModel || RoleAssignment,
-    researchEntityId,
-  );
+  const heldLead = await heldLeadPersonId(researchEntityId);
   if (heldLead !== undefined) {
     return {
       synced: false,
@@ -4053,7 +4046,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   const observedAt = new Date();
   const confidence = Number(identity.confidence) || 0.8;
 
-  await materializeCanonicalMembership(
+  const outcome = await materializeCanonicalMembership(
     researchEntityId,
     {
       legacyRole: 'pi',
@@ -4076,7 +4069,12 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     },
   );
 
-  return { synced: true, created: true, researchEntityId, userId: researcherId };
+  return {
+    synced: !outcome.startsWith('refused-'),
+    created: outcome === 'created',
+    researchEntityId,
+    userId: researcherId,
+  };
 }
 
 function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
