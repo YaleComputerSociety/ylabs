@@ -12,6 +12,7 @@ import {
   sourceKeyForFund,
 } from '../sources/studentGrantsDatabaseScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import type { FundSearchGrid, FundSearchGridRow } from '../utils/communityForceFundSearch';
 import { beginBenchmarkCapture, finishBenchmarkCapture } from '../snapshotBenchmarkMode';
 
@@ -56,6 +57,7 @@ function fundDetailHtml(
     award?: string;
     title?: string;
     brief?: string;
+    fullDescription?: string;
     applicationInformation?: string;
     eligibility?: string;
     yearOfStudy?: string[];
@@ -68,6 +70,7 @@ function fundDetailHtml(
     award = '',
     title = 'Fixture Summer Research Fellowship',
     brief = 'The fellowship funds independent summer research projects proposed by Yale College undergraduates working under a faculty mentor.',
+    fullDescription = '',
     applicationInformation = '',
     eligibility = 'Enrolled Yale College undergraduates in good standing.',
     yearOfStudy = ['Sophomore', 'Junior'],
@@ -88,6 +91,7 @@ function fundDetailHtml(
     <span id="${P}lblFundClosedOn">${closedOn}</span>
     <span id="${P}lblReasonClosed"></span>
     <span id="${P}lblBriefDescription">${section('Brief Description', brief)}</span>
+    <span id="${P}lblDescription">${section('Description', fullDescription)}</span>
     <span id="${P}lblApplicationInformation">${section('Application Information', applicationInformation)}</span>
     <span id="${P}lblSpecialEligibilityRequirements">${section('Special Eligibility Requirements', eligibility)}</span>
     <span id="${P}lblRestrictionstoUseofAward"></span>
@@ -504,6 +508,36 @@ describe('a contact direction in fund prose (#4177)', () => {
     expect(witnessOf(fundWith({ eligibility: '' }))?.assertsNoValueFor ?? []).not.toContain(
       'eligibility',
     );
+  });
+});
+
+describe('the fund Description section the classifier reads (#4232)', () => {
+  const BRIEF = 'To provide funding to offset the costs associated with a senior research project.';
+  const REQUIREMENT =
+    'Each application must include the approval of a faculty advisor who will supervise the research project.';
+
+  it('observes the whole Description section, so a requirement only it states is classified', () => {
+    const fund = parseFundDetailPage(
+      fundDetailHtml({
+        brief: BRIEF,
+        fullDescription: `The grants support senior projects. ${REQUIREMENT}`,
+      }),
+      { title: '', url: FUND_A_URL },
+    )!;
+
+    expect(fund.fullSourceDescription).toContain(REQUIREMENT);
+    expect(
+      classificationFromObservedFacts(fundToObservations(fund)).requiresMentorBeforeApply,
+    ).toBe(true);
+  });
+
+  it('observes no Description on a page that has none', () => {
+    const fund = parseFundDetailPage(fundDetailHtml({ brief: BRIEF }), {
+      title: '',
+      url: FUND_A_URL,
+    })!;
+
+    expect(fundToObservations(fund).map((obs) => obs.field)).not.toContain('fullSourceDescription');
   });
 });
 

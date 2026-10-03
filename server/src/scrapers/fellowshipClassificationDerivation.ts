@@ -18,6 +18,7 @@ import {
   type ProgramClassification,
   type ProgramClassificationInput,
 } from '../services/programClassifier';
+import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
 
 export const CLASSIFIER_OWNED_FELLOWSHIP_FIELDS = [
   'programCategory',
@@ -73,6 +74,7 @@ const CLASSIFIER_INPUT_TEXT_FIELDS = [
   'applicationInformation',
   'eligibility',
   'additionalInformation',
+  'fullSourceDescription',
   'sourceUrl',
   'sourcePageTitle',
 ] as const;
@@ -125,6 +127,46 @@ export function fellowshipClassificationInput(
   return input as ProgramClassificationInput;
 }
 
+const CLASSIFIER_PROSE_FIELDS = [
+  'summary',
+  'description',
+  'applicationInformation',
+  'eligibility',
+  'additionalInformation',
+] as const;
+
+const capMarker = /\s*…$/;
+
+/**
+ * The stored prose is capped, so a requirement stated past the cap is invisible in it
+ * (#4232). Where a stored value is the head of what a source observed, the requirement
+ * check also reads the whole observed text, sanitized the same way but never clamped.
+ * Only the requirement check reads it, so the rest of the classification keeps reading
+ * the copy a student sees.
+ */
+function withUncappedRequirementText(
+  input: ProgramClassificationInput,
+  observedValues: Record<string, unknown>,
+  lockedFields: readonly string[],
+): ProgramClassificationInput {
+  const uncapped: string[] = [];
+  for (const field of CLASSIFIER_PROSE_FIELDS) {
+    if (lockedFields.includes(field)) continue;
+    const observed = observedValues[field];
+    const standing = textOrUndefined(input[field]);
+    if (typeof observed !== 'string' || !standing) continue;
+    const whole = sanitizeStoredCatalogDescription(observed, Number.POSITIVE_INFINITY);
+    if (whole.length > standing.length && whole.startsWith(standing.replace(capMarker, ''))) {
+      uncapped.push(whole);
+    }
+  }
+  if (uncapped.length === 0) return input;
+  return {
+    ...input,
+    fullSourceDescription: [input.fullSourceDescription, ...uncapped].filter(Boolean).join(' '),
+  };
+}
+
 function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
@@ -148,7 +190,11 @@ export function planFellowshipClassification(input: {
   const lockedFields = input.lockedFields ?? [];
   const observedValues = input.observedValues ?? {};
   const classifierReading = classifyProgram(
-    fellowshipClassificationInput(input.stored, staged, unset),
+    withUncappedRequirementText(
+      fellowshipClassificationInput(input.stored, staged, unset),
+      observedValues,
+      lockedFields,
+    ),
   );
   const standingKind = lockedFields.includes('programKind')
     ? (input.stored?.programKind as ProgramKind)

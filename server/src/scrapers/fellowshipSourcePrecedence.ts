@@ -57,6 +57,7 @@ export const FUND_FACET_FIELDS: ReadonlySet<string> = new Set([
 export const FUND_AUTHORITY_FIELDS: ReadonlySet<string> = new Set([
   ...FUND_FACET_FIELDS,
   ...APPLICATION_WINDOW_FIELDS,
+  'fullSourceDescription',
 ]);
 
 // The fund lane derives `isAcceptingApplications` and `reviewRequired` on every page, dated

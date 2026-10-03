@@ -650,3 +650,15 @@ describe('publicProgramForReader serves a deadline from another copy of the fund
     expect(payload).not.toHaveProperty('upcomingDuplicateWindow');
   });
 });
+
+describe('the fund Description kept for the classifier (#4232)', () => {
+  it('is never served to a reader', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58530',
+      title: 'Example Senior Research Grant',
+      fullSourceDescription: 'The whole fund Description section as the page states it.',
+    }) as Record<string, unknown>;
+
+    expect(payload).not.toHaveProperty('fullSourceDescription');
+  });
+});

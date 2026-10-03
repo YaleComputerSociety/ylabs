@@ -195,6 +195,10 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    fullSourceDescription: {
+      type: String,
+      default: '',
+    },
     links: {
       type: [
         {
