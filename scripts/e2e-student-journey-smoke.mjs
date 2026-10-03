@@ -380,6 +380,9 @@ await step('withheld-tier rows never reach browse, search, or detail', async () 
   for (const entity of SMOKE_WITHHELD_ENTITIES) {
     await page.goto(`${baseUrl}/research/${entity.slug}`, { waitUntil: 'domcontentloaded' });
     await settleResearchPage();
+    await page.waitForFunction(() => document.title.startsWith('Page not found'), undefined, {
+      timeout: 20000,
+    });
     await assertNoWithheldEntityIsServed(`The detail route for ${entity.slug}`);
   }
 });
