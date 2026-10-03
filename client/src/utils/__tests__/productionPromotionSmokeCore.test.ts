@@ -5,7 +5,6 @@ import {
   createSmokeReport,
   discoverResearchSlug,
   evaluateResearchSearchResponse,
-  shouldRetryResearchSearch,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -224,21 +223,19 @@ describe('production promotion smoke research search health', () => {
     expect(discoverResearchSlug(healthyBody)).toBe('synthetic-lab-a');
   });
 
-  it('fails a 200 response that reports itself degraded, and retries it once', () => {
+  it('fails a 200 response that reports itself degraded even when it carries rows', () => {
     const evaluation = evaluateResearchSearchResponse(200, { ...healthyBody, degraded: true });
 
     expect(evaluation.status).toBe('fail');
     expect(evaluation.details).toStrictEqual({ statusCode: 200, degraded: true, rowCount: 2 });
-    expect(shouldRetryResearchSearch(evaluation)).toBe(true);
   });
 
-  it('fails a 200 response from an empty index without a retry, and discovers no slug', () => {
+  it('fails a 200 response from an empty index, and discovers no slug', () => {
     const emptyBody = { researchEntities: [], estimatedTotalHits: 0, degraded: false };
     const evaluation = evaluateResearchSearchResponse(200, emptyBody);
 
     expect(evaluation.status).toBe('fail');
     expect(evaluation.details.rowCount).toBe(0);
-    expect(shouldRetryResearchSearch(evaluation)).toBe(false);
     expect(discoverResearchSlug(emptyBody)).toBeUndefined();
   });
 

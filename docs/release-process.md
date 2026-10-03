@@ -283,7 +283,7 @@ So read the deployed commit from the Render dashboard, and treat the smoke as be
 
 The research search check fails rather than warns on anything short of a working index (#4147).
 The empty-query search must answer 200, must not say `degraded: true`, and must return at least one row, and the slug it yields must open the detail route.
-A degraded answer is retried once after a few seconds, so one transient companion-query failure does not fail a promotion, while an empty index fails at once.
+A degraded or empty answer fails at once, with no retry, because a promotion should not pass on a second look at an index that just answered badly.
 The check records only the status, the `degraded` flag and the row count, never payload content, because the Actions log is public.
 
 ## Monitoring production

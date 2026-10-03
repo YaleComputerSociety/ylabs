@@ -9,8 +9,6 @@ import {
   createSmokeReport,
   discoverResearchSlug,
   evaluateResearchSearchResponse,
-  RESEARCH_SEARCH_DEGRADED_RETRY_DELAY_MS,
-  shouldRetryResearchSearch,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -74,11 +72,7 @@ const searchResearch = async () => {
 };
 
 const discoverResearch = async () => {
-  let { json, evaluation } = await searchResearch();
-  if (shouldRetryResearchSearch(evaluation)) {
-    await new Promise((resolve) => setTimeout(resolve, RESEARCH_SEARCH_DEGRADED_RETRY_DELAY_MS));
-    ({ json, evaluation } = await searchResearch());
-  }
+  const { json, evaluation } = await searchResearch();
   addCheck('api.research.search.200', evaluation.status, evaluation.details);
   warnOnInternalLabels('api.research.search.internalVisibilityLabels', json);
 
