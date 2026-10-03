@@ -592,7 +592,9 @@ function createLiveScraplingRenderedFetcher(
 }
 
 function inferRenderedFetchOverrides(result: unknown): RenderedFetchMetricOverrides {
-  if (!result || typeof result !== 'object') return { selectorBreakage: true };
+  if (!result || typeof result !== 'object') {
+    return { failed: true, blocked: false, blockedReason: 'no-result', selectorBreakage: false };
+  }
   const page = result as Partial<RenderedFetchResult>;
   if (!page.blocked && !isSuccessfulHttpStatus(page.statusCode)) {
     return {

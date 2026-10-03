@@ -1901,6 +1901,37 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
+  it('records a home page that failed to load as a failed fetch, not an http selector breakage (#4429)', async () => {
+    const fetchPage = makeFetchPage({});
+    const callLLM = vi.fn();
+    const labFinder = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'offline-lab',
+        name: 'Offline Lab',
+        websiteUrl: 'https://offline.example.com/',
+      },
+    ];
+
+    const scraper = newTestScraper({
+      fetchPage,
+      renderedFetcher: null,
+      callLLM,
+      labFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(result.fetchMetrics?.summary.byMode.http).toMatchObject({
+      total: 1,
+      succeeded: 0,
+      selectorBreakages: 0,
+    });
+    expect(result.fetchMetrics?.summary.failed).toBe(1);
+  });
+
   it('records no rendered attempt when the renderer is disabled, so it adds no scrapling selector breakage (#3742)', async () => {
     const fetchPage = makeFetchPage({
       'https://hydrated.example.com/':

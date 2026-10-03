@@ -442,6 +442,32 @@ describe('fetchUsableRenderedPage', () => {
   });
 });
 
+describe('measureRenderedFetch fetch outcome (#4429)', () => {
+  it('records a fetch that returned no page as a failed fetch, not a selector breakage', async () => {
+    const measured = await measureRenderedFetch(
+      'https://lab.example.edu/',
+      'http',
+      async () => null,
+    );
+
+    expect(measured.metric).toMatchObject({
+      success: false,
+      blocked: false,
+      blockedReason: 'no-result',
+      selectorBreakage: false,
+    });
+  });
+
+  it('keeps a selector breakage for a page that loaded with an empty body', async () => {
+    const measured = await measureRenderedFetch('https://lab.example.edu/', 'http', async () => ({
+      url: 'https://lab.example.edu/',
+      html: '  ',
+    }));
+
+    expect(measured.metric).toMatchObject({ success: false, selectorBreakage: true });
+  });
+});
+
 describe('measureRenderedFallback (#3742)', () => {
   const request = { url: 'https://lab.example.edu/', waitSelector: 'body', timeoutMs: 10_000 };
 
