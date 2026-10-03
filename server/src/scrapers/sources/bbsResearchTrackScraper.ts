@@ -42,6 +42,12 @@ import {
   type CenterRosterStopReason,
 } from '../centerRosterRetirement';
 import { getCached, setCached } from '../snapshotCache';
+import { fetchFailureStatusCode } from '../utils/fetchFailure';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
@@ -58,6 +64,8 @@ const BBS_TRACK_PI_ROLE = 'track-pi';
 const BBS_HOST = 'medicine.yale.edu';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
+const PROFILE_REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
+export const BBS_REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
 /**
  * The school name as the CORPUS stores it, which is not how the school brands itself.
  *
@@ -568,7 +576,27 @@ export interface BbsResearchTrackScraperDeps {
   fetchPage?: FetchBbsPageFn;
   entityFinder?: BbsEntityFinderFn;
   trackEverListedPis?: TrackEverListedPisFn;
+  pause?: (ms: number) => Promise<void>;
 }
+
+type BbsProfileRead =
+  | { status: 'read'; links: BbsProfileLinks }
+  | { status: 'refused'; statusCode: number }
+  | { status: 'failed' };
+
+export interface BbsProfileFetchTally {
+  concurrency: number;
+  attempted: number;
+  read: number;
+  refused: number;
+  recovered: number;
+  lost: number;
+  failed: number;
+}
+
+const EMPTY_PROFILE_LINKS: BbsProfileLinks = { canonicalProfileUrl: '', labUrls: [] };
+
+const realPause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * A per-track read snapshot on the #3781 contract, so absence can later be governed by the same
@@ -760,6 +788,14 @@ async function defaultEntityFinder(): Promise<BbsCandidateEntity[]> {
   return docs.map(candidateFromDoc);
 }
 
+export function profileFetchSummary(tally: BbsProfileFetchTally): string {
+  return (
+    `profiles at concurrency ${tally.concurrency}: ${tally.read} of ${tally.attempted} read, ` +
+    `${tally.refused} refused with HTTP 403/429 (${tally.recovered} recovered on a retry, ${tally.lost} lost), ` +
+    `${tally.failed} failed otherwise`
+  );
+}
+
 export class BbsResearchTrackScraper implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'BBS research-track topical evidence for biomedical PIs';
@@ -767,11 +803,85 @@ export class BbsResearchTrackScraper implements IScraper {
   private readonly fetchPage: FetchBbsPageFn;
   private readonly entityFinder: BbsEntityFinderFn;
   private readonly trackEverListedPis: TrackEverListedPisFn;
+  private readonly pause: (ms: number) => Promise<void>;
 
   constructor(deps: BbsResearchTrackScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.entityFinder = deps.entityFinder || defaultEntityFinder;
     this.trackEverListedPis = deps.trackEverListedPis || defaultTrackEverListedPis;
+    this.pause = deps.pause || realPause;
+  }
+
+  private async readProfile(pi: BbsTrackPi, ctx: ScraperContext): Promise<BbsProfileRead> {
+    try {
+      const html = await this.fetchPage(pi.profileUrl, ctx.options.useCache);
+      return {
+        status: 'read',
+        links: html ? parseBbsProfileLinks(html, pi.profileUrl) : EMPTY_PROFILE_LINKS,
+      };
+    } catch (error) {
+      const statusCode = fetchFailureStatusCode(error);
+      if (statusCode !== undefined && PROFILE_REFUSAL_STATUS_CODES.has(statusCode)) {
+        return { status: 'refused', statusCode };
+      }
+      ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
+      return { status: 'failed' };
+    }
+  }
+
+  private async readProfiles(
+    targets: readonly BbsTrackPi[],
+    ctx: ScraperContext,
+  ): Promise<{ linksBySlug: Map<string, BbsProfileLinks>; tally: BbsProfileFetchTally }> {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    const tally: BbsProfileFetchTally = {
+      concurrency,
+      attempted: targets.length,
+      read: 0,
+      refused: 0,
+      recovered: 0,
+      lost: 0,
+      failed: 0,
+    };
+    const linksBySlug = new Map<string, BbsProfileLinks>();
+    const refused: BbsTrackPi[] = [];
+    ctx.log(`Reading ${targets.length} PI profile(s) at source concurrency ${concurrency}`);
+    await mapWithConcurrency(targets, concurrency, async (pi) => {
+      const read = await this.readProfile(pi, ctx);
+      if (read.status === 'read') {
+        tally.read += 1;
+        linksBySlug.set(pi.profileSlug, read.links);
+      } else if (read.status === 'refused') {
+        tally.refused += 1;
+        refused.push(pi);
+        ctx.log(`[${pi.profileSlug}] profile refused with HTTP ${read.statusCode}`);
+      } else {
+        tally.failed += 1;
+      }
+    });
+    if (refused.length > 0) {
+      ctx.log(
+        `Retrying ${refused.length} refused profile(s) once after a ${BBS_REFUSED_PROFILE_RETRY_PAUSE_MS} ms pause`,
+      );
+      await this.pause(BBS_REFUSED_PROFILE_RETRY_PAUSE_MS);
+      await mapWithConcurrency(refused, concurrency, async (pi) => {
+        const read = await this.readProfile(pi, ctx);
+        if (read.status === 'read') {
+          tally.recovered += 1;
+          tally.read += 1;
+          linksBySlug.set(pi.profileSlug, read.links);
+          return;
+        }
+        tally.lost += 1;
+        if (read.status === 'refused') {
+          ctx.log(`[${pi.profileSlug}] profile refused again with HTTP ${read.statusCode}`);
+        }
+      });
+    }
+    return { linksBySlug, tally };
   }
 
   private async collectTrackPis(ctx: ScraperContext): Promise<{
@@ -861,19 +971,12 @@ export class BbsResearchTrackScraper implements IScraper {
     let noExistingRow = 0;
     let ambiguous = 0;
     let citedByAnotherPerson = 0;
-    let processed = 0;
 
-    for (const pi of pis.values()) {
-      if (processed >= limit) break;
-      processed += 1;
+    const targets = [...pis.values()].slice(0, Number.isFinite(limit) ? limit : undefined);
+    const { linksBySlug, tally } = await this.readProfiles(targets, ctx);
 
-      let links: BbsProfileLinks = { canonicalProfileUrl: '', labUrls: [] };
-      try {
-        const html = await this.fetchPage(pi.profileUrl, ctx.options.useCache);
-        if (html) links = parseBbsProfileLinks(html, pi.profileUrl);
-      } catch (error) {
-        ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
-      }
+    for (const pi of targets) {
+      const links = linksBySlug.get(pi.profileSlug) ?? EMPTY_PROFILE_LINKS;
 
       const resolution = resolveBbsResearchHome(
         links,
@@ -928,6 +1031,13 @@ export class BbsResearchTrackScraper implements IScraper {
       observationCount += rosterHealth.length;
     }
 
+    const partialFailures = [...emptyTrackFailures];
+    if (tally.lost > 0) {
+      partialFailures.push(
+        `${tally.lost} BBS profile page(s) stayed refused or unreadable after a retry, so those PIs resolved on the name path alone (#3835)`,
+      );
+    }
+
     return {
       observationCount,
       entitiesObserved: grafted,
@@ -937,12 +1047,12 @@ export class BbsResearchTrackScraper implements IScraper {
       // streak, so deferring to it would cost two runs of detection on the one unit
       // class known to have broken (#3833).
       metrics: { unitYields },
-      ...(emptyTrackFailures.length > 0 ? { partialFailures: emptyTrackFailures } : {}),
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
       notes:
         `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
         `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
         `${citedByAnotherPerson} cite a lab URL only on a row naming someone else, ` +
-        `${ambiguous} ambiguous row.`,
+        `${ambiguous} ambiguous row; ${profileFetchSummary(tally)}.`,
     };
   }
 }
