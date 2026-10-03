@@ -63,7 +63,7 @@ Scrapers run as short-lived CLI or cron jobs outside the web service process. Do
 
 ### Playwright environment fix (no root required)
 
-This shim only changes anything on a Linux host without root: there it downloads x86_64 Debian libraries.
+This shim only changes anything on Linux: there it downloads x86_64 Debian libraries.
 On macOS and every other platform it runs the wrapped command unchanged, so `yarn e2e:smoke` works there too.
 If `npx playwright` crashes with missing system libs (for example `libnspr4.so`), run Playwright through the local shim:
 

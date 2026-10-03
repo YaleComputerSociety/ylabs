@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { prepareWorktreeEnv, upsertEnvValues } from './prepare-worktree-env.mjs';
+import { describePreparedEnv, prepareWorktreeEnv, upsertEnvValues } from './prepare-worktree-env.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SYNTHETIC_SECRET = 'synthetic-secret-value-for-worktree-env-test';
@@ -45,7 +45,7 @@ test('copies the primary env files privately and points them at the reserved por
     serverPort: 4011,
   });
 
-  assert.deepEqual([result.server.source, result.client.source], ['primary', 'primary']);
+  assert.deepEqual([result.server.ready, result.client.ready], [true, true]);
   const serverEnv = fs.readFileSync(path.join(worktreeRoot, 'server', '.env'), 'utf8');
   assert.match(serverEnv, new RegExp(`MONGODBURL=${SYNTHETIC_SECRET}`));
   assert.match(serverEnv, /^PORT=4011$/m);
@@ -59,7 +59,7 @@ test('copies the primary env files privately and points them at the reserved por
   assert.match(fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'), /^PORT=4000$/m);
 });
 
-test('reports a missing primary server env instead of inventing one', () => {
+test('reports missing primary env files instead of inventing them', () => {
   const primaryRoot = makeTempDir('ylabs-primary-');
   const worktreeRoot = makeTempDir('ylabs-worktree-');
   writeFile(
@@ -74,13 +74,12 @@ test('reports a missing primary server env instead of inventing one', () => {
     serverPort: 4012,
   });
 
-  assert.equal(result.server.ready, false);
+  assert.deepEqual([result.server.ready, result.client.ready], [false, false]);
   assert.equal(fs.existsSync(path.join(worktreeRoot, 'server', '.env')), false);
-  assert.equal(result.client.source, 'example');
-  assert.match(
-    fs.readFileSync(path.join(worktreeRoot, 'client', '.env'), 'utf8'),
-    /^VITE_APP_SERVER=http:\/\/localhost:4012$/m,
-  );
+  assert.equal(fs.existsSync(path.join(worktreeRoot, 'client', '.env')), false);
+  const [serverLine, clientLine] = describePreparedEnv(result, primaryRoot);
+  assert.match(serverLine, /set PORT and SERVER_BASE_URL to the ports above/);
+  assert.match(clientLine, /set VITE_APP_SERVER to the ports above/);
 });
 
 const git = (cwd, ...args) => {
@@ -95,7 +94,6 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
   for (const file of [
     'scripts/new-agent-worktree.sh',
     'scripts/prepare-worktree-env.mjs',
-    'client/.env.example',
   ]) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
@@ -118,6 +116,7 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
     path.join(primaryRoot, 'server', '.env'),
     `MONGODBURL=${SYNTHETIC_SECRET}\nPORT=4000\n`,
   );
+  writeFile(path.join(primaryRoot, 'client', '.env'), 'VITE_APP_SERVER=http://localhost:4000\n');
 
   const result = spawnSync('bash', ['scripts/new-agent-worktree.sh', 'feat/synthetic-branch'], {
     cwd: primaryRoot,
@@ -141,6 +140,7 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
   assert.ok(!result.stderr.includes(SYNTHETIC_SECRET));
   const serverEnvFile = path.join(worktreeRoot, 'server', '.env');
   assert.equal(fileMode(serverEnvFile), 0o600);
+  assert.equal(fileMode(path.join(worktreeRoot, 'client', '.env')), 0o600);
   assert.match(fs.readFileSync(serverEnvFile, 'utf8'), new RegExp(`^PORT=${serverPort}$`, 'm'));
   assert.match(
     fs.readFileSync(path.join(worktreeRoot, 'client', '.env'), 'utf8'),

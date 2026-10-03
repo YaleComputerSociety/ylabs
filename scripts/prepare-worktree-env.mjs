@@ -34,29 +34,11 @@ function writePrivateFile(file, contents) {
   fs.chmodSync(file, PRIVATE_FILE_MODE);
 }
 
-function readIfPresent(file) {
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
-}
-
-function sameFile(a, b) {
-  return path.resolve(a) === path.resolve(b);
-}
-
-function prepareEnvFile({ label, primaryFile, worktreeFile, exampleFile, values }) {
-  const existing = readIfPresent(worktreeFile);
-  if (existing !== undefined) {
-    writePrivateFile(worktreeFile, upsertEnvValues(existing, values));
-    return { label, ready: true, source: 'existing' };
-  }
-  if (!sameFile(primaryFile, worktreeFile) && fs.existsSync(primaryFile)) {
-    writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), values));
-    return { label, ready: true, source: 'primary' };
-  }
-  if (exampleFile && fs.existsSync(exampleFile)) {
-    writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(exampleFile, 'utf8'), values));
-    return { label, ready: true, source: 'example' };
-  }
-  return { label, ready: false, source: 'missing' };
+function prepareEnvFile({ label, primaryFile, worktreeFile, values }) {
+  const keys = Object.keys(values);
+  if (!fs.existsSync(primaryFile)) return { label, keys, ready: false };
+  writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), values));
+  return { label, keys, ready: true };
 }
 
 export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
@@ -71,22 +53,16 @@ export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
     label: 'client/.env',
     primaryFile: path.join(primaryRoot, 'client', '.env'),
     worktreeFile: path.join(worktreeRoot, 'client', '.env'),
-    exampleFile: path.join(worktreeRoot, 'client', '.env.example'),
     values: { VITE_APP_SERVER: serverOrigin },
   });
   return { server, client };
 }
 
 export function describePreparedEnv({ server, client }, primaryRoot) {
-  const sourceText = {
-    existing: 'kept the existing file',
-    primary: `copied from the primary checkout (${primaryRoot})`,
-    example: 'created from .env.example',
-  };
   return [server, client].map((result) =>
     result.ready
-      ? `  ${result.label}: ${sourceText[result.source]}, mode 0600, ports written`
-      : `  ${result.label}: MISSING. The primary checkout has no ${result.label}, so nothing was copied. Create it from ${result.label}.example (see DEVELOPER_GUIDE.md), then set PORT and SERVER_BASE_URL to the ports below.`,
+      ? `  ${result.label}: copied from the primary checkout (${primaryRoot}), mode 0600, ports written`
+      : `  ${result.label}: MISSING. The primary checkout has no ${result.label}, so nothing was copied. Create it from ${result.label}.example (see DEVELOPER_GUIDE.md), then set ${result.keys.join(' and ')} to the ports above.`,
   );
 }
 
