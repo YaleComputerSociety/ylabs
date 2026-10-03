@@ -36,7 +36,18 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { Observation } from '../../models/observation';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  centerRosterReadAdmissibility,
+  snapshotMembers,
+  type CenterRosterHealthSnapshot,
+} from '../centerRosterRetirement';
+import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { normalizeName, splitName } from '../utils/scraperHelpers';
 import {
@@ -45,7 +56,8 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 
-const SOURCE_KEY = 'center-director-llm';
+export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
+const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
 const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
@@ -76,11 +88,19 @@ export interface CenterDirectorExtraction {
   director: CenterDirector | null;
 }
 
+export type CenterDirectorRole = 'director' | 'co-director';
+
+export interface NamedCenterDirector {
+  name: string;
+  role: CenterDirectorRole;
+}
+
 export interface CandidateCenter {
   _id?: string;
   slug?: string;
   name: string;
   websiteUrl?: string;
+  suppliedDirectors?: NamedCenterDirector[];
 }
 
 export type FetchPageFn = (url: string) => Promise<{ url: string; html: string } | null>;
@@ -93,13 +113,18 @@ export type CallCenterDirectorLLMFn = (input: {
 }) => Promise<CenterDirectorExtraction>;
 export type CenterFinderFn = (options?: {
   only?: string[];
-  missingLeadOnly?: boolean;
+  skipCentersLedByOtherSources?: boolean;
 }) => Promise<CandidateCenter[]>;
+export type PriorDirectorReadFinderFn = (
+  centerEntityKey: string,
+  currentScrapeRunId: string,
+) => Promise<NamedCenterDirector | null>;
 
 export interface CenterDirectorLLMExtractorDeps {
   fetchPage?: FetchPageFn;
   callLLM?: CallCenterDirectorLLMFn;
   centerFinder?: CenterFinderFn;
+  priorReadFinder?: PriorDirectorReadFinderFn;
   apiKey?: string;
   model?: string;
 }
@@ -123,7 +148,7 @@ function sameHost(a: string, b: string): boolean {
 }
 
 /** Map an LLM-provided role onto director vs co-director. */
-function normalizeDirectorRole(role: unknown, title: unknown): 'director' | 'co-director' {
+function normalizeDirectorRole(role: unknown, title: unknown): CenterDirectorRole {
   const value = `${textValue(role)} ${textValue(title)}`.toLowerCase();
   if (/\b(co[-\s]?director|associate director|deputy director|interim director)\b/.test(value)) {
     return 'co-director';
@@ -211,6 +236,91 @@ export function directorExtractionToObservations(
   return obs;
 }
 
+export function namedCenterDirector(director: CenterDirector): NamedCenterDirector {
+  return {
+    name: normalizeName(textValue(director.name)),
+    role: normalizeDirectorRole(director.role, director.title),
+  };
+}
+
+export function sameNamedDirector(left: NamedCenterDirector, right: NamedCenterDirector): boolean {
+  return left.role === right.role && observedPersonNameAgreesWith(left.name, right.name);
+}
+
+export function directorReadSnapshotObservation(input: {
+  centerEntityKey: string;
+  sourceUrl: string;
+  director: NamedCenterDirector;
+  readAt?: Date;
+}): ObservationInput {
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey: input.centerEntityKey,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: input.centerEntityKey,
+      entityKey: input.centerEntityKey,
+      members: [{ memberKey: input.director.name, role: input.director.role }],
+      pagesRead: 1,
+      readMode: 'html',
+      stopReason: 'not-paginated',
+      cacheAllowed: false,
+      readAt: input.readAt ?? new Date(),
+    }),
+    sourceUrl: input.sourceUrl,
+  };
+}
+
+export function directorNamedBySnapshot(
+  snapshot: CenterRosterHealthSnapshot,
+): NamedCenterDirector | null {
+  if (centerRosterReadAdmissibility(snapshot) !== 'read-listed-members') return null;
+  const [member] = snapshotMembers(snapshot);
+  if (!member) return null;
+  return {
+    name: member.memberKey,
+    role: member.role === 'co-director' ? 'co-director' : 'director',
+  };
+}
+
+export type DirectorReadDecision = 'first-read' | 'confirmed' | 'changed' | 'change-unconfirmed';
+
+/**
+ * A read that names someone other than the director this lane already supplied is held
+ * until a second read agrees, because one model call is not a repeatable read: measured on
+ * Development, two identical passes over the 46 supplied centers named a different director for 3 of them.
+ */
+export function decideDirectorRead(
+  named: NamedCenterDirector,
+  suppliedDirectors: readonly NamedCenterDirector[],
+  priorRead: NamedCenterDirector | null,
+): DirectorReadDecision {
+  if (suppliedDirectors.length === 0) return 'first-read';
+  if (suppliedDirectors.some((supplied) => sameNamedDirector(supplied, named))) return 'confirmed';
+  return priorRead && sameNamedDirector(priorRead, named) ? 'changed' : 'change-unconfirmed';
+}
+
+async function defaultPriorReadFinder(
+  centerEntityKey: string,
+  currentScrapeRunId: string,
+): Promise<NamedCenterDirector | null> {
+  const excludeRun = mongoose.Types.ObjectId.isValid(currentScrapeRunId)
+    ? { scrapeRunId: { $ne: new mongoose.Types.ObjectId(currentScrapeRunId) } }
+    : {};
+  const row = (await Observation.findOne({
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceName: SOURCE_KEY,
+    entityKey: centerEntityKey,
+    'rollback.rolledBackAt': { $exists: false },
+    ...excludeRun,
+  })
+    .sort({ observedAt: -1 })
+    .select('value')
+    .lean()) as { value?: unknown } | null;
+  return row ? directorNamedBySnapshot((row.value ?? {}) as CenterRosterHealthSnapshot) : null;
+}
+
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   // SSRF guard: url is a DB-sourced center websiteUrl (or a link discovered on
   // it) — block private/metadata hosts and validate redirect hops at connect time.
@@ -285,7 +395,7 @@ async function defaultCallLLM(input: {
 }
 
 async function defaultCenterFinder(
-  options: { only?: string[]; missingLeadOnly?: boolean } = {},
+  options: { only?: string[]; skipCentersLedByOtherSources?: boolean } = {},
 ): Promise<CandidateCenter[]> {
   const only = Array.from(
     new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
@@ -315,25 +425,51 @@ async function defaultCenterFinder(
     { _id: 1, slug: 1, name: 1, websiteUrl: 1 },
   ).lean();
 
-  let candidates = (docs as any[]).map((doc) => ({
+  const candidates: CandidateCenter[] = (docs as any[]).map((doc) => ({
     _id: serializedDocumentId(doc._id),
     slug: doc.slug,
     name: doc.name,
     websiteUrl: doc.websiteUrl,
   }));
+  if (!options.skipCentersLedByOtherSources) return candidates;
 
-  if (options.missingLeadOnly) {
-    const withLead = await RoleAssignment.distinct('target.id', {
-      'target.kind': 'RESEARCH_ENTITY',
-      'target.id': { $in: (docs as any[]).map((doc) => doc._id) },
-      role: { $in: LEAD_ROLE_CANONICAL_VALUES },
-      state: { $ne: 'HISTORICAL' },
-      archived: { $ne: true },
-    });
-    const withLeadSet = new Set(withLead.map((id: any) => String(id)));
-    candidates = candidates.filter((c) => !c._id || !withLeadSet.has(c._id));
+  const leadEdges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: (docs as any[]).map((doc) => doc._id) },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target.id personId role rosterProvenance.sourceName')
+    .lean()) as any[];
+  const suppliedEdges = leadEdges.filter(
+    (edge) => edge.rosterProvenance?.sourceName === SOURCE_KEY,
+  );
+  const displayNames = new Map(
+    (
+      (await Researcher.find({ _id: { $in: suppliedEdges.map((edge) => edge.personId) } })
+        .select('displayName')
+        .lean()) as any[]
+    ).map((researcher) => [String(researcher._id), textValue(researcher.displayName)]),
+  );
+  const ledCenters = new Set(leadEdges.map((edge) => String(edge.target.id)));
+  const suppliedByCenter = new Map<string, NamedCenterDirector[]>();
+  for (const edge of suppliedEdges) {
+    const name = displayNames.get(String(edge.personId)) || '';
+    const supplied = suppliedByCenter.get(String(edge.target.id)) ?? [];
+    supplied.push({ name, role: edge.role === 'CO_DIRECTOR' ? 'co-director' : 'director' });
+    suppliedByCenter.set(String(edge.target.id), supplied);
   }
-  return candidates;
+  return candidates
+    .filter(
+      (candidate) =>
+        !candidate._id || !ledCenters.has(candidate._id) || suppliedByCenter.has(candidate._id),
+    )
+    .map((candidate) =>
+      candidate._id && suppliedByCenter.has(candidate._id)
+        ? { ...candidate, suppliedDirectors: suppliedByCenter.get(candidate._id) }
+        : candidate,
+    );
 }
 
 export class CenterDirectorLLMExtractor implements IScraper {
@@ -343,6 +479,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
   private readonly fetchPage: FetchPageFn;
   private readonly callLLM: CallCenterDirectorLLMFn;
   private readonly centerFinder: CenterFinderFn;
+  private readonly priorReadFinder: PriorDirectorReadFinderFn;
   private readonly apiKey?: string;
   private readonly model: string;
 
@@ -350,6 +487,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.callLLM = deps.callLLM || defaultCallLLM;
     this.centerFinder = deps.centerFinder || defaultCenterFinder;
+    this.priorReadFinder = deps.priorReadFinder || defaultPriorReadFinder;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
   }
@@ -433,37 +571,73 @@ export class CenterDirectorLLMExtractor implements IScraper {
       ctx.options.exhaustive && ctx.options.limit === undefined
         ? Number.POSITIVE_INFINITY
         : Math.max(1, Number(ctx.options.limit) || 100);
-    const candidates = (await this.centerFinder({ only, missingLeadOnly: true }))
+    const candidates = (await this.centerFinder({ only, skipCentersLedByOtherSources: true }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);
 
     let observationCount = 0;
     let entitiesObserved = 0;
+    const decisions: Record<DirectorReadDecision | 'unreadable', number> = {
+      'first-read': 0,
+      confirmed: 0,
+      changed: 0,
+      'change-unconfirmed': 0,
+      unreadable: 0,
+    };
 
     const concurrency = resolveSourceConcurrency(
       ctx.options.sourceConcurrency,
       DEFAULT_SOURCE_CONCURRENCY,
     );
     await mapWithConcurrency(candidates, concurrency, async (center) => {
+      let result: Awaited<ReturnType<CenterDirectorLLMExtractor['extractDirectorForCenter']>>;
       try {
-        const result = await this.extractDirectorForCenter(center, ctx.log);
-        if (!result) {
-          ctx.log(`[${center.slug}] no director named on leadership pages.`);
-          return;
-        }
-        await ctx.emit(result.observations);
-        observationCount += result.observations.length;
-        entitiesObserved += 1;
-        ctx.log(`[${center.slug}] director extracted.`);
+        result = await this.extractDirectorForCenter(center, ctx.log);
       } catch (error) {
         ctx.log(`[${center.slug}] director extraction failed: ${sanitizeLogValue(error)}`);
+        decisions.unreadable += 1;
+        return;
       }
+      if (!result) {
+        ctx.log(`[${center.slug}] no director named on leadership pages.`);
+        decisions.unreadable += 1;
+        return;
+      }
+      const named = namedCenterDirector(result.director);
+      const decision = decideDirectorRead(
+        named,
+        center.suppliedDirectors ?? [],
+        center.suppliedDirectors?.length
+          ? await this.priorReadFinder(center.slug as string, ctx.scrapeRunId)
+          : null,
+      );
+      decisions[decision] += 1;
+      const snapshot = directorReadSnapshotObservation({
+        centerEntityKey: center.slug as string,
+        sourceUrl: result.sourceUrl,
+        director: named,
+      });
+      const emitted =
+        decision === 'change-unconfirmed' ? [snapshot] : [...result.observations, snapshot];
+      await ctx.emit(emitted);
+      observationCount += emitted.length;
+      if (decision !== 'change-unconfirmed') entitiesObserved += 1;
+      ctx.log(
+        decision === 'change-unconfirmed'
+          ? `[${center.slug}] a different director was named; held until a second read agrees.`
+          : `[${center.slug}] director extracted (${decision}).`,
+      );
     });
 
     return {
       observationCount,
       entitiesObserved,
-      notes: `Extracted directors for ${entitiesObserved} organizational homes.`,
+      notes:
+        `Extracted directors for ${entitiesObserved} organizational homes: ` +
+        `${decisions['first-read']} first read(s), ${decisions.confirmed} confirmed, ` +
+        `${decisions.changed} changed after two agreeing reads, ` +
+        `${decisions['change-unconfirmed']} change(s) held for a second read, ` +
+        `${decisions.unreadable} unreadable.`,
     };
   }
 }

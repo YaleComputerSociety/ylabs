@@ -1311,6 +1311,17 @@ The lane honours `manuallyLockedFields`: a row that locks `studentVisibilitySupp
 The marker is appended to any existing suppression reason rather than replacing it, because that field is a comma-joined list read by substring elsewhere.
 The result names why a pass did nothing (`disabled`, `dry-run`, `invalid-run-id`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
 
+### Center director re-reads: refreshing the lead `center-director-llm` supplied
+
+`center-director-llm` used to read only homes with no current lead, so the lead edge its first read wrote made it stop reading that home, and the edge was never refreshed or re-judged (#4023).
+It now reads every home with no current lead and every home with a current lead edge whose `rosterProvenance.sourceName` is this lane; a home led only by another source, or by an edge with no provenance, is still skipped.
+Each read that names a director emits a `centerRosterHealth` snapshot naming that one person and role.
+A read that names the supplied director re-emits the `inferredDirector*` observations, which refreshes the edge's `rosterProvenance.observedAt`.
+A read that names someone else is held: it emits only the snapshot, and the new director's observations are emitted only when the lane's previous snapshot for the home named the same person and role.
+`centerDirectorRetirement.ts` then ends, as `HISTORICAL`, this lane's lead edge once two admitted reads after it was last observed name a different director, using the same `absentReadRunIds` rule as the roster retirement.
+A read that names nobody emits no snapshot, so an unreadable leadership page never ends an edge.
+The hold exists because two identical passes over the 46 supplied homes on Development named a different director for 3 of them.
+
 ### Center roster retirement: members a complete read no longer lists
 
 `centers-institutes-index` keys every roster member as its own observation (`<center>:<member>`), so a member the roster stops listing is never re-asserted, never superseded, and keeps its role edge forever, including a stale lead edge (#3781).

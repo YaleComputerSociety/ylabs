@@ -23,7 +23,7 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
   return { ctx, emitted };
 }
 
-describe('CenterDirectorLLMExtractor default finder missingLeadOnly on canonical RoleAssignment', () => {
+describe('CenterDirectorLLMExtractor default finder skips centers another source leads', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
