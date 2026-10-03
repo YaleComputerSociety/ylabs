@@ -19,10 +19,13 @@ import {
   resolveSweepPreflightConfig,
   type StorageHeadroomVerdict,
 } from './scraperSweepPreflight';
+import { WeeklySweepRun } from '../models/weeklySweepRun';
 import {
   WEEKLY_SWEEP_MODES,
+  buildCorpusSnapshotArgs,
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
+  buildWeeklySweepRunRecord,
   findSweepSummaryPath,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
@@ -30,7 +33,10 @@ import {
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
   type WeeklySweepArgs,
+  weeklySweepStorageReading,
+  type WeeklySweepCorpusSnapshotRecord,
   type WeeklySweepModeOutcome,
+  type WeeklySweepPreflightRecord,
 } from './weeklyDevelopmentSweepCore';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -59,24 +65,28 @@ function runYarn(args: string[], env: NodeJS.ProcessEnv): number | null {
   return result.status;
 }
 
-async function preflight(args: WeeklySweepArgs, jobDir: string): Promise<boolean> {
+async function preflight(
+  args: WeeklySweepArgs,
+  jobDir: string,
+): Promise<WeeklySweepPreflightRecord> {
   await connectScriptMongo(process.env.MONGODBURL!);
   try {
-    const held = await heldSweepSourceLocks();
-    if (held.length > 0) {
-      console.error(
-        `[weekly-sweep] refusing: another writer holds a live scrape job lock on ${held.join(', ')}`,
-      );
-      return false;
+    const heldLockSources = await heldSweepSourceLocks();
+    if (heldLockSources.length > 0) {
+      const refusal = `another writer holds a live scrape job lock on ${heldLockSources.join(', ')}`;
+      console.error(`[weekly-sweep] refusing: ${refusal}`);
+      return { ok: false, heldLockSources, snapshotCacheDropped: false, refusal };
     }
     console.log('[weekly-sweep] no live scrape job lock on any sweep source');
 
     let headroom = await storageHeadroom();
+    const storageBefore = weeklySweepStorageReading(headroom);
     console.log(`[weekly-sweep] storage: ${headroom.message}`);
-    if (headroom.ok) return true;
+    if (headroom.ok)
+      return { ok: true, heldLockSources, storageBefore, snapshotCacheDropped: false };
     if (args.dryRun) {
       console.log('[weekly-sweep] a real run would drop the scrape_snapshots fetch cache here');
-      return true;
+      return { ok: true, heldLockSources, storageBefore, snapshotCacheDropped: false };
     }
     const childEnv = weeklySweepChildEnvironment(process.env, jobDir);
     declareMaterializationReadScopeForChildren(childEnv);
@@ -85,12 +95,21 @@ async function preflight(args: WeeklySweepArgs, jobDir: string): Promise<boolean
       childEnv,
     );
     if (dropStatus !== 0) {
-      console.error('[weekly-sweep] refusing: the snapshot cache drop failed');
-      return false;
+      const refusal = 'the snapshot cache drop failed';
+      console.error(`[weekly-sweep] refusing: ${refusal}`);
+      return { ok: false, heldLockSources, storageBefore, snapshotCacheDropped: false, refusal };
     }
     headroom = await storageHeadroom();
+    const storageAfter = weeklySweepStorageReading(headroom);
     console.log(`[weekly-sweep] storage after dropping the fetch cache: ${headroom.message}`);
-    return headroom.ok;
+    return {
+      ok: headroom.ok,
+      heldLockSources,
+      storageBefore,
+      storageAfter,
+      snapshotCacheDropped: true,
+      ...(headroom.ok ? {} : { refusal: 'storage is still short after dropping the fetch cache' }),
+    };
   } finally {
     await mongoose.disconnect();
   }
@@ -106,16 +125,51 @@ function runSweeps(jobDir: string): WeeklySweepModeOutcome[] {
       weeklySweepChildEnvironment(process.env, modeDir),
     );
     const summaryPath = findSweepSummaryPath(modeDir, mode);
+    let summary: unknown;
     if (summaryPath) {
-      console.log(
-        formatWeeklySweepSummaryLine(mode, JSON.parse(fs.readFileSync(summaryPath, 'utf8'))),
-      );
+      summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+      console.log(formatWeeklySweepSummaryLine(mode, summary));
     } else {
       console.error(`[weekly-sweep] ${mode} wrote no summary.json`);
     }
     console.log(`[weekly-sweep] ${mode} exited ${exitCode}`);
-    return { mode, exitCode, summaryPath };
+    return { mode, exitCode, summaryFound: Boolean(summaryPath), summary };
   });
+}
+
+function takeCorpusSnapshot(): WeeklySweepCorpusSnapshotRecord {
+  console.log('[weekly-sweep] taking a corpus quality snapshot');
+  const exitCode = runYarn(buildCorpusSnapshotArgs(), {
+    ...process.env,
+    SCRAPER_ENV: 'development',
+  });
+  if (exitCode !== 0) console.error(`[weekly-sweep] corpus snapshot exited ${exitCode}`);
+  return { status: exitCode === 0 ? 'written' : 'failed', exitCode };
+}
+
+async function persistWeeklySweepRun(
+  input: Omit<Parameters<typeof buildWeeklySweepRunRecord>[0], 'databaseName' | 'finishedAt'>,
+): Promise<boolean> {
+  try {
+    await connectScriptMongo(process.env.MONGODBURL!);
+    try {
+      const record = buildWeeklySweepRunRecord({
+        ...input,
+        finishedAt: new Date(),
+        databaseName: mongoose.connection.db?.databaseName ?? '',
+      });
+      const created = await WeeklySweepRun.create(record);
+      console.log(
+        `[weekly-sweep] recorded run ${String(created._id)} as ${record.status} in weekly_sweep_runs`,
+      );
+      return true;
+    } finally {
+      await mongoose.disconnect();
+    }
+  } catch (error) {
+    console.error(`[weekly-sweep] could not record the run: ${sanitizeLogValue(error)}`);
+    return false;
+  }
 }
 
 export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number> {
@@ -125,18 +179,51 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     for (const problem of problems) console.error(`[weekly-sweep] ${problem}`);
     return 1;
   }
-  console.log(`[weekly-sweep] code ${readSweepHeadSha(REPO_ROOT) ?? 'unknown'}`);
+  const codeSha = readSweepHeadSha(REPO_ROOT);
+  console.log(`[weekly-sweep] code ${codeSha ?? 'unknown'}`);
   const jobDir = fs.mkdtempSync(
     path.join(fs.realpathSync(process.env.TMPDIR || '/tmp'), 'ylabs-weekly-sweep-'),
   );
-  if (!(await preflight(args, jobDir))) return 1;
   if (args.dryRun) {
+    if (!(await preflight(args, jobDir)).ok) return 1;
     for (const mode of WEEKLY_SWEEP_MODES) {
       console.log(`[weekly-sweep] would run: yarn ${buildWeeklySweepArgs(mode).join(' ')}`);
     }
     return 0;
   }
-  return weeklySweepExitCode(runSweeps(jobDir));
+
+  const startedAt = new Date();
+  let preflightRecord: WeeklySweepPreflightRecord = {
+    ok: false,
+    heldLockSources: [],
+    snapshotCacheDropped: false,
+  };
+  let outcomes: WeeklySweepModeOutcome[] = [];
+  let corpusSnapshot: WeeklySweepCorpusSnapshotRecord = { status: 'skipped' };
+  let exitCode = 1;
+  let error: string | undefined;
+  try {
+    preflightRecord = await preflight(args, jobDir);
+    if (preflightRecord.ok) {
+      outcomes = runSweeps(jobDir);
+      exitCode = weeklySweepExitCode(outcomes);
+      if (exitCode === 0) corpusSnapshot = takeCorpusSnapshot();
+    }
+  } catch (caught) {
+    error = sanitizeLogValue(caught);
+    exitCode = 1;
+    console.error(`[weekly-sweep] failed: ${error}`);
+  }
+  const recorded = await persistWeeklySweepRun({
+    startedAt,
+    codeSha,
+    exitCode,
+    preflight: preflightRecord,
+    outcomes,
+    corpusSnapshot,
+    ...(error ? { error } : {}),
+  });
+  return recorded ? exitCode : 1;
 }
 
 if (isDirectScriptInvocation(import.meta.url, 'weeklyDevelopmentSweep')) {

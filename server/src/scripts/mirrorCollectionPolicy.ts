@@ -16,6 +16,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'engine_benchmarks',
   'engine_benchmark_rows',
   'engine_benchmark_snapshots',
+  'weekly_sweep_runs',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -32,6 +33,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'engine_benchmarks',
   'engine_benchmark_rows',
   'engine_benchmark_snapshots',
+  'weekly_sweep_runs',
 ];
 
 // A lease is state rather than history: it expires and is taken over, so a

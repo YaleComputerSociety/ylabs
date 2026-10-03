@@ -6,15 +6,21 @@ import { readSweepHeadSha } from '../runScraperSweep';
 import {
   WEEKLY_SWEEP_CONFIRM_FLAG,
   WEEKLY_SWEEP_SUMMARY_MARKER,
+  buildCorpusSnapshotArgs,
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
+  buildWeeklySweepRunRecord,
+  RENDER_CRON_RUN_LIMIT_MS,
+  WEEKLY_SWEEP_ERROR_TEXT_LIMIT,
   findSweepSummaryPath,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
   weeklySweepChildEnvironment,
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
+  weeklySweepRunStatus,
 } from '../weeklyDevelopmentSweepCore';
+import { sweepSummaryFixture } from './fixtures/weeklySweepSummaryFixture';
 
 const DEVELOPMENT_URL = 'mongodb+srv://user:pass@cluster.example.net/Development';
 
@@ -154,7 +160,7 @@ describe('findSweepSummaryPath', () => {
 
 describe('weeklySweepExitCode', () => {
   it('succeeds only when every mode exited zero and left a summary', () => {
-    const ok = { exitCode: 0, summaryPath: '/s.json' };
+    const ok = { exitCode: 0, summaryFound: true };
     expect(
       weeklySweepExitCode([
         { mode: 'development-full', ...ok },
@@ -164,11 +170,11 @@ describe('weeklySweepExitCode', () => {
     expect(
       weeklySweepExitCode([
         { mode: 'development-full', ...ok },
-        { mode: 'fellowship-development-full', exitCode: 1, summaryPath: '/s.json' },
+        { mode: 'fellowship-development-full', exitCode: 1, summaryFound: true },
       ]),
     ).toBe(1);
     expect(
-      weeklySweepExitCode([{ mode: 'development-full', exitCode: 0, summaryPath: null }]),
+      weeklySweepExitCode([{ mode: 'development-full', exitCode: 0, summaryFound: false }]),
     ).toBe(1);
   });
 });
@@ -202,5 +208,215 @@ describe('readSweepHeadSha', () => {
       })),
     ).toBe('b'.repeat(40));
     expect(readSweepHeadSha('/repo', {}, () => ({ status: 128, stdout: '' }))).toBeNull();
+  });
+});
+
+describe('buildWeeklySweepRunRecord', () => {
+  const startedAt = new Date('2026-10-04T07:00:00Z');
+  const finishedAt = new Date('2026-10-04T15:30:00Z');
+  const okPreflight = {
+    ok: true,
+    heldLockSources: [],
+    storageBefore: { ok: false, usedMb: 4600, quotaMb: 5120, headroomMb: 520, minHeadroomMb: 800 },
+    storageAfter: { ok: true, usedMb: 1200, quotaMb: 5120, headroomMb: 3920, minHeadroomMb: 800 },
+    snapshotCacheDropped: true,
+  };
+  const recordFrom = (overrides: Partial<Parameters<typeof buildWeeklySweepRunRecord>[0]> = {}) =>
+    buildWeeklySweepRunRecord({
+      startedAt,
+      finishedAt,
+      databaseName: 'Development',
+      codeSha: 'abc123',
+      exitCode: 1,
+      preflight: okPreflight,
+      outcomes: [
+        {
+          mode: 'development-full',
+          exitCode: 1,
+          summaryFound: true,
+          summary: sweepSummaryFixture(),
+        },
+        {
+          mode: 'fellowship-development-full',
+          exitCode: 0,
+          summaryFound: true,
+          summary: sweepSummaryFixture({
+            mode: 'fellowship-development-full',
+            rows: [],
+            phases: [],
+            postRun: undefined,
+            throttleRetry: { recovered: 3, exhausted: 1, exhaustedSources: ['source-b'] },
+            codeDrift: [
+              {
+                stage: 'source:x',
+                startedSha: 'abc123',
+                currentSha: 'def456',
+                message: 'checkout moved',
+              },
+            ],
+          }),
+        },
+      ],
+      corpusSnapshot: { status: 'skipped' },
+      ...overrides,
+    });
+
+  it('flattens each source, stage and phase into queryable rows with their timings', () => {
+    const record = recordFrom();
+    expect(
+      record.sources.map((source) => [source.mode, source.sourceName, source.durationMs]),
+    ).toEqual([
+      ['development-full', 'source-a', 7_200_000],
+      ['development-full', 'source-b', 600_000],
+    ]);
+    expect(record.sources[0]).toMatchObject({
+      phase: 'discovery',
+      status: 'succeeded',
+      exitCode: 0,
+      observationCount: 120,
+      throttleRecovered: 7,
+      startedAt: new Date('2026-10-04T07:01:00.000Z'),
+    });
+    expect(record.stages).toEqual([
+      {
+        mode: 'development-full',
+        name: 'visibility-gate',
+        status: 'succeeded',
+        exitCode: 0,
+        durationMs: 900_000,
+      },
+    ]);
+    expect(record.phases).toEqual([
+      {
+        mode: 'development-full',
+        phase: 'discovery',
+        startedAt: new Date('2026-10-04T07:01:00.000Z'),
+        finishedAt: new Date('2026-10-04T09:01:00.000Z'),
+        durationMs: 7_200_000,
+      },
+    ]);
+    expect(record.modes[0]).toMatchObject({
+      mode: 'development-full',
+      durationMs: 6 * 60 * 60 * 1000,
+      sourceCount: 2,
+      failed: 1,
+      postRunStatus: 'succeeded',
+      postRunDurationMs: 1_200_000,
+      throttleRecovered: 7,
+      throttleExhausted: 2,
+    });
+  });
+
+  it('keeps rows small by dropping artifact paths and stage deltas and capping error text', () => {
+    const record = recordFrom();
+    const serialized = JSON.stringify(record);
+    expect(serialized).not.toContain('artifactPath');
+    expect(serialized).not.toContain('mergeDelta');
+    expect(record.sources[1].error).toHaveLength(WEEKLY_SWEEP_ERROR_TEXT_LIMIT);
+    expect(recordFrom({ error: 'y'.repeat(5_000) }).error).toHaveLength(
+      WEEKLY_SWEEP_ERROR_TEXT_LIMIT,
+    );
+  });
+
+  it('measures total wall time against the Render cron limit', () => {
+    const record = recordFrom();
+    expect(record.durationMs).toBe(8.5 * 60 * 60 * 1000);
+    expect(record.renderLimit).toEqual({
+      limitMs: RENDER_CRON_RUN_LIMIT_MS,
+      withinLimit: true,
+      headroomMs: 3.5 * 60 * 60 * 1000,
+    });
+    const overrun = recordFrom({ finishedAt: new Date('2026-10-04T20:00:00Z') });
+    expect(overrun.renderLimit.withinLimit).toBe(false);
+    expect(overrun.renderLimit.headroomMs).toBe(-60 * 60 * 1000);
+  });
+
+  it('totals throttle retries across modes and records code drift as a refusal', () => {
+    const record = recordFrom();
+    expect(record.throttleRetry).toEqual({
+      recovered: 10,
+      exhausted: 3,
+      exhaustedSources: ['source-b'],
+    });
+    expect(record.codeDrift).toEqual([
+      {
+        mode: 'fellowship-development-full',
+        stage: 'source:x',
+        startedSha: 'abc123',
+        currentSha: 'def456',
+        message: 'checkout moved',
+      },
+    ]);
+    expect(record.refusals).toEqual(['checkout moved']);
+    expect(record.preflight.storageBefore?.usedMb).toBe(4600);
+    expect(record.preflight.storageAfter?.usedMb).toBe(1200);
+    expect(record.status).toBe('failed');
+  });
+
+  it('records a preflight refusal as refused with its reason, distinct from a failed sweep', () => {
+    const refused = recordFrom({
+      preflight: {
+        ok: false,
+        heldLockSources: ['source-a'],
+        snapshotCacheDropped: false,
+        refusal: 'held lock',
+      },
+      outcomes: [],
+    });
+    expect(refused.status).toBe('refused');
+    expect(refused.refusals).toEqual(['held lock']);
+    expect(refused.sources).toEqual([]);
+    expect(refused.throttleRetry).toEqual({ recovered: 0, exhausted: 0, exhaustedSources: [] });
+  });
+
+  it('records a thrown error as failed even when the preflight never completed', () => {
+    const record = recordFrom({
+      preflight: { ok: false, heldLockSources: [], snapshotCacheDropped: false },
+      outcomes: [],
+      error: 'connection reset',
+    });
+    expect(record.status).toBe('failed');
+    expect(record.error).toBe('connection reset');
+  });
+
+  it('tolerates a mode that wrote no summary', () => {
+    const record = recordFrom({
+      outcomes: [{ mode: 'development-full', exitCode: 1, summaryFound: false }],
+    });
+    expect(record.modes).toEqual([
+      {
+        mode: 'development-full',
+        exitCode: 1,
+        summaryFound: false,
+        sourceCount: 0,
+        succeeded: 0,
+        failed: 0,
+        notRun: 0,
+        producedNothing: 0,
+        throttleRecovered: 0,
+        throttleExhausted: 0,
+      },
+    ]);
+  });
+});
+
+describe('weeklySweepRunStatus', () => {
+  it('maps preflight, exit code, and error to one status', () => {
+    expect(weeklySweepRunStatus(true, 0)).toBe('succeeded');
+    expect(weeklySweepRunStatus(true, 1)).toBe('failed');
+    expect(weeklySweepRunStatus(false, 1)).toBe('refused');
+    expect(weeklySweepRunStatus(true, 0, 'boom')).toBe('failed');
+  });
+});
+
+describe('buildCorpusSnapshotArgs', () => {
+  it('takes the snapshot through the existing corpus:snapshot command against development', () => {
+    expect(buildCorpusSnapshotArgs()).toEqual([
+      '--cwd',
+      'server',
+      'corpus:snapshot',
+      '--environment',
+      'development',
+    ]);
   });
 });

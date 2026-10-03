@@ -304,6 +304,7 @@ describe('Beta to Development sync guards', () => {
       'lane_benchmark_pages',
       'lane_benchmarks',
       'lane_scorecard_snapshots',
+      'weekly_sweep_runs',
     ]);
     expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
   });

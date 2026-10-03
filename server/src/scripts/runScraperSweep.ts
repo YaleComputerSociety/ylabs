@@ -160,7 +160,25 @@ const PHASE_CONCURRENCY_CAPS: Partial<Record<ScraperSweepPhase, number>> = {
   'content-access': LLM_PHASE_CONCURRENCY_CAP,
 };
 
-export interface ScraperSweepRunRow {
+export interface SweepStepTiming {
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+}
+
+export function sweepStepTiming(startedAt: Date, finishedAt: Date): Required<SweepStepTiming> {
+  return {
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+  };
+}
+
+export interface SweepPhaseTiming extends Required<SweepStepTiming> {
+  phase: ScraperSweepPhase;
+}
+
+export interface ScraperSweepRunRow extends SweepStepTiming {
   sourceName: string;
   phase: ScraperSweepSource['phase'];
   status: 'succeeded' | 'failed' | 'not-run';
@@ -187,7 +205,7 @@ export interface ScraperSweepRunRow {
   error?: string;
 }
 
-export interface DevelopmentPostRunStage {
+export interface DevelopmentPostRunStage extends SweepStepTiming {
   name:
     | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
@@ -333,14 +351,15 @@ export interface ScraperSweepSummary {
   producedNothingSources: string[];
   throttleRetry: SweepThrottleRetrySummary;
   rows: ScraperSweepRunRow[];
+  phases?: SweepPhaseTiming[];
   pageReuse?: SweepPageReuseSummary;
   postRun?: {
     status: 'succeeded' | 'failed';
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
-  };
+  } & SweepStepTiming;
 }
 
-export interface FellowshipPostRunStage {
+export interface FellowshipPostRunStage extends SweepStepTiming {
   name:
     | 'program-visibility-gate'
     | 'global-regions-backfill'
@@ -1580,6 +1599,8 @@ async function runDevelopmentPostRunStages(
   options: DevelopmentPostRunStageOptions = {},
   ctx?: SweepRuntimeContext,
 ): Promise<ScraperSweepSummary['postRun']> {
+  const clock = ctx?.now ?? (() => new Date());
+  const postRunStartedAt = clock();
   const stages: DevelopmentPostRunStage[] = [];
   for (const planned of planDevelopmentPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
@@ -1603,6 +1624,7 @@ async function runDevelopmentPostRunStages(
       );
     }
     console.log(`\n[post-run] ${planned.name}`);
+    const stageStartedAt = clock();
     const logPath = `${planned.artifactPath}.log`;
     ctx?.store.markRunning(stepId, 'stage', ctx.now());
     ctx?.logger.logStart(stepId);
@@ -1651,6 +1673,7 @@ async function runDevelopmentPostRunStages(
       status: error ? 'failed' : 'succeeded',
       artifactPath: planned.artifactPath,
       exitCode,
+      ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
       ...delta,
     });
@@ -1658,6 +1681,7 @@ async function runDevelopmentPostRunStages(
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
     stages,
+    ...sweepStepTiming(postRunStartedAt, clock()),
   };
 }
 
@@ -1842,6 +1866,8 @@ async function runFellowshipPostRunStages(
   options: FellowshipPostRunStageOptions = {},
   ctx?: SweepRuntimeContext,
 ): Promise<ScraperSweepSummary['postRun']> {
+  const clock = ctx?.now ?? (() => new Date());
+  const postRunStartedAt = clock();
   const stages: FellowshipPostRunStage[] = [];
   for (const planned of planFellowshipPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
@@ -1864,6 +1890,7 @@ async function runFellowshipPostRunStages(
       );
     }
     console.log(`\n[fellowship-post-run] ${planned.name}`);
+    const stageStartedAt = clock();
     const logPath = planned.artifactPath
       ? `${planned.artifactPath}.log`
       : path.join(outputDirectory, `fellowship-${planned.name}.log`);
@@ -1900,12 +1927,14 @@ async function runFellowshipPostRunStages(
       status: error ? 'failed' : 'succeeded',
       ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
       exitCode,
+      ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
     });
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
     stages,
+    ...sweepStepTiming(postRunStartedAt, clock()),
   };
 }
 
@@ -2081,7 +2110,8 @@ export async function runScraperSweep(
     console.log(
       `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (logs -> ${logPath})`,
     );
-    store.markRunning(stepId, 'source', now());
+    const sourceStartedAt = now();
+    store.markRunning(stepId, 'source', sourceStartedAt);
     logger.logStart(stepId);
     const child = await childRunner(
       'yarn',
@@ -2102,6 +2132,7 @@ export async function runScraperSweep(
       },
     );
     const exitCode = child.status ?? 1;
+    const sourceTiming = sweepStepTiming(sourceStartedAt, now());
     const failStep = (error: string): void => {
       store.markFailed(stepId, 'source', exitCode, now());
       logger.logFailed(stepId, exitCode, logPath);
@@ -2111,6 +2142,7 @@ export async function runScraperSweep(
         status: 'failed',
         artifactPath,
         exitCode,
+        ...sourceTiming,
         error,
       };
     };
@@ -2131,6 +2163,8 @@ export async function runScraperSweep(
         phase: source.phase,
         status: 'succeeded',
         artifactPath,
+        exitCode,
+        ...sourceTiming,
         ...artifact,
       };
       store.markDone(stepId, 'source', exitCode, now(), artifactPath);
@@ -2173,15 +2207,18 @@ export async function runScraperSweep(
   };
 
   const globalEntries = sweepSources.map((source, index) => ({ source, index }));
+  const phases: SweepPhaseTiming[] = [];
   let pageReuseSummary: SweepPageReuseSummary | undefined;
   try {
     for (const phase of orderedScraperSweepPhases(sweepSources)) {
+      const phaseStartedAt = now();
       const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
       const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
       await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
         runSource(source, index, phaseConcurrency),
       );
       await runBetweenPhasesPrune(phase);
+      phases.push({ phase, ...sweepStepTiming(phaseStartedAt, now()) });
     }
   } finally {
     pageReuseSummary = sweepPageReuseSummary(hostSlotBroker);
@@ -2246,6 +2283,7 @@ export async function runScraperSweep(
     producedNothingSources,
     throttleRetry: sweepThrottleRetrySummary(rows),
     rows,
+    phases,
     ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
   };

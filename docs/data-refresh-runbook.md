@@ -97,8 +97,42 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 4. Measures the cluster's dataSize plus indexSize, and when headroom is below what a sweep needs it runs `observations:prune-dead --apply --drop-snapshot-cache` once, which also deletes dead superseded observations, and measures again, refusing if headroom is still short (#3536).
 5. Runs `development-full`, then `fellowship-development-full`, one after the other and each with `--restart`, because they share the per-host fetch budget and the storage quota.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when either mode failed or wrote no summary.
+7. After both modes succeed, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per weekly run.
+8. Writes one `weekly_sweep_runs` row in Development, whether the run succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if that write fails, because an unrecorded run cannot be audited.
 
-`--dry-run` in place of the confirmation runs steps 1 to 4 read-only and prints the two sweep commands without running them.
+`--dry-run` in place of the confirmation runs steps 1 to 4 read-only, prints the two sweep commands without running them, and writes no row.
+Steps 1 and 2 also write no row, because a run refused there has not proven it holds a Development connection.
+
+### Auditing Weekly Runs
+
+Each weekly run leaves one row in Development's `weekly_sweep_runs` collection (`server/src/models/weeklySweepRun.ts`), indexed on `startedAt`, so the sweeps can be measured and improved over time.
+The row flattens both modes' `summary.json` into queryable fields rather than storing it whole:
+
+- `startedAt`, `finishedAt`, `durationMs`, and `renderLimit`, which holds Render's 12-hour limit, whether the run fit, and the headroom left.
+- `codeSha`, `status` (`succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
+- `preflight`: the held lock sources, storage before and after the fetch-cache drop as `usedMb`, `quotaMb`, `headroomMb` and `minHeadroomMb`, and whether the cache was dropped.
+- `modes`: per mode, its wall time, source counts, post-run status and duration, and throttle totals.
+- `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle recovered and exhausted, and materialization errors.
+- `stages`: one entry per post-run stage per mode, with status, exit code, start, finish and duration.
+- `phases`: each phase's wall time per mode.
+- `throttleRetry` totals across both modes, and whether the corpus snapshot was written.
+
+Artifact paths and stage deltas are not stored, and error text is capped at 500 characters, so a row stays small.
+Source and stage timings come from `summary.json`, which records `startedAt`, `finishedAt` and `durationMs` on every source row and post-run stage, and a `phases` array of phase wall times; a step resumed from a checkpoint carries no timing.
+The collection is environment-local, like `corpus_quality_snapshots`: a promotion never copies it and a Development refresh preserves it.
+
+Read the runs from any checkout whose `server/.env` points at Development:
+
+```bash
+yarn --cwd server scrape:sweep:weekly-runs
+yarn --cwd server scrape:sweep:weekly-runs --limit 1
+yarn --cwd server scrape:sweep:weekly-runs --compare --limit 6
+yarn --cwd server scrape:sweep:weekly-runs --limit 1 --json
+```
+
+The default view prints the last five runs, each with its total time against the 12-hour limit, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
+`--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run, so a regression shows as a growing number.
+`--json` prints the stored rows.
 
 Two sources stay out of the image on purpose.
 `undergrad-fellowships-recipients` is manual-only and never part of a sweep (`scrapers/manualOnlySweepSources.ts`), and its curated input holds recipient names, so it is neither copied into the image nor committed; run it by hand from a checkout as before.
@@ -129,7 +163,7 @@ Render stops a cron run after 12 hours.
 The research sweep alone took 414 minutes on 2026-09-28, so read the first run's duration before trusting both modes to fit; if they do not, split them into two cron jobs on different days.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
-Render keeps logs for a limited time and a cron container's disk is discarded, so the `WEEKLY_SWEEP_SUMMARY` lines and Development's own `scrape_runs` are the record of a run.
+Render keeps logs for a limited time and a cron container's disk is discarded, so the `weekly_sweep_runs` row is the durable record of a run, alongside Development's own per-source `scrape_runs`.
 Alerting on a failed or missing weekly run is the remaining part of #4507.
 
 Render automation remains appropriate for Beta and Production re-gating, Meilisearch reindexing, and read-only gates.

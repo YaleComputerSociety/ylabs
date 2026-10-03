@@ -155,6 +155,7 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_profiles',
   'student_trackings',
   'visibility_release_queue_items',
+  'weekly_sweep_runs',
 ];
 
 export function replaceMongoDatabaseName(value: string, databaseName: string): string {
