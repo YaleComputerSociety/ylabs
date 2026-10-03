@@ -17,6 +17,7 @@ import mongoose from 'mongoose';
 import { CorpusQualitySnapshot } from '../models/corpusQualitySnapshot';
 import { readCorpusQualityReport } from './corpusQualityReport';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { captureServerWarning } from '../utils/errorTracking';
 import {
   operatorEnvironmentForDatabaseName,
   type OperatorDatabaseEnvironment,
@@ -77,11 +78,12 @@ export async function recordCorpusQualitySnapshotIfStale({
   return 'recorded';
 }
 
-async function tick(): Promise<void> {
+export async function runCorpusQualitySnapshotCycle(
+  databaseName: string | undefined = mongoose.connection.db?.databaseName,
+): Promise<void> {
   if (running) return;
   running = true;
   try {
-    const databaseName = mongoose.connection.db?.databaseName;
     const environment = connectedOperatorEnvironment(databaseName);
     if (!environment || !databaseName) return;
 
@@ -95,6 +97,7 @@ async function tick(): Promise<void> {
     }
   } catch (error) {
     console.error('[corpus-snapshot] measurement failed:', sanitizeLogValue(error));
+    captureServerWarning('corpus_snapshot_failed');
   } finally {
     running = false;
   }
@@ -104,8 +107,8 @@ export function startCorpusQualitySnapshotScheduler(env: NodeJS.ProcessEnv = pro
   if (!corpusSnapshotSchedulerEnabled(env)) return false;
   if (timer) return true;
 
-  void tick();
-  timer = setInterval(() => void tick(), CHECK_INTERVAL_MS);
+  void runCorpusQualitySnapshotCycle();
+  timer = setInterval(() => void runCorpusQualitySnapshotCycle(), CHECK_INTERVAL_MS);
   timer.unref?.();
   return true;
 }

@@ -34,8 +34,10 @@ const mocks = vi.hoisted(() => ({
   passThrough: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-vi.mock('../utils/errorTracking', () => ({
+vi.mock('../utils/errorTracking', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/errorTracking')>()),
   captureServerError: mocks.captureServerError,
+  captureServerWarning: vi.fn(),
 }));
 
 vi.mock('../middleware/auth', async (importOriginal) => ({

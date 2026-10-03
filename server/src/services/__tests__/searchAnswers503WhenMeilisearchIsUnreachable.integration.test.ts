@@ -18,8 +18,10 @@ vi.mock('../../utils/meiliClient', () => ({
   })),
 }));
 
-vi.mock('../../utils/errorTracking', () => ({
+vi.mock('../../utils/errorTracking', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/errorTracking')>()),
   captureServerError: vi.fn(),
+  captureServerWarning: vi.fn(),
 }));
 
 import apiRouter from '../../routes';

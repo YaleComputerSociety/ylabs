@@ -204,7 +204,7 @@
     "scrape:canary": "tsx src/scripts/scrapeCanary.ts",
     "scrape-runs:reconcile-stale": "tsx src/scripts/reconcileStaleScrapeRuns.ts",
     "scrape:seed-sources": "tsx src/scrapers/seedSources.ts",
-    "start": "node ../scripts/ensure-server-build-fresh.mjs && node build/index.js",
+    "start": "node ../scripts/ensure-server-build-fresh.mjs && node --enable-source-maps build/index.js",
     "test": "cross-env NODE_ENV=test ./node_modules/.bin/vitest run",
     "test:guards": "cross-env NODE_ENV=test ./node_modules/.bin/vitest run src/scrapers/__tests__/sourceDispatch.test.ts src/scrapers/__tests__/seedSources.test.ts src/scrapers/__tests__/provenanceSourceNamesResolve.test.ts src/scripts/__tests__/humanRunWriteScriptGuard.test.ts src/utils/__tests__/researchEntityFieldLocks.test.ts src/scripts/__tests__/vitestHookBudget.test.ts src/scripts/__tests__/guardSuiteInventory.test.ts",
     "prod": "cross-env NODE_ENV=production tsx watch src/index.ts",

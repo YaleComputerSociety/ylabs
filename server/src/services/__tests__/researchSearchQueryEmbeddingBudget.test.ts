@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../utils/errorTracking', () => ({
+  captureServerWarning: vi.fn(),
+}));
+
+import { captureServerWarning } from '../../utils/errorTracking';
 import {
   recordResearchSearchQueryEmbeddingFailure,
   recordResearchSearchQueryEmbeddingSuccess,
@@ -143,6 +148,22 @@ describe('the breaker', () => {
     expect(reserveResearchSearchQueryEmbedding(CLIENT, START + 1)).toBe('cooling-down');
     expect(reserveResearchSearchQueryEmbedding(CLIENT, START + 29_999)).toBe('cooling-down');
     expect(reserveResearchSearchQueryEmbedding(CLIENT, START + 30_000)).toBe('allowed');
+  });
+
+  it('reports each opening once as a degraded-service warning, and nothing while it stays open', () => {
+    vi.mocked(captureServerWarning).mockClear();
+
+    for (let index = 0; index < 4; index += 1) {
+      recordResearchSearchQueryEmbeddingFailure('error', START);
+    }
+    expect(captureServerWarning).not.toHaveBeenCalled();
+
+    recordResearchSearchQueryEmbeddingFailure('error', START);
+    expect(captureServerWarning).toHaveBeenCalledTimes(1);
+    expect(captureServerWarning).toHaveBeenCalledWith('embedding_breaker_open');
+
+    reserveResearchSearchQueryEmbedding(CLIENT, START + 1);
+    expect(captureServerWarning).toHaveBeenCalledTimes(1);
   });
 
   it('opens only once ordinary failures repeat', () => {

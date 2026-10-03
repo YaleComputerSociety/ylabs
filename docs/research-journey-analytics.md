@@ -185,6 +185,19 @@ A message the server writes itself must still not interpolate a netid, email, or
 The route template keeps its mount path even from the global error handler, where Express has already cleared `req.baseUrl`, by taking the leading request segments the template does not cover.
 That is safe only while every router is mounted at a static path, so mounting one at a param path means changing that recovery first.
 
+A server report's release is `SENTRY_RELEASE` when it is set and otherwise `RENDER_GIT_COMMIT`, which the hosting platform sets on every deploy, so a report names the commit that produced it without anyone updating a variable (#4144).
+The release stays inside error tracking: `GET /api/config` still carries no commit, and no public response does.
+The server bundle is built with a source map beside it in `server/build/`, and `yarn --cwd server start` runs `node --enable-source-maps`, so a stack frame names a file under `server/src/` instead of a line in the bundle.
+That map is never served, because the static asset server serves only `client/dist` and refuses every `.map` request; the client build still emits no source map.
+A server report also carries the platform's `rndr-id` request header as an `rndrId` tag when it is present, and only when it is a short run of letters, digits and hyphens, so a caller cannot put arbitrary text into a tag (#4146).
+The error handler writes one JSON line per error with `event: "server_error"`, the method, the same route template the report quotes, that `rndrId`, and the sanitized message, so a log line, the platform's request log, and the error report join on one id.
+It never logs the concrete path, the query string, a header other than that id, or the session.
+
+A dependency that fails gracefully is reported as a `warning` rather than an error, through `captureServerWarning` with a closed `DegradedSignal` name (#4145).
+The four signals are `mongo_topology_lost` (a request answered `503` after the topology was lost), `embedding_breaker_open` (the query-embedding breaker opened), `corpus_snapshot_failed` (the corpus-snapshot scheduler's measurement threw), and `gate_refresh_failed` (a gate-refresh cycle exited non-zero or could not spawn).
+A warning carries only the signal name as its message, a fingerprint equal to that name, and a `signal` tag, so one incident groups into one issue rather than one per request, and it passes through the same `scrubServerEvent` as every other event.
+The existing console lines stay, because the platform log is where a reader looks first.
+
 The client reports no user, sets every `dataCollection` category off in `client/src/utils/errorTracking.ts` except the `User-Agent` request header, and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
 The browser SDK's defaults would otherwise attach the concrete page URL, the `Referer` header, navigation and request breadcrumbs with concrete paths and query strings, and console and click breadcrumbs with uncontrolled text.
 On `/research/person/:publicKey` and `/research/:slug` that is a person-bearing value.

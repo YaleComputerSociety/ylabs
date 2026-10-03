@@ -12,7 +12,12 @@ import {
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 import { triggerReconnect, isMongoUnavailableError, isTopologyLostError } from '../db/connections';
-import { captureServerError } from '../utils/errorTracking';
+import {
+  captureServerError,
+  captureServerWarning,
+  errorReportRoute,
+  platformRequestId,
+} from '../utils/errorTracking';
 
 const MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 const SEARCH_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
@@ -39,9 +44,20 @@ const publicClientErrorMessage = (status: number): string => {
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
+export const serverErrorLogLine = (req: Request, message: string): string => {
+  const rndrId = platformRequestId(req);
+  return JSON.stringify({
+    event: 'server_error',
+    method: req.method,
+    route: errorReportRoute(req),
+    ...(rndrId ? { rndrId } : {}),
+    message,
+  });
+};
+
 export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
   const sanitizedError = sanitizeErrorForLog(error);
-  console.error('Error:', sanitizedError.message);
+  console.error(serverErrorLogLine(req, sanitizedError.message));
   if (!requiresDeployedRuntimeSecurity() && sanitizedError.stack) {
     console.error('Stack:', sanitizedError.stack);
   }
@@ -101,8 +117,10 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     // close the pool the next request is about to use. The other arms stay in
     // error tracking, because a socket timeout on a reachable database is a slow
     // query rather than an outage.
-    if (isTopologyLostError(error)) void triggerReconnect();
-    else captureServerError(error, req);
+    if (isTopologyLostError(error)) {
+      void triggerReconnect();
+      captureServerWarning('mongo_topology_lost');
+    } else captureServerError(error, req);
     res.set('Retry-After', String(MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
