@@ -4,6 +4,39 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-03: The `http-cache-semantics` advisory is accepted until a patched release exists (#4452)
+
+GHSA-ch52-4w7c-c8xp (npm 1240991) is a high advisory against every `http-cache-semantics` release through 4.2.0, the latest, so there is no version to move to.
+It is ignored by id in `.yarnrc.yml`, with the reasoning beside the entry.
+The flaw is a shared cache serving one user's stored response to another on `max-stale`.
+The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false`, never calls `satisfiesWithoutRevalidation`, always revalidates with a conditional request, and never serves a cached body to a site user, so that path is not reachable.
+The exit condition is a patched `http-cache-semantics` release; adopt it and remove the entry.
+A new consumer of the package that does serve from cache invalidates this judgement, so re-read it before adding one.
+
+## 2026-10-02: Runtime types move to Node 26 and same-major drift is taken (#4367)
+
+`@types/node` moves from 20 to 26 in `client` and `server`, matching `.node-version`, so the type surface describes the runtime CI tests.
+`packageManager` moves to Yarn 4.18.1 through `yarn set version`, which adds no `yarnPath`, so Corepack still selects the version.
+Same-major bumps cover React 19.3, Vite 8.3, React Router 7.18, Playwright 1.63 and their peers.
+`meilisearch` moves from 0.57 to 0.62, whose changelogs list no breaking change, and `cross-env` moves to 10 with no change.
+`dotenv` moves to 18, and why every call passes `quiet: true`, along with why Prettier stays on 3.8.3, is recorded in `docs/decisions.md` under the same issue.
+Playwright 1.63 dropped the root's only users of `undici` and `tar`, so those two root pins matched nothing and are removed.
+
+## 2026-10-02: The test toolchain moves to Vitest 5 and jsdom 30 (#4377)
+
+`vitest` moves from 4 to 5 in `client` and `server`, and `jsdom` from 29 to 30 in `client`, and both suites keep beta's file and test counts with no new skip.
+Vitest 5 makes `vite` a peer, and Yarn does not install peers, so `server` declares `vite` 8 directly.
+No config option needed renaming, and the new `clearMocks: true` default is adopted.
+`jsdom` 30 needs the `Iterator` global from Node 22, so on an older Node every client test file fails with `ReferenceError: Iterator is not defined`; `DEVELOPER_GUIDE.md` names that symptom.
+Vitest 5 shortens object parameters in `it.each` titles, so two parameterised cases can share a title; they still run, but cannot be told apart by `-t`.
+
+## 2026-10-02: Sentry moves to 11 with every data category set off explicitly (#4378)
+
+`@sentry/node` and `@sentry/react` move together from 10.63 to 11.2.
+Sentry 11 drops `sendDefaultPii` and collects any `dataCollection` category left unset, so both SDKs now set every category off explicitly, including those 11 adds, and a test pins the resolved list so a new or renamed category fails the suite.
+The server's `expressIntegration` sets `shouldHandleError: false`, so the app's own error handler is the single capture path and its event keeps the route template; Express 5 forwarding rejected async handlers is covered by the same tests.
+The full privacy contract is in `docs/research-journey-analytics.md` under Error Reporting.
+
 ## 2026-10-02: The client moves to Tailwind CSS 4 and drops `autoprefixer` (#4386)
 
 `tailwindcss` is on 4.3 and runs as the `@tailwindcss/vite` plugin, so `postcss.config.js`, `tailwind.config.js`, and `autoprefixer` are removed; Tailwind 4 prefixes through Lightning CSS.
