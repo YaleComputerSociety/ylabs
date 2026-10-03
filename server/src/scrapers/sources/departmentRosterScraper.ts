@@ -112,6 +112,7 @@ import {
 } from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
+import { labNameStatedForPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -245,6 +246,7 @@ const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 // one-liner while matching the shared profile-page tier used by the lab-microsite
 // extractor so a later microsite full-page description still wins.
 const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
+const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
@@ -299,6 +301,8 @@ export interface FacultyEntry {
   profileSourceUrl?: string;
   /** Official roster/profile image URL. */
   imageUrl?: string;
+  /** A lab the person's own official profile says that person leads (#4468). */
+  statedLabName?: string;
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -3285,6 +3289,7 @@ export function profileEnrichmentFromHtml(
     | 'profileSourceUrl'
     | 'researchHomeDescription'
     | 'researchHomeShortDescription'
+    | 'statedLabName'
   >
 > {
   const $ = cheerio.load(html);
@@ -3382,11 +3387,19 @@ export function profileEnrichmentFromHtml(
   );
   const bio = extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
+  const declaredName = personNameFromProfileHtml($);
+  const statedLabName = declaredName
+    ? labNameStatedForPerson({
+        text: [bio, officialProse?.fullDescription].filter(Boolean).join('\n'),
+        personName: declaredName,
+        pageUrl: canonicalUrl,
+      })
+    : undefined;
 
   return {
     profileUrl: canonicalUrl,
     profileSourceUrl: canonicalUrl,
-    name: personNameFromProfileHtml($),
+    name: declaredName,
     email,
     title,
     labUrl,
@@ -3395,6 +3408,7 @@ export function profileEnrichmentFromHtml(
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,
+    statedLabName,
     researchInterests: researchInterests.length > 0 ? researchInterests : undefined,
     topics: researchInterests.length > 0 ? researchInterests : undefined,
     scholarCandidateProfileUrls:
@@ -3465,6 +3479,7 @@ function mergeProfileEnrichment(
       | 'imageUrl'
       | 'researchHomeDescription'
       | 'researchHomeShortDescription'
+      | 'statedLabName'
     >
   >,
 ): FacultyEntry {
@@ -3485,6 +3500,7 @@ function mergeProfileEnrichment(
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
     researchHomeShortDescription:
       entry.researchHomeShortDescription || enrichment.researchHomeShortDescription,
+    statedLabName: entry.statedLabName || enrichment.statedLabName,
     researchInterests:
       uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
         .length > 0
@@ -4008,6 +4024,27 @@ function entryToResearchEntityObservationsUnscreened(
     entityKey: slug,
     sourceUrl: labLessCitationUrl || sourceUrl,
   };
+  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
+  const identityObservations: ObservationInput[] = statedLabName
+    ? [
+        { field: 'name', value: statedLabName },
+        { field: 'kind', value: 'lab' },
+        { field: 'entityType', value: 'LAB' },
+      ].map((identity) => ({
+        ...base,
+        ...identity,
+        sourceUrl: profileCitationUrl,
+        confidenceOverride: STATED_LAB_NAME_CONFIDENCE,
+      }))
+    : [
+        { ...base, field: 'name', value: entityName },
+        { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
+        {
+          ...base,
+          field: 'entityType',
+          value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA',
+        },
+      ];
   // Only a positively attested empty slot is an absence. A refusal, and silence from
   // a parse that never looked, both leave the claim unmade (#3135, #2647).
   const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
@@ -4019,9 +4056,7 @@ function entryToResearchEntityObservationsUnscreened(
       value: slug,
       ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
     },
-    { ...base, field: 'name', value: entityName },
-    { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
-    { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
+    ...identityObservations,
     ...(dept.crossListedProgramme
       ? []
       : [{ ...base, field: 'school' as const, value: dept.schoolName }]),
