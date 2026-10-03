@@ -14,6 +14,21 @@ const SMOKE_ENTITY_NAME = 'Quokka Cognition Lab';
 const SMOKE_ENTITY_SLUG = 'e2e-smoke-quokka-cognition-lab';
 const SMOKE_SEARCH_TOKEN = 'quokka';
 const SMOKE_ZERO_RESULT_QUERY = 'zzqxwphantomtopicnobodystudies';
+const SMOKE_WITHHELD_ENTITIES = [
+  {
+    slug: 'e2e-smoke-withheld-review-quokka-lab',
+    name: 'Quokka Pending Review Lab',
+    copy: 'Awaits operator review before it may reach students',
+  },
+  {
+    slug: 'e2e-smoke-withheld-suppressed-quokka-lab',
+    name: 'Quokka Suppressed Record Lab',
+    copy: 'Is suppressed from students',
+  },
+];
+const SMOKE_CONTACT_ENTITY_NAME = 'Quokka Burrow Acoustics Lab';
+const SMOKE_CONTACT_ENTITY_SLUG = 'e2e-smoke-quokka-burrow-acoustics-lab';
+const SMOKE_CONTACT_DETAILS = ['quokka.coordinator@example.invalid', '203-555-0147'];
 const SMOKE_ZERO_RESULT_COPY =
   'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
 
@@ -334,6 +349,70 @@ await step('opening a result renders the detail identity and description', async
   await assertTextIncludes('marsupials');
 });
 await screenshot('03-detail');
+
+const assertNoWithheldEntityIsServed = async (surface) => {
+  const text = await bodyText();
+  const html = await page.content();
+  for (const entity of SMOKE_WITHHELD_ENTITIES) {
+    for (const value of [entity.name, entity.copy]) {
+      assert(
+        !text.includes(value) && !html.includes(value),
+        `${surface} served a withheld-tier row (${entity.slug}).`,
+      );
+    }
+  }
+};
+
+await step('withheld-tier rows never reach browse, search, or detail', async () => {
+  await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
+  await assertTextIncludes(SMOKE_ENTITY_NAME);
+  await assertNoWithheldEntityIsServed('Browse');
+
+  await submitSearch(SMOKE_SEARCH_TOKEN);
+  await page
+    .getByRole('link', { name: SMOKE_CONTACT_ENTITY_NAME })
+    .first()
+    .waitFor({ timeout: 20000 });
+  await assertNoWithheldEntityIsServed(`Search for '${SMOKE_SEARCH_TOKEN}'`);
+
+  for (const entity of SMOKE_WITHHELD_ENTITIES) {
+    await page.goto(`${baseUrl}/research/${entity.slug}`, { waitUntil: 'domcontentloaded' });
+    await settleResearchPage();
+    await page.waitForFunction(() => document.title.startsWith('Page not found'), undefined, {
+      timeout: 20000,
+    });
+    await assertNoWithheldEntityIsServed(`The detail route for ${entity.slug}`);
+  }
+});
+
+await step('a contact-bearing row renders with its contact details withheld', async () => {
+  await page.goto(`${baseUrl}/research/${SMOKE_CONTACT_ENTITY_SLUG}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await settleResearchPage();
+  await page
+    .getByRole('heading', { level: 1, name: SMOKE_CONTACT_ENTITY_NAME })
+    .waitFor({ timeout: 20000 });
+  await assertTextIncludes('vocalizations');
+  const text = await bodyText();
+  const html = await page.content();
+  for (const detail of SMOKE_CONTACT_DETAILS) {
+    assert(
+      !text.includes(detail) && !html.includes(detail),
+      `The detail page served a stored contact detail (${detail}) unredacted.`,
+    );
+  }
+});
+
+await step('the student returns to the detail page the journey continues from', async () => {
+  await page.goto(`${baseUrl}/research/${SMOKE_ENTITY_SLUG}`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  await page
+    .getByRole('heading', { level: 1, name: SMOKE_ENTITY_NAME })
+    .waitFor({ timeout: 20000 });
+});
 
 const UNBROKEN_NAME_TOKEN = 'Quokkasynthetictoken'.repeat(6);
 const UNBROKEN_URL_TOKEN = `https://example.test/${'quokkapath'.repeat(10)}`;

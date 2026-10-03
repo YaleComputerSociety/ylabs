@@ -34,6 +34,7 @@ interface SmokeEntitySeed {
   browseRankScore: number;
   kind?: 'lab' | 'center';
   entityType?: 'LAB' | 'CENTER';
+  studentVisibilityTier?: 'student_ready' | 'operator_review' | 'suppressed';
 }
 
 export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
@@ -132,6 +133,52 @@ export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
   },
 ];
 
+export const E2E_SMOKE_CONTACT_EMAIL = 'quokka.coordinator@example.invalid';
+export const E2E_SMOKE_CONTACT_PHONE = '203-555-0147';
+
+export const E2E_SMOKE_CONTACT_ENTITY: SmokeEntitySeed = {
+  slug: `${E2E_SMOKE_SLUG_PREFIX}quokka-burrow-acoustics-lab`,
+  name: 'Quokka Burrow Acoustics Lab',
+  shortDescription:
+    'Records and classifies the vocalizations small marsupials make inside shared burrows.',
+  fullDescription: `The Quokka Burrow Acoustics Lab records the vocalizations small marsupials make inside shared burrows and builds classifiers for them. Prospective students can write to ${E2E_SMOKE_CONTACT_EMAIL} or call ${E2E_SMOKE_CONTACT_PHONE} to ask about field recording work. Undergraduates help annotate recordings and evaluate acoustic models.`,
+  researchAreas: ['bioacoustics', 'animal communication'],
+  methods: ['acoustic recording', 'audio classification'],
+  departments: ['Department of Fictional Biology'],
+  school: 'School of Invented Sciences',
+  browseRankScore: 30,
+};
+
+export const E2E_SMOKE_WITHHELD_ENTITIES: SmokeEntitySeed[] = [
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}withheld-review-quokka-lab`,
+    name: 'Quokka Pending Review Lab',
+    shortDescription:
+      'Awaits operator review before it may reach students, despite studying quokkas.',
+    fullDescription:
+      'The Quokka Pending Review Lab is a synthetic row held for operator review. Its quokka research copy must never appear in student browse, search, or detail.',
+    researchAreas: ['animal cognition'],
+    methods: ['behavioral experiments'],
+    departments: ['Department of Fictional Biology'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 1000,
+    studentVisibilityTier: 'operator_review',
+  },
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}withheld-suppressed-quokka-lab`,
+    name: 'Quokka Suppressed Record Lab',
+    shortDescription: 'Is suppressed from students, although it names quokkas throughout.',
+    fullDescription:
+      'The Quokka Suppressed Record Lab is a synthetic suppressed row. Its quokka research copy must never appear in student browse, search, or detail.',
+    researchAreas: ['spatial memory'],
+    methods: ['movement tracking'],
+    departments: ['Department of Fictional Biology'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 1000,
+    studentVisibilityTier: 'suppressed',
+  },
+];
+
 function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
   return {
     schemaVersion: 1,
@@ -152,8 +199,8 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     browseRankScore: seed.browseRankScore,
     lastObservedAt: new Date(nowIso),
     archived: false,
-    studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
+    studentVisibilityTier: seed.studentVisibilityTier ?? 'student_ready',
+    studentVisibilityComputedTier: seed.studentVisibilityTier ?? 'student_ready',
     studentVisibilityReasons: ['e2e-smoke-seed'],
   };
 }
@@ -176,7 +223,11 @@ export async function seedE2eSmokeData(): Promise<{
   const removal = await ResearchEntity.deleteMany({
     slug: { $regex: `^${E2E_SMOKE_SLUG_PREFIX}` },
   });
-  const documents = E2E_SMOKE_ENTITIES.map(toEntityDocument);
+  const documents = [
+    ...E2E_SMOKE_ENTITIES,
+    E2E_SMOKE_CONTACT_ENTITY,
+    ...E2E_SMOKE_WITHHELD_ENTITIES,
+  ].map(toEntityDocument);
   const inserted = await ResearchEntity.insertMany(documents, { ordered: true });
 
   const survivor = inserted.find(
