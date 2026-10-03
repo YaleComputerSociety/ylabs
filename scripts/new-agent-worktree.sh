@@ -76,19 +76,34 @@ if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   bash "$WORKTREE_DIR/scripts/install-all.sh"
 fi
 
-find_free_port() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1; then
-    while lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; do
-      port=$((port + 1))
-    done
-  fi
-  printf '%s' "$port"
+port_in_use() {
+  command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+claimed_api_ports() {
+  local tree
+  while IFS= read -r tree; do
+    if [ "$tree" != "$WORKTREE_DIR" ] && [ -f "$tree/server/.env" ]; then
+      sed -n 's/^PORT=\([0-9][0-9]*\).*/\1/p' "$tree/server/.env"
+    fi
+  done < <(git -C "$REPO_ROOT" worktree list --porcelain | sed -n 's/^worktree //p')
+}
+
+find_free_port_offset() {
+  local offset="$1"
+  local claimed
+  claimed=" $(claimed_api_ports | tr '\n' ' ') "
+  while port_in_use "$((3000 + offset))" || port_in_use "$((4000 + offset))" ||
+    [[ "$claimed" == *" $((4000 + offset)) "* ]]; do
+    offset=$((offset + 1))
+  done
+  printf '%s' "$offset"
 }
 
 WORKTREE_COUNT="$(git -C "$REPO_ROOT" worktree list --porcelain | grep -c '^worktree ')"
-PORT="$(find_free_port "$((3000 + WORKTREE_COUNT))")"
-SERVER_PORT="$(find_free_port "$((4000 + WORKTREE_COUNT))")"
+PORT_OFFSET="$(find_free_port_offset "$WORKTREE_COUNT")"
+PORT="$((3000 + PORT_OFFSET))"
+SERVER_PORT="$((4000 + PORT_OFFSET))"
 
 ENV_STATUS=0
 ENV_SUMMARY="$(node "$WORKTREE_DIR/scripts/prepare-worktree-env.mjs" \
@@ -114,8 +129,11 @@ Start the API and the client dev server (isolated to this worktree):
 Log in locally (returns to this worktree's client):
   http://localhost:${SERVER_PORT}/api/dev-login?redirect=http://localhost:${PORT}/
 
-When the branch is merged, remove the worktree from the primary checkout:
-  git worktree remove "${WORKTREE_DIR}"
+When the branch is merged, delete the remote branch and remove the worktree
+(merge without --delete-branch, which removes the worktree and switches the
+primary checkout's branch):
+  git push origin --delete "${BRANCH}"
+  git -C "${PRIMARY_ROOT}" worktree remove "${WORKTREE_DIR}"
 EOF
 
 if [ "$ENV_STATUS" -eq 1 ]; then

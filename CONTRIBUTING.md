@@ -166,8 +166,11 @@ Merge when CI is green and the pull request is mergeable on its current head.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
-gh pr merge <n> --squash --delete-branch
+gh pr merge <n> --squash --repo YaleComputerSociety/ylabs
+git push origin --delete <branch>
 ```
+
+Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
 
 **Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
 
@@ -178,8 +181,9 @@ If you have it, use it for the review requirement and never to get past a failin
 Confirm the linked issue auto-closed, then clean up:
 
 ```bash
-git worktree remove <path>
+git -C <primary-checkout> worktree remove <path>
 git worktree prune
+git -C <primary-checkout> branch --show-current   # still beta
 ```
 
 A stored-data fix does not close its issue on merge.

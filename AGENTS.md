@@ -102,7 +102,9 @@ A refusal from the guard means rewrite by predicate and re-run, never call the r
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
-- Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
+- Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --repo YaleComputerSociety/ylabs`.
+Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
+Delete the remote branch with `git push origin --delete <branch>` instead.
 - `--admin` is load-bearing here rather than a shortcut, and the reason is worth knowing so it is not "cleaned up". Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
 `require CI on beta` requires `test-and-build` and `student-journey-smoke`, requires **one approving review**, and blocks force pushes; `protect main (production)` additionally requires `release-hold` and allows merge commits only.
 A sole maintainer cannot approve their own PR, so without the Admin bypass nothing merges at all.
@@ -110,7 +112,7 @@ A sole maintainer cannot approve their own PR, so without the Admin bypass nothi
 To get past a red `test-and-build` or `student-journey-smoke`, never; fix the check or report the blocker.
 The bypass is unconditional, so the flag really will override a failing suite, which makes the restraint the contract rather than the configuration.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
-- After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
+- After merging, remove the worktree with `git -C ~/Personal/ylabs worktree remove <path>`, prune stale entries with `git worktree prune`, and confirm `git -C ~/Personal/ylabs branch --show-current` still prints `beta`.
 - Asking after the fact whether a merge was gated is an **ancestry** question, never an equality one, and the report that answers it lives in the watchdog repository rather than here (#2452).
 A correctly gated head moves after the run, because the gate rebases and pushes its own review and document commits, so no recorded SHA equals the head that merged.
 Compare against the pull request's `headRefOid` and never against the commit the merge produces: every merge here is a squash, so the branch head is not an ancestor of it, measured 20 of 20 on the last 20 merged pull requests.

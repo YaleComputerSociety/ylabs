@@ -159,3 +159,51 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
   );
   assert.equal(git(worktreeRoot, 'status', '--porcelain'), '');
 });
+
+test('new-agent-worktree.sh never reuses an API port another worktree already holds', () => {
+  const primaryRoot = makeTempDir('ylabs-helper-primary-');
+  const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
+  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
+    writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
+  }
+  const guardInstaller = path.join(primaryRoot, 'scripts', 'install-gh-identifier-guard.sh');
+  writeFile(guardInstaller, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(guardInstaller, 0o755);
+  writeFile(path.join(primaryRoot, '.gitignore'), '.env\n**/.env\n');
+  git(primaryRoot, 'init', '--quiet', '--initial-branch=beta');
+  git(primaryRoot, 'add', '.');
+  git(
+    primaryRoot,
+    '-c',
+    'user.name=Synthetic',
+    '-c',
+    'user.email=synthetic@example.invalid',
+    'commit',
+    '--quiet',
+    '-m',
+    'init',
+  );
+  writeFile(path.join(primaryRoot, 'server', '.env'), 'PORT=4000\n');
+
+  const createWorktree = (branch) => {
+    const result = spawnSync('bash', ['scripts/new-agent-worktree.sh', branch], {
+      cwd: primaryRoot,
+      encoding: 'utf8',
+      env: { ...process.env, SKIP_INSTALL: '1', YLABS_WORKTREE_ROOT: worktreeParent },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return {
+      apiPort: result.stdout.match(/api port:\s+(\d+)/)?.[1],
+      clientPort: result.stdout.match(/dev port:\s+(\d+)/)?.[1],
+    };
+  };
+
+  createWorktree('feat/first');
+  const second = createWorktree('feat/second');
+  git(primaryRoot, 'worktree', 'remove', '--force', path.join(worktreeParent, 'feat-first'));
+  const third = createWorktree('feat/third');
+
+  assert.notEqual(third.apiPort, second.apiPort);
+  assert.notEqual(third.clientPort, second.clientPort);
+  assert.notEqual(third.apiPort, '4000');
+});
