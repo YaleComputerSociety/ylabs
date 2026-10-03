@@ -367,7 +367,9 @@ The posture, including why every `dataCollection` category is set off explicitly
 | `RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE` | No | Same window, per client address; defaults to 120 and is floored at 10. |
 | `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |
 | `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
-| `MEILISEARCH_API_KEY` | No | Meilisearch API key. |
+| `MEILISEARCH_SEARCH_API_KEY` | Deployed web service | Search-only Meilisearch key used by the request path (#4014). |
+| `MEILISEARCH_WRITE_API_KEY` | Reindex shell | Meilisearch write key for the reindex and scripts; never stored on the web service. |
+| `MEILISEARCH_API_KEY` | No | Legacy single key, the fallback for either role; a deployed fallback logs a warning. Remove from the web service once the search key is set. |
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |

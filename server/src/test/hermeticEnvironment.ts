@@ -27,6 +27,8 @@ const UNREACHABLE_BACKEND_VALUES: Record<string, string> = {
   PRODUCTION_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   MEILISEARCH_HOST: 'http://127.0.0.1:1',
   MEILISEARCH_API_KEY: 'ylabs-hermetic-fence',
+  MEILISEARCH_SEARCH_API_KEY: 'ylabs-hermetic-fence',
+  MEILISEARCH_WRITE_API_KEY: 'ylabs-hermetic-fence',
   MEILISEARCH_INDEX_PREFIX: 'ylabs_hermetic_fence',
 };
 
@@ -136,6 +138,8 @@ vi.mock('dotenv/config', () => ({}));
 vi.mock('../utils/meiliClient', () => ({
   getMeiliClient: async () => searchFence.unreachableSurface(),
   getMeiliIndex: async () => searchFence.unreachableSurface(),
+  getMeiliSearchClient: async () => searchFence.unreachableSurface(),
+  getMeiliSearchIndex: async () => searchFence.unreachableSurface(),
   resolveIndexName: (name: string) => name,
   assertDeployedMeiliConnectionConfig: () => undefined,
 }));

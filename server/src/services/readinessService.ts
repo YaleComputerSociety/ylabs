@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { getMeiliClient } from '../utils/meiliClient';
+import { getMeiliSearchClient } from '../utils/meiliClient';
 
 export const READINESS_PROBE_TIMEOUT_MS = 2_000;
 
@@ -22,7 +22,7 @@ const pingMongo: ReadinessProbe = async () => {
 };
 
 const checkMeiliHealth: ReadinessProbe = async () => {
-  const client = await getMeiliClient();
+  const client = await getMeiliSearchClient();
   const health = await client.health();
   if (health?.status !== 'available') throw new Error('Meilisearch is not available');
 };

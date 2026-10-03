@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const meili = vi.hoisted(() => ({ health: vi.fn() }));
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliClient: async () => meili,
+  getMeiliSearchClient: async () => meili,
 }));
 
 import { defaultReadinessProbes } from '../readinessService';

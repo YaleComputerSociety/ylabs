@@ -24,7 +24,7 @@ vi.mock('../researchEntityMembershipAccessor', async (importOriginal) => {
 });
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     getEmbedders: vi.fn(async () => ({})),
   })),

@@ -54,13 +54,14 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 ## Required environment variables
 
 Set all four in the shell that runs the command.
-They come from the Render dashboard for the target service.
+`MONGODBURL`, `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` come from the Render dashboard for the target service.
+`MEILISEARCH_WRITE_API_KEY` does not live on the service: export it in the shell session for the run, so the web process never holds a write key.
 
 | Variable                   | Shape                                                  | Why                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
 | `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
-| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged.                                                                                                  |
+| `MEILISEARCH_WRITE_API_KEY` | the reindex write key from [Meilisearch keys](#meilisearch-keys), exported in this shell only | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged. The legacy `MEILISEARCH_API_KEY` is still accepted in its place until the scoped key exists. |
 | `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
 
 The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
@@ -69,7 +70,62 @@ So `MEILISEARCH_INDEX_PREFIX=beta` gives `beta_researchentities`, which is the i
 A rebuild with the wrong prefix reports success while search keeps returning the stale index.
 
 The wrapper reports **every** missing variable at once with its expected shape, rather than one failed run per gap.
-It never echoes `MONGODBURL` or `MEILISEARCH_API_KEY` back to the terminal, since you may be sharing a screen; it reports the host, the database name, and whether the key is present.
+It never echoes `MONGODBURL` or a Meilisearch key back to the terminal, since you may be sharing a screen; it reports the host, the database name, and whether the key is present.
+
+## Meilisearch keys
+
+The server uses two keys with different rights (#4014).
+
+| Variable | Read by | Rights |
+| -------- | ------- | ------ |
+| `MEILISEARCH_SEARCH_API_KEY` | the web service: search, the similar-research rail, the embedder check, readiness | `search` and `settings.get` on `<prefix>_researchentities` only |
+| `MEILISEARCH_WRITE_API_KEY` | the reindex and the sync and repair scripts (`getMeiliIndex`, `getMeiliClient`) | document, index and settings writes; no key management |
+| `MEILISEARCH_API_KEY` | legacy fallback for either role | whatever it is, usually the master key |
+
+`server/src/utils/meiliClient.ts` resolves each role's own variable first and falls back to `MEILISEARCH_API_KEY`.
+A deployed process that falls back logs one warning per role, naming the variable it is missing, so deploying this code before the keys exist changes nothing.
+The search role never falls back to the write key.
+
+### Creating the keys
+
+Run these from the Render shell of the target service, with the master key exported as `MEILI_MASTER_KEY` for the session only.
+The response carries the new key in its `key` field; copy it straight into Render and do not paste it anywhere else.
+
+```bash
+curl -s -X POST "$MEILISEARCH_HOST/keys" \
+  -H "Authorization: Bearer $MEILI_MASTER_KEY" -H 'Content-Type: application/json' \
+  --data '{"name":"ylabs-<prefix>-search","description":"y/labs web service search","actions":["search","settings.get"],"indexes":["<prefix>_researchentities"],"expiresAt":null}'
+
+curl -s -X POST "$MEILISEARCH_HOST/keys" \
+  -H "Authorization: Bearer $MEILI_MASTER_KEY" -H 'Content-Type: application/json' \
+  --data '{"name":"ylabs-<prefix>-reindex","description":"y/labs reindex and sync scripts","actions":["documents.add","documents.get","documents.delete","indexes.create","indexes.get","indexes.update","indexes.delete","indexes.swap","settings.get","settings.update","tasks.get","stats.get"],"indexes":["*"],"expiresAt":null}'
+```
+
+Replace `<prefix>` with `beta` or `prod`.
+The search key needs `settings.get` because the web service reads the index's embedder settings to decide whether to run hybrid search.
+
+The write key's `indexes` is `["*"]` rather than `["<prefix>_*"]` on purpose.
+The rebuild swaps a staging index into place and waits for the swap task, and Meilisearch records an index swap with no `indexUid`, so a key scoped to named indexes cannot see that task and the rebuild fails after the swap (measured on Development on 2026-10-03: `Task not found`).
+That is why the write key is never stored on a service: it exists only in the shell session that runs the rebuild.
+A sync or repair script that only adds or deletes documents works with a key scoped to `["<prefix>_*"]`, if one is ever stored for an automated job.
+
+### Which Render service gets which variable
+
+| Render service | Set | Remove once the search key is live |
+| -------------- | --- | ---------------------------------- |
+| Beta web service | `MEILISEARCH_SEARCH_API_KEY` = the `beta` search key | `MEILISEARCH_API_KEY` |
+| Production web service | `MEILISEARCH_SEARCH_API_KEY` = the `prod` search key | `MEILISEARCH_API_KEY` |
+| Meilisearch private services | nothing new; `MEILI_MASTER_KEY` stays there | |
+
+Order: create the keys, set `MEILISEARCH_SEARCH_API_KEY`, redeploy, confirm the fallback warning is gone from the logs and search works, then delete `MEILISEARCH_API_KEY` from the web service.
+For a reindex, export `MEILISEARCH_WRITE_API_KEY` in the Render shell before running the wrapper.
+
+### Verified on Development (2026-10-03)
+
+With a search key scoped as above, a search and an embedder read answered `200`, and a document write, a settings update, an index delete and a key listing each answered `403`.
+`POST /api/research/search` through the running server with only the search key valid answered `200` from Meilisearch, not degraded.
+`yarn development:search:rebuild` with only `MEILISEARCH_WRITE_API_KEY` valid rebuilt 4,487 documents and swapped them in.
+The proof keys were deleted afterwards.
 
 ## Procedure
 
@@ -141,7 +197,7 @@ Beta and Production each hold 6440 `research_entities` documents as of 2026-09-1
 For the retired attributes, confirm the settings rather than a search result, because an inert filterable attribute changes no query output:
 
 ```bash
-curl -s -H "Authorization: Bearer $MEILISEARCH_API_KEY" \
+curl -s -H "Authorization: Bearer $MEILISEARCH_WRITE_API_KEY" \
   "$MEILISEARCH_HOST/indexes/${MEILISEARCH_INDEX_PREFIX}_researchentities/settings" \
   | grep -oE 'hasDocumentedWayIn|undergraduateCurrentAvailability|undergraduateCompensationModel|undergraduateEligibleStudentLevels'
 ```

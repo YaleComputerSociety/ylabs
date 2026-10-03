@@ -34,7 +34,7 @@ import {
 import { isOwnDepartmentUndergraduateResearchProgramme } from '../scrapers/undergradJoinPageAdmission';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
-import { getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliSearchIndex } from '../utils/meiliClient';
 import {
   isResearchEntitySearchEmbedderConfigured,
   readResearchEntitySearchEmbedderState,
@@ -1499,7 +1499,7 @@ export async function searchResearchGroupsViaMeili(
     searchParams.sort = sortConfig;
   }
 
-  const index = await getMeiliIndex('researchentities');
+  const index = await getMeiliSearchIndex('researchentities');
   let embedderStateUnknown = false;
   let semanticLegUnaffordable = false;
   if (!isBrowseAllQuery) {
@@ -2823,7 +2823,7 @@ export async function listSimilarResearchEntities(
     Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : MAX_SIMILAR_RESEARCH_ENTITIES),
   );
 
-  const index = await getMeiliIndex('researchentities');
+  const index = await getMeiliSearchIndex('researchentities');
   if (!(await isResearchEntitySearchEmbedderConfigured(index))) return [];
 
   const exclusionKeys = new Set<string>();

@@ -60,7 +60,8 @@ Two conclusions worth keeping, because both invert the guess:
 
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
-Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
+Request-path reads use `getMeiliSearchIndex(name)` (the search key); writes, the reindex and scripts use `getMeiliIndex(name)` (the write key); both prefix through `resolveIndexName(name)`.
+Each role reads its own key and falls back to `MEILISEARCH_API_KEY` with a one-time warning in deployed runtimes (#4014); the key rights and the Render placement are in `docs/meilisearch-reindex-runbook.md#meilisearch-keys`.
 Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search within that bound instead of holding the request for the runtime's default fetch timeout of several minutes.
 
 ### A Meilisearch outage answers 503, not a Mongo search (#4187)
@@ -98,7 +99,9 @@ Relevant config:
 | Variable                   | Purpose                                                    |
 | -------------------------- | ---------------------------------------------------------- |
 | `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
-| `MEILISEARCH_API_KEY`      | Meilisearch API key.                                       |
+| `MEILISEARCH_SEARCH_API_KEY` | Search-only key for the web service (`search`, `settings.get` on `<prefix>_researchentities`). |
+| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts; exported in the shell, never stored on the web service. |
+| `MEILISEARCH_API_KEY`      | Legacy single key; the fallback for either role, logged as a warning when deployed. |
 | `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 

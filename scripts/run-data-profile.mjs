@@ -168,6 +168,8 @@ export function run(argv = process.argv.slice(2)) {
   if (invocation.profileName === 'beta-operator') {
     childEnv.MEILISEARCH_HOST = 'http://127.0.0.1:7700';
     childEnv.MEILISEARCH_API_KEY = 'local_development_master_key';
+    delete childEnv.MEILISEARCH_SEARCH_API_KEY;
+    delete childEnv.MEILISEARCH_WRITE_API_KEY;
     childEnv.MEILISEARCH_INDEX_PREFIX = 'beta_operator';
   }
   delete childEnv.MONGODBURL_MIGRATION;
