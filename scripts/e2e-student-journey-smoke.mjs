@@ -1476,6 +1476,10 @@ await step('a research profile keeps its layout when the profile arrives', async
     { width: 1440, height: 900 },
   ]) {
     await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.route(
+        `**/api/research/${SYNTHETIC_PROFILE_SLUG}/reports/mine**`,
+        (route) => route.fulfill({ json: { reports: [] } }),
+      );
       const { total, largest, loadingBox } = await contentShiftOnceReleased(syntheticPage, {
         holdRoute: `**/api/research/${SYNTHETIC_PROFILE_SLUG}`,
         respond: (route) =>
