@@ -81,6 +81,7 @@ export async function readLabSiteVerificationCandidates(options: {
       'target.kind': 'RESEARCH_ENTITY',
       'target.id': { $in: entityIds },
       archived: { $ne: true },
+      state: { $ne: 'HISTORICAL' },
       role: { $in: [...VERIFIED_LEAD_ROLES] },
     },
     { personId: 1, role: 1, 'target.id': 1 },
@@ -125,7 +126,7 @@ export async function readLabSiteVerificationCandidates(options: {
     const entityId = String(entity._id);
     const leads = leadsByEntityId.get(entityId);
     const slug = textValue(entity.slug);
-    const website = firstHttpUrl(entity.website, entity.websiteUrl);
+    const website = firstHttpUrl(entity.websiteUrl, entity.website);
     if (!leads?.length || !slug || !website) continue;
     const entityType = textValue(entity.entityType);
     candidates.push({ entityId, slug, website, ...(entityType ? { entityType } : {}), leads });
@@ -140,6 +141,11 @@ interface FetchedPage {
   html: string;
   finalUrl: string;
   httpStatusCode?: number;
+}
+
+function redirectedUrl(response: { request?: { res?: { responseUrl?: unknown } } }): string {
+  const value = response.request?.res?.responseUrl;
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : '';
 }
 
 async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
@@ -162,7 +168,7 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
   );
   const page: FetchedPage = {
     html: String(response.data || ''),
-    finalUrl: cacheKey,
+    finalUrl: redirectedUrl(response) || cacheKey,
     httpStatusCode: response.status,
   };
   if (useCache) await setCached(LAB_SITE_LEAD_VERIFICATION_SOURCE, cacheKey, page);
