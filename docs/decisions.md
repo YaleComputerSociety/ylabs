@@ -12,7 +12,8 @@ A merged-in type that contradicts the survivor's is still dropped, because the m
 Measured on Development on 2026-10-03, 627 of 3,464 served rows had no live `entityType` observation on their own key or id.
 For 448 a merged-in row carries one; on the commit before, none of the 448 resolved a type, and with this rule 445 resolve the type they already serve, so no served type changes.
 The other 3 are labs whose only type evidence is a merged-in profile's contradicting type.
-Those 3 and the 179 served rows with no live type observation on any key and none ever filed on their own (162 `FACULTY_RESEARCH_AREA`, 16 `LAB`, 1 `CENTER`), are not fixable by derivation: no lane observes their type, and stamping the stored value as an observation would manufacture evidence.
+Those 3 and the 179 served rows with no live type observation on any key and none ever filed on their own (162 `FACULTY_RESEARCH_AREA`, 16 `LAB`, 1 `CENTER`) are not fixable by derivation: no lane observes their type, and stamping the stored value as an observation would manufacture evidence.
+
 ## 2026-10-03: Design And Instrument Practice Are Creative Practice, And A Practice Biography Is Not A Description (#4551)
 
 Three of the rows #4388 would newly serve were wrong for reasons the lead mint does not cause, and each is a serve-time predicate gap.
