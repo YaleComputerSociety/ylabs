@@ -226,4 +226,173 @@ describe('BBS retirement governs both identity forms', () => {
     expect(result.counts?.retiredClaims).toBe(1);
     expect((await Observation.findById(claim._id).lean())?.superseded).toBe(true);
   });
+
+  it('retires an older claim once the run resolves the same PI to another row, and leaves claims the run did not contradict (#3834)', async () => {
+    const lanesOldRow = await ResearchEntity.create({
+      slug: 'bbs-synthetic-pi',
+      name: 'Synthetic Pi Faculty Research',
+      researchAreas: ['Retired Compound Track'],
+    });
+    const canonicalRow = await ResearchEntity.create({
+      slug: 'ysm-faculty-synthetic-pi',
+      name: 'Synthetic Pi Research',
+    });
+    const unresolvedRow = await ResearchEntity.create({
+      slug: 'bbs-synthetic-unresolved',
+      name: 'Synthetic Unresolved Faculty Research',
+    });
+    const claimFor = (
+      identity: { entityId?: mongoose.Types.ObjectId; entityKey?: string },
+      sourceUrl: string,
+      extra: Record<string, unknown> = {},
+    ) =>
+      Observation.create({
+        entityType: 'researchEntity',
+        field: 'researchAreas',
+        sourceId,
+        sourceName: 'bbs-research-track',
+        value: ['Retired Compound Track'],
+        confidence: 0.7,
+        superseded: false,
+        observedAt: new Date('2026-08-27T00:00:00Z'),
+        sourceUrl,
+        ...identity,
+        ...extra,
+      });
+    const movedClaim = await claimFor(
+      { entityKey: 'bbs-synthetic-pi' },
+      'https://medicine.yale.edu/bbs/profile/synthetic-pi/',
+    );
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'bbs-synthetic-pi',
+      field: 'name',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      value: 'Synthetic Pi Faculty Research',
+      confidence: 0.9,
+      superseded: false,
+      observedAt: new Date('2026-08-27T00:00:00Z'),
+    });
+    await ResearchEntity.collection.updateOne(
+      { _id: lanesOldRow._id },
+      {
+        $set: {
+          'fieldProvenance.researchAreas': {
+            sourceName: 'bbs-research-track',
+            observationId: movedClaim._id,
+          },
+        },
+      },
+    );
+    const untouchedClaim = await claimFor(
+      { entityKey: 'bbs-synthetic-unresolved' },
+      'https://medicine.yale.edu/bbs/profile/synthetic-unresolved/',
+    );
+
+    const run = new mongoose.Types.ObjectId();
+    const currentGraft = await claimFor(
+      { entityId: canonicalRow._id as mongoose.Types.ObjectId },
+      'https://medicine.yale.edu/profile/synthetic-pi-canonical/',
+      { scrapeRunId: run, value: ['Immunology'], observedAt: new Date('2026-09-29T00:00:00Z') },
+    );
+    await Observation.create({
+      entityType: 'centerRosterHealth',
+      entityKey: BBS_TRACKS[0].slug,
+      field: 'centerRosterHealth',
+      sourceId,
+      sourceName: 'bbs-research-track',
+      scrapeRunId: run,
+      observedAt: new Date('2026-09-29T00:00:00Z'),
+      confidence: 0.7,
+      superseded: false,
+      value: {
+        centerKey: BBS_TRACKS[0].slug,
+        entityKey: BBS_TRACKS[0].slug,
+        status: 'ok',
+        complete: true,
+        claimEntityKeysRecorded: true,
+        discoveredCount: 2,
+        members: [
+          { memberKey: 'synthetic-pi', role: 'track-pi', claimEntityKey: String(canonicalRow._id) },
+          { memberKey: 'synthetic-unresolved', role: 'track-pi' },
+        ],
+        read: {
+          pagesRead: 1,
+          readMode: 'html',
+          cacheAllowed: false,
+          stopReason: 'not-paginated',
+          readAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    });
+
+    const result = await reconcileBbsTrackRetirementsFromRun(String(run), deps, {});
+
+    expect(result.outcome).toBe('reconciled');
+    expect(result.counts?.movedClaims).toBe(1);
+    expect((await Observation.findById(movedClaim._id).lean())?.superseded).toBe(true);
+    expect((await Observation.findById(untouchedClaim._id).lean())?.superseded).not.toBe(true);
+    expect((await Observation.findById(currentGraft._id).lean())?.superseded).not.toBe(true);
+    const reprojected = (await ResearchEntity.findById(lanesOldRow._id).lean()) as {
+      researchAreas?: string[];
+    } | null;
+    expect(reprojected?.researchAreas ?? []).not.toContain('Retired Compound Track');
+    const untouchedRow = (await ResearchEntity.findById(unresolvedRow._id).lean()) as {
+      researchAreas?: string[];
+    } | null;
+    expect(untouchedRow?.researchAreas ?? []).toEqual([]);
+  });
+
+  it('moves nothing on a dry run', async () => {
+    const lanesOldRow = await ResearchEntity.create({
+      slug: 'bbs-synthetic-dry',
+      name: 'Synthetic Dry Faculty Research',
+    });
+    const canonicalRow = await ResearchEntity.create({
+      slug: 'ysm-faculty-synthetic-dry',
+      name: 'Synthetic Dry Research',
+    });
+    const base = {
+      entityType: 'researchEntity' as const,
+      field: 'researchAreas',
+      sourceId,
+      sourceName: 'bbs-research-track',
+      confidence: 0.7,
+      superseded: false,
+    };
+    const staleClaim = await Observation.create({
+      ...base,
+      entityKey: lanesOldRow.slug,
+      value: ['Retired Compound Track'],
+      observedAt: new Date('2026-08-27T00:00:00Z'),
+      sourceUrl: 'https://medicine.yale.edu/profile/synthetic-dry/',
+    });
+    await Observation.create({
+      ...base,
+      entityId: canonicalRow._id,
+      value: ['Immunology'],
+      observedAt: new Date('2026-08-27T00:00:00Z'),
+      sourceUrl: 'https://medicine.yale.edu/profile/synthetic-dry/',
+    });
+    const run = new mongoose.Types.ObjectId();
+    await Observation.create({
+      ...base,
+      entityId: canonicalRow._id,
+      value: ['Immunology'],
+      scrapeRunId: run,
+      observedAt: new Date('2026-09-29T00:00:00Z'),
+      sourceUrl: 'https://medicine.yale.edu/profile/synthetic-dry/',
+    });
+    await seedAdmittedRead({
+      runId: run,
+      observedAt: new Date('2026-09-29T00:00:00Z'),
+      listedRowIds: [String(canonicalRow._id)],
+    });
+
+    const result = await reconcileBbsTrackRetirementsFromRun(String(run), deps, { dryRun: true });
+
+    expect(result.counts?.movedClaims).toBe(1);
+    expect((await Observation.findById(staleClaim._id).lean())?.superseded).not.toBe(true);
+  });
 });

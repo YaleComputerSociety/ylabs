@@ -956,7 +956,7 @@ A contact field stands on a row only while a live observation keyed to that row 
 A stored `researchAreas` list that no live evidence states is extended from the row's own description on every resolve, and never replaced (#3836).
 Scope is the shared predicate in `scrapers/researchAreaEvidence.ts`: `researchAreas` is unlocked and no live observation on the row or any merged-in key states an area the row admits.
 The derived chips are admitted through `partitionResearchAreas` and appended after the stored ones they do not duplicate, so a derivation never removes a stored chip; `description-derived-research-area` is recorded only when every resolved chip is derived, and a stale derived entry on a list that keeps stored-only chips is unset.
-A derivation is never allowed to empty a non-empty stored list, and a second pass plans nothing; the materialize result reports each in-scope row as `unbackedResearchAreas`.
+A derivation is never allowed to empty a non-empty stored list, and a second pass plans nothing; the one exception, a list whose credited source retired its own claim on the row (#3980), is described in `skills/scrapers/SKILL.md`; the materialize result reports each in-scope row as `unbackedResearchAreas`.
 `yarn --cwd server research-entity:rematerialize --unbacked-research-areas` selects that scope, runs scoped to `researchAreas`, and sums the outcomes in its report together with `researchAreaChips` `{ added, removed }`, where `removed` must be 0; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
 `docs/decisions.md` records the rule and its Development measurement.
 

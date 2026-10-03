@@ -300,6 +300,56 @@ describe('resolveBbsResearchHome', () => {
   });
 });
 
+describe("resolveBbsResearchHome on the lane's own pre-#3561 key (#3834)", () => {
+  const profileLinks: BbsProfileLinks = {
+    canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera/',
+    labUrls: [],
+  };
+
+  it("re-reaches a row keyed by the lane's own profile slug when nothing else resolves", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+    ]);
+    expect(resolveBbsResearchHome(profileLinks, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'matched',
+      entityId: '121212121212121212121212',
+    });
+  });
+
+  it("still resolves to the canonical row when the lane's own row also exists", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+      candidate({ _id: '343434343434343434343434', slug: 'ysm-faculty-alex-rivera', nameKey: 'x' }),
+    ]);
+    expect(resolveBbsResearchHome(profileLinks, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'matched',
+      entityId: '343434343434343434343434',
+    });
+  });
+
+  it("does not fall back to the lane's own row when the profile could not be read", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+      candidate({ _id: '343434343434343434343434', slug: 'ysm-faculty-alex-rivera', nameKey: 'x' }),
+    ]);
+    expect(resolveBbsResearchHome(NO_LINKS, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'unmatched',
+    });
+  });
+});
+
 describe('observation shaping', () => {
   it('grafts research areas onto an existing home keyed by entity id', () => {
     const obs = bbsGraftObservations(
@@ -321,6 +371,36 @@ describe('observation shaping', () => {
 });
 
 describe('BbsResearchTrackScraper.run', () => {
+  it('names the grafted row by key as well as id, so the graft supersedes a claim stored under either form (#3834)', async () => {
+    const pages: Record<string, string> = {
+      'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+        { slug: 'a-rivera', label: 'Rivera, Alex' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/a-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '121212121212121212121212',
+          slug: 'bbs-a-rivera',
+          nameKey: 'alex-rivera-faculty-research',
+        }),
+      ],
+    });
+
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'researchAreas')).toMatchObject({
+      entityId: '121212121212121212121212',
+      entityKey: 'bbs-a-rivera',
+      value: ['Immunology'],
+    });
+  });
+
   it('grafts onto an existing row and mints nothing for an absent or ambiguous one', async () => {
     const pages: Record<string, string> = {
       'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([

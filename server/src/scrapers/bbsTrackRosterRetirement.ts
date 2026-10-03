@@ -16,7 +16,11 @@ import {
   type CenterRosterHealthSnapshot,
   type CenterRosterRead,
 } from './centerRosterRetirement';
-import { BBS_TRACKS } from './sources/bbsResearchTrackScraper';
+import {
+  BBS_TRACKS,
+  bbsProfileSlugFromUrl,
+  normalizeMatchUrl,
+} from './sources/bbsResearchTrackScraper';
 
 const BBS_TRACK_SOURCE_NAME = 'bbs-research-track';
 
@@ -70,6 +74,7 @@ export interface BbsTrackClaim {
   entityKey: string;
   storedEntityKey?: string;
   scrapeRunId?: string;
+  sourceUrl?: string;
   observedAt: Date;
 }
 
@@ -87,6 +92,7 @@ export interface BbsTrackRetirementPlan {
     claimsAwaitingSecondRead: number;
     claimsBlockedByAnUnresolvedPi: number;
     retiredClaims: number;
+    movedClaims?: number;
   };
 }
 
@@ -157,6 +163,84 @@ export function planBbsTrackRosterRetirement(input: {
     counts,
   };
 }
+
+/**
+ * The PI a claim or a graft cites, in one comparable form whichever page it cites.
+ *
+ * A graft cites the PI's canonical YSM profile when the lane could read it and the BBS profile
+ * otherwise, and a track snapshot names the PI by BBS profile slug, so both forms are keyed.
+ */
+export function bbsCitedPiKey(sourceUrl: unknown): string {
+  const raw = typeof sourceUrl === 'string' ? sourceUrl : '';
+  const bbsSlug = bbsProfileSlugFromUrl(raw);
+  if (bbsSlug) return `bbs:${bbsSlug}`;
+  const url = normalizeMatchUrl(raw);
+  return url ? `url:${url.toLowerCase()}` : '';
+}
+
+export interface BbsRunResolutionRow {
+  entityId?: unknown;
+  sourceUrl?: unknown;
+  value?: unknown;
+}
+
+/**
+ * The rows one run resolved each listed PI to, keyed by every form the PI is cited in.
+ *
+ * Read from the run's own grafts and its own track snapshots, so it is positive evidence: a PI the
+ * run could not resolve, for whatever reason, contributes nothing and so moves no claim.
+ */
+export function bbsRowsResolvedByCitedPi(input: {
+  grafts: readonly BbsRunResolutionRow[];
+  snapshots: readonly BbsRunResolutionRow[];
+}): Map<string, Set<string>> {
+  const rowsByPi = new Map<string, Set<string>>();
+  const add = (piKey: string, rowId: string) => {
+    if (!piKey || !rowId) return;
+    const rows = rowsByPi.get(piKey) ?? new Set<string>();
+    rows.add(rowId);
+    rowsByPi.set(piKey, rows);
+  };
+  for (const graft of input.grafts) {
+    add(bbsCitedPiKey(graft.sourceUrl), serializedDocumentId(graft.entityId) || '');
+  }
+  for (const snapshot of input.snapshots) {
+    const value = (snapshot.value ?? {}) as BbsTrackHealthSnapshot;
+    if (value.claimEntityKeysRecorded !== true) continue;
+    for (const member of snapshotMembers(value)) {
+      if (member.claimEntityKey)
+        add(`bbs:${member.memberKey.toLowerCase()}`, member.claimEntityKey);
+    }
+  }
+  return rowsByPi;
+}
+
+/**
+ * This lane's older claims whose PI the run has just resolved to a different row.
+ *
+ * The lane once grafted a PI's track onto a row it can no longer resolve that PI to, typically a
+ * shell it minted before #3561 while the PI's canonical row now wins the person-key match. Its own
+ * newer graft is on the canonical row, and nothing ever retired the older claim, because
+ * latest-wins supersession is per row and absence retirement waits on reads that can never omit a
+ * PI who is still listed (#3834).
+ */
+export function planBbsTrackMovedClaims(input: {
+  claims: readonly BbsTrackClaim[];
+  rowsResolvedByCitedPi: ReadonlyMap<string, ReadonlySet<string>>;
+  scrapeRunId: string;
+}): string[] {
+  const moved: string[] = [];
+  for (const claim of input.claims) {
+    if (claim.scrapeRunId === input.scrapeRunId) continue;
+    const resolvedRows = input.rowsResolvedByCitedPi.get(bbsCitedPiKey(claim.sourceUrl));
+    if (!resolvedRows || resolvedRows.size === 0 || resolvedRows.has(claim.entityKey)) continue;
+    moved.push(claim.observationId);
+  }
+  return moved;
+}
+
+export const BBS_TRACK_MOVED_CLAIM_REASON =
+  'bbs-research-track now resolves this PI to another row, which carries its newer graft (#3834)';
 
 export const BBS_TRACK_RETIREMENT_REASON =
   'bbs-research-track no longer lists this PI, confirmed by two admitted reads (#3852)';
@@ -319,7 +403,7 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
     field: 'researchAreas',
     superseded: { $ne: true },
   })
-    .select('_id entityId entityKey scrapeRunId observedAt')
+    .select('_id entityId entityKey scrapeRunId sourceUrl observedAt')
     .lean()) as Array<Record<string, unknown>>;
 
   const storedIds = [
@@ -362,6 +446,7 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
       entityKey: canonical,
       ...(storedEntityKey ? { storedEntityKey } : {}),
       ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
+      ...(typeof row.sourceUrl === 'string' ? { sourceUrl: row.sourceUrl } : {}),
       observedAt: new Date(row.observedAt as Date | string),
     });
   }
@@ -398,8 +483,16 @@ export async function reconcileBbsTrackRetirementsFromRun(
   });
   if (!runRecordedATrackRead) return { outcome: 'no-bbs-track-read', dryRun };
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
-  if (reads.length === 0) return { outcome: 'no-admitted-read', dryRun };
   const { claims, orphanedClaims } = await loadBbsTrackClaims();
+  const movedObservationIds = await planMovedClaimsForRun(runObjectId, claims);
+  if (reads.length === 0 && movedObservationIds.length === 0) {
+    return { outcome: 'no-admitted-read', dryRun };
+  }
+  const retire = async (observationIds: readonly string[], reason: string) => {
+    if (dryRun || observationIds.length === 0) return;
+    const ids = observationIds.map((id) => new mongoose.Types.ObjectId(id));
+    await retireObservations({ _id: { $in: ids } }, reason);
+  };
   if (claims.length === 0) {
     // Orphans are reported even here, so "nothing governed" never hides a population the loader
     // declined to weigh.
@@ -413,6 +506,7 @@ export async function reconcileBbsTrackRetirementsFromRun(
         claimsAwaitingSecondRead: 0,
         claimsBlockedByAnUnresolvedPi: 0,
         retiredClaims: 0,
+        movedClaims: 0,
       },
     };
   }
@@ -425,6 +519,12 @@ export async function reconcileBbsTrackRetirementsFromRun(
   // Surfaced beside the governed count so an operator can see how much of the population the
   // mechanism declined to weigh, rather than reading a low retired count as a clean corpus.
   plan.counts.orphanedClaims = orphanedClaims;
+  const absentIds = plan.verdict === 'frozen' ? [] : plan.retiredObservationIds;
+  const movedIds = movedObservationIds.filter((id) => !absentIds.includes(id));
+  plan.counts.movedClaims = movedIds.length;
+  await retire(movedIds, BBS_TRACK_MOVED_CLAIM_REASON);
+  await retire(absentIds, BBS_TRACK_RETIREMENT_REASON);
+  if (!dryRun) await rematerializeClaimRows(claims, [...movedIds, ...absentIds], deps);
   if (plan.verdict === 'frozen') {
     console.warn(
       `[bbs-track-retirement] frozen (${plan.freezeReason}): ${plan.counts.governedClaims} claims governed across ${plan.counts.admittedReads} admitted reads`,
@@ -437,19 +537,62 @@ export async function reconcileBbsTrackRetirementsFromRun(
       counts: plan.counts,
     };
   }
-  if (!dryRun && plan.retiredObservationIds.length > 0) {
-    const ids = plan.retiredObservationIds.map((id) => new mongoose.Types.ObjectId(id));
-    await retireObservations({ _id: { $in: ids } }, BBS_TRACK_RETIREMENT_REASON);
-    const retired = new Set(plan.retiredObservationIds);
-    const retiredClaims = claims.filter((claim) => retired.has(claim.observationId));
-    const affectedEntityIds = new Set(retiredClaims.map((claim) => claim.entityKey));
-    const affectedStoredKeys = new Set(
-      retiredClaims.flatMap((claim) => (claim.storedEntityKey ? [claim.storedEntityKey] : [])),
+  const verdict = movedIds.length > 0 ? 'retired' : plan.verdict;
+  return { outcome: 'reconciled', dryRun, verdict, counts: plan.counts };
+}
+
+async function planMovedClaimsForRun(
+  runObjectId: mongoose.Types.ObjectId,
+  claims: readonly BbsTrackClaim[],
+): Promise<string[]> {
+  const [grafts, snapshots] = await Promise.all([
+    Observation.find({
+      scrapeRunId: runObjectId,
+      entityType: 'researchEntity',
+      sourceName: BBS_TRACK_SOURCE_NAME,
+      field: 'researchAreas',
+    })
+      .select('entityId sourceUrl')
+      .lean(),
+    Observation.find({
+      scrapeRunId: runObjectId,
+      entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+      field: CENTER_ROSTER_HEALTH_FIELD,
+      sourceName: BBS_TRACK_SOURCE_NAME,
+    })
+      .select('value')
+      .lean(),
+  ]);
+  const moved = planBbsTrackMovedClaims({
+    claims,
+    rowsResolvedByCitedPi: bbsRowsResolvedByCitedPi({
+      grafts: grafts as BbsRunResolutionRow[],
+      snapshots: snapshots as BbsRunResolutionRow[],
+    }),
+    scrapeRunId: String(runObjectId),
+  });
+  if (!passesCenterRosterAbsenceCeiling(moved.length, claims.length)) {
+    console.warn(
+      `[bbs-track-retirement] moved-claim pass frozen: ${moved.length} of ${claims.length} claims would move, above the absence ceiling`,
     );
-    for (const entityId of affectedEntityIds) await deps.rematerializeResearchEntity({ entityId });
-    for (const entityKey of affectedStoredKeys) {
-      await deps.rematerializeResearchEntity({ entityKey });
-    }
+    return [];
   }
-  return { outcome: 'reconciled', dryRun, verdict: plan.verdict, counts: plan.counts };
+  return moved;
+}
+
+async function rematerializeClaimRows(
+  claims: readonly BbsTrackClaim[],
+  retiredObservationIds: readonly string[],
+  deps: BbsTrackRetirementDeps,
+): Promise<void> {
+  const retired = new Set(retiredObservationIds);
+  const retiredClaims = claims.filter((claim) => retired.has(claim.observationId));
+  const affectedEntityIds = new Set(retiredClaims.map((claim) => claim.entityKey));
+  const affectedStoredKeys = new Set(
+    retiredClaims.flatMap((claim) => (claim.storedEntityKey ? [claim.storedEntityKey] : [])),
+  );
+  for (const entityId of affectedEntityIds) await deps.rematerializeResearchEntity({ entityId });
+  for (const entityKey of affectedStoredKeys) {
+    await deps.rematerializeResearchEntity({ entityKey });
+  }
 }
