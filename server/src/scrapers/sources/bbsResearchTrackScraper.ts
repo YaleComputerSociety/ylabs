@@ -324,6 +324,7 @@ export function bbsPiMatchKeys(links: BbsProfileLinks): { urls: string[]; slugs:
 export interface BbsMatchIndex {
   entityIdByUrl: Map<string, Set<string>>;
   entityIdBySlug: Map<string, string>;
+  slugByEntityId: Map<string, string>;
   entityIdByNameKey: Map<string, Set<string>>;
   /** Identity tokens and netid per entity, for corroborating a non-person-key match. */
   identityByEntityId: Map<string, { tokens: Set<string>; netid: string }>;
@@ -430,12 +431,16 @@ export function bbsRowIdentityNamesProfilePerson(
 export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIndex {
   const entityIdByUrl = new Map<string, Set<string>>();
   const entityIdBySlug = new Map<string, string>();
+  const slugByEntityId = new Map<string, string>();
   const entityIdByNameKey = new Map<string, Set<string>>();
   for (const candidate of candidates) {
     const entityId = serializedDocumentId(candidate._id);
     if (!entityId) continue;
     const slug = text(candidate.slug).toLowerCase();
-    if (slug) entityIdBySlug.set(slug, entityId);
+    if (slug) {
+      entityIdBySlug.set(slug, entityId);
+      slugByEntityId.set(entityId, text(candidate.slug));
+    }
     for (const rawUrl of candidate.matchUrls) {
       const url = normalizeMatchUrl(rawUrl);
       if (!url) continue;
@@ -458,7 +463,7 @@ export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIn
       netid: bbsIdentityNetid(candidate.slug),
     });
   }
-  return { entityIdByUrl, entityIdBySlug, entityIdByNameKey, identityByEntityId };
+  return { entityIdByUrl, entityIdBySlug, slugByEntityId, entityIdByNameKey, identityByEntityId };
 }
 
 export type BbsHomeResolution =
@@ -478,6 +483,7 @@ export function resolveBbsResearchHome(
   links: BbsProfileLinks,
   nameKey: string,
   index: BbsMatchIndex,
+  bbsProfileSlug = '',
 ): BbsHomeResolution {
   const { urls, slugs } = bbsPiMatchKeys(links);
   const profileUrl = normalizeMatchUrl(links.canonicalProfileUrl);
@@ -513,6 +519,14 @@ export function resolveBbsResearchHome(
   // and letting it through would re-admit the row the URL arm just declined.
   if (matchedOnCitedUrl.size > 0) return { status: 'refused' };
 
+  // The key this lane minted rows under before #3561, derived from this same profile, so it names
+  // the PI. A fallback rather than a person key: where the canonical row also exists, ranking the
+  // two as equals would fail every such PI closed as ambiguous (#3834).
+  const lanesOwnRow = bbsProfileSlug
+    ? index.entityIdBySlug.get(`bbs-${bbsProfileSlug.trim().toLowerCase()}`)
+    : undefined;
+  if (lanesOwnRow) return { status: 'matched', entityId: lanesOwnRow };
+
   if (nameKey) {
     const byName = index.entityIdByNameKey.get(nameKey);
     if (byName && byName.size === 1) return { status: 'matched', entityId: [...byName][0] };
@@ -525,6 +539,7 @@ export function bbsGraftObservations(
   entityId: string,
   researchAreas: string[],
   sourceUrl: string,
+  entityKey = '',
 ): ObservationInput[] {
   const areas = uniqueStrings(researchAreas);
   if (!entityId || areas.length === 0) return [];
@@ -532,6 +547,7 @@ export function bbsGraftObservations(
     {
       entityType: 'researchEntity',
       entityId,
+      ...(entityKey ? { entityKey } : {}),
       sourceUrl,
       field: 'researchAreas',
       value: areas,
@@ -857,7 +873,12 @@ export class BbsResearchTrackScraper implements IScraper {
         ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
       }
 
-      const resolution = resolveBbsResearchHome(links, facultyNameMatchKey(pi.name), index);
+      const resolution = resolveBbsResearchHome(
+        links,
+        facultyNameMatchKey(pi.name),
+        index,
+        pi.profileSlug,
+      );
 
       if (resolution.status === 'ambiguous') {
         ambiguous += 1;
@@ -879,6 +900,7 @@ export class BbsResearchTrackScraper implements IScraper {
         resolution.entityId,
         pi.researchAreas,
         links.canonicalProfileUrl || pi.profileUrl,
+        index.slugByEntityId.get(resolution.entityId),
       );
       if (observations.length === 0) continue;
       await ctx.emit(observations);

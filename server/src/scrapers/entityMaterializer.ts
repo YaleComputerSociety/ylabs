@@ -1216,7 +1216,44 @@ export async function storedResearchAreasHaveNoLiveEvidence(input: {
   );
 }
 
+/**
+ * Whether the source the stored topics are credited to has had its own claim on this row retired.
+ *
+ * The union rule keeps a stored list no live observation states, because a hand-read found such
+ * chips right 29 of 39 times (#3836). A list whose credited source then retired the very claim
+ * that set it is not of unknown standing: the evidence was withdrawn, so keeping the list would
+ * make every lane retirement inert on a row no other source describes (#3980).
+ */
+async function storedResearchAreasSourceRetiredItsClaim(
+  entityDoc: any,
+  mergedInRows: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>,
+): Promise<boolean> {
+  const sourceName = objectRecord(
+    objectRecord(entityDoc?.fieldProvenance).researchAreas,
+  ).sourceName;
+  if (typeof sourceName !== 'string' || !sourceName) return false;
+  if (sourceName === DERIVED_RESEARCH_AREA_SOURCE_NAME) return false;
+  const rows = [entityDoc, ...mergedInRows];
+  const ids = rows.flatMap((row) => {
+    const id = serializedDocumentId(row?._id);
+    return id
+      ? [id, ...(mongoose.isValidObjectId(id) ? [new mongoose.Types.ObjectId(id)] : [])]
+      : [];
+  });
+  const slugs = rows.map((row) => textValue(row?.slug)).filter(Boolean);
+  if (ids.length === 0 && slugs.length === 0) return false;
+  const retired = await Observation.exists({
+    sourceName,
+    field: 'researchAreas',
+    superseded: true,
+    'rollback.rolledBackAt': { $exists: true },
+    $or: [{ entityId: { $in: ids } }, { entityKey: { $in: slugs } }],
+  });
+  return Boolean(retired);
+}
+
 export type UnbackedResearchAreaOutcome =
+  | 'retired-with-its-evidence'
   | 'rederived'
   | 'already-derived'
   | 'added-derived'
@@ -1245,13 +1282,20 @@ async function rederiveUnbackedResearchAreas(input: {
   set: Record<string, unknown>;
   unset: Record<string, ''>;
   entityDoc: any;
+  storedEvidenceRetired?: boolean;
   derive: typeof applyDescriptionResearchAreaDerivation;
   canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
 }): Promise<UnbackedResearchAreaOutcome> {
   const { set, unset, entityDoc } = input;
   const stored: unknown[] = Array.isArray(entityDoc?.researchAreas) ? entityDoc.researchAreas : [];
   const kept: unknown[] =
-    'researchAreas' in set ? (Array.isArray(set.researchAreas) ? set.researchAreas : []) : stored;
+    'researchAreas' in set
+      ? Array.isArray(set.researchAreas)
+        ? set.researchAreas
+        : []
+      : input.storedEvidenceRetired
+        ? []
+        : stored;
   const trial: Record<string, unknown> = { ...set };
   delete trial.researchAreas;
   await input.derive(trial, { ...(entityDoc ?? {}), researchAreas: [] });
@@ -1264,6 +1308,10 @@ async function rederiveUnbackedResearchAreas(input: {
     : [];
   if (!Array.isArray(derived) || derived.length === 0) {
     if (stored.length === 0) return 'nothing-derived';
+    if (input.storedEvidenceRetired && kept.length === 0) {
+      set.researchAreas = [];
+      return 'retired-with-its-evidence';
+    }
     const entityType = set.entityType ?? entityDoc?.entityType;
     return typeof entityType === 'string' &&
       DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)
@@ -5866,6 +5914,7 @@ export interface ProjectFromLogInput {
   provenanceOnly?: boolean;
   readRowUnderOwnIdentity?: boolean;
   researchAreasHaveNoLiveEvidence?: boolean;
+  storedResearchAreasEvidenceRetired?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
   applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
   applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
@@ -7023,6 +7072,7 @@ export async function projectFromLog(
         set,
         unset,
         entityDoc,
+        storedEvidenceRetired: input.storedResearchAreasEvidenceRetired === true,
         derive:
           input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation,
         canonicalizeResearchAreas,
@@ -8333,6 +8383,9 @@ export async function materializeEntity(
       observations: researchAreaEvidenceObservations,
       manuallyLockedFields,
     }));
+  const storedResearchAreasEvidenceRetired =
+    researchAreasHaveNoLiveEvidence &&
+    (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows));
 
   const projection = await projectFromLog(entityType, {
     resolved,
@@ -8358,6 +8411,7 @@ export async function materializeEntity(
     provenanceOnly: options.onlyReconcileFieldProvenance,
     readRowUnderOwnIdentity,
     researchAreasHaveNoLiveEvidence,
+    storedResearchAreasEvidenceRetired,
   });
   const { conflicts } = projection;
   const { set, unset, fieldsWritten } = options.onlyReconcileFieldProvenance

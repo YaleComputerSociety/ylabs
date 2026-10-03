@@ -78,6 +78,12 @@ Keying governance on the stored `entityId` alone reached 47% of the lane's claim
 So a slug-keyed claim is resolved to its row rather than skipped.
 A claim in either identity form whose key names no live, unarchived row is an **orphan** and is excluded rather than counted absent: 415 of those 545 keys point at rows that no longer exist, and a row that went away is not a listing that stopped naming it.
 A retired slug-keyed claim is re-projected through its stored `entityKey` as well as the row id, because `materializeEntity` returns early when the identity it is given reads no observations, so an id-only re-projection never reaches a row whose evidence is all slug-keyed.
+A claim is also **moved** when the run resolves the PI it cites to a different row, read from that run's own grafts and snapshots and keyed by the cited BBS slug or canonical profile URL (#3834).
+Absence cannot reach it, because a PI who is still listed is never absent, and per-row supersession cannot either, because the newer graft is on another row; measured on Development, 13 of 19 rows still storing a retired compound track label were exactly this, mostly `bbs-<profile slug>` shells minted before #3561.
+A PI the run did not resolve moves nothing, and the moved pass has its own absence ceiling.
+The resolver falls back to the lane's own `bbs-<profile slug>` key when the URL and person-key arms find nothing, ahead of the name key, and only as a fallback, because ranking it beside the canonical row would fail every PI that has both as ambiguous.
+A graft names its row by `entityKey` as well as `entityId`, because latest-wins supersession matches whichever forms the new observation carries, so an id-only graft never superseded a slug-keyed claim on the same row.
+The materializer's union rule keeps a stored `researchAreas` list no live observation states, except when the source its `fieldProvenance` credits has a retired (rolled-back) `researchAreas` observation on the row; without that a retirement was inert on every row no other source describes, which was all 19 (#3980).
 Orphans are reported as `orphanedClaims`, including on the `nothing-governed` path, so a low retired count never hides a population the loader declined to weigh.
 "Has listed PIs before" is read as any stored `researchAreas` observation from this lane's `sourceId` carrying one of the track's topics, not as an observation cited to the track URL: a graft cites the PI's profile page and never the track page, and no two tracks share a topic.
 
