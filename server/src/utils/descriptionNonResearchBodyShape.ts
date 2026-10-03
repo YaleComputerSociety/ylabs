@@ -98,8 +98,8 @@ const STATES_RESEARCH =
  * An education program's description: the body's subject is the instruction it offers
  * ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course,
  * not a group a student could join. Only a lab is refused for it, because a core facility's
- * or a center's training and workshops are its own service. A research statement keeps the body, so a research core
- * that also trains its users is not read as a course.
+ * or a center's training and workshops are its own service. A research statement keeps the
+ * body, so a research core that also trains its users is not read as a course.
  */
 export function isInstructionOfferingText(value: unknown): boolean {
   const text = textValue(value);
