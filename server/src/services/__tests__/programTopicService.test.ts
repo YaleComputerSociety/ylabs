@@ -39,7 +39,7 @@ describe('yearOfStudyAliasesForQuery', () => {
       'first-year',
     ]);
     expect(yearOfStudyAliasesForQuery('Freshman')).toEqual(['first-year']);
-    expect(yearOfStudyAliasesForQuery('summer research for first years')).toEqual(['first-year']);
+    expect(yearOfStudyAliasesForQuery('summer research in my first year')).toEqual(['first-year']);
     expect(yearOfStudyAliasesForQuery('programs for sophomores')).toEqual(['sophomore']);
   });
 

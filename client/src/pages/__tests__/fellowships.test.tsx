@@ -617,6 +617,25 @@ describe('Programs page', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
+  it('seeds the search from a handed-off query and then drops it from the URL', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship()], { setQueryString }, ['/programs?q=summer+funding&type=x']);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('current-location').textContent).toBe('/programs?type=x'),
+    );
+    expect(setQueryString).toHaveBeenCalledTimes(1);
+    expect(setQueryString).toHaveBeenCalledWith('summer funding');
+  });
+
+  it('leaves the search alone when the URL carries no handed-off query', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship()], { setQueryString });
+
+    await screen.findByText('Summer Research Fellowship');
+    expect(setQueryString).not.toHaveBeenCalled();
+  });
+
   it('keeps keyboard focus on the program search after Enter and Escape', async () => {
     renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
 

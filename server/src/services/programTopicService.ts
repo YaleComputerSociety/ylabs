@@ -132,13 +132,8 @@ export const topicRegexForSubjects = (subjects: string[]): string => {
 
 const STUDENT_YEAR_OF_STUDY_ALIASES: ReadonlyArray<{ spoken: readonly string[]; sourced: string }> =
   [
-    {
-      spoken: ['freshman', 'freshmen', 'frosh', 'first year', 'first years'],
-      sourced: 'first-year',
-    },
+    { spoken: ['freshman', 'freshmen', 'first year'], sourced: 'first-year' },
     { spoken: ['sophomores'], sourced: 'sophomore' },
-    { spoken: ['juniors'], sourced: 'junior' },
-    { spoken: ['seniors'], sourced: 'senior' },
   ];
 
 export const yearOfStudyAliasesForQuery = (query: unknown): string[] => {
