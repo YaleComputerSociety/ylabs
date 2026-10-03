@@ -822,13 +822,17 @@ await step('a lazy route keeps the footer below the fold while it loads', async 
               if (entry.hadRecentInput) continue;
               window.__pageShift += entry.value;
               if (entry.sources.some(isFooterSource)) {
-                window.__footerSourcedShifts.push({ startTime: entry.startTime, value: entry.value });
+                window.__footerSourcedShifts.push({
+                  startTime: entry.startTime,
+                  value: entry.value,
+                });
               }
             }
           }).observe({ type: 'layout-shift', buffered: true });
           const sampleFooter = (time) => {
             const footer = document.querySelector('footer');
-            if (footer) window.__footerSamples.push({ time, top: footer.getBoundingClientRect().top });
+            if (footer)
+              window.__footerSamples.push({ time, top: footer.getBoundingClientRect().top });
             requestAnimationFrame(sampleFooter);
           };
           requestAnimationFrame(sampleFooter);
