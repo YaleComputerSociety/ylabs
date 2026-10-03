@@ -129,3 +129,21 @@ export const topicRegexForSubjects = (subjects: string[]): string => {
   const aliases = topicAliasesForSubjects(subjects).map(escapeRegex);
   return aliases.length > 0 ? `(?:^|[^a-z0-9])(?:${aliases.join('|')})(?:$|[^a-z0-9])` : '';
 };
+
+const STUDENT_YEAR_OF_STUDY_ALIASES: ReadonlyArray<{ spoken: readonly string[]; sourced: string }> =
+  [
+    {
+      spoken: ['freshman', 'freshmen', 'frosh', 'first year', 'first years'],
+      sourced: 'first-year',
+    },
+    { spoken: ['sophomores'], sourced: 'sophomore' },
+    { spoken: ['juniors'], sourced: 'junior' },
+    { spoken: ['seniors'], sourced: 'senior' },
+  ];
+
+export const yearOfStudyAliasesForQuery = (query: unknown): string[] => {
+  const text = normalizedText([query]);
+  return STUDENT_YEAR_OF_STUDY_ALIASES.filter(({ spoken }) =>
+    spoken.some((alias) => aliasMatches(text, alias)),
+  ).map(({ sourced }) => sourced);
+};

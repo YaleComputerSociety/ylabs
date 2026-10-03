@@ -527,3 +527,39 @@ export function withoutMeshSourcedNonSubjectResearchAreas(
   );
   return kept.length === areas.length ? (areas as string[]) : kept;
 }
+
+const descriptorWordKey = (word: string): string =>
+  word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word;
+
+export function meshDescriptorWordKeys(text: string): string[] {
+  return text
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(descriptorWordKey);
+}
+
+const wordKeysOf = (values: readonly unknown[]): Set<string> =>
+  new Set(
+    values
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap(meshDescriptorWordKeys),
+  );
+
+// MeSH indexes a clinician's publications with the techniques the studies used, so a
+// descriptor such as "Robotics" on a MeSH-indexed profile says the clinician used a
+// surgical robot, not that the row researches robotics (#4373). These are the words
+// only such descriptors carry, which the search path reads to rank a row's own
+// evidence above them.
+export function meshDescriptorOnlyTerms(
+  areas: readonly unknown[],
+  fieldProvenance: unknown,
+  ownEvidence: readonly unknown[],
+): string[] {
+  if (!isMeshIndexedProfileUrl(researchAreaProvenanceSourceUrl(fieldProvenance))) return [];
+  const ownKeys = wordKeysOf(ownEvidence);
+  return [...wordKeysOf(areas)].filter((key) => !ownKeys.has(key));
+}

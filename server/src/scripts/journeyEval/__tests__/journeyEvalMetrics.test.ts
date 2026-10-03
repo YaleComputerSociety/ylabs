@@ -4,6 +4,8 @@ import {
   buildRate,
   checkConstantReportedTotal,
   checkFacetAgreement,
+  checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
@@ -453,5 +455,90 @@ describe('survivor website attribution (#3585)', () => {
     );
     const clean = tallySurvivorWebsites([survivor({ survivorStated: new Set([LAB]) })]);
     expect(checkSurvivorWebsiteAttribution(clean, steadyCorpus, movedCorpus).status).toBe('pass');
+  });
+});
+
+describe('checkQueryVariantServesTheBaseline', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-10-01T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-10-01T00:00:01.000Z' };
+  const pair = (variantKeys: string[]) => [
+    { baselineQuery: 'topic', baselineKeys: ['a', 'b'], variantQuery: 'topic yale', variantKeys },
+  ];
+
+  it('passes when the variant serves the same ordered rows', () => {
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', pair(['a', 'b']), still, still).status,
+    ).toBe('pass');
+  });
+
+  it('fails on a reordered or different top, and is inconclusive when the corpus moved', () => {
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', pair(['b', 'a']), still, still).status,
+    ).toBe('fail');
+    expect(checkQueryVariantServesTheBaseline('x', 'x', pair(['c']), still, moved).status).toBe(
+      'inconclusive',
+    );
+  });
+
+  it('accepts a variant that serves extra rows when only coverage is asserted', () => {
+    const covering = pair(['b', 'c', 'a']);
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', covering, still, still, 'coversBaselineRows')
+        .status,
+    ).toBe('pass');
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', pair(['b']), still, still, 'coversBaselineRows')
+        .status,
+    ).toBe('fail');
+  });
+
+  it('is inconclusive when the baseline served nothing', () => {
+    const empty = [{ baselineQuery: 'q', baselineKeys: [], variantQuery: 'q2', variantKeys: [] }];
+    expect(checkQueryVariantServesTheBaseline('x', 'x', empty, still, still).status).toBe(
+      'inconclusive',
+    );
+  });
+});
+
+describe('checkMeshDescriptorOnlyRowsRankBelowOwnEvidence', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-10-01T00:00:00.000Z' };
+
+  it('fails when a descriptor-only row outranks a row with its own evidence', () => {
+    const result = checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+      [
+        {
+          query: 'robotics',
+          topClasses: ['meshDescriptorOnly', 'ownEvidence', 'other'],
+          meshDescriptorOnlyServed: 3,
+        },
+      ],
+      still,
+      still,
+    );
+    expect(result.status).toBe('fail');
+  });
+
+  it('passes when descriptor-only rows sit below every own-evidence row', () => {
+    const result = checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+      [
+        {
+          query: 'robotics',
+          topClasses: ['ownEvidence', 'other', 'ownEvidence', 'meshDescriptorOnly'],
+          meshDescriptorOnlyServed: 2,
+        },
+      ],
+      still,
+      still,
+    );
+    expect(result.status).toBe('pass');
+  });
+
+  it('is inconclusive when no descriptor-only row was served', () => {
+    const result = checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+      [{ query: 'robotics', topClasses: ['ownEvidence'], meshDescriptorOnlyServed: 0 }],
+      still,
+      still,
+    );
+    expect(result.status).toBe('inconclusive');
   });
 });

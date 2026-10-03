@@ -1952,3 +1952,40 @@ describe('index document field allowlist (#3944)', () => {
     }
   });
 });
+
+describe('buildResearchEntitySearchIndexDocument MeSH descriptor terms (#4373)', () => {
+  const meshProfileRow = (overrides: Record<string, unknown> = {}) => ({
+    _id: new mongoose.Types.ObjectId(),
+    slug: 'synthetic-mesh-profile',
+    name: 'Synthetic Clinical Outcomes Group',
+    entityType: 'LAB',
+    fullDescription: 'Studies outcomes after urologic surgery in adult patients.',
+    departments: ['Urology'],
+    researchAreas: ['Robotics', 'Urology'],
+    fieldProvenance: {
+      researchAreas: { sourceUrl: 'https://medicine.yale.edu/profile/synthetic-person/' },
+    },
+    ...overrides,
+  });
+
+  it('records the descriptor words no own evidence on a MeSH-indexed profile names', () => {
+    const document = buildResearchEntitySearchIndexDocument(meshProfileRow());
+    expect(document?.meshDescriptorOnlyTerms).toEqual(['robotic']);
+    expect(document?.researchAreas).toEqual(['Robotics', 'Urology']);
+  });
+
+  it('records nothing when the row names the descriptor or its topics are not from MeSH', () => {
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        meshProfileRow({ fullDescription: 'Builds surgical robotics platforms.' }),
+      )?.meshDescriptorOnlyTerms,
+    ).toBeUndefined();
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        meshProfileRow({
+          fieldProvenance: { researchAreas: { sourceUrl: 'https://synthetic-lab.example.org/' } },
+        }),
+      )?.meshDescriptorOnlyTerms,
+    ).toBeUndefined();
+  });
+});

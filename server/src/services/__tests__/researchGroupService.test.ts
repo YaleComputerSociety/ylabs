@@ -119,6 +119,7 @@ import {
   listSimilarResearchEntities,
   normalizeResearchSearchQuery,
   promoteExactAliasFieldMatches,
+  rankOwnEvidenceAboveMeshDescriptorMatches,
   normalizeResearchGroupObjectId,
   isFreshVerifiedOfficialRosterRow,
   publicResearchEntityLeadMemberNames,
@@ -287,6 +288,60 @@ describe('searchResearchGroupsViaMeili', () => {
     ]) {
       expect(normalizeResearchSearchQuery(query)).toMatchObject({ query });
     }
+  });
+
+  it('ranks a keyword hit resting on a MeSH descriptor below hits with their own evidence', () => {
+    const hits = [
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'own-lab' },
+      { id: 'descriptor-elsewhere', meshDescriptorOnlyTerms: ['urology'] },
+      { id: 'second-own-lab' },
+    ];
+    const ordered = rankOwnEvidenceAboveMeshDescriptorMatches(
+      hits,
+      normalizeResearchSearchQuery('robotics'),
+    );
+    expect(ordered.map((hit) => hit.id)).toEqual([
+      'own-lab',
+      'descriptor-elsewhere',
+      'second-own-lab',
+      'descriptor-only',
+    ]);
+    expect(
+      rankOwnEvidenceAboveMeshDescriptorMatches(hits, normalizeResearchSearchQuery('ml')).map(
+        (hit) => hit.id,
+      ),
+    ).toEqual(hits.map((hit) => hit.id));
+  });
+
+  it('drops the institution name so it cannot outrank the topic', () => {
+    for (const query of [
+      'machine learning yale',
+      'machine learning research at yale',
+      'machine learning yale university',
+      'Yale machine learning',
+    ]) {
+      expect(normalizeResearchSearchQuery(query)).toMatchObject({
+        query: 'machine learning',
+        tokens: ['machine', 'learning'],
+      });
+    }
+    expect(normalizeResearchSearchQuery('yale quantum institute')).toMatchObject({
+      query: 'quantum institute',
+    });
+  });
+
+  it('keeps university as a topic and searches a bare institution query as typed', () => {
+    expect(normalizeResearchSearchQuery('university governance')).toMatchObject({
+      query: 'university governance',
+    });
+    expect(normalizeResearchSearchQuery('history of the university')).toMatchObject({
+      query: 'history university',
+    });
+    expect(normalizeResearchSearchQuery('yale')).toMatchObject({ query: 'yale' });
+    expect(normalizeResearchSearchQuery('yale university')).toMatchObject({
+      query: 'yale university',
+    });
   });
 
   it('strips question-frame verbs that name nothing in the corpus', () => {
@@ -2197,8 +2252,18 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const poolParams = mocks.search.mock.calls[0][1];
     const keywordLegParams = mocks.search.mock.calls[2][1];
-    expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
-    expect(keywordLegParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    expect(poolParams.attributesToRetrieve).toEqual([
+      'id',
+      'departments',
+      'researchAreas',
+      'meshDescriptorOnlyTerms',
+    ]);
+    expect(keywordLegParams.attributesToRetrieve).toEqual([
+      'id',
+      'departments',
+      'researchAreas',
+      'meshDescriptorOnlyTerms',
+    ]);
     expect(keywordLegParams).not.toHaveProperty('showMatchesPosition');
     // The keyword leg is identified by carrying no hybrid block, and it still
     // asks for the ranking-score details the typo filter reads.

@@ -1,4 +1,5 @@
 import ActiveFilterChip from './ActiveFilterChip';
+import ResearchProgramsHandoff from './ResearchProgramsHandoff';
 import { researchEntityTypeFilterLabel } from '../../utils/researchEntityCopy';
 
 interface ResearchZeroResultRecoveryProps {
@@ -15,6 +16,7 @@ interface ResearchZeroResultRecoveryProps {
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
   onBrowseAll: () => void;
+  programsHandoffQuery?: string;
 }
 
 const actionClassName =
@@ -34,6 +36,7 @@ const ResearchZeroResultRecovery = ({
   relaxedQuery,
   onRelaxQuery,
   onBrowseAll,
+  programsHandoffQuery = '',
 }: ResearchZeroResultRecoveryProps) => (
   <section
     aria-label="Ways to recover this search"
@@ -87,6 +90,12 @@ const ResearchZeroResultRecovery = ({
         <button type="button" onClick={onRelaxQuery} className={actionClassName}>
           Search &lsquo;{relaxedQuery}&rsquo; instead
         </button>
+      </div>
+    )}
+
+    {programsHandoffQuery.trim() && (
+      <div className="mt-4">
+        <ResearchProgramsHandoff query={programsHandoffQuery} />
       </div>
     )}
 

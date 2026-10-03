@@ -27,6 +27,7 @@ import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
+import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -112,10 +113,13 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   },
 };
 
+export const MESH_DESCRIPTOR_ONLY_TERMS_FIELD = 'meshDescriptorOnlyTerms';
+
 export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = Array.from(
   new Set([
     RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
     'slug',
+    MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
@@ -592,6 +596,20 @@ export function buildResearchEntitySearchIndexDocument(
   if (studentSearchTerms.length > 0) {
     out.studentSearchTerms = studentSearchTerms;
   }
+  const descriptorOnlyTerms = meshDescriptorOnlyTerms(
+    Array.isArray(out.researchAreas) ? out.researchAreas : [],
+    out.fieldProvenance,
+    [
+      out.name,
+      out.displayName,
+      out.shortDescription,
+      out.fullDescription,
+      out.departments,
+      out.orgAffiliationLabels,
+      out.methods,
+    ],
+  );
+  if (descriptorOnlyTerms.length > 0) out[MESH_DESCRIPTOR_ONLY_TERMS_FIELD] = descriptorOnlyTerms;
   return projectToIndexedFields(out);
 }
 

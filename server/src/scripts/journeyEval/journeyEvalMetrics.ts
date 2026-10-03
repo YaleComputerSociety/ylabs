@@ -650,3 +650,115 @@ export function checkUndergradEvidenceQuoteAttribution(
   }
   return buildInvariant(id, title, unattributed === 0, detail);
 }
+
+export interface ServedQueryPair {
+  baselineQuery: string;
+  baselineKeys: readonly string[];
+  variantQuery: string;
+  variantKeys: readonly string[];
+}
+
+export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows';
+
+const variantAgrees = (pair: ServedQueryPair, agreement: QueryVariantAgreement): boolean => {
+  if (agreement === 'coversBaselineRows') {
+    const variantKeys = new Set(pair.variantKeys);
+    return pair.baselineKeys.every((key) => variantKeys.has(key));
+  }
+  return (
+    pair.baselineKeys.length === pair.variantKeys.length &&
+    pair.baselineKeys.every((key, index) => pair.variantKeys[index] === key)
+  );
+};
+
+export function checkQueryVariantServesTheBaseline(
+  id: string,
+  title: string,
+  pairs: readonly ServedQueryPair[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+  agreement: QueryVariantAgreement = 'sameOrderedRows',
+): InvariantResult {
+  const compared = pairs.map((pair) => ({
+    baselineQuery: pair.baselineQuery,
+    variantQuery: pair.variantQuery,
+    baselineServed: pair.baselineKeys.length,
+    variantServed: pair.variantKeys.length,
+    agrees: variantAgrees(pair, agreement),
+  }));
+  const detail = { agreement, pairs: compared };
+  if (compared.some((pair) => pair.baselineServed === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'A baseline query served no rows, so agreement with it would be a green signal over an empty population',
+      detail,
+    );
+  }
+  const disagreeing = compared.filter((pair) => !pair.agrees).length;
+  if (disagreeing > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed between the two queries, so a ranking difference may be a write rather than the query',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, disagreeing === 0, detail);
+}
+
+export type QueryEvidenceClass = 'ownEvidence' | 'meshDescriptorOnly' | 'other';
+
+export interface QueryEvidenceRanking {
+  query: string;
+  topClasses: readonly QueryEvidenceClass[];
+  meshDescriptorOnlyServed: number;
+}
+
+export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+  rankings: readonly QueryEvidenceRanking[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'mesh-descriptor-only-rows-rank-below-own-evidence';
+  const title =
+    'No row matching a query only through a MeSH descriptor outranks a row whose own text names the query';
+  const perQuery = rankings.map((ranking) => {
+    const lastOwnEvidenceRank = ranking.topClasses.lastIndexOf('ownEvidence');
+    const outranking = ranking.topClasses.filter(
+      (evidence, rank) => evidence === 'meshDescriptorOnly' && rank < lastOwnEvidenceRank,
+    ).length;
+    return {
+      query: ranking.query,
+      ranked: ranking.topClasses.length,
+      ownEvidenceInTop: ranking.topClasses.filter((evidence) => evidence === 'ownEvidence').length,
+      meshDescriptorOnlyInTop: ranking.topClasses.filter(
+        (evidence) => evidence === 'meshDescriptorOnly',
+      ).length,
+      meshDescriptorOnlyServed: ranking.meshDescriptorOnlyServed,
+      meshDescriptorOnlyOutrankingOwnEvidence: outranking,
+    };
+  });
+  const detail = { queries: perQuery };
+  if (perQuery.some((query) => query.meshDescriptorOnlyServed === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'A query served no MeSH-descriptor-only row, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  const violations = perQuery.reduce(
+    (total, query) => total + query.meshDescriptorOnlyOutrankingOwnEvidence,
+    0,
+  );
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rows were classified, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, detail);
+}

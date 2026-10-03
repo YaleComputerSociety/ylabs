@@ -6,6 +6,11 @@ import { unattributedResearchAreaDrops } from '../../utils/servedResearchAreaGua
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
+  buildResearchEntitySearchIndexDocument,
+  MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+} from '../../services/researchEntitySearchIndexService';
+import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
+import {
   attributeTopicDrops,
   buildInconclusiveInvariant,
   buildInvariant,
@@ -13,6 +18,8 @@ import {
   checkExpectedNoResults,
   checkFacetAgreement,
   checkConstantReportedTotal,
+  checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkQueryRelevance,
@@ -32,6 +39,7 @@ import {
   type CorpusFingerprint,
   type FacetAgreementObservation,
   type InvariantResult,
+  type QueryEvidenceClass,
   type RateResult,
   type QuoteAttributionObservation,
   type SurvivorWebsiteObservation,
@@ -739,6 +747,117 @@ const survivorWebsiteAttribution: JourneyCase = {
   },
 };
 
+const INSTITUTION_WORD_QUERY_PAIRS = [
+  { baselineQuery: 'machine learning', variantQuery: 'machine learning research at yale' },
+  { baselineQuery: 'robotics', variantQuery: 'robotics research at yale' },
+  { baselineQuery: 'neuroscience', variantQuery: 'yale university neuroscience' },
+];
+const QUERY_PAIR_DEPTH = 10;
+
+const institutionWordKeepsTopicRanking: JourneyCase = {
+  id: 'institution-word-keeps-topic-ranking',
+  title: 'Adding the institution name to a topic query serves the same top rows as the topic',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of INSTITUTION_WORD_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'institution-word-serves-the-topic-ranking',
+          'A topic query with "yale" added serves the same ordered top rows as the topic alone',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+const MESH_DESCRIPTOR_PROBE_QUERIES = ['robotics', 'machine learning'];
+const MESH_DESCRIPTOR_TOP_DEPTH = 10;
+const MESH_DESCRIPTOR_POOL_DEPTH = 50;
+const OWN_EVIDENCE_INDEX_FIELDS = [
+  'name',
+  'displayName',
+  'shortDescription',
+  'fullDescription',
+  'departments',
+  'orgAffiliationLabels',
+  'methods',
+];
+
+const indexedWordKeys = (document: Record<string, unknown>, fields: string[]): Set<string> =>
+  new Set(
+    fields
+      .flatMap((field) => {
+        const value = document[field];
+        return Array.isArray(value) ? value : [value];
+      })
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap(meshDescriptorWordKeys),
+  );
+
+const classifyQueryEvidence = (
+  storedRow: Record<string, unknown> | undefined,
+  queryKeys: readonly string[],
+): QueryEvidenceClass => {
+  const document = storedRow ? buildResearchEntitySearchIndexDocument(storedRow) : null;
+  if (!document) return 'other';
+  const descriptorOnlyTerms = document[MESH_DESCRIPTOR_ONLY_TERMS_FIELD];
+  if (
+    Array.isArray(descriptorOnlyTerms) &&
+    queryKeys.some((key) => descriptorOnlyTerms.includes(key))
+  ) {
+    return 'meshDescriptorOnly';
+  }
+  const ownKeys = indexedWordKeys(document, OWN_EVIDENCE_INDEX_FIELDS);
+  return queryKeys.every((key) => ownKeys.has(key)) ? 'ownEvidence' : 'other';
+};
+
+const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
+  id: 'mesh-descriptor-ranks-below-own-evidence',
+  title: "A MeSH technique descriptor never outranks a row's own evidence for the query",
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const rankings = [];
+    for (const query of MESH_DESCRIPTOR_PROBE_QUERIES) {
+      const keys = servedRows(await context.browse({ query, pageSize: MESH_DESCRIPTOR_POOL_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+      const storedRows = await context.readStoredRows(keys);
+      const queryKeys = meshDescriptorWordKeys(query);
+      const classes = keys.map((key) => classifyQueryEvidence(storedRows.get(key), queryKeys));
+      rankings.push({
+        query,
+        topClasses: classes.slice(0, MESH_DESCRIPTOR_TOP_DEPTH),
+        meshDescriptorOnlyServed: classes.filter((evidence) => evidence === 'meshDescriptorOnly')
+          .length,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(rankings, corpusBefore, corpusAfter),
+      ],
+      rates: [],
+    };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
@@ -750,4 +869,6 @@ export const journeyCases: readonly JourneyCase[] = [
   topicQueryRelevance,
   undergradEvidenceQuotePrecision,
   survivorWebsiteAttribution,
+  institutionWordKeepsTopicRanking,
+  meshDescriptorRanksBelowOwnEvidence,
 ];
