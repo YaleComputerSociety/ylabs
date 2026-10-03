@@ -1785,6 +1785,12 @@ When no official profile bio exists, trusted personal or lab homepages may suppo
 
 Explicit `View Lab Website` links on official Yale profiles are a stronger research-home signal than broad profile affiliations. This path may accept a non-Yale lab domain when the official profile card itself labels the target as a lab website; the materialized lab name should use the profile person's name plus `Lab`, with credential suffixes such as `PhD` stripped. These lab-card links still must not be confused with profile chrome, academic-publication concept links, social/profile services, or broader center/department pages.
 
+An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
+The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.
+
+When a row has more than one official profile, `official-profile-pi-backfill` reads the lead's own recorded official profile (`profileLinks` kind `YALE_OFFICIAL`) first and orders the rest with the shared `personProfileRanking` order the detail page uses (#4459).
+It no longer prefers `medicine.yale.edu` outright, because that school-wide directory mirrors profiles for people appointed elsewhere, and reading the mirror first hid the department profile's lab-site link.
+
 The department-roster scraper no longer extracts official-profile publications or linked publication lists, and the entity materializer ignores historical `officialProfilePublications` observations instead of creating `research_scholarly_links`.
 The standalone official-profile publication-pointer repair command is also retired.
 Paper Observation materialization and the `Paper` and `PaperAuthor` models and their readers are fully retired, with no rollback opt-in.
