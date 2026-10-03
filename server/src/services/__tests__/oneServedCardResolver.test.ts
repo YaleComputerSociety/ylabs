@@ -206,3 +206,17 @@ describe('a served card never opens on an unmatched quotation mark (#4341)', () 
     }
   });
 });
+
+describe("the served copy keeps laboratory where it is not the row's own (#4432)", () => {
+  it('serves a laboratory study and a laboratory research heading as written', () => {
+    const row = facultyResearchRow({
+      name: 'Ada Fixture Faculty Research',
+      fullDescription:
+        'Ada Fixture studies drug resistance in prostate cancer. She conducts both Phase 1 human laboratory studies and outpatient clinical trials of new therapies for advanced disease. Laboratory research: mechanism of treatment resistance in prostate cancer, using patient-derived models.',
+    });
+    const served = servedResearchEntityCopy(row, ['Ada Fixture']);
+    expect(served.fullDescription).toContain('human laboratory studies');
+    expect(served.fullDescription).toContain('Laboratory research: mechanism');
+    expect(served.fullDescription).not.toContain('research program');
+  });
+});
