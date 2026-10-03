@@ -28,6 +28,10 @@
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import {
+  resolveCenterConfigKey,
+  type CenterConfigKeyResolution,
+} from '../centerConfigKeyResolution';
+import {
   buildCenterRosterHealthSnapshot,
   CENTER_ROSTER_HEALTH_ENTITY_TYPE,
   CENTER_ROSTER_HEALTH_FIELD,
@@ -260,6 +264,33 @@ export function centerRosterSiteRefusal(config: CenterConfig): CenterRosterSiteR
 
 export function centerEntityKey(config: CenterConfig): string {
   return config.entityKey || `center-${config.centerKey}`;
+}
+
+export type CenterConfigRouteRefusal =
+  | 'archived-without-survivor'
+  | 'survivor-claimed-by-another-config';
+
+export type CenterConfigRoute =
+  | { config: CenterConfig; redirectedFrom?: string }
+  | { refusal: CenterConfigRouteRefusal };
+
+export async function routeCenterConfigToLiveRow(
+  config: CenterConfig,
+  allConfigs: readonly CenterConfig[],
+  resolve: (entityKey: string) => Promise<CenterConfigKeyResolution> = resolveCenterConfigKey,
+): Promise<CenterConfigRoute> {
+  const configuredKey = centerEntityKey(config);
+  const resolution = await resolve(configuredKey);
+  if (resolution.kind === 'live' || resolution.kind === 'unminted') return { config };
+  if (resolution.kind === 'archived-without-survivor') return { refusal: resolution.kind };
+  const survivorIsAnotherConfigsRow = allConfigs.some(
+    (other) => other !== config && centerEntityKey(other) === resolution.survivorKey,
+  );
+  if (survivorIsAnotherConfigsRow) return { refusal: 'survivor-claimed-by-another-config' };
+  return {
+    config: { ...config, entityKey: resolution.survivorKey },
+    redirectedFrom: configuredKey,
+  };
 }
 
 export function centerHomeUrlWriteRefusal(
@@ -1934,6 +1965,7 @@ export class CentersInstitutesScraper implements IScraper {
     const perCenter: Array<{ key: string; status: string; count: number }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
     const rosterSiteRefusals: Array<{ key: string; reason: CenterRosterSiteRefusal }> = [];
+    const survivorRoutes: Array<{ key: string; from: string; to: string }> = [];
 
     const refuseRosterSite = (
       config: CenterConfig,
@@ -2060,9 +2092,30 @@ export class CentersInstitutesScraper implements IScraper {
       });
     };
 
-    for (const config of this.configs) {
-      if (onlyFilter && !onlyFilter.has(config.centerKey.toLowerCase())) continue;
+    for (const configured of this.configs) {
+      if (onlyFilter && !onlyFilter.has(configured.centerKey.toLowerCase())) continue;
       if (centersProcessed >= limit) break;
+
+      const route = await routeCenterConfigToLiveRow(configured, this.configs);
+      if ('refusal' in route) {
+        ctx.log(
+          `[${configured.centerKey}] refused - its row ${sanitizeLogValue(centerEntityKey(configured))} is archived (${route.refusal}); nothing read`,
+        );
+        perCenter.push({ key: configured.centerKey, status: route.refusal, count: 0 });
+        centersProcessed++;
+        continue;
+      }
+      const config = route.config;
+      if (route.redirectedFrom) {
+        ctx.log(
+          `[${config.centerKey}] its row ${sanitizeLogValue(route.redirectedFrom)} was merged into ${sanitizeLogValue(centerEntityKey(config))}; reading the roster onto the survivor`,
+        );
+        survivorRoutes.push({
+          key: config.centerKey,
+          from: route.redirectedFrom,
+          to: centerEntityKey(config),
+        });
+      }
 
       const rosterSiteRefusal = centerRosterSiteRefusal(config);
       if (rosterSiteRefusal) {
@@ -2229,6 +2282,14 @@ export class CentersInstitutesScraper implements IScraper {
       `Emitted ${totalObs} observations across ${centersProcessed} centers, ${totalMembers} members, ${totalChildCenters} child centers (${summary})`,
     );
 
+    if (survivorRoutes.length > 0) {
+      ctx.log(
+        `Routed ${survivorRoutes.length} center config(s) onto their merge survivor: ${survivorRoutes
+          .map((route) => `${route.key} (${route.from} -> ${route.to})`)
+          .join(', ')}`,
+      );
+    }
+
     if (rosterSiteRefusals.length > 0) {
       ctx.log(
         `Refused ${rosterSiteRefusals.length} center roster(s) off the center's own site: ${rosterSiteRefusals
@@ -2240,7 +2301,11 @@ export class CentersInstitutesScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: centersProcessed + totalMembers + totalChildCenters,
-      notes: `Centers: ${summary}`,
+      notes: `Centers: ${summary}${
+        survivorRoutes.length > 0
+          ? `; routed onto merge survivor: ${survivorRoutes.map((route) => route.key).join(', ')}`
+          : ''
+      }`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
