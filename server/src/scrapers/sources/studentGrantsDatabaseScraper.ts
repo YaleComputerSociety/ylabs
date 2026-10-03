@@ -56,6 +56,8 @@ import {
   statedProseDeadlines,
 } from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
+import { Observation } from '../../models/observation';
+import { endOfNewYorkDay, newYorkCalendarDate } from '../../utils/newYorkTime';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import {
   fundIdentityKey,
@@ -356,9 +358,10 @@ function nextStatedApplicationWindow(
   const structured = parseApplicationWindow($);
   if (!structured.deadline) return structured;
   const structuredDeadline = structured.deadline;
+  const structuredDeadlineDayEnd = endOfNewYorkDay(newYorkCalendarDate(structuredDeadline));
   const laterCycles = CYCLE_PROSE_SECTION_IDS.flatMap((id) =>
     statedProseDeadlines(sectionText($, id) || '', referenceDate),
-  ).filter((deadline) => deadline.getTime() > structuredDeadline.getTime());
+  ).filter((deadline) => deadline.getTime() > structuredDeadlineDayEnd.getTime());
   const deadline = nextCycleDeadline([structuredDeadline, ...laterCycles], referenceDate);
   return deadline === structuredDeadline ? structured : { deadline };
 }
@@ -588,10 +591,19 @@ export async function loadCitedFundDetailUrls(): Promise<string[]> {
     },
     { applicationLink: 1, links: 1 },
   ).lean()) as Array<{ applicationLink?: unknown; links?: Array<{ url?: unknown }> }>;
-  const urls = rows.flatMap((row) => [
-    row.applicationLink,
-    ...(Array.isArray(row.links) ? row.links.map((link) => link?.url) : []),
-  ]);
+  const retiredFundUrls = (await Observation.distinct('sourceUrl', {
+    entityType: 'fellowship',
+    sourceName: STUDENT_GRANTS_DATABASE_SOURCE,
+    field: 'archived',
+    value: true,
+  })) as unknown[];
+  const urls = [
+    ...rows.flatMap((row) => [
+      row.applicationLink,
+      ...(Array.isArray(row.links) ? row.links.map((link) => link?.url) : []),
+    ]),
+    ...retiredFundUrls,
+  ];
   return urls.filter(
     (url): url is string => typeof url === 'string' && isRecordSpecificFundDetailUrl(url),
   );

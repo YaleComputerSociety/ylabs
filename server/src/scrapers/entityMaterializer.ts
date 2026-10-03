@@ -4774,9 +4774,7 @@ async function fundFacetObservationsCitedBy(
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
   const retirement = newestFundRetirement(kept);
-  if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) {
-    return retirement ? [retirement] : [];
-  }
+  if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
   return kept.filter(
     (observation: any) =>
       observation === retirement ||

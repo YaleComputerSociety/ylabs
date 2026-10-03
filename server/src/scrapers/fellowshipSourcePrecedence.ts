@@ -184,7 +184,7 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   }
   for (const [field, resolvedField] of Object.entries(input.resolved)) {
     if (!(field in input.staged)) continue;
-    if (isFundRetirementWrite(field, input.staged)) continue;
+    if (input.fundSpeaksForRow && isFundRetirementWrite(field, input.staged)) continue;
     if (!isEnrichOnlyWriteOnAnotherLanesRow(input.stored, resolvedField?.contributingSources)) {
       continue;
     }

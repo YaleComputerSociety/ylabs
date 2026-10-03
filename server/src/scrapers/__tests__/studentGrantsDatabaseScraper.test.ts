@@ -1096,6 +1096,30 @@ describe('a later cycle the fund prose states (#4171)', () => {
     expect(fund.deadline?.toISOString()).toBe('2027-01-05T04:59:59.999Z');
   });
 
+  it('never reads prose restating the structured deadline day as a later cycle', () => {
+    const restated = (referenceDate: Date) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: '6/05/2026',
+          deadline: '7/30/2026 5:00 PM',
+          applicationInformation: 'The deadline is July 30, 2026.',
+        }),
+        { title: '', url: FUND_A_URL },
+        referenceDate,
+      )!;
+
+    for (const referenceDate of [
+      new Date('2026-07-31T01:00:00Z'),
+      new Date('2026-10-03T12:00:00Z'),
+    ]) {
+      const fund = restated(referenceDate);
+
+      expect(fund.deadline?.toISOString()).toBe('2026-07-30T21:00:00.000Z');
+      expect(fund.applicationOpenDate?.toISOString()).toBe('2026-06-05T04:00:00.000Z');
+      expect(fund.isAcceptingApplications).toBe(false);
+    }
+  });
+
   it('never moves a deadline earlier than the structured one', () => {
     const fund = parseFundDetailPage(
       fundDetailHtml({

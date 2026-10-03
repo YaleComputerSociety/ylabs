@@ -19,6 +19,7 @@ import {
 } from '../entityMaterializer';
 import { sourceKeyForFund } from '../fellowshipFundFacets';
 import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
+import { loadCitedFundDetailUrls } from '../sources/studentGrantsDatabaseScraper';
 
 const OFFICE = 'yale-college-fellowships-office';
 const GRANTS = 'student-grants-database';
@@ -261,6 +262,29 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
 
     expect((await officeRow())?.archived).toBe(true);
+  });
+
+  it('a retired fund that describes a different program archives neither pass (#4174)', async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await observe(OFFICE_KEY, OFFICE, OFFICE_PAGE, { archived: false }, '2026-03-02T00:00:00Z');
+    await seedFund(FUND_PAGE, FUND_FACETS, '2026-02-01T00:00:00Z');
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { title: 'Common Application' }, '2026-02-02T00:00:00Z');
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-04-01T00:00:00Z');
+
+    await materializeEntity('fellowship', { entityKey: FUND_KEY });
+    const afterFundPass = await officeRow();
+    await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+
+    expect(afterFundPass?.archived).toBe(false);
+    expect((await officeRow())?.archived).toBe(false);
+  });
+
+  it('keeps reading a retired fund whose only citing row it archived (#4174)', async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await Fellowship.updateOne({ sourceKey: OFFICE_KEY }, { $set: { archived: true } });
+    await observe(FUND_KEY, GRANTS, FUND_PAGE, { archived: true }, '2026-04-01T00:00:00Z');
+
+    expect(await loadCitedFundDetailUrls()).toContain(FUND_PAGE);
   });
 
   it("the owning lane's pass keeps the fund's application window over its own (#4412)", async () => {
