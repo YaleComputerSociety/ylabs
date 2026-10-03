@@ -1334,8 +1334,14 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     it('keeps an operator correction of the name', () => {
       expect(
-        reasonsFor({ name: { sourceName: 'manual-data-correction', sourceUrl: PROFILE } }),
+        reasonsFor({ name: { sourceName: 'manual-admin-edit', sourceUrl: PROFILE } }),
       ).not.toContain('unbacked_lab_name');
+    });
+
+    it('holds a lab name a repair script wrote directly', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'manual-data-correction', sourceUrl: PROFILE } }),
+      ).toContain('unbacked_lab_name');
     });
   });
 

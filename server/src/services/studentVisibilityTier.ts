@@ -1,5 +1,6 @@
 import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
+import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import {
   isStudiesResearchAreaEchoDescription,
   sanitizeCatalogDescription,
@@ -360,15 +361,13 @@ function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
   if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
   if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
-  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
+  if (
+    OPERATOR_AUTHORED_SOURCE_NAMES.includes(textValue(entity.fieldProvenance?.name?.sourceName))
+  ) {
+    return false;
+  }
   return !citedUrls(entity).some(urlNamesALaboratory);
 }
-
-const OPERATOR_NAME_SOURCES: ReadonlySet<string> = new Set([
-  'manual-data-correction',
-  'manual-admin-edit',
-  'manual-pi-edit',
-]);
 
 /**
  * A recorded name source backs a lab name only when the lane that recorded it also
