@@ -667,6 +667,9 @@ describe('auth environment guards', () => {
         userConfirmed: true,
         profileVerified: false,
         isAdmin: false,
+        sessionId: expect.stringMatching(/^[0-9a-f]{32}$/),
+        issuedAt: expect.any(Number),
+        sessionVersion: 0,
       },
     });
 

@@ -24,12 +24,15 @@ vi.mock('../services/adminGrantService', () => ({
 }));
 
 import passport from '../passport';
+import { mintSessionClaim } from '../utils/sessionClaim';
 
 const deserialize = async (principal: Record<string, unknown>) => {
   const deserializer = (passport as any)._deserializers[0];
 
   return new Promise<{ error: unknown; user: any }>((resolve) => {
-    deserializer(principal, (error: unknown, user: any) => resolve({ error, user }));
+    deserializer({ ...principal, ...mintSessionClaim(0) }, (error: unknown, user: any) =>
+      resolve({ error, user }),
+    );
   });
 };
 

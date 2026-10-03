@@ -25,6 +25,7 @@ export interface AccountRecord {
   lastLoginAt?: Date;
   profile?: AccountProfile;
   archived: boolean;
+  sessionVersion?: number;
 }
 
 export const accountProfileSchema = new mongoose.Schema<AccountProfile>(
@@ -77,6 +78,11 @@ export const accountSchema = new mongoose.Schema<AccountRecord>(
     archived: {
       type: Boolean,
       default: false,
+    },
+    sessionVersion: {
+      type: Number,
+      min: 0,
+      default: 0,
     },
   },
   {

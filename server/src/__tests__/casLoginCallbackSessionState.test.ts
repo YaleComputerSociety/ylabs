@@ -104,9 +104,17 @@ const sessionCookieHeader = (payload: Record<string, unknown>): string => {
   )}`;
 };
 
+const SIGNED_IN_PRINCIPAL = {
+  netId: SIGNED_IN_NETID,
+  userType: 'graduate',
+  sessionId: 'a'.repeat(32),
+  issuedAt: Date.now(),
+  sessionVersion: 0,
+};
+
 const signedInCookieHeader = (): string =>
   sessionCookieHeader({
-    passport: { user: { netId: SIGNED_IN_NETID, userType: 'graduate' } },
+    passport: { user: SIGNED_IN_PRINCIPAL },
   });
 
 const cookieHeaderFrom = (response: Response): string =>
@@ -279,7 +287,7 @@ describe('CAS login callback binding', () => {
       const refused = await get(callbackUrl, existing);
       expectRefusedCallback(refused, validationsBefore);
       expect(sessionPayloadOf(refused.cookie).passport).toEqual({
-        user: { netId: SIGNED_IN_NETID, userType: 'graduate' },
+        user: SIGNED_IN_PRINCIPAL,
       });
 
       const check = await get(`${baseUrl}/api/check`, existing);

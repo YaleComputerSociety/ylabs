@@ -18,7 +18,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
         unavailable -> the userType a previous login stored on Account.profile, else "unknown"
         not_found -> "unknown"
      -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
-     -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
+     -> cookie-session carrying a session claim, httpOnly, secure in prod, sameSite lax
+     -> deserializeUser refuses it after sign-out or 30 days (SESSION_LIFETIME_MS)
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
@@ -38,6 +39,22 @@ There is no Yale Directory fallback: `directory.yale.edu` is behind a per-person
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
 A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
+
+### Sessions are revocable and expire on the server (#4010)
+
+The session is still a signed `cookie-session` cookie with no server-side session store, so the server keeps no list of live sessions.
+What makes it revocable is a claim `serializeUser` adds to the signed principal at every sign-in: a fresh random `sessionId`, an `issuedAt` time, and the account's current `Account.sessionVersion`.
+The helpers live in `server/src/utils/sessionClaim.ts`.
+`deserializeUser` refuses a principal with no claim, a claim whose `sessionVersion` differs from the stored one, and a claim older than `SESSION_LIFETIME_MS` (30 days), so the lifetime holds even for a client that keeps the cookie past its `Expires`.
+The check rides on the `Account` read that `deserializeUser` already does, so it costs no extra query.
+Sign-out calls `revokeAccountSessions`, which increments `sessionVersion`, so it ends every copy of that account's sessions on every device, not just the browser that signed out.
+`revokeAccountSessions` is also the call an operator or admin path should use to end a suspected leaked session.
+The fresh `sessionId` per sign-in is the fixation defence: a cookie captured before a sign-in never carries the signed-in principal, and two sign-ins never share an id.
+The Passport `regenerate` shim stays a no-op because there is no stored session to rotate.
+A missing `sessionVersion` on an older `Account` reads as `0`; the field needs no index because it is read only through the `netid` lookup.
+Cookies issued before this change carry no claim, so the deploy that shipped it signed everyone out once.
+`server/src/__tests__/sessionRevocation.integration.test.ts` drives sign-in, sign-out, replay, expiry, and id rotation through the mounted app against a stub CAS and an in-memory Mongo.
+Key rotation with an overlap window is not implemented: one `SESSION_SECRET` signs every cookie, so changing it still signs everyone out.
 
 ### The two legs of `GET /api/cas`
 

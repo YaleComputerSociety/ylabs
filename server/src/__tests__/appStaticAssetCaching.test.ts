@@ -26,7 +26,18 @@ const signCookie = (name: string, value: string): string =>
     .replace(/\/|\+|=/g, (character) => ({ '/': '_', '+': '-', '=': '' })[character] ?? '');
 
 const signedInSessionCookieHeader = (): string => {
-  const value = Buffer.from(JSON.stringify({ passport: { user: 'abc123' } })).toString('base64');
+  const value = Buffer.from(
+    JSON.stringify({
+      passport: {
+        user: {
+          netId: 'abc123',
+          sessionId: 'c'.repeat(32),
+          issuedAt: Date.now(),
+          sessionVersion: 0,
+        },
+      },
+    }),
+  ).toString('base64');
   const signature = signCookie(SESSION_COOKIE_NAME, value);
   return `${SESSION_COOKIE_NAME}=${value}; ${SESSION_COOKIE_NAME}.sig=${signature}`;
 };
