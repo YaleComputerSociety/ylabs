@@ -699,6 +699,8 @@ describe('a title-derived role is scoped to the center being read (#4475)', () =
       'Emery Synthetic',
       'Professor; Co-Director, Yale Center for Placeholder Studies',
     ),
+    gridCard('ff', 'Gale Synthetic', 'Professor of Fixtures; Director of the Institute'),
+    gridCard('gg', 'Harper Synthetic', 'Director of Research'),
   ].join('');
   const roles = (centerName?: string) =>
     Object.fromEntries(
@@ -713,6 +715,14 @@ describe('a title-derived role is scoped to the center being read (#4475)', () =
       'Avery Synthetic': 'director',
       'Devon Synthetic': 'co-director',
     });
+  });
+
+  it('reads a directorship of the generically named center as this center', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Gale Synthetic': 'director' });
+  });
+
+  it('keeps a functional directorate of the center a roster member', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Harper Synthetic': 'core-faculty' });
   });
 
   it('reads a directorship of another unit as membership', () => {

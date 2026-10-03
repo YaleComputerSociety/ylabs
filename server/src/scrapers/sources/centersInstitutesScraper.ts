@@ -410,6 +410,16 @@ function directorshipNamedUnit(clause: string): string | undefined {
   const commaUnit = clause.match(DIRECTORSHIP_COMMA_NAMED_UNIT)?.[1];
   return commaUnit && ORGANIZATION_NOUN.test(commaUnit) ? commaUnit : undefined;
 }
+
+function organizationTextIsGenericSelfReference(organizationText: string): boolean {
+  const words = organizationNameWords(organizationText);
+  return (
+    words.some((word) => ORGANIZATION_NOUN.test(word)) &&
+    words.every(
+      (word) => ORGANIZATION_NAME_FILLER_WORDS.has(word) || ORGANIZATION_NOUN.test(word),
+    )
+  );
+}
 const FORMER_DIRECTORSHIP =
   /\bformer(?:ly)?\s+(?:\S+\s+){0,4}\S*director\b|\bdirector\s+emerit(?:us|a)\b|\bemerit(?:us|a)\s+\S*director\b/i;
 const CLOSED_YEAR_RANGE = /\b((?:19|20)\d{2})\s*[-\u2013\u2014]\s*((?:19|20)?\d{2})\b/g;
@@ -447,7 +457,11 @@ function directorClausesForUnit(title: string, unitName: string | undefined): st
     .filter((clause) => !isHistoricalDirectorship(clause))
     .filter((clause) => {
       const namedUnit = directorshipNamedUnit(clause);
-      return !namedUnit || organizationTextNamesUnit(namedUnit, unitName);
+      return (
+        !namedUnit ||
+        organizationTextIsGenericSelfReference(namedUnit) ||
+        organizationTextNamesUnit(namedUnit, unitName)
+      );
     });
 }
 
