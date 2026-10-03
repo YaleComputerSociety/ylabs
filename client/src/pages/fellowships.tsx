@@ -39,6 +39,7 @@ import useUndoableProgramUnwatch, {
 import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
+import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
 import {
   programKindLabel,
   entryModeLabel,
@@ -350,6 +351,8 @@ const Fellowships = () => {
     searchParams.get(PROGRAM_PARAM) || searchParams.get(LEGACY_PROGRAM_PARAM);
   const {
     queryString,
+    queryCorrection,
+    searchTypedSpelling,
     fellowships,
     isLoading,
     loadError,
@@ -841,6 +844,15 @@ const Fellowships = () => {
                   placeholder="Try a topic, program, deadline, or funding source"
                   className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
+                {queryCorrection && queryCorrection.originalQuery === queryString.trim() && (
+                  <div className="mt-2">
+                    <SearchSpellingNotice
+                      originalQuery={queryCorrection.originalQuery}
+                      correctedQuery={queryCorrection.correctedQuery}
+                      onSearchOriginal={searchTypedSpelling}
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
                 <FellowshipSortDropdown />

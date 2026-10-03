@@ -23,6 +23,8 @@ export interface CorrectedSearchQuery {
   corrections: SearchQueryCorrection[];
 }
 
+export type SearchSpellingProtectedTerms = Pick<ReadonlySet<string>, 'has'>;
+
 export const SPELLING_CANDIDATE_MIN_DOCUMENTS = 3;
 
 const WORD_PATTERN = /[\p{L}\p{M}]+/gu;
@@ -108,7 +110,7 @@ export const boundedEditDistance = (a: string, b: string, maxEdits: number): num
 const correctWord = (
   word: string,
   vocabulary: SearchSpellingVocabulary,
-  protectedTerms: ReadonlySet<string>,
+  protectedTerms: SearchSpellingProtectedTerms,
 ): string | null => {
   if (!ASCII_WORD.test(word) || protectedTerms.has(word) || vocabulary.nameTerms.has(word)) {
     return null;
@@ -138,7 +140,7 @@ const correctWord = (
 export const correctSearchQuerySpelling = (
   query: string,
   vocabulary: SearchSpellingVocabulary | null,
-  protectedTerms: ReadonlySet<string> = new Set(),
+  protectedTerms: SearchSpellingProtectedTerms = new Set(),
 ): CorrectedSearchQuery => {
   if (!vocabulary || !query) return { query, corrections: [] };
   const corrections: SearchQueryCorrection[] = [];

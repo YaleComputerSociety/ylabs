@@ -46,6 +46,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const {
     queryString,
+    exactSpelling,
+    queryCorrection,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -75,6 +77,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const setQueryString = useCallback((value: string) => {
     dispatch({ type: 'SET_QUERY_STRING', payload: value });
   }, []);
+
+  const searchTypedSpelling = useCallback(() => {
+    if (!queryCorrection) return;
+    dispatch({ type: 'SEARCH_TYPED_SPELLING', payload: queryCorrection.originalQuery });
+  }, [queryCorrection]);
 
   const setSelectedYearOfStudy = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
@@ -159,6 +166,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const filtersRef = useRef({
     queryString,
+    exactSpelling,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -175,6 +183,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   });
   filtersRef.current = {
     queryString,
+    exactSpelling,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -235,6 +244,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       const formattedQuery = f.queryString.trim();
 
       let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${searchPageSize}`;
+
+      if (f.exactSpelling && formattedQuery) {
+        url += '&correctSpelling=false';
+      }
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -297,6 +310,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       const collected: Fellowship[] = [];
       let currentPage = 1;
       let reportedTotal = Infinity;
+      let queryCorrection = null;
 
       while (collected.length < reportedTotal) {
         const response = await axios.get(buildSearchUrl(currentPage, pageSize));
@@ -304,17 +318,18 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           createFellowship(elem),
         );
         collected.push(...pageResults);
+        if (currentPage === 1) queryCorrection = response.data.queryCorrection ?? null;
         reportedTotal =
           typeof response.data.total === 'number' ? response.data.total : collected.length;
         if (pageResults.length < pageSize || collected.length >= reportedTotal) break;
         currentPage += 1;
       }
 
-      return { collected, reportedTotal };
+      return { collected, reportedTotal, queryCorrection };
     };
 
     accumulate()
-      .then(({ collected, reportedTotal }) => {
+      .then(({ collected, reportedTotal, queryCorrection }) => {
         if (loadRequestIdRef.current !== requestId) return;
         dispatch({
           type: 'SEARCH_SUCCESS',
@@ -323,6 +338,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
             pageSize,
             append: false,
+            queryCorrection,
           },
         });
       })
@@ -353,6 +369,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
               total: response.data.total,
               pageSize,
               append: searchPage !== 1,
+              queryCorrection: response.data.queryCorrection ?? null,
             },
           });
         })
@@ -402,6 +419,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
+    exactSpelling,
     searchReady,
     searchIfParametersChanged,
   ]);
@@ -428,6 +446,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       value={{
         queryString,
         setQueryString,
+        queryCorrection,
+        searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,
         selectedProgramKind,

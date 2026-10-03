@@ -81,6 +81,7 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
           totalCount: data?.total,
           pageSize: data?.pageSize,
           totalPages: data?.totalPages,
+          spellingCorrected: Boolean(data?.queryCorrection),
         },
       }).catch((err) =>
         console.error('Error logging program search event:', sanitizeLogValue(err)),

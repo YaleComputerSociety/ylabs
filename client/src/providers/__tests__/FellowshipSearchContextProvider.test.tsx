@@ -53,6 +53,17 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
                 <p data-testid="search-exhausted">{String(context.searchExhausted)}</p>
                 <p data-testid="load-error">{String(context.loadError)}</p>
                 <p data-testid="is-loading">{String(context.isLoading)}</p>
+                <p data-testid="query-correction">
+                  {context.queryCorrection
+                    ? `${context.queryCorrection.originalQuery}>${context.queryCorrection.correctedQuery}`
+                    : ''}
+                </p>
+                <button type="button" onClick={() => context.setQueryString('sophmore')}>
+                  Type misspelling
+                </button>
+                <button type="button" onClick={context.searchTypedSpelling}>
+                  Search typed spelling
+                </button>
                 <button type="button" onClick={context.refreshFellowships}>
                   Retry
                 </button>
@@ -491,6 +502,41 @@ describe('FellowshipSearchContextProvider program routes', () => {
       });
       expect(searchUrls()).toHaveLength(2);
       expect(searchUrls()[1]).toContain('query=marine');
+    });
+  });
+});
+
+describe('FellowshipSearchContextProvider spelling correction (#4537)', () => {
+  it('exposes the correction and searches the typed spelling on request', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') return Promise.resolve({ data: {} });
+      if (url.includes('query=sophmore') && !url.includes('correctSpelling=false')) {
+        return Promise.resolve({
+          data: {
+            results: [],
+            total: 0,
+            queryCorrection: { originalQuery: 'sophmore', correctedQuery: 'sophomore' },
+          },
+        });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('is-loading').textContent).toBe('false'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Type misspelling' }));
+    await waitFor(
+      () => expect(screen.getByTestId('query-correction').textContent).toBe('sophmore>sophomore'),
+      { timeout: 3000 },
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Search typed spelling' }));
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining('query=sophmore&page=1&pageSize=100&correctSpelling=false'),
+      );
+      expect(screen.getByTestId('query-correction').textContent).toBe('');
     });
   });
 });

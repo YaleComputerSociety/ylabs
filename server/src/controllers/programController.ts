@@ -120,6 +120,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     studentVisibilityTier,
     includeOperatorReview,
     includeSuppressed,
+    correctSpelling,
   } = request.query;
   const currentUser = request.user as
     { netId?: string; netid?: string; userType?: string } | undefined;
@@ -147,6 +148,7 @@ export const searchProgramsController = async (request: Request, response: Respo
       : [],
     includeOperatorReview: hasAdminAuthority && includeOperatorReview === 'true',
     includeSuppressed: hasAdminAuthority && includeSuppressed === 'true',
+    correctSpelling: correctSpelling !== 'false',
   });
   const programs = hasAdminAuthority
     ? result.programs.map(withProgramAudience)
@@ -158,6 +160,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     page: result.page,
     pageSize: result.pageSize,
     totalPages: result.totalPages,
+    ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
   });
 };
 

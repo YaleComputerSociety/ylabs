@@ -3687,7 +3687,8 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /value\.slice\(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS\)/);
   assert.match(fellowshipService, /ids\s*\.slice\(0, MAX_FELLOWSHIP_ID_READS\)/);
   assert.match(fellowshipService, /PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS/);
-  assert.match(fellowshipService, /const safeQuery = boundedSearchQuery\(query\)/);
+  assert.match(fellowshipService, /const typedQuery = boundedSearchQuery\(query\)/);
+  assert.match(fellowshipService, /const safeQuery = boundedSearchQuery\(spelling\.query\)/);
   assert.match(
     fellowshipService,
     /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/,
