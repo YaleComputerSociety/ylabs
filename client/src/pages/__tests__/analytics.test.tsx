@@ -876,6 +876,8 @@ describe('Analytics page', () => {
     expect(screen.queryByText(/Listing Views/)).toBeNull();
     expect(screen.getAllByText(/Profile Opens/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Profile Opens/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Site searches/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'Site searches' })).toBeNull();
   });
 
   it('renders resolved names, entity links, and singular counts in Top Research Entities', async () => {

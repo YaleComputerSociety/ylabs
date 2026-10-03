@@ -49,8 +49,15 @@ import {
 } from '../utils/communityForceFundSearch';
 import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
-import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
+import {
+  type ProgramDateBoundary,
+  nextCycleDeadline,
+  parseProgramDate,
+  statedProseDeadlines,
+} from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
+import { Observation } from '../../models/observation';
+import { endOfNewYorkDay, newYorkCalendarDate } from '../../utils/newYorkTime';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import {
   fundIdentityKey,
@@ -338,6 +345,27 @@ function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadli
   return window;
 }
 
+const CYCLE_PROSE_SECTION_IDS = [
+  'lblApplicationInformation',
+  'lblBriefDescription',
+  'lblDescription',
+];
+
+function nextStatedApplicationWindow(
+  $: cheerio.CheerioAPI,
+  referenceDate: Date,
+): { opensAt?: Date; deadline?: Date } {
+  const structured = parseApplicationWindow($);
+  if (!structured.deadline) return structured;
+  const structuredDeadline = structured.deadline;
+  const structuredDeadlineDayEnd = endOfNewYorkDay(newYorkCalendarDate(structuredDeadline));
+  const laterCycles = CYCLE_PROSE_SECTION_IDS.flatMap((id) =>
+    statedProseDeadlines(sectionText($, id) || '', referenceDate),
+  ).filter((deadline) => deadline.getTime() > structuredDeadlineDayEnd.getTime());
+  const deadline = nextCycleDeadline([structuredDeadline, ...laterCycles], referenceDate);
+  return deadline === structuredDeadline ? structured : { deadline };
+}
+
 function awardAmountText($: cheerio.CheerioAPI): string | undefined {
   const text = sectionText($, 'lblAwardAmount')?.replace(/^award amount\s*:?\s*/i, '');
   return text && /\$|\d/.test(text) ? text.slice(0, 120) : undefined;
@@ -359,7 +387,7 @@ export function parseFundDetailPage(
   const title = sectionText($, 'lblFundName');
   if (!title) return null;
 
-  const { opensAt, deadline } = parseApplicationWindow($);
+  const { opensAt, deadline } = nextStatedApplicationWindow($, referenceDate);
   const closed = Boolean(sectionText($, 'lblFundClosedOn') || sectionText($, 'lblReasonClosed'));
   const now = referenceDate.getTime();
   const { yearOfStudy: yearOfStudyFilter, ...otherFacets } = parseFacets($);
@@ -457,6 +485,28 @@ function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
   ];
 }
 
+const RETIRED_FUND_NOTICE = /\bthis fund is no longer available\b/i;
+
+export function isRetiredFundPage(html: string): boolean {
+  const $ = cheerio.load(html);
+  if (sectionText($, 'lblFundName')) return false;
+  $('script, style, noscript').remove();
+  return RETIRED_FUND_NOTICE.test(cleanText($('body').text()));
+}
+
+export function retiredFundObservations(fundUrl: string): ObservationInput[] {
+  return [
+    {
+      entityType: 'fellowship',
+      entityKey: sourceKeyForFund(fundUrl),
+      sourceUrl: normalizeFundDetailUrl(fundUrl),
+      field: 'archived',
+      value: true,
+      confidenceOverride: 0.95,
+    },
+  ];
+}
+
 export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] {
   const base = {
     entityType: 'fellowship' as const,
@@ -541,10 +591,19 @@ export async function loadCitedFundDetailUrls(): Promise<string[]> {
     },
     { applicationLink: 1, links: 1 },
   ).lean()) as Array<{ applicationLink?: unknown; links?: Array<{ url?: unknown }> }>;
-  const urls = rows.flatMap((row) => [
-    row.applicationLink,
-    ...(Array.isArray(row.links) ? row.links.map((link) => link?.url) : []),
-  ]);
+  const retiredFundUrls = (await Observation.distinct('sourceUrl', {
+    entityType: 'fellowship',
+    sourceName: STUDENT_GRANTS_DATABASE_SOURCE,
+    field: 'archived',
+    value: true,
+  })) as unknown[];
+  const urls = [
+    ...rows.flatMap((row) => [
+      row.applicationLink,
+      ...(Array.isArray(row.links) ? row.links.map((link) => link?.url) : []),
+    ]),
+    ...retiredFundUrls,
+  ];
   return urls.filter(
     (url): url is string => typeof url === 'string' && isRecordSpecificFundDetailUrl(url),
   );
@@ -738,6 +797,7 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     let totalEntities = 0;
     let withDeadline = 0;
     let unavailable = 0;
+    let retired = 0;
     const readKeys = new Set<string>();
     const readNames = new Set<string>();
 
@@ -745,6 +805,16 @@ export class StudentGrantsDatabaseScraper implements IScraper {
       readKeys.add(fundIdentityKey(link.url));
       const detailHtml = await this.detailFetcher(link.url, ctx.options.useCache, this.name);
       const fund = detailHtml ? parseFundDetailPage(detailHtml, link, referenceDate) : null;
+      if (!fund && detailHtml && isRetiredFundPage(detailHtml)) {
+        retired += 1;
+        const observations = retiredFundObservations(link.url);
+        await ctx.emit(observations);
+        totalObservations += observations.length;
+        ctx.log('[student-grants] retired fund - the portal says it is no longer available', {
+          url: link.url,
+        });
+        return;
+      }
       if (!fund) {
         unavailable += 1;
         ctx.log('[student-grants] skipped fund - detail unavailable or not a fund page', {
@@ -774,13 +844,13 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     partialFailures.push(...postback.partialFailures);
 
     ctx.log(
-      `Emitted ${totalObservations} observations across ${totalEntities} student-grants funds (${withDeadline} with a parsed deadline, ${unavailable} skipped)`,
+      `Emitted ${totalObservations} observations across ${totalEntities} student-grants funds (${withDeadline} with a parsed deadline, ${retired} retired, ${unavailable} skipped)`,
     );
 
     return {
       observationCount: totalObservations,
       entitiesObserved: totalEntities,
-      notes: `funds=${totalEntities}, grid=${gridLinks.length}, postbackRows=${staticGrid.rows.length}, postbacks=${postback.posted}, postbackSkippedKnown=${postback.skippedKnown}, postbackUnresolved=${postback.unresolved}, cited=${seedUrls.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
+      notes: `funds=${totalEntities}, grid=${gridLinks.length}, postbackRows=${staticGrid.rows.length}, postbacks=${postback.posted}, postbackSkippedKnown=${postback.skippedKnown}, postbackUnresolved=${postback.unresolved}, cited=${seedUrls.length}, withDeadline=${withDeadline}, retired=${retired}, skipped=${unavailable}`,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }

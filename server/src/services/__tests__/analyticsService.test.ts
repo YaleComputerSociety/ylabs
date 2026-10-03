@@ -651,13 +651,13 @@ describe('getAnalytics research coverage and range scoping', () => {
 
       await db.collection('analyticsevents').insertMany([
         ...Array.from({ length: 3 }, () => ({
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'accountless01',
           userType: 'undergraduate',
           timestamp: new Date(),
         })),
         ...Array.from({ length: 5 }, () => ({
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'linked01',
           userType: 'graduate',
           timestamp: new Date(),
@@ -981,13 +981,13 @@ describe('getUserAnalytics', () => {
 
       await db.collection('analyticsevents').insertMany([
         {
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'linked01',
           userType: 'graduate',
           timestamp: new Date(),
         },
         {
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'accountless01',
           userType: 'undergraduate',
           timestamp: new Date(),

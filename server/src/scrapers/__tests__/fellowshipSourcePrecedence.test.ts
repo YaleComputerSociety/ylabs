@@ -251,3 +251,25 @@ describe('fellowshipAbsenceClearWithheldBySourcePrecedence', () => {
     ).toBe(false);
   });
 });
+
+describe('a retired fund on another lane row (#4174)', () => {
+  it("lets the fund's retirement archive the row, and never its live claim", () => {
+    expect(
+      withheld({ ...ownedRow, archived: false }, { archived: true }, 'student-grants-database'),
+    ).toEqual([]);
+    expect(
+      withheld({ ...ownedRow, archived: true }, { archived: false }, 'student-grants-database'),
+    ).toEqual(['archived']);
+  });
+
+  it('withholds the retirement of a fund that describes a different program', () => {
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: { ...ownedRow, archived: false },
+        staged: { archived: true },
+        resolved: { archived: { contributingSources: ['student-grants-database'] } },
+        fundSpeaksForRow: false,
+      }),
+    ).toEqual(['archived']);
+  });
+});

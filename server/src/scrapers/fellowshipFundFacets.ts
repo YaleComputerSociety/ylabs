@@ -19,6 +19,7 @@
  * whose owning lane also states a window took whichever pass ran last.
  */
 import {
+  FUND_RETIREMENT_FIELD,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fundAuthorityFieldsStated,
   fundFacetsDescribeProgram,
@@ -113,9 +114,44 @@ interface FacetObservationLike {
   _id?: unknown;
   field?: unknown;
   sourceName?: unknown;
+  value?: unknown;
+  observedAt?: unknown;
+}
+
+export function newestFundRetirement<T extends FacetObservationLike>(
+  observations: readonly T[],
+): T | undefined {
+  const newest = observations
+    .filter(
+      (observation) =>
+        observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
+        observation.field === FUND_RETIREMENT_FIELD,
+    )
+    .sort(
+      (a, b) =>
+        new Date((b.observedAt as Date) || 0).getTime() -
+        new Date((a.observedAt as Date) || 0).getTime(),
+    )[0];
+  return newest?.value === true ? newest : undefined;
 }
 
 export function preferFundFacetObservations<T extends FacetObservationLike>(
+  observations: readonly T[],
+  fundFacetObservations: readonly T[],
+): T[] {
+  const preferred = preferFundAuthorityObservations(
+    observations,
+    fundFacetObservations.filter((observation) => observation.field !== FUND_RETIREMENT_FIELD),
+  );
+  const retirement = newestFundRetirement(fundFacetObservations);
+  if (!retirement) return preferred;
+  return [
+    ...preferred.filter((observation) => observation.field !== FUND_RETIREMENT_FIELD),
+    retirement,
+  ];
+}
+
+function preferFundAuthorityObservations<T extends FacetObservationLike>(
   observations: readonly T[],
   fundFacetObservations: readonly T[],
 ): T[] {

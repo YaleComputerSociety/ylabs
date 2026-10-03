@@ -260,3 +260,30 @@ describe('the fund pass on another lane row whose fund names a different program
     ).toEqual(['purpose']);
   });
 });
+
+describe('a retired fund on the row that applies through it (#4174)', () => {
+  const archivedBy = (id: string, sourceName: string, value: boolean, observedAt: string) => ({
+    _id: id,
+    field: 'archived',
+    sourceName,
+    value,
+    observedAt: new Date(observedAt),
+  });
+
+  it("replaces the owning lane's live claim with the fund's newest retirement", () => {
+    const owningLane = archivedBy('lane', 'yale-college-fellowships-office', false, '2026-10-02');
+    const retirement = archivedBy('fund', 'student-grants-database', true, '2026-10-03');
+
+    expect(preferFundFacetObservations([owningLane], [retirement])).toEqual([retirement]);
+  });
+
+  it('never revives a row from a live fund, nor retires it once the fund is back', () => {
+    const owningLane = archivedBy('lane', 'yale-college-fellowships-office', true, '2026-10-02');
+    const live = archivedBy('fund-live', 'student-grants-database', false, '2026-10-01');
+    const retired = archivedBy('fund-old', 'student-grants-database', true, '2026-09-01');
+    const back = archivedBy('fund-back', 'student-grants-database', false, '2026-10-03');
+
+    expect(preferFundFacetObservations([owningLane], [live])).toEqual([owningLane]);
+    expect(preferFundFacetObservations([owningLane], [retired, back])).toEqual([owningLane]);
+  });
+});

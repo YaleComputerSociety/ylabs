@@ -143,6 +143,7 @@ import { planFellowshipClassification } from './fellowshipClassificationDerivati
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   FUND_AUTHORITY_FIELDS,
+  FUND_RETIREMENT_FIELD,
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
@@ -153,6 +154,7 @@ import {
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
   fundSpeaksForFellowship,
+  newestFundRetirement,
   preferFundFacetObservations,
 } from './fellowshipFundFacets';
 import {
@@ -4729,20 +4731,26 @@ async function findFellowshipByRecordSpecificApplicationLink(
 
   const query = new URL(applicationLink).search.replace(/^\?/, '');
   const observingLane = observedOwningFellowshipLane(obs);
-  const candidates = (
-    await Model.find({
-      applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
-      archived: { $ne: true },
-      ...(observingLane ? { sourceName: { $ne: observingLane } } : {}),
-    })
-      .limit(2)
-      .lean()
-  ).filter(
-    (candidate: any) =>
-      recordSpecificApplicationPortalIdentity(String(candidate.applicationLink || '').trim()) ===
-      fund,
-  );
-  return candidates.length === 1 ? candidates[0] : null;
+  const candidatesCitingFund = async (archived: boolean) =>
+    (
+      await Model.find({
+        applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
+        archived: archived ? true : { $ne: true },
+        ...(observingLane ? { sourceName: { $ne: observingLane } } : {}),
+      })
+        .limit(2)
+        .lean()
+    ).filter(
+      (candidate: any) =>
+        recordSpecificApplicationPortalIdentity(String(candidate.applicationLink || '').trim()) ===
+        fund,
+    );
+  const active = await candidatesCitingFund(false);
+  if (active.length > 0) return active.length === 1 ? active[0] : null;
+  // A fund retirement archives the row it resolved to, so a later read of the same fund,
+  // retired or republished, must resolve to that row rather than mint a duplicate (#4174).
+  const archived = await candidatesCitingFund(true);
+  return archived.length === 1 ? archived[0] : null;
 }
 
 // An owning lane finds its own rows by sourceKey, title and page, so a row it already owns
@@ -4768,14 +4776,16 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title'] },
+      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title', FUND_RETIREMENT_FIELD] },
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  const retirement = newestFundRetirement(kept);
   if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
   return kept.filter(
     (observation: any) =>
-      observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
-      FUND_AUTHORITY_FIELDS.has(String(observation.field)),
+      observation === retirement ||
+      (observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
+        FUND_AUTHORITY_FIELDS.has(String(observation.field))),
   );
 }
 
@@ -4829,6 +4839,9 @@ function hasRequiredFieldsForCreate(
 ): boolean {
   if (isResearchEntityObservationType(entityType)) {
     return !!insert.name;
+  }
+  if (entityType === 'fellowship') {
+    return !!insert.title;
   }
   return true;
 }

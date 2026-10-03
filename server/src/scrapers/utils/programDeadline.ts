@@ -161,3 +161,35 @@ export function nextCycleDeadline(
   if (deadlines.length === 0) return undefined;
   return deadlines.reduce((latest, deadline) => (deadline > latest ? deadline : latest));
 }
+
+const PROSE_DEADLINE_LABEL = /\bdeadlines?\b|\bdue\b/gi;
+const ANOTHER_APPLICATION_STEP =
+  /\b(?:recommend\w*|references?|referees?|notif\w*|decisions?|announc\w*|interviews?|info(?:rmation(?:al)?)?\s+sessions?|webinars?|events?|reports?)\b/i;
+const NAMED_DATE_WITH_YEAR_SOURCE = `(?:(?:${WEEKDAY_NAMES}),?\\s+)?(?:${MONTH_NAMES})\\s+\\d{1,2}(?!\\d),?\\s*\\d{4}`;
+const DATE_WITH_YEAR = new RegExp(
+  `(?:${NAMED_DATE_WITH_YEAR_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})${OPTIONAL_STATED_CLOCK_TIME}`,
+  'i',
+);
+const MAX_LABEL_TO_DATE_CHARS = 40;
+
+export function statedProseDeadlines(text: string, referenceDate: Date): Date[] {
+  const deadlines: Date[] = [];
+  for (const sentence of text.replace(/\s+/g, ' ').split(/(?<=[.!?;])\s+/)) {
+    const labels = Array.from(sentence.matchAll(PROSE_DEADLINE_LABEL));
+    let clauseStart = 0;
+    labels.forEach((label, index) => {
+      const labelStart = label.index ?? 0;
+      const labelEnd = labelStart + label[0].length;
+      const segmentEnd = labels[index + 1]?.index ?? sentence.length;
+      const segment = sentence.slice(labelEnd, segmentEnd);
+      const date = DATE_WITH_YEAR.exec(segment);
+      const lead = sentence.slice(clauseStart, labelStart);
+      if (!date || (date.index ?? 0) > MAX_LABEL_TO_DATE_CHARS) return;
+      clauseStart = labelEnd + (date.index ?? 0) + date[0].length;
+      if (ANOTHER_APPLICATION_STEP.test(`${lead} ${segment.slice(0, date.index)}`)) return;
+      const deadline = parseProgramDate(date[0], 'deadline', referenceDate);
+      if (deadline) deadlines.push(deadline);
+    });
+  }
+  return deadlines;
+}

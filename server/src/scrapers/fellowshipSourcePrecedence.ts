@@ -65,6 +65,12 @@ export const FUND_AUTHORITY_FIELDS: ReadonlySet<string> = new Set([
 // window from the owning lane would be served as closed.
 const APPLICATION_WINDOW_DATE_FIELDS = ['deadline', 'applicationOpenDate'];
 
+export const FUND_RETIREMENT_FIELD = 'archived';
+
+export function isFundRetirementWrite(field: string, staged: Record<string, unknown>): boolean {
+  return field === FUND_RETIREMENT_FIELD && staged[field] === true;
+}
+
 export function fundAuthorityFieldsStated(statedFields: Iterable<string>): Set<string> {
   const stated = new Set([...statedFields].filter((field) => FUND_AUTHORITY_FIELDS.has(field)));
   if (!APPLICATION_WINDOW_DATE_FIELDS.some((field) => stated.has(field))) {
@@ -178,6 +184,7 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   }
   for (const [field, resolvedField] of Object.entries(input.resolved)) {
     if (!(field in input.staged)) continue;
+    if (input.fundSpeaksForRow && isFundRetirementWrite(field, input.staged)) continue;
     if (!isEnrichOnlyWriteOnAnotherLanesRow(input.stored, resolvedField?.contributingSources)) {
       continue;
     }

@@ -171,8 +171,7 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   };
 };
 
-export type AnalyticsUserSort =
-  'lastActive' | 'totalEvents' | 'logins' | 'searches' | 'researchViews';
+export type AnalyticsUserSort = 'lastActive' | 'totalEvents' | 'logins' | 'researchViews';
 export type AnalyticsSortDirection = 'asc' | 'desc';
 
 export interface AnalyticsUsersQuery {
@@ -196,7 +195,6 @@ export interface AnalyticsUserSummary {
   lname?: string;
   totalEvents: number;
   logins: number;
-  searches: number;
   researchViews: number;
   fellowshipViews: number;
   profileUpdates: number;
@@ -319,7 +317,6 @@ const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'lastActive',
   'totalEvents',
   'logins',
-  'searches',
   'researchViews',
 ]);
 
@@ -365,7 +362,6 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
-  searches: AnalyticsEventType.SEARCH,
   researchViews: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
   profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
@@ -670,7 +666,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
   const search = validateUserAnalyticsSearch(query.search);
   const sort = query.sort && USER_ANALYTICS_SORTS.has(query.sort) ? query.sort : 'lastActive';
   const direction = query.direction === 'asc' ? 1 : -1;
-  const match: PipelineStage.Match['$match'] = {};
+  const match: PipelineStage.Match['$match'] = { eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES } };
 
   if (netid) {
     match.netid = { $regex: `^${escapeRegex(netid)}$`, $options: 'i' };
@@ -740,7 +736,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         displayName: 1,
         totalEvents: 1,
         logins: 1,
-        searches: 1,
         researchViews: 1,
         fellowshipViews: 1,
         profileUpdates: 1,
@@ -1875,6 +1870,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
         ],
         mostActiveUsers: [
+          { $match: { eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES } } },
           {
             $group: {
               _id: { netid: '$netid', userType: '$userType' },

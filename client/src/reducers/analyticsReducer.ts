@@ -93,7 +93,6 @@ export interface AnalyticsUserActivityRow {
   lname?: string;
   totalEvents: number;
   logins: number;
-  searches: number;
   researchViews: number;
   fellowshipViews: number;
   profileUpdates: number;
