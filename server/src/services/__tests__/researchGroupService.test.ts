@@ -41,7 +41,7 @@ vi.mock('../adminGrantService', () => ({
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
     getEmbedders: mocks.getEmbedders,

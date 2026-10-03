@@ -43,7 +43,7 @@ const facetDistributionOf = (rows: Array<Record<string, any>>, facets: string[] 
   );
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     getEmbedders: vi.fn(async () => ({})),
     search: vi.fn(async (_query: string, params: { filter?: string; facets?: string[] } = {}) => {
       const rows = await storedRowsMatching(params.filter ?? '');

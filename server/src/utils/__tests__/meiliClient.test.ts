@@ -172,3 +172,131 @@ describe('meiliClient connection config', () => {
     );
   });
 });
+
+const startRecordingServer = async () => {
+  const authorizationHeaders: string[] = [];
+  const server = http.createServer((request, response) => {
+    authorizationHeaders.push(String(request.headers.authorization ?? ''));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ hits: [], status: 'available' }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    host: `http://127.0.0.1:${port}`,
+    authorizationHeaders,
+    close: async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+};
+
+describe('meiliClient scoped keys', () => {
+  const KEY_VARIABLES = [
+    'MEILISEARCH_HOST',
+    'MEILISEARCH_API_KEY',
+    'MEILISEARCH_SEARCH_API_KEY',
+    'MEILISEARCH_WRITE_API_KEY',
+    'NODE_ENV',
+    'SERVER_BASE_URL',
+  ] as const;
+  const originalValues = Object.fromEntries(KEY_VARIABLES.map((name) => [name, process.env[name]]));
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const name of KEY_VARIABLES) {
+      if (originalValues[name] === undefined) delete process.env[name];
+      else process.env[name] = originalValues[name];
+    }
+  });
+
+  const setEnv = (values: Partial<Record<(typeof KEY_VARIABLES)[number], string>>) => {
+    for (const name of KEY_VARIABLES) delete process.env[name];
+    Object.assign(process.env, values);
+  };
+
+  it('resolves the search key for the search role and the write key for the write role', async () => {
+    const { resolveMeiliConnectionConfig } = await loadActualMeiliClient();
+    const env = {
+      ...DEPLOYED_ENV,
+      MEILISEARCH_API_KEY: 'legacy-admin-key',
+      MEILISEARCH_SEARCH_API_KEY: 'scoped-search-key',
+      MEILISEARCH_WRITE_API_KEY: 'scoped-write-key',
+    };
+
+    expect(resolveMeiliConnectionConfig(env, 'search')).toMatchObject({
+      apiKey: 'scoped-search-key',
+      apiKeySource: 'scoped',
+    });
+    expect(resolveMeiliConnectionConfig(env, 'write')).toMatchObject({
+      apiKey: 'scoped-write-key',
+      apiKeySource: 'scoped',
+    });
+    expect(resolveMeiliConnectionConfig(env)).toMatchObject({ apiKey: 'scoped-write-key' });
+  });
+
+  it('sends the search key on search requests and the write key on index writes', async () => {
+    const recorder = await startRecordingServer();
+    try {
+      setEnv({
+        MEILISEARCH_HOST: recorder.host,
+        MEILISEARCH_API_KEY: 'legacy-admin-key',
+        MEILISEARCH_SEARCH_API_KEY: 'scoped-search-key',
+        MEILISEARCH_WRITE_API_KEY: 'scoped-write-key',
+      });
+      const { getMeiliSearchIndex, getMeiliIndex } = await loadActualMeiliClient();
+
+      await (await getMeiliSearchIndex('researchentities')).search('neuroscience');
+      expect(recorder.authorizationHeaders.at(-1)).toBe('Bearer scoped-search-key');
+
+      await (await getMeiliIndex('researchentities')).addDocuments([{ id: 'synthetic' }]);
+      expect(recorder.authorizationHeaders.at(-1)).toBe('Bearer scoped-write-key');
+      expect(recorder.authorizationHeaders).not.toContain('Bearer legacy-admin-key');
+    } finally {
+      await recorder.close();
+    }
+  });
+
+  it('falls back to the legacy key for both roles and warns once per role when deployed', async () => {
+    const recorder = await startRecordingServer();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      setEnv({
+        NODE_ENV: 'production',
+        SERVER_BASE_URL: 'https://yalelabs.io',
+        MEILISEARCH_HOST: recorder.host,
+        MEILISEARCH_API_KEY: 'legacy-admin-key',
+      });
+      const { getMeiliSearchIndex, getMeiliIndex, legacyMeiliKeyFallbackWarning } =
+        await loadActualMeiliClient();
+
+      await (await getMeiliSearchIndex('researchentities')).search('neuroscience');
+      await (await getMeiliSearchIndex('researchentities')).search('chemistry');
+      await (await getMeiliIndex('researchentities')).addDocuments([{ id: 'synthetic' }]);
+
+      expect(recorder.authorizationHeaders).toEqual([
+        'Bearer legacy-admin-key',
+        'Bearer legacy-admin-key',
+        'Bearer legacy-admin-key',
+      ]);
+      const warnings = warn.mock.calls.map(([message]) => String(message));
+      expect(warnings).toEqual([
+        legacyMeiliKeyFallbackWarning('search'),
+        legacyMeiliKeyFallbackWarning('write'),
+      ]);
+      expect(warnings.join('\n')).toMatch(/MEILISEARCH_SEARCH_API_KEY is not set/);
+      expect(warnings.join('\n')).not.toContain('legacy-admin-key');
+    } finally {
+      await recorder.close();
+    }
+  });
+
+  it('never hands the search role the write key', async () => {
+    const { resolveMeiliConnectionConfig } = await loadActualMeiliClient();
+
+    expect(
+      resolveMeiliConnectionConfig({ MEILISEARCH_WRITE_API_KEY: 'scoped-write-key' }, 'search'),
+    ).toMatchObject({ apiKey: undefined, apiKeySource: 'none' });
+  });
+});

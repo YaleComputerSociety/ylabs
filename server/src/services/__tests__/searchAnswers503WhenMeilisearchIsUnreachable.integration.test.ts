@@ -12,7 +12,7 @@ const meili = vi.hoisted(() => ({
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: meili.search,
     getEmbedders: meili.getEmbedders,
   })),
