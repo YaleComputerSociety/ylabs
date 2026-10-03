@@ -1558,7 +1558,7 @@ async function defaultCallLLM(input: {
   return JSON.parse(content) as DescriptionExtraction;
 }
 
-async function defaultLabFinder(
+export async function defaultLabFinder(
   options: { only?: string[]; exhaustive?: boolean } = {},
 ): Promise<CandidateDescriptionLab[]> {
   const only = uniqueStrings(options.only || []);
@@ -1589,7 +1589,7 @@ async function defaultLabFinder(
           { displayName: { $in: only } },
         ],
       }
-    : queueOrder.length
+    : queueOrder.length && !options.exhaustive
       ? { _id: { $in: queueOrder } }
       : {};
   const urlFilter = {

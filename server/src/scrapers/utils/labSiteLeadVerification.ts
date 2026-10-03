@@ -542,6 +542,7 @@ export function judgeLeadAgainstSite(
 export interface LabSiteLeadVerification {
   state: LabSiteVerificationState;
   checkedUrl: string;
+  requestedUrl?: string;
   httpStatusCode?: number;
   pagesRead: number;
   confirmedCount: number;
@@ -588,6 +589,14 @@ export function contestedSurnamesAmong(leads: readonly LabSiteLeadCandidate[]): 
   return contested;
 }
 
+function normalizedUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
+}
+
 export function buildLabSiteLeadVerification(
   leads: readonly LabSiteLeadCandidate[],
   reading: LabSiteReading,
@@ -609,9 +618,13 @@ export function buildLabSiteLeadVerification(
       leadIsTheRecordSubject,
     ),
   );
+  const checkedUrl = reading.visitedUrls[0] || reading.website;
   return {
     state: rollUpVerificationState(judgements),
-    checkedUrl: reading.website,
+    checkedUrl,
+    ...(normalizedUrl(checkedUrl) !== normalizedUrl(reading.website)
+      ? { requestedUrl: reading.website }
+      : {}),
     ...(typeof reading.httpStatusCode === 'number'
       ? { httpStatusCode: reading.httpStatusCode }
       : {}),

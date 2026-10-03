@@ -403,6 +403,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           required: true,
         },
         checkedUrl: { type: String, default: '' },
+        requestedUrl: { type: String, required: false },
         httpStatusCode: { type: Number, min: 100, max: 599, required: false },
         pagesRead: { type: Number, min: 0, default: 0 },
         confirmedCount: { type: Number, min: 0, default: 0 },
