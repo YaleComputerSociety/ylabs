@@ -24,6 +24,7 @@ import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
+import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   canonicalLegacyResearchHomeUrl,
@@ -431,8 +432,36 @@ export function shouldQueueEntityForPiBackfill(entity: Record<string, any>): boo
   return officialProfileUrlsForEntity(entity).length === 1;
 }
 
-export function preferredOfficialProfileUrl(candidates: string[]): string {
-  return candidates.find((url) => /medicine\.yale\.edu/i.test(url)) || candidates[0] || '';
+/**
+ * The lead's own recorded official profile first, then the order the detail page ranks
+ * person profiles by. A school-wide directory such as `medicine.yale.edu` mirrors a
+ * profile for people appointed elsewhere, so preferring it outright read a cross-listed
+ * School of Medicine page in place of the department profile the page shows (#4459).
+ */
+export function rankedOfficialProfileFetchCandidates(
+  candidates: string[],
+  entity: Record<string, any> = {},
+): string[] {
+  const leadOfficialProfiles = new Set(
+    objectStringValues(entity.leadOfficialProfileUrls).map(normalizeOfficialProfileUrl),
+  );
+  const isLeadOfficialProfile = (url: string) =>
+    leadOfficialProfiles.has(normalizeOfficialProfileUrl(url));
+  const ranked = rankPersonProfileUrls(uniqueStrings(candidates).filter(Boolean), {
+    schools: [entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])],
+    provenanceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [],
+  });
+  return [
+    ...ranked.filter(isLeadOfficialProfile),
+    ...ranked.filter((url) => !isLeadOfficialProfile(url)),
+  ];
+}
+
+export function preferredOfficialProfileUrl(
+  candidates: string[],
+  entity: Record<string, any> = {},
+): string {
+  return rankedOfficialProfileFetchCandidates(candidates, entity)[0] || '';
 }
 
 function userIdentityMatchEntity(
@@ -570,10 +599,6 @@ function sameOfficialProfilePerson(left: string, right: string): boolean {
   const leftSlug = profileSlug(left);
   const rightSlug = profileSlug(right);
   return Boolean(leftSlug && rightSlug && leftSlug === rightSlug);
-}
-
-function orderedProfileFetchCandidates(candidates: string[]): string[] {
-  return uniqueStrings([preferredOfficialProfileUrl(candidates), ...candidates]).filter(Boolean);
 }
 
 function sameOfficialPersonPageForEntity(
@@ -1247,6 +1272,22 @@ function disallowedProfileLinkedResearchHome(name: string, url: string): boolean
   );
 }
 
+function profilePersonSurname($: cheerio.CheerioAPI, profiles: Array<Record<string, any>>): string {
+  const name =
+    profileNameFromProfiles(profiles) ||
+    cleanOfficialProfileDisplayName(firstUsefulText($, ['main h1', 'h1']));
+  return splitName(name).last;
+}
+
+export function isEponymousResearchGroupLinkText(text: string, surname: string): boolean {
+  if (!surname) return false;
+  const surnamePattern = escapeRegex(surname).replace(/\s+/g, '\\s+');
+  return new RegExp(
+    `^(?:the\\s+)?${surnamePattern}\\s+(?:research\\s+)?(?:lab|laboratory|group)$`,
+    'i',
+  ).test(textValue(text));
+}
+
 function profileLinkedLabWebsitesFromHtml(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
@@ -1254,6 +1295,7 @@ function profileLinkedLabWebsitesFromHtml(
 ): OfficialProfileResearchHome[] {
   const homes: OfficialProfileResearchHome[] = [];
   const profileName = profileNameFromProfiles(profiles);
+  const surname = profilePersonSurname($, profiles);
   const evidenceText = profileEvidenceText($, profiles);
 
   $('main a[href], article a[href], body a[href]').each((_i, el) => {
@@ -1262,12 +1304,17 @@ function profileLinkedLabWebsitesFromHtml(
 
     const rawName = textValue(link.text());
     const context = textValue(link.closest('p,li,article,section,div').first().text());
-    if (!/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)) return;
+    const isEponymousGroupLink = isEponymousResearchGroupLinkText(rawName, surname);
+    if (!isEponymousGroupLink && !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)) {
+      return;
+    }
 
     const url = publicProfileLinkedLabWebsiteUrl(link.attr('href'), profileUrl);
     if (!url) return;
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
-    const name = profileLinkedLabWebsiteName(rawName, context, profileName);
+    const name = isEponymousGroupLink
+      ? canonicalResearchHomeName(rawName)
+      : profileLinkedLabWebsiteName(rawName, context, profileName);
     if (!name || genericOrganizationName(name)) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
     const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
@@ -2696,9 +2743,11 @@ async function annotateEntitiesWithLeadUsers(
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
+  const leadOfficialProfileUrlsByEntity = new Map<string, string[]>();
 
   for (const entry of rosterEntries) {
     const user = usersByNetid.get(entry.netid);
+    appendLeadOfficialProfileUrl(leadOfficialProfileUrlsByEntity, entry, user);
     const split = splitName(entry.name);
     const lead = {
       fname: user?.fname || split.first,
@@ -2724,9 +2773,23 @@ async function annotateEntitiesWithLeadUsers(
     ],
     leadUserProfileUrls: uniqueStrings([
       ...objectStringValues(entity.leadUserProfileUrls),
+      ...(leadOfficialProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || []),
       ...(generatedProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || []),
     ]),
+    leadOfficialProfileUrls:
+      leadOfficialProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || [],
   }));
+}
+
+function appendLeadOfficialProfileUrl(
+  byEntity: Map<string, string[]>,
+  entry: ResearchEntityRosterEntry,
+  user: Record<string, any> | undefined,
+): void {
+  const official = textValue(user?.profileUrls?.official);
+  if (!official) return;
+  const entityId = idValue(entry.researchEntityId);
+  byEntity.set(entityId, uniqueStrings([...(byEntity.get(entityId) || []), official]));
 }
 
 export const OBSERVATION_LOOKUP_ENTITY_CHUNK_SIZE = 250;
@@ -2941,9 +3004,11 @@ async function selectResearchHomeProfileTargets(
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
+  const leadOfficialProfileUrlsByEntity = new Map<string, string[]>();
 
   for (const entry of rosterEntries) {
     const user = usersByNetid.get(entry.netid);
+    appendLeadOfficialProfileUrl(leadOfficialProfileUrlsByEntity, entry, user);
     const urls = uniqueStrings([
       user?.website,
       user?.websiteUrl,
@@ -2969,6 +3034,7 @@ async function selectResearchHomeProfileTargets(
   const entitiesWithLeadUrls = entities.map((entity) => ({
     ...entity,
     leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
+    leadOfficialProfileUrls: leadOfficialProfileUrlsByEntity.get(idValue(entity._id)) || [],
     leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
   }));
   const entitiesWithObservationUrls =
@@ -3432,8 +3498,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           ]);
     const fetchFirstProfile = async (entity: Record<string, any>): Promise<FetchedProfile> => {
       const failures: FetchedProfile['failures'] = [];
-      for (const candidateProfileUrl of orderedProfileFetchCandidates(
+      for (const candidateProfileUrl of rankedOfficialProfileFetchCandidates(
         profileCandidatesFor(entity),
+        entity,
       )) {
         try {
           await awaitFetchTurn();
@@ -3600,7 +3667,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         } catch (err: any) {
           ctx.log('Profile fetch failed', {
             entityId: officialProfileDocumentId(entity._id),
-            profileUrl: preferredOfficialProfileUrl(candidates),
+            profileUrl: preferredOfficialProfileUrl(candidates, entity),
             error: sanitizeLogValue(err),
           });
         }

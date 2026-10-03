@@ -20,6 +20,8 @@ import {
   OfficialProfilePiBackfillScraper,
   officialProfileUrlsForEntity,
   preferredOfficialProfileUrl,
+  rankedOfficialProfileFetchCandidates,
+  isEponymousResearchGroupLinkText,
   PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD,
   resolveExistingUserForIdentity,
   shouldQueueEntityForPiBackfill,
@@ -1694,13 +1696,76 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(shouldQueueEntityForPiBackfill(entity)).toBe(true);
   });
 
-  it('prefers Medicine profile URLs when multiple official profiles are available', () => {
+  it("prefers the lead's recorded official profile over a cross-listed school directory profile", () => {
+    const candidates = [
+      'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+      'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+    ];
+    expect(
+      rankedOfficialProfileFetchCandidates(candidates, {
+        school: 'School of Medicine',
+        schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+        leadOfficialProfileUrls: [
+          'https://anthropology.yale.edu/profile/riley-anthropology-fixture',
+        ],
+      }),
+    ).toEqual([
+      'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+      'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+    ]);
+  });
+
+  it('demotes a school directory profile from a school the row does not list', () => {
+    expect(
+      preferredOfficialProfileUrl(
+        [
+          'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+          'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+        ],
+        { schools: ['Faculty of Arts and Sciences'] },
+      ),
+    ).toBe('https://anthropology.yale.edu/profile/riley-anthropology-fixture/');
+  });
+
+  it('keeps caller order when nothing distinguishes the candidates', () => {
     expect(
       preferredOfficialProfileUrl([
-        'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
         'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+        'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
       ]),
     ).toBe('https://medicine.yale.edu/profile/riley-anthropology-fixture/');
+  });
+
+  it("admits a department profile's eponymous group button as the lab website", () => {
+    const html = `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <div class="cta-group">
+          <a class="cta" href="https://marlowfixturelab.yale.edu">Marlowfixture Group</a>
+        </div>
+        <div class="cta-group">
+          <a class="cta" href="https://otherfixturelab.yale.edu">Otherfixture Group</a>
+        </div>
+      </main></body></html>
+    `;
+    expect(
+      extractOfficialProfileResearchHomes(
+        html,
+        'https://chem.yale.edu/profile/quinn-marlowfixture/',
+      ).map((home) => [home.name, home.url]),
+    ).toEqual([['Marlowfixture Group', 'https://marlowfixturelab.yale.edu/']]);
+  });
+
+  it('matches eponymous group link text only on the profile surname', () => {
+    expect(isEponymousResearchGroupLinkText('The Marlowfixture Lab', 'Marlowfixture')).toBe(true);
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Research Group', 'Marlowfixture')).toBe(
+      true,
+    );
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Group News', 'Marlowfixture')).toBe(
+      false,
+    );
+    expect(isEponymousResearchGroupLinkText('Otherfixture Group', 'Marlowfixture')).toBe(false);
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Group', '')).toBe(false);
   });
 
   it('selects direct lead research-home URLs while rejecting profile pages and documents', () => {
