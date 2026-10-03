@@ -91,10 +91,13 @@ Source files are left to the body and review path.
 The preflight's denylist of real identifiers that once appeared in tests is stored as SHA-256 digests, so the repository no longer republishes the values it forbids; it hashes each run of up to four word tokens in every test and fixture file and fails on a matching digest.
 
 **Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
-For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, the checkout remote, an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
+For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, any remote of the checkout (so a fork whose `upstream` is this repository is guarded, #4259), an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
 It also refuses when the scanner itself is missing, so a broken install fails closed rather than posting unchecked.
 A refused draft is kept at `$TMPDIR/gh-guard-<random>/body.md`, readable only by its owner, and the refusal prints that path, so the author can read exactly what to rewrite.
 `scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
+The installer copies the guard into `~/.local/share/ylabs-gh-guard` and the shim runs that copy, falling back to the checkout it was installed from, so moving or deleting a checkout leaves `gh` working (#4258).
+When neither is present the shim names the missing path, refuses every publishing and API command, and passes read-only commands through.
+The installer exits non-zero, and `scripts/new-agent-worktree.sh` stops before creating a worktree, when the shim is not the first `gh` on `PATH`.
 There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
 The body arm separates a finding from a note.

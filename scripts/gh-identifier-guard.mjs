@@ -72,6 +72,10 @@ const git = (gitArgs) => {
 const plan = planGuard(args, {
   envRepo: process.env.GH_REPO,
   originUrl: git(['remote', 'get-url', 'origin']),
+  remoteUrls: git(['config', '--get-regexp', '^remote\\..*\\.url$'])
+    .split('\n')
+    .map((line) => line.split(/\s+/)[1])
+    .filter(Boolean),
   readBodyFile: (file) => (file === '-' ? readStdinOnce() : fs.readFileSync(file, 'utf8')),
   branchCommitMessages: (base) => git(['log', '--format=%B', `origin/${base}..HEAD`]),
 });

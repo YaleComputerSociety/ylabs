@@ -46,8 +46,12 @@ export const classifyCommand = (args) => {
   return { group, action, kind: 'other' };
 };
 
-export const targetRepo = (args, { envRepo, originUrl }) =>
-  optionValue(args, ['-R', '--repo']) ?? envRepo ?? originUrl ?? '';
+export const explicitRepo = (args, { envRepo }) =>
+  optionValue(args, ['-R', '--repo']) ?? (envRepo || undefined);
+
+export const targetRepo = (args, context) => explicitRepo(args, context) ?? context.originUrl ?? '';
+
+const checkoutRemotes = ({ originUrl, remoteUrls = [] }) => [originUrl, ...remoteUrls];
 
 export const isGuardedRepo = (repo) =>
   String(repo).toLowerCase().includes(GUARDED_ORG.toLowerCase());
@@ -62,8 +66,14 @@ const isGraphqlMutation = (args) =>
   args.includes('graphql') &&
   apiFields(args).some(({ key, value }) => key === 'query' && /\bmutation\b/.test(value));
 
+const targetsGuardedCheckout = (args, context) => {
+  const explicit = explicitRepo(args, context);
+  if (explicit !== undefined) return isGuardedRepo(explicit);
+  return checkoutRemotes(context).filter(Boolean).some(isGuardedRepo);
+};
+
 const targetsGuardedRepo = (args, context) =>
-  isGuardedRepo(targetRepo(args, context)) || args.some(isGuardedRepo) || isGraphqlMutation(args);
+  targetsGuardedCheckout(args, context) || args.some(isGuardedRepo) || isGraphqlMutation(args);
 
 const fillsFromCommits = (args) =>
   args.some((arg) => arg.startsWith('--fill') || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(arg));

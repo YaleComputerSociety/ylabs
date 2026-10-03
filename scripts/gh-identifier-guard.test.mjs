@@ -92,6 +92,26 @@ test('passes through a repository outside the guarded organisation', () => {
   );
 });
 
+test('scans a pr create from a fork checkout whose upstream is the guarded repository', () => {
+  const fork = context({
+    originUrl: 'git@github.com:contributor/ylabs.git',
+    remoteUrls: ['git@github.com:contributor/ylabs.git', `https://github.com/${GUARDED}.git`],
+  });
+
+  assert.equal(planGuard(['pr', 'create', '--title', 't', '--body', FLAGGED], fork).action, 'scan');
+  assert.equal(planGuard(['issue', 'comment', '1', '--body', FLAGGED], fork).action, 'scan');
+  assert.deepEqual(
+    planGuard(
+      ['pr', 'create', '--title', 't', '--body', FLAGGED],
+      context({
+        originUrl: 'git@github.com:contributor/other.git',
+        remoteUrls: ['git@github.com:contributor/other.git'],
+      }),
+    ),
+    { action: 'passthrough' },
+  );
+});
+
 test('an explicit -R or GH_REPO outranks the checkout remote', () => {
   const outside = context({ originUrl: 'git@github.com:cli/cli.git' });
 
@@ -280,15 +300,47 @@ test('fails closed when the scanner is missing, instead of posting unchecked', (
   assert.equal(fs.existsSync(log), false);
 });
 
-const runInstaller = (binDir) =>
-  spawnSync(
-    'bash',
-    [path.join(scriptsDir, 'install-gh-identifier-guard.sh'), path.dirname(scriptsDir)],
-    {
-      encoding: 'utf8',
-      env: { ...process.env, GH_GUARD_BIN_DIR: binDir },
+const GUARD_FILES = [
+  'gh-identifier-guard.mjs',
+  'gh-identifier-guard-core.mjs',
+  'check-no-person-identifiers.mjs',
+  'check-no-person-identifiers-core.mjs',
+];
+
+const nodeDir = path.dirname(process.execPath);
+
+const runInstaller = (binDir, { checkout = path.dirname(scriptsDir), guardHome, pathDirs } = {}) =>
+  spawnSync('bash', [path.join(scriptsDir, 'install-gh-identifier-guard.sh'), checkout], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GH_GUARD_BIN_DIR: binDir,
+      GH_GUARD_HOME: guardHome ?? makeTempDirectory('gh-guard-home-'),
+      PATH: [...(pathDirs ?? [binDir]), nodeDir, '/usr/bin', '/bin'].join(path.delimiter),
     },
-  );
+  });
+
+const makeThrowawayCheckout = () => {
+  const checkout = makeTempDirectory('gh-guard-checkout-');
+  fs.mkdirSync(path.join(checkout, 'scripts'));
+  for (const file of GUARD_FILES) {
+    fs.copyFileSync(path.join(scriptsDir, file), path.join(checkout, 'scripts', file));
+  }
+  return checkout;
+};
+
+const runShim = (shimDir, realGhDir, args, input = '') =>
+  spawnSync(path.join(shimDir, 'gh'), args, {
+    cwd: os.tmpdir(),
+    input,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: [shimDir, realGhDir, nodeDir, '/usr/bin', '/bin'].join(path.delimiter),
+      GH_REPO: '',
+      TMPDIR: makeTempDirectory('gh-guard-drafts-'),
+    },
+  });
 
 test('the installer refuses to overwrite a gh that is not a guard shim', () => {
   const { dir } = makeFakeGh();
@@ -304,10 +356,72 @@ test('the installer refuses to overwrite a gh that is not a guard shim', () => {
 
 test('the installer writes the shim into an empty directory and is idempotent', () => {
   const dir = makeTempDirectory('gh-guard-install-');
+  const guardHome = makeTempDirectory('gh-guard-home-');
 
-  assert.equal(runInstaller(dir).status, 0);
-  const again = runInstaller(dir);
+  const first = runInstaller(dir, { guardHome });
+  assert.equal(first.status, 0, first.stderr);
+  const again = runInstaller(dir, { guardHome });
   assert.equal(again.status, 0, again.stderr);
   assert.match(again.stdout, /already current/);
-  assert.match(fs.readFileSync(path.join(dir, 'gh'), 'utf8'), /gh-identifier-guard\.mjs/);
+  assert.deepEqual(fs.readdirSync(guardHome).sort(), [...GUARD_FILES].sort());
+});
+
+test('the installer fails loudly when the shim is not the first gh on PATH', () => {
+  const shimDir = makeTempDirectory('gh-guard-install-');
+  const { dir: realGhDir } = makeFakeGh();
+
+  const shadowed = runInstaller(shimDir, { pathDirs: [realGhDir, shimDir] });
+  assert.equal(shadowed.status, 1);
+  assert.match(shadowed.stderr, /is not ahead of .* on PATH/);
+
+  const absent = runInstaller(shimDir, { pathDirs: [] });
+  assert.equal(absent.status, 1);
+  assert.match(absent.stderr, /is not ahead of the real gh on PATH/);
+});
+
+test('the shim keeps guarding after the checkout it was installed from is deleted', () => {
+  const shimDir = makeTempDirectory('gh-guard-install-');
+  const { dir: realGhDir, log } = makeFakeGh();
+  const checkout = makeThrowawayCheckout();
+  assert.equal(runInstaller(shimDir, { checkout }).status, 0);
+  fs.rmSync(checkout, { recursive: true, force: true });
+
+  const refused = runShim(shimDir, realGhDir, ['issue', 'create', '-R', GUARDED, '-b', FLAGGED]);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /gh guard: NOT posted/);
+  assert.equal(fs.existsSync(log), false);
+
+  const outside = runShim(shimDir, realGhDir, ['issue', 'create', '-R', 'cli/cli', '-b', FLAGGED]);
+  assert.equal(outside.status, 0, outside.stderr);
+  const clean = runShim(shimDir, realGhDir, ['issue', 'create', '-R', GUARDED, '-b', CLEAN]);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(
+    fs.readFileSync(log, 'utf8'),
+    `issue create -R cli/cli -b ${FLAGGED}\nissue create -R ${GUARDED} -b ${CLEAN}\n`,
+  );
+});
+
+test('the shim names the missing guard, refuses posts, and passes other commands through', () => {
+  const shimDir = makeTempDirectory('gh-guard-install-');
+  const guardHome = makeTempDirectory('gh-guard-home-');
+  const { dir: realGhDir, log } = makeFakeGh();
+  const checkout = makeThrowawayCheckout();
+  assert.equal(runInstaller(shimDir, { checkout, guardHome }).status, 0);
+  fs.rmSync(checkout, { recursive: true, force: true });
+  fs.rmSync(guardHome, { recursive: true, force: true });
+
+  for (const args of [
+    ['issue', 'create', '-R', GUARDED, '-b', CLEAN],
+    ['pr', 'comment', '1', '-b', CLEAN],
+    ['api', 'repos/x/y/issues', '-f', `body=${CLEAN}`],
+  ]) {
+    const result = runShim(shimDir, realGhDir, args);
+    assert.equal(result.status, 1, args.join(' '));
+    assert.match(result.stderr, /is missing; re-run scripts\/install-gh-identifier-guard\.sh/);
+  }
+  assert.equal(fs.existsSync(log), false);
+
+  const read = runShim(shimDir, realGhDir, ['pr', 'view', '1']);
+  assert.equal(read.status, 0, read.stderr);
+  assert.equal(fs.readFileSync(log, 'utf8'), 'pr view 1\n');
 });

@@ -48,18 +48,26 @@ if [ -e "$WORKTREE_DIR" ]; then
   exit 1
 fi
 
-git -C "$REPO_ROOT" fetch origin --quiet || true
+if ! (cd "$REPO_ROOT" && scripts/install-gh-identifier-guard.sh); then
+  echo "ERROR: the gh identifier guard is not active, so gh bodies would not be checked before posting." >&2
+  echo "Fix the problem above and re-run; no worktree was created." >&2
+  exit 1
+fi
+
+BASE_REMOTE=origin
+if git -C "$REPO_ROOT" remote get-url upstream >/dev/null 2>&1; then
+  BASE_REMOTE=upstream
+fi
+
+git -C "$REPO_ROOT" fetch "$BASE_REMOTE" --quiet || true
 
 BASE_REF="$BASE"
-if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/${BASE}"; then
-  BASE_REF="origin/${BASE}"
+if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/${BASE_REMOTE}/${BASE}"; then
+  BASE_REF="${BASE_REMOTE}/${BASE}"
 fi
 
 mkdir -p "$WORKTREE_ROOT"
 git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
-
-(cd "$REPO_ROOT" && scripts/install-gh-identifier-guard.sh) ||
-  echo "WARNING: the gh identifier guard is not installed, so gh bodies are not checked before posting." >&2
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   bash "$WORKTREE_DIR/scripts/install-all.sh"
