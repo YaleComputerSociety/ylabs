@@ -133,6 +133,19 @@ Three things about it are deliberate.
 The three actions in use were bumped in the same change to releases that target the current runtime, which removes the deprecation warning from every run.
 The updater is what keeps that true without another manual pass.
 
+## 2026-10-02: The http-cache-semantics advisory is accepted until a fix is published
+
+GHSA-ch52-4w7c-c8xp (advisory 1240991, high) was published against `http-cache-semantics` `<=4.2.0`, and 4.2.0 is the latest release, so no version satisfies the fix.
+It reached the server workspace directly and through `make-fetch-happen`, and the security preflight failed every pull request on it.
+The advisory is a cross-user disclosure through `max-stale` handling in a shared cache.
+The server uses the package only in `scrapers/utils/httpValidatorCache.ts`, the scraper's local validator cache for its own anonymous fetches of public pages; a request carrying an `authorization` or `cookie` header bypasses it, and nothing the cache stores is ever served to a user, so there is no second user to disclose to.
+It is suppressed in `.yarnrc.yml` by advisory id with that justification.
+Remove the suppression as soon as a patched release is published: `npm view http-cache-semantics version`.
+
+The same day GHSA-vfj7-8cjw-p6xm against `braces` `<=3.0.3` (advisory 1240992, high), a stack-exhaustion denial of service through deeply nested patterns, failed the all-environments audit, and 3.0.3 is also the latest release.
+It reaches only the client's build tooling, through `chokidar` and `micromatch`, which expand glob patterns written in this repository and never a pattern a user supplies, so it is suppressed on the same terms.
+Remove it once a patched release is published: `npm view braces version`.
+
 ## 2026-09-22: One low advisory is patched in range, one is accepted (#2392)
 
 `node scripts/run-dependency-audit.mjs . server client -- --recursive --severity low` reported two, both in the server workspace and both reached only through the development toolchain, never through anything the server ships.
