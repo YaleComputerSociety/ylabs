@@ -5,7 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { describePreparedEnv, prepareWorktreeEnv, upsertEnvValues } from './prepare-worktree-env.mjs';
+import {
+  describePreparedEnv,
+  prepareWorktreeEnv,
+  upsertEnvValues,
+} from './prepare-worktree-env.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SYNTHETIC_SECRET = 'synthetic-secret-value-for-worktree-env-test';
@@ -91,10 +95,7 @@ const git = (cwd, ...args) => {
 test('new-agent-worktree.sh produces a worktree with private env files and its own ports', () => {
   const primaryRoot = makeTempDir('ylabs-helper-primary-');
   const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
-  for (const file of [
-    'scripts/new-agent-worktree.sh',
-    'scripts/prepare-worktree-env.mjs',
-  ]) {
+  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
   fs.mkdirSync(path.join(primaryRoot, 'server'), { recursive: true });
