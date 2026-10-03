@@ -267,11 +267,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    // Three rather than two: the card is now derivable from a body whose lead
-    // sentence names the person, because `normalizeLead` drops a person subject
-    // ahead of a research verb the way it already drops an organization one. The
-    // old count recorded the missing card rather than a contract.
-    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
+    // The card is derivable from a body whose lead sentence names the person,
+    // because `normalizeLead` drops a person subject ahead of a research verb the
+    // way it already drops an organization one, and the official body now carries
+    // its page-grounded topic (#3923).
+    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -331,6 +331,86 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const methodsObservation = emitted.find((obs) => obs.field === 'methods');
     expect(methodsObservation?.value).toEqual(['flow cytometry', 'live-cell imaging']);
+  });
+
+  describe('topics on the official-prose path', () => {
+    const pageProse =
+      'The Tide Lab studies coastal sediment transport and estuarine ecology, combining field surveys with numerical models of tidal mixing across seasonal cycles.';
+
+    async function runOfficialProsePath(extraction: DescriptionExtraction) {
+      const { ctx, emitted } = makeContext();
+      ctx.options.only = ['ysm-tide-lab'];
+      ctx.options.limit = 1;
+      const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'entity-tide',
+            slug: 'ysm-tide-lab',
+            name: 'Tide Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/tide/',
+          },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({
+          url: 'https://medicine.yale.edu/lab/tide/',
+          html: `<main><h1>Tide Lab</h1><p>${pageProse}</p></main>`,
+        }),
+        callLLM: vi.fn().mockResolvedValue(extraction),
+        callCardLLM: vi.fn().mockResolvedValue(''),
+      });
+      await scraper.run(ctx);
+      return emitted;
+    }
+
+    it('emits the page-grounded topics beside the official body', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: 'A paraphrase the official prose outranks.',
+        shortDescription: '',
+        topics: [
+          'Sediment transport',
+          'Estuarine ecology',
+          'Quantum chromodynamics',
+          'Publications',
+        ],
+        methods: [],
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.find((obs) => obs.field === 'researchAreas')).toMatchObject({
+        entityId: 'entity-tide',
+        sourceUrl: 'https://medicine.yale.edu/lab/tide/',
+        value: ['Sediment transport', 'Estuarine ecology'],
+      });
+    });
+
+    it('emits no topics when the model says the page describes another subject', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: '',
+        shortDescription: '',
+        topics: ['Sediment transport', 'Estuarine ecology'],
+        methods: [],
+        subject: 'organization',
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.map((obs) => obs.field)).not.toContain('researchAreas');
+    });
+
+    it('emits no topics when none is grounded on the page', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: '',
+        shortDescription: '',
+        topics: ['Quantum chromodynamics'],
+        methods: [],
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.map((obs) => obs.field)).not.toContain('researchAreas');
+    });
   });
 
   it('rejects unsafe runtime bounds before fetching lab pages', async () => {
