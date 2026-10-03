@@ -1773,9 +1773,9 @@ describe('officialProfilePiBackfillScraper', () => {
     } as any);
     vi.spyOn(Account, 'find').mockReturnValue({
       select: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([
-        { _id: 'acc-riley', netid: 'raf1', email: 'riley.fixture@yale.edu' },
-      ]),
+      lean: vi
+        .fn()
+        .mockResolvedValue([{ _id: 'acc-riley', netid: 'raf1', email: 'riley.fixture@yale.edu' }]),
     } as any);
     const targets = await selectVisibleProfileBioTargets(5);
     expect(targets).toHaveLength(1);
