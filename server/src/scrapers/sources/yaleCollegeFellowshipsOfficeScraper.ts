@@ -832,8 +832,10 @@ const TIMELINE_STEP_LABEL =
   /\b(?:deadlines?|due|notif\w*|decisions?|announc\w*|interviews?|open(?:s|ing)?|clos(?:e|es|ed|ing)|start(?:s|ing)?|begin(?:s|ning)?|end(?:s|ing)?|recommend\w*|references?)\b/i;
 
 /**
- * On a timeline laid out one step per block, a date in another block that carries a
- * label of its own is that label's value, whichever side of it the date sits (#4172).
+ * On a timeline laid out one step per block, a date in another block followed by a label
+ * of its own is that label's value, whichever side of it the date sits (#4172). Only the
+ * words after the date count, because a block that leads with a label and then states the
+ * date ("Applications are due February 1") is describing the label being read.
  */
 function withoutDateOfAnotherBlockLabel(
   match: RegExpMatchArray | undefined,
@@ -845,11 +847,9 @@ function withoutDateOfAnotherBlockLabel(
   const end = start + match[0].length;
   const between = side === 'before' ? window.slice(end) : window.slice(0, start);
   if (!between.includes(DATE_BLOCK_BOUNDARY)) return match;
-  const blockStart = window.lastIndexOf(DATE_BLOCK_BOUNDARY, start) + 1;
   const nextBoundary = window.indexOf(DATE_BLOCK_BOUNDARY, end);
   const blockEnd = nextBoundary === -1 ? window.length : nextBoundary;
-  const dateBlock = `${window.slice(blockStart, start)} ${window.slice(end, blockEnd)}`;
-  return TIMELINE_STEP_LABEL.test(dateBlock) ? undefined : match;
+  return TIMELINE_STEP_LABEL.test(window.slice(end, blockEnd)) ? undefined : match;
 }
 
 function dateNearLabel(

@@ -677,6 +677,23 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ).toBeUndefined();
   });
 
+  it('reads a deadline heading from the next block when that block describes the deadline', () => {
+    const deadlineUnderHeading = (sentence: string) =>
+      parseFellowshipCatalogPage(
+        `<main><h1>Fixture Undergraduate Research Fellowship</h1><p>Open to students graduating May 2026</p><h2>Application Deadline</h2><p>${sentence}</p></main>`,
+        detailPageUrl,
+        new Date('2025-11-01T00:00:00Z'),
+      )[0]?.deadline;
+
+    for (const sentence of [
+      'Applications are due February 1, 2026.',
+      'The deadline is February 1, 2026.',
+      'Submit by the end of day February 1, 2026.',
+    ]) {
+      expect(deadlineUnderHeading(sentence)).toEqual(new Date('2026-02-02T04:59:59.999Z'));
+    }
+  });
+
   it('associates labeled dates within their sentence before using direction', () => {
     const candidates = parseFellowshipCatalogPage(
       `
