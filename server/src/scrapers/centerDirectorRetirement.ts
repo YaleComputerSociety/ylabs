@@ -147,6 +147,7 @@ export interface CenterDirectorRetirementResult {
   retiredEdges: number;
   edgesAwaitingSecondRead: number;
   unjudgedEdges: number;
+  indexSyncFailures: number;
 }
 
 /**
@@ -171,6 +172,7 @@ export async function reconcileCenterDirectorRetirementsFromRun(
     retiredEdges: 0,
     edgesAwaitingSecondRead: 0,
     unjudgedEdges: 0,
+    indexSyncFailures: 0,
   };
   for (const centerKey of centerKeys) {
     const center = (await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
@@ -204,7 +206,8 @@ export async function reconcileCenterDirectorRetirementsFromRun(
       _id: center._id,
       archived: { $ne: true },
     }).lean();
-    await syncResearchEntitiesWithOutcome(refreshed ? [refreshed] : []);
+    const indexSync = await syncResearchEntitiesWithOutcome(refreshed ? [refreshed] : []);
+    result.indexSyncFailures += indexSync.indexSyncFailures;
   }
   return result;
 }
