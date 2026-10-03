@@ -278,10 +278,10 @@ export function centerRosterReadFromSnapshot(
  * well as on the observation keeps an intermittent absence from accumulating: a claim
  * listed between two absences starts counting again.
  */
-export function absentReadRunIds(
+export function absentReadRunIds<Read extends { scrapeRunId: string; observedAt: Date }>(
   claim: { observedAt: Date; scrapeRunId?: string },
-  reads: readonly CenterRosterRead[],
-  isListed: (read: CenterRosterRead) => boolean,
+  reads: readonly Read[],
+  isListed: (read: Read) => boolean,
 ): string[] {
   let anchor = claim.observedAt.getTime();
   for (const read of reads) {

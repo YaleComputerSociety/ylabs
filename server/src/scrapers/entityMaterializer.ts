@@ -280,6 +280,7 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
+import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
 import {
   CENTER_AFFILIATION_ROSTER_LANE,
   CENTERS_INSTITUTES_ROSTER_LANE,
@@ -9119,6 +9120,14 @@ export async function materializeFromRun(
   );
   if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
+  }
+  const centerDirectorRetirement = await reconcileCenterDirectorRetirementsFromRun(scrapeRunId, {
+    dryRun: options.dryRun,
+  });
+  if (centerDirectorRetirement) {
+    console.info(
+      `[center-director-retirement] ${centerDirectorRetirement.dryRun ? 'planned' : 'reconciled'} ${centerDirectorRetirement.centersRead} center read(s): ${centerDirectorRetirement.retiredEdges} lead edge(s) ended, ${centerDirectorRetirement.edgesAwaitingSecondRead} awaiting a second read, ${centerDirectorRetirement.unjudgedEdges} not judged, ${centerDirectorRetirement.indexSyncFailures} center index sync failure(s)`,
+    );
   }
   // Runs beside the centres retirement because it is the same contract over another lane's claims.
   // Lane-wide rather than per run's snapshots, because a claim is absent only when NO track still

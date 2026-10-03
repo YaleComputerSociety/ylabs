@@ -175,8 +175,10 @@ describe('CenterDirectorLLMExtractor.run', () => {
       fname: 'Elliot',
       lname: 'Fixture',
     });
-    // the finder is asked only for homes missing a lead
-    expect(centerFinder).toHaveBeenCalledWith(expect.objectContaining({ missingLeadOnly: true }));
+    // the finder skips homes another source leads
+    expect(centerFinder).toHaveBeenCalledWith(
+      expect.objectContaining({ skipCentersLedByOtherSources: true }),
+    );
   });
 
   it('skips cleanly when no director is named on any candidate page', async () => {
