@@ -159,6 +159,16 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
       { entityKey: 'synthetic-tidepool-lab', field: 'undergradAccessEvidence' },
       { $set: { superseded: true } },
     );
+    await seed(
+      'synthetic-tidepool-lab',
+      'undergradAccessEvidence',
+      {
+        openToUndergrads: 'no',
+        evidenceSource: 'explicit_text',
+        evidenceQuote: 'The lab is not taking undergraduates this year.',
+      },
+      '2026-09-15',
+    );
     await resolve('synthetic-tidepool-lab');
     expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:REACH_OUT_PLAUSIBLE');
   }, 120000);

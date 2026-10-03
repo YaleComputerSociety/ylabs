@@ -702,8 +702,10 @@ async function resolveResearchEntityId(identifier: {
 /**
  * An empty observation read yields no signals here, and that is a no-op rather
  * than a retraction: `materializeAccessForResearchGroup` archives a signal it did
- * not derive only when the read holds that signal's own evidence fields (#3921),
- * so an empty read archives nothing. So do NOT move an observation-store
+ * not derive only when the read holds that signal's own evidence fields (#3921)
+ * or every observation the signal cites was superseded or rolled back (#3920),
+ * so an empty store archives nothing and an empty read archives only signals
+ * whose cited evidence was withdrawn. So do NOT move an observation-store
  * availability guard into this function, which #2514 proposed. Three paths reach
  * the read below without supplying observations - the reconcile lane, the entity
  * materializer through the wrapper, and the orphan-reference repair's

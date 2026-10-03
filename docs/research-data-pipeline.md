@@ -1507,7 +1507,7 @@ The access pass retires what it stops deriving for every materializer key except
 `EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS` now names the evidence fields of every other key the materializer produces, so the same archive and revive covers not-currently-available, credit formalization, senior-thesis supervision, past undergraduates, fellowship compatibility and the contact-field signal.
 A signal is also archived when the read holds none of its evidence fields but every observation it cites has been superseded or rolled back, which is how a signal minted by the retired `research-entity-cache-backfill` lane stays live forever otherwise: no lane will ever write that field on the row again.
 A signal citing a live observation the pass did not read is kept, because a pass entered through that observation's key is the one that derives it, and archiving it on the other pass would flip it on every alternate resolve.
-A cited observation that no longer exists proves nothing, so a database with no observations, which is what Beta and Production hold, archives nothing.
+A cited observation that no longer exists proves nothing, so an empty store, which is what Beta and Production hold, archives nothing, and an empty read archives only signals whose cited evidence was withdrawn.
 `signal:CURRENT_UNDERGRADS` and `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` stay ungoverned while #4430 decides whether those types are admissible.
 
 Measured on Development on 2026-10-02 over the 3,459 `student_ready` rows, 587 live materializer-keyed signals on 553 rows were not derived by the materializer's own input.
