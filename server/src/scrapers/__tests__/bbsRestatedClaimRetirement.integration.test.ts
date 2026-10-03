@@ -72,7 +72,7 @@ const seedRead = async (input: {
           role: 'track-pi',
           ...(member.rowId ? { claimEntityKey: member.rowId } : {}),
           ...(member.canonicalProfileRead
-            ? { canonicalProfileUrl: canonicalProfileUrl(member.profileSlug) }
+            ? { citedProfileUrl: canonicalProfileUrl(member.profileSlug) }
             : {}),
         })),
         read: {
@@ -216,20 +216,54 @@ describe('BBS retires a claim the listing restates for a PI it could not resolve
     expect((await Observation.findById(unkeyed._id).lean())?.superseded).not.toBe(true);
   });
 
-  it('keeps a claim carrying any label the listing still gives its PI', async () => {
+  it('retires the whole claim even when the listing still gives one of its labels', async () => {
     const row = await ResearchEntity.create({ slug: 'synthetic-partial-lab', name: 'Partial' });
     const partial = await seedClaim({
       entityId: row._id as mongoose.Types.ObjectId,
       profileSlug: 'synthetic-partial-pi',
       value: ['Immunology', RETIRED_COMPOUND_LABEL],
     });
+    const supportedSlugs = ['synthetic-supported-pi-one', 'synthetic-supported-pi-two'];
+    for (const profileSlug of supportedSlugs) {
+      const supportedRow = await ResearchEntity.create({ slug: `${profileSlug}-lab`, name: 'Kept' });
+      await seedClaim({
+        entityId: supportedRow._id as mongoose.Types.ObjectId,
+        profileSlug,
+        value: ['Immunology'],
+      });
+    }
     const runId = new mongoose.Types.ObjectId();
-    await seedRead({ runId, members: { immunology: [{ profileSlug: 'synthetic-partial-pi' }] } });
+    await seedRead({
+      runId,
+      members: {
+        immunology: [
+          { profileSlug: 'synthetic-partial-pi' },
+          ...supportedSlugs.map((profileSlug) => ({ profileSlug })),
+        ],
+      },
+    });
 
     const result = await reconcileBbsTrackRetirementsFromRun(String(runId), deps, {});
 
+    expect(result.counts?.restatedClaims).toBe(1);
+    expect((await Observation.findById(partial._id).lean())?.superseded).toBe(true);
+  });
+
+  it('does not count a claim whose BBS-cited PI no track lists as unkeyed', async () => {
+    const row = await ResearchEntity.create({ slug: 'synthetic-departed-lab', name: 'Departed' });
+    const departed = await seedClaim({
+      entityId: row._id as mongoose.Types.ObjectId,
+      profileSlug: 'synthetic-unlisted-pi',
+      value: ['Immunology'],
+    });
+    const runId = new mongoose.Types.ObjectId();
+    await seedRead({ runId, members: {} });
+
+    const result = await reconcileBbsTrackRetirementsFromRun(String(runId), deps, { dryRun: true });
+
+    expect(result.counts?.claimsUnkeyedForRestatement).toBe(0);
     expect(result.counts?.restatedClaims ?? 0).toBe(0);
-    expect((await Observation.findById(partial._id).lean())?.superseded).not.toBe(true);
+    expect((await Observation.findById(departed._id).lean())?.superseded).not.toBe(true);
   });
 
   it('restates nothing from a read that missed a track', async () => {

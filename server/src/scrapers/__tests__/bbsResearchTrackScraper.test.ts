@@ -957,6 +957,19 @@ describe('per-track roster-health snapshot', () => {
       ['immunology'],
     );
     expect([...reads[0].claimEntityKeys]).toEqual(['111111111111111111111111']);
+
+    const citedUrls = Object.fromEntries(
+      ((value.members ?? []) as Array<{ memberKey: string; citedProfileUrl?: string }>).map(
+        (m) => [m.memberKey, m.citedProfileUrl],
+      ),
+    );
+    const graft = emitted.find(
+      (observation) =>
+        observation.field === 'researchAreas' &&
+        String(observation.entityId) === '111111111111111111111111',
+    );
+    expect(citedUrls['alex-rivera']).toBe(graft?.sourceUrl);
+    expect(citedUrls['morgan-lee']).toBe('https://medicine.yale.edu/profile/morgan-lee/');
     expect([...reads[0].unresolvedMemberKeys].sort()).toEqual([
       'jo-park',
       'morgan-lee',

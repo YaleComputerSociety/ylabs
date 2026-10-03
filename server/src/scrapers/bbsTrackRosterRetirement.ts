@@ -223,18 +223,18 @@ export function bbsRowsResolvedByCitedPi(input: {
 function bbsSnapshotMemberPiKeys(
   snapshot: BbsTrackHealthSnapshot,
 ): Array<{ member: CenterRosterReadMember; piKeys: string[] }> {
-  const canonicalUrlByMemberKey = new Map<string, string>();
+  const citedUrlByMemberKey = new Map<string, string>();
   for (const entry of Array.isArray(snapshot.members) ? snapshot.members : []) {
     const raw = (entry ?? {}) as Record<string, unknown>;
-    if (typeof raw.memberKey === 'string' && typeof raw.canonicalProfileUrl === 'string') {
-      canonicalUrlByMemberKey.set(raw.memberKey, raw.canonicalProfileUrl);
+    if (typeof raw.memberKey === 'string' && typeof raw.citedProfileUrl === 'string') {
+      citedUrlByMemberKey.set(raw.memberKey, raw.citedProfileUrl);
     }
   }
   return snapshotMembers(snapshot).map((member) => ({
     member,
     piKeys: [
       `bbs:${member.memberKey.toLowerCase()}`,
-      bbsCitedPiKey(canonicalUrlByMemberKey.get(member.memberKey)),
+      bbsCitedPiKey(citedUrlByMemberKey.get(member.memberKey)),
     ].filter(Boolean),
   }));
 }
@@ -296,18 +296,23 @@ export function bbsLabelsListedByCitedPi(
 }
 
 /**
- * This lane's older claims asserting only labels the listing no longer gives their PI.
+ * This lane's older claims asserting a label the listing no longer gives their PI.
  *
  * The moved-claim pass reaches a claim only through the row its PI resolves to now, so a PI the
  * run read but could not resolve leaves its pre-split claim live on the row it used to graft onto:
  * nothing supersedes it, and absence retirement never acts because the PI is still listed. The
  * listing itself refutes the claim, though, whichever row it sits on, so it is retired on that
  * evidence. A claim on a row its PI resolved to this run is left to latest-wins supersession, and
- * one carrying any label the listing still gives is kept, because retiring the observation would
- * remove that label too, as `aggregateBbsTrackReads` explains (#3834).
+ * one whose labels the listing still gives is still true and kept (#3834).
  *
- * A claim whose cited PI no complete read keys, typically one citing a canonical profile the run
- * could not read, is counted as unkeyed rather than silently kept.
+ * The whole claim is retired even when some of its labels are still listed, deliberately. A PI who
+ * did not resolve to this row was refused or ambiguous, so the lane can no longer vouch that this
+ * row is the PI's at all, and it must not keep asserting any label there.
+ *
+ * A claim citing a profile URL that no listed PI was recorded under this run is counted as unkeyed
+ * rather than silently kept: the run cannot tell whether its PI is still listed. A claim citing a
+ * BBS profile the listing does not name is not counted, because its PI is simply not listed and
+ * absence retirement governs it.
  */
 export function planBbsTrackRestatedClaims(input: {
   claims: readonly BbsTrackClaim[];
@@ -323,11 +328,11 @@ export function planBbsTrackRestatedClaims(input: {
     const piKey = bbsCitedPiKey(claim.sourceUrl);
     const listed = input.labelsListedByCitedPi.get(piKey);
     if (!listed) {
-      unkeyed += 1;
+      if (piKey && !bbsProfileSlugFromUrl(claim.sourceUrl ?? '')) unkeyed += 1;
       continue;
     }
     if (input.rowsResolvedByCitedPi.get(piKey)?.has(claim.entityKey)) continue;
-    if (claim.value.some((label) => listed.has(label))) continue;
+    if (claim.value.every((label) => listed.has(label))) continue;
     restated.push(claim.observationId);
   }
   return { restated, unkeyed };
