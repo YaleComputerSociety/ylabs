@@ -3,8 +3,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mongoOptions } from '../../db/connections';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
 import {
   GRANT_OR_ORCID_LANE_SOURCE_NAMES,
@@ -81,6 +83,32 @@ describe('the grant-only archive is bounded by the cap and reads URL-less eviden
     expect(delta.grantOnlyPlannedArchives).toBe(2);
     expect(delta.grantOnlyArchived).toBe(0);
     expect(delta.grantOnlyDeferredByCap).toBe(2);
+  });
+
+  it('a dry run under a cap of zero reports every enrichment as deferred, not applied', async () => {
+    const grantRowId = await seedGrantOnlyRow('nih-pi-synthetic-one');
+    const labId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: labId,
+      slug: 'synthetic-enrichment-lab',
+      name: 'Synthetic Enrichment Lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+    const personId = new mongoose.Types.ObjectId();
+    for (const targetId of [grantRowId, labId]) {
+      await RoleAssignment.collection.insertOne({
+        personId,
+        role: LEAD_ROLE_CANONICAL_VALUES[0],
+        target: { kind: 'RESEARCH_ENTITY', id: targetId },
+        archived: false,
+      });
+    }
+
+    const { delta } = await runGrantShellPort({ dryRun: true, confirmed: false, maxPorts: 0 });
+
+    expect(delta.grantOnlyEnrichedIntoExistingRow).toBe(0);
+    expect(delta.grantOnlyDeferredByCap).toBe(1);
   });
 
   it('a row carrying URL-less evidence from a non-grant lane is not archived', async () => {

@@ -15,6 +15,7 @@ import {
   type CenterRosterFreezeReason,
   type CenterRosterHealthSnapshot,
   type CenterRosterRead,
+  type CenterRosterReadMember,
 } from './centerRosterRetirement';
 import {
   BBS_TRACKS,
@@ -96,6 +97,7 @@ export interface BbsTrackRetirementPlan {
     retiredClaims: number;
     movedClaims?: number;
     restatedClaims?: number;
+    claimsUnkeyedForRestatement?: number;
   };
 }
 
@@ -210,12 +212,31 @@ export function bbsRowsResolvedByCitedPi(input: {
   for (const snapshot of input.snapshots) {
     const value = (snapshot.value ?? {}) as BbsTrackHealthSnapshot;
     if (value.claimEntityKeysRecorded !== true) continue;
-    for (const member of snapshotMembers(value)) {
-      if (member.claimEntityKey)
-        add(`bbs:${member.memberKey.toLowerCase()}`, member.claimEntityKey);
+    for (const { member, piKeys } of bbsSnapshotMemberPiKeys(value)) {
+      if (!member.claimEntityKey) continue;
+      for (const piKey of piKeys) add(piKey, member.claimEntityKey);
     }
   }
   return rowsByPi;
+}
+
+function bbsSnapshotMemberPiKeys(
+  snapshot: BbsTrackHealthSnapshot,
+): Array<{ member: CenterRosterReadMember; piKeys: string[] }> {
+  const canonicalUrlByMemberKey = new Map<string, string>();
+  for (const entry of Array.isArray(snapshot.members) ? snapshot.members : []) {
+    const raw = (entry ?? {}) as Record<string, unknown>;
+    if (typeof raw.memberKey === 'string' && typeof raw.canonicalProfileUrl === 'string') {
+      canonicalUrlByMemberKey.set(raw.memberKey, raw.canonicalProfileUrl);
+    }
+  }
+  return snapshotMembers(snapshot).map((member) => ({
+    member,
+    piKeys: [
+      `bbs:${member.memberKey.toLowerCase()}`,
+      bbsCitedPiKey(canonicalUrlByMemberKey.get(member.memberKey)),
+    ].filter(Boolean),
+  }));
 }
 
 /**
@@ -262,11 +283,12 @@ export function bbsLabelsListedByCitedPi(
     const labels = bbsTrackResearchAreaLabels(trackKey);
     if (labels.length === 0) continue;
     admittedTracks.add(trackKey);
-    for (const member of snapshotMembers(value)) {
-      const piKey = `bbs:${member.memberKey.toLowerCase()}`;
-      const listed = labelsByPi.get(piKey) ?? new Set<string>();
-      for (const label of labels) listed.add(label);
-      labelsByPi.set(piKey, listed);
+    for (const { piKeys } of bbsSnapshotMemberPiKeys(value)) {
+      for (const piKey of piKeys) {
+        const listed = labelsByPi.get(piKey) ?? new Set<string>();
+        for (const label of labels) listed.add(label);
+        labelsByPi.set(piKey, listed);
+      }
     }
   }
   const everyTrackRead = BBS_TRACKS.every((track) => admittedTracks.has(track.slug));
@@ -274,32 +296,41 @@ export function bbsLabelsListedByCitedPi(
 }
 
 /**
- * This lane's older claims asserting a label the listing no longer gives their PI.
+ * This lane's older claims asserting only labels the listing no longer gives their PI.
  *
  * The moved-claim pass reaches a claim only through the row its PI resolves to now, so a PI the
  * run read but could not resolve leaves its pre-split claim live on the row it used to graft onto:
  * nothing supersedes it, and absence retirement never acts because the PI is still listed. The
  * listing itself refutes the claim, though, whichever row it sits on, so it is retired on that
  * evidence. A claim on a row its PI resolved to this run is left to latest-wins supersession, and
- * one whose labels the listing still gives is still true and kept (#3834).
+ * one carrying any label the listing still gives is kept, because retiring the observation would
+ * remove that label too, as `aggregateBbsTrackReads` explains (#3834).
+ *
+ * A claim whose cited PI no complete read keys, typically one citing a canonical profile the run
+ * could not read, is counted as unkeyed rather than silently kept.
  */
 export function planBbsTrackRestatedClaims(input: {
   claims: readonly BbsTrackClaim[];
   labelsListedByCitedPi: ReadonlyMap<string, ReadonlySet<string>>;
   rowsResolvedByCitedPi: ReadonlyMap<string, ReadonlySet<string>>;
   scrapeRunId: string;
-}): string[] {
+}): { restated: string[]; unkeyed: number } {
   const restated: string[] = [];
+  let unkeyed = 0;
+  if (input.labelsListedByCitedPi.size === 0) return { restated, unkeyed };
   for (const claim of input.claims) {
-    if (claim.scrapeRunId === input.scrapeRunId) continue;
+    if (claim.scrapeRunId === input.scrapeRunId || !claim.value?.length) continue;
     const piKey = bbsCitedPiKey(claim.sourceUrl);
     const listed = input.labelsListedByCitedPi.get(piKey);
-    if (!listed || !claim.value?.length) continue;
+    if (!listed) {
+      unkeyed += 1;
+      continue;
+    }
     if (input.rowsResolvedByCitedPi.get(piKey)?.has(claim.entityKey)) continue;
-    if (claim.value.every((label) => listed.has(label))) continue;
+    if (claim.value.some((label) => listed.has(label))) continue;
     restated.push(claim.observationId);
   }
-  return restated;
+  return { restated, unkeyed };
 }
 
 export const BBS_TRACK_RESTATED_CLAIM_REASON =
@@ -553,7 +584,8 @@ export async function reconcileBbsTrackRetirementsFromRun(
   if (!runRecordedATrackRead) return { outcome: 'no-bbs-track-read', dryRun };
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
   const { claims, orphanedClaims } = await loadBbsTrackClaims();
-  const { movedObservationIds, restatedObservationIds } = await planRunResolvedClaims(
+  const { movedObservationIds, restatedObservationIds, claimsUnkeyedForRestatement } =
+    await planRunResolvedClaims(
     runObjectId,
     claims,
   );
@@ -584,6 +616,7 @@ export async function reconcileBbsTrackRetirementsFromRun(
         retiredClaims: 0,
         movedClaims: 0,
         restatedClaims: 0,
+        claimsUnkeyedForRestatement,
       },
     };
   }
@@ -603,6 +636,7 @@ export async function reconcileBbsTrackRetirementsFromRun(
   );
   plan.counts.movedClaims = movedIds.length;
   plan.counts.restatedClaims = restatedIds.length;
+  plan.counts.claimsUnkeyedForRestatement = claimsUnkeyedForRestatement;
   await retire(movedIds, BBS_TRACK_MOVED_CLAIM_REASON);
   await retire(restatedIds, BBS_TRACK_RESTATED_CLAIM_REASON);
   await retire(absentIds, BBS_TRACK_RETIREMENT_REASON);
@@ -628,7 +662,11 @@ export async function reconcileBbsTrackRetirementsFromRun(
 async function planRunResolvedClaims(
   runObjectId: mongoose.Types.ObjectId,
   claims: readonly BbsTrackClaim[],
-): Promise<{ movedObservationIds: string[]; restatedObservationIds: string[] }> {
+): Promise<{
+  movedObservationIds: string[];
+  restatedObservationIds: string[];
+  claimsUnkeyedForRestatement: number;
+}> {
   const [grafts, snapshots] = await Promise.all([
     Observation.find({
       scrapeRunId: runObjectId,
@@ -659,20 +697,19 @@ async function planRunResolvedClaims(
     );
     return [];
   };
+  const restatement = planBbsTrackRestatedClaims({
+    claims,
+    labelsListedByCitedPi: bbsLabelsListedByCitedPi(snapshots as BbsRunResolutionRow[]),
+    rowsResolvedByCitedPi,
+    scrapeRunId,
+  });
   return {
     movedObservationIds: withinCeiling(
       'moved-claim',
       planBbsTrackMovedClaims({ claims, rowsResolvedByCitedPi, scrapeRunId }),
     ),
-    restatedObservationIds: withinCeiling(
-      'restated-claim',
-      planBbsTrackRestatedClaims({
-        claims,
-        labelsListedByCitedPi: bbsLabelsListedByCitedPi(snapshots as BbsRunResolutionRow[]),
-        rowsResolvedByCitedPi,
-        scrapeRunId,
-      }),
-    ),
+    restatedObservationIds: withinCeiling('restated-claim', restatement.restated),
+    claimsUnkeyedForRestatement: restatement.unkeyed,
   };
 }
 

@@ -32,6 +32,7 @@ import {
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { applyResearchEntityDedupeMergeGroup } from './dedupeResearchEntitiesByPi';
+import { GRANT_CORPUS_SYNTHESIS_SOURCE_NAME, GRANT_SOURCE_NAMES } from './grantCorpusSynthesisCore';
 import {
   GRANT_SHELL_PORT_SLUG_RE,
   isGrantShellSlug,
@@ -112,12 +113,8 @@ type GrantOnlyArchivalDelta = Pick<
 >;
 
 export const GRANT_OR_ORCID_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
-  'nih-reporter',
-  'nsf-award-search',
-  'neh-funded-projects',
-  'federal-award-usaspending',
-  'doe-osti',
-  'grant-corpus-synthesis-llm',
+  ...GRANT_SOURCE_NAMES,
+  GRANT_CORPUS_SYNTHESIS_SOURCE_NAME,
 ]);
 
 /**
@@ -298,7 +295,7 @@ async function archiveGrantOnlyRows(
       toArchive.length,
   };
   if (dryRun) {
-    delta.grantOnlyEnrichedIntoExistingRow = plan.enrichIntoExistingRow.length;
+    delta.grantOnlyEnrichedIntoExistingRow = enrichmentsToApply.length;
     return delta;
   }
 

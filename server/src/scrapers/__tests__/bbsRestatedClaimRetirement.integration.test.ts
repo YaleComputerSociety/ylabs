@@ -15,10 +15,13 @@ const sourceId = new mongoose.Types.ObjectId();
 const RETIRED_COMPOUND_LABEL = 'Molecular Medicine, Pharmacology & Physiology';
 const profileUrl = (slug: string) => `https://medicine.yale.edu/bbs/profile/${slug}/`;
 
+const canonicalProfileUrl = (slug: string) => `https://medicine.yale.edu/profile/${slug}/`;
+
 const seedClaim = async (input: {
   entityId: mongoose.Types.ObjectId;
   profileSlug: string;
   value: string[];
+  citesCanonicalProfile?: boolean;
 }) =>
   Observation.create({
     entityType: 'researchEntity',
@@ -26,7 +29,9 @@ const seedClaim = async (input: {
     field: 'researchAreas',
     sourceId,
     sourceName: 'bbs-research-track',
-    sourceUrl: profileUrl(input.profileSlug),
+    sourceUrl: input.citesCanonicalProfile
+      ? canonicalProfileUrl(input.profileSlug)
+      : profileUrl(input.profileSlug),
     value: input.value,
     confidence: 0.7,
     superseded: false,
@@ -36,7 +41,10 @@ const seedClaim = async (input: {
 
 const seedRead = async (input: {
   runId: mongoose.Types.ObjectId;
-  members: Record<string, Array<{ profileSlug: string; rowId?: string }>>;
+  members: Record<
+    string,
+    Array<{ profileSlug: string; rowId?: string; canonicalProfileRead?: boolean }>
+  >;
   skipTrack?: string;
 }) => {
   for (const track of BBS_TRACKS) {
@@ -63,6 +71,9 @@ const seedRead = async (input: {
           memberKey: member.profileSlug,
           role: 'track-pi',
           ...(member.rowId ? { claimEntityKey: member.rowId } : {}),
+          ...(member.canonicalProfileRead
+            ? { canonicalProfileUrl: canonicalProfileUrl(member.profileSlug) }
+            : {}),
         })),
         read: {
           pagesRead: 1,
@@ -169,6 +180,56 @@ describe('BBS retires a claim the listing restates for a PI it could not resolve
       researchAreas?: string[];
     } | null;
     expect(reprojected?.researchAreas ?? []).not.toContain(RETIRED_COMPOUND_LABEL);
+  });
+
+  it('retires a stale claim citing the canonical profile and counts one no read can key', async () => {
+    const staleRow = await ResearchEntity.create({ slug: 'synthetic-stale-lab', name: 'Stale' });
+    const unkeyedRow = await ResearchEntity.create({ slug: 'synthetic-unkeyed-lab', name: 'Other' });
+    const stale = await seedClaim({
+      entityId: staleRow._id as mongoose.Types.ObjectId,
+      profileSlug: 'synthetic-canonical-pi',
+      value: [RETIRED_COMPOUND_LABEL],
+      citesCanonicalProfile: true,
+    });
+    const unkeyed = await seedClaim({
+      entityId: unkeyedRow._id as mongoose.Types.ObjectId,
+      profileSlug: 'synthetic-unread-pi',
+      value: [RETIRED_COMPOUND_LABEL],
+      citesCanonicalProfile: true,
+    });
+    const runId = new mongoose.Types.ObjectId();
+    await seedRead({
+      runId,
+      members: {
+        m2p2: [
+          { profileSlug: 'synthetic-canonical-pi', canonicalProfileRead: true },
+          { profileSlug: 'synthetic-unread-pi' },
+        ],
+      },
+    });
+
+    const result = await reconcileBbsTrackRetirementsFromRun(String(runId), deps, {});
+
+    expect(result.counts?.restatedClaims).toBe(1);
+    expect(result.counts?.claimsUnkeyedForRestatement).toBe(1);
+    expect((await Observation.findById(stale._id).lean())?.superseded).toBe(true);
+    expect((await Observation.findById(unkeyed._id).lean())?.superseded).not.toBe(true);
+  });
+
+  it('keeps a claim carrying any label the listing still gives its PI', async () => {
+    const row = await ResearchEntity.create({ slug: 'synthetic-partial-lab', name: 'Partial' });
+    const partial = await seedClaim({
+      entityId: row._id as mongoose.Types.ObjectId,
+      profileSlug: 'synthetic-partial-pi',
+      value: ['Immunology', RETIRED_COMPOUND_LABEL],
+    });
+    const runId = new mongoose.Types.ObjectId();
+    await seedRead({ runId, members: { immunology: [{ profileSlug: 'synthetic-partial-pi' }] } });
+
+    const result = await reconcileBbsTrackRetirementsFromRun(String(runId), deps, {});
+
+    expect(result.counts?.restatedClaims ?? 0).toBe(0);
+    expect((await Observation.findById(partial._id).lean())?.superseded).not.toBe(true);
   });
 
   it('restates nothing from a read that missed a track', async () => {
