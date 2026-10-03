@@ -233,13 +233,13 @@ describe('the observation engine can retract a field a source stopped asserting 
     await runDirectoryPass({ name: 'Yale Liver Center', url: AFFILIATED_ORG });
     await runDirectoryPass({ name: 'Yale Liver Center', url: AFFILIATED_ORG });
 
-    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await storedWebsiteUrl()).toBe('');
 
     const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
     expect(result.counts.absenceNotWitnessed).toBe(1);
     expect(result.counts.retractedObservations).toBe(0);
 
-    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await storedWebsiteUrl()).toBe('');
     expect(await liveWebsiteUrlObservations()).toHaveLength(1);
   }, 120000);
 

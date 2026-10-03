@@ -986,6 +986,20 @@ Each run records `metrics.descriptionSlotAttestation` with `empty`, `refused`, `
 Before #3739 the lane wrote `empty` for most of those refusals, and measured on Development on 2026-10-02 304 of the 480 live `empty` attestations cite a page the shared-evidence or institution guard now refuses.
 `research-entity:refuse-unasserted-descriptions` therefore counts only attestations from runs whose metrics carry the vocabulary marker and reports the rest as `excludedPreVocabularyAttestations`; on that date it excluded all 988 and planned nothing, where it had planned 16 refusals before.
 
+### A lane's refusal withdraws its own earlier `websiteUrl` (#3926)
+
+A refusal is not an absence, so field retraction cannot act on one, and a read that withholds `websiteUrl` used to leave the lane's earlier assertion of the same link live and unopposed.
+Measured on Development on 2026-10-02, 60 non-archived rows served a `websiteUrl` whose provenance named `ysm-faculty-directory` while that lane's newest read typed the row `FACULTY_RESEARCH_AREA` and stated no empty slot, 47 of them `student_ready`.
+
+`ysm-faculty-directory` now states the refusal as evidence: a populated lab slot it will not adopt emits a `refusedWebsiteUrl` observation carrying the refused link.
+`withoutLaneRefusedWebsiteUrls` in `scrapers/laneRefusedWebsiteUrl.ts` reads it on every resolve, before the resolver ranks anything.
+The lane's newest read wins over its own older reads of the row: every `websiteUrl` it asserted before the refusal stops counting, whatever the link, on either identity form of the row, because a slot that now carries a refused link no longer carries the earlier one.
+A newer read that adopts a link again wins over the refusal.
+The lane's own older citations stop keeping a withdrawn link standing for the same reason.
+Another lane's assertion of the link resolves normally, and the stored value is cleared only when no other lane asserts or cites it after the withdrawal and the field carries no lock.
+The same pass declines to promote that link back from a citation, because a clear that the citation promotion refills on the same pass does not hold.
+Nothing is written to the observation log and the refusal is never projected onto the row, so a second pass over an unchanged corpus plans nothing.
+
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 
 A fellowship lane could not withdraw a value it used to assert, and three mechanisms each ruled themselves out.

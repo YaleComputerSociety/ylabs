@@ -48,6 +48,7 @@ import {
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
@@ -501,6 +502,9 @@ export function facultyToResearchEntityObservations(
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
   if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  else if (profile.labUrl) {
+    obs.push({ ...base, field: REFUSED_WEBSITE_URL_FIELD, value: profile.labUrl });
+  }
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
   }
