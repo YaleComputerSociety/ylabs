@@ -3515,9 +3515,10 @@ export async function resolveExistingUserForIdentity(
 }
 
 /**
- * For a row that already serves the link, a suppressed holder cannot own it: a suppressed
- * duplicate carrying the same site is a dedupe question, and withdrawing on it stripped
- * real lab sites from the visible row in the #4544 dry run.
+ * For a row that already serves the link, only a student-visible holder can own it: a
+ * duplicate that is suppressed or held for review carrying the same site is a dedupe
+ * question, and withdrawing on it stripped real lab sites from the visible row in the
+ * #4544 dry run, with 3 more visible rows exposed to a held-for-review duplicate.
  */
 export async function websiteUrlOwnedByAnotherEntity(
   websiteUrl: string,
@@ -3530,7 +3531,7 @@ export async function websiteUrlOwnedByAnotherEntity(
     archived: { $ne: true },
     ...(mongoose.isValidObjectId(entityId) ? { _id: { $ne: entityId } } : {}),
     ...(rowStoresWebsite(entity, websiteUrl)
-      ? { studentVisibilityTier: { $ne: 'suppressed' } }
+      ? { studentVisibilityTier: { $in: [...publicStudentVisibilityTiers] } }
       : {}),
     $or: [{ websiteUrl: { $in: lookupUrls } }, { website: { $in: lookupUrls } }],
   })

@@ -1815,12 +1815,12 @@ describe('officialProfilePiBackfillScraper', () => {
     };
     const row = { _id: '0123456789abcdef01234567', websiteUrl: 'https://fixturelab.example.org/' };
 
-    it('does not count a suppressed holder when the row already serves the link', async () => {
+    it('counts only a student-visible holder when the row already serves the link', async () => {
       const filters = findOneReturning(null);
       await expect(
         websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', row),
       ).resolves.toBe(false);
-      expect(filters[0].studentVisibilityTier).toEqual({ $ne: 'suppressed' });
+      expect(filters[0].studentVisibilityTier).toEqual({ $in: ['student_ready'] });
       expect(filters[0]._id).toEqual({ $ne: row._id });
     });
 
