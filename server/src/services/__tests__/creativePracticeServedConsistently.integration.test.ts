@@ -9,12 +9,13 @@ const mocks = vi.hoisted(() => ({
   deleteFromIndex: vi.fn(async () => {}),
 }));
 
-vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+vi.mock('../../utils/meiliClient', () => {
+  const searchIndex = vi.fn(async () => ({
     search: mocks.search,
     getEmbedders: vi.fn(async () => ({})),
-  })),
-}));
+  }));
+  return { getMeiliIndex: searchIndex, getMeiliSearchIndex: searchIndex };
+});
 
 vi.mock('../meiliSyncService', () => ({
   syncEntities: mocks.syncEntities,
