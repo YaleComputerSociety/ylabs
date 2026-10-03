@@ -56,8 +56,14 @@ import { publicResearchEntityDescriptionText } from '../../utils/researchEntityD
 import {
   isOwnDepartmentUndergraduateResearchProgramme,
   joinPageUrlRefusal,
+  joinRouteKind,
+  joinRouteTextAdmits,
+  joinRouteUrlRefusal,
+  namesAnUnqualifiedStudentAudience,
+  recruitingSentences,
+  textInvitesUndergraduates,
   type JoinPageEntity,
-  type JoinPageUrlRefusal,
+  type JoinRouteRefusal,
 } from '../undergradJoinPageAdmission';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
@@ -121,7 +127,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'roster-page-current-and-past-v3';
+const OBSERVATION_DERIVATION_VERSION = 'join-route-invites-undergraduates-v4';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -836,55 +842,11 @@ export function rosterSnippetSitsUnderAHistoricalHeading(
   return appearances > 0;
 }
 
-const RECRUITING_SENTENCE = new RegExp(
-  [
-    'looking\\s+for',
-    'on\\s+the\\s+lookout\\s+for',
-    'seek(?:s|ing)?\\s+(?:a|an|new|motivated|talented|highly|undergrad\\w*|students?|post-?docs?|candidates?|applicants?|graduate)',
-    'recruit(?:s|ing)?',
-    'hiring',
-    'accepting',
-    'welcom(?:es|ing)',
-    'are\\s+welcome',
-    'welcome\\s+(?:to|applications|inquiries|students|undergrad\\w*|motivated|new|all)',
-    'invit(?:e|es|ing)',
-    'apply\\s+(?:to|for|by|online|here|now|through|via)',
-    'applications?\\s+(?:are|will|should|must|from|for|to|deadline|form|process|materials)',
-    'applicants?',
-    'openings?',
-    'positions?\\s+(?:are|is)\\s+(?:available|open)',
-    '(?<!(?:before|after|since)\\s)join(?:ing)?\\s+(?:us|our|the)',
-    'interested\\s+in\\s+(?:joining|working|becoming|doing|research)',
-    'get\\s+involved',
-    'reach\\s+out',
-    'prospective\\s+(?:students?|members?|applicants?|undergrad\\w*|graduate|ph\\.?d|post-?docs?|trainees?|lab\\s+members?)',
-    'please\\s+(?:write|e-?mail|contact|send)',
-    '(?:write|e-?mail|send)\\s+(?:to\\s+)?me',
-  ]
-    .map((cue) => `\\b${cue}\\b`)
-    .join('|'),
-  'i',
-);
-
 const NON_UNDERGRADUATE_AUDIENCE =
   /\b(?:ph\.?\s?d\.?|doctoral|graduate\s+students?|grad\s+students?|post-?docs?|post-?doctora(?:l|tes?)|post-?graduates?|post-?bac\w*|staff|technicians?|(?:research|visiting)\s+scientists?|patients?|participants?|volunteers?|parents|families|residents|fellows|medical\s+students?|master'?s)\b/i;
 
 const UNDERGRADUATE_OR_OPEN_AUDIENCE =
   /\b(?:undergrad\w*|yale\s+college|college\s+students?|high\s+school|(?:all|every)\s+levels?|anyone|everyone|trainees?)\b/i;
-
-const QUALIFIED_STUDENT_AUDIENCE =
-  /\b(?:graduate|grad|ph\.?\s?d\.?|doctoral|medical|master'?s|md|rotation|rotating|visiting)\s*$/i;
-
-function namesAnUnqualifiedStudentAudience(sentence: string): boolean {
-  return Array.from(sentence.matchAll(/\bstudents?\b/gi)).some(
-    (match) => !QUALIFIED_STUDENT_AUDIENCE.test(sentence.slice(0, match.index ?? 0)),
-  );
-}
-
-const recruitingSentences = (text: string | undefined): string[] =>
-  normalizeQuoteText(text || '')
-    .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => RECRUITING_SENTENCE.test(sentence));
 
 /**
  * Whether a join page recruits only audiences other than undergraduates (#4430). One
@@ -910,11 +872,13 @@ export function joinPageRecruitsOnlyNonUndergraduates(text: string | undefined):
 }
 
 export type LaneJoinPageRefusal =
-  | JoinPageUrlRefusal
+  | JoinRouteRefusal
   | 'join-page-not-read'
   | 'join-page-outside-the-entity-scope'
   | 'join-page-invites-no-one'
-  | 'join-page-recruits-only-non-undergraduates';
+  | 'join-page-recruits-only-non-undergraduates'
+  | 'home-profile-or-member-listing-does-not-invite-undergraduates'
+  | 'join-page-names-no-undergraduate-audience';
 
 const SHARED_INSTITUTIONAL_HOST_LABEL = /(?:lab|labs|group|project)/i;
 
@@ -945,7 +909,9 @@ function isSharedInstitutionalHost(url: string): boolean {
  * such a URL, and each answered 404. On a shared school or center host the page must sit
  * in the row's own section, the scope `pagesWithinEntityScope` applies to quotes, and it
  * must invite someone: a roster page offered as the join page lists members and recruits
- * no one.
+ * no one. A home page, profile or member listing must invite undergraduates by name, and
+ * any other page must name an audience that can include them, so a generic hiring or
+ * "contact us if interested" line stays contact evidence (#4543).
  */
 export function laneJoinPageRefusal(
   joinPageUrl: string | null | undefined,
@@ -957,22 +923,56 @@ export function laneJoinPageRefusal(
   const identity = pageUrlIdentity(String(joinPageUrl));
   const page = sourcePages.find((candidate) => pageUrlIdentity(candidate.url) === identity);
   if (!page) return 'join-page-not-read';
+  const isOwnDepartmentProgramme =
+    isOwnDepartmentUndergraduateResearchProgramme(page.url, entity) &&
+    /\bundergrad|\byale\s+college\b/i.test(page.text);
   if (
     sourcePages[0] &&
     isSharedInstitutionalHost(sourcePages[0].url) &&
     !pagesWithinEntityScope(sourcePages).includes(page) &&
-    !(
-      isOwnDepartmentUndergraduateResearchProgramme(page.url, entity) &&
-      /\bundergrad|\byale\s+college\b/i.test(page.text)
-    )
+    !isOwnDepartmentProgramme
   ) {
     return 'join-page-outside-the-entity-scope';
   }
+  const routeRefusal = joinRouteUrlRefusal(joinPageUrl, entity);
+  if (routeRefusal) return routeRefusal;
   if (recruitingSentences(page.text).length === 0) return 'join-page-invites-no-one';
   if (joinPageRecruitsOnlyNonUndergraduates(page.text)) {
     return 'join-page-recruits-only-non-undergraduates';
   }
-  return null;
+  if (isOwnDepartmentProgramme) return null;
+  const kind = joinRouteKind(page.url, entity);
+  if (joinRouteTextAdmits(kind, page.text)) return null;
+  return kind === 'join-page'
+    ? 'join-page-names-no-undergraduate-audience'
+    : 'home-profile-or-member-listing-does-not-invite-undergraduates';
+}
+
+/**
+ * The join route a read emits: the page the model named when it is admissible, and
+ * otherwise the home page or profile carrying the read's own access quote when that quote
+ * invites undergraduates by name, as a profile saying "undergraduates interested in joining
+ * my group should contact me" does while the model named its department's jobs page
+ * (#4543). A read whose model named no join page emits none.
+ */
+export function admissibleJoinRoute(
+  extraction: Pick<LLMExtraction, 'joinPageUrl' | 'openToUndergrads'>,
+  evidenceQuote: { text: string; sourceUrl: string } | null,
+  pages: readonly PromptSourcePage[],
+  entity?: JoinPageEntity,
+): string {
+  if (!extraction.joinPageUrl) return '';
+  if (!laneJoinPageRefusal(extraction.joinPageUrl, pages, entity)) return extraction.joinPageUrl;
+  if (
+    extraction.openToUndergrads === 'yes' &&
+    evidenceQuote &&
+    joinRouteKind(evidenceQuote.sourceUrl, entity) === 'home-or-profile' &&
+    textInvitesUndergraduates(evidenceQuote.text) &&
+    !laneJoinPageRefusal(evidenceQuote.sourceUrl, pages, entity)
+  ) {
+    return evidenceQuote.sourceUrl;
+  }
+  return '';
 }
 
 /**
@@ -1191,18 +1191,16 @@ export function extractionToObservations(
     });
   }
 
-  const admissibleJoinPageUrl =
-    extraction.joinPageUrl &&
-    !laneJoinPageRefusal(
-      extraction.joinPageUrl,
-      [...(sourceContext.sourcePages ?? []), ...(sourceContext.joinPages ?? [])],
-      sourceContext.entityShape,
-    )
-      ? extraction.joinPageUrl
-      : '';
+  const admissibleJoinPageUrl = admissibleJoinRoute(
+    extraction,
+    evidenceQuote,
+    [...(sourceContext.sourcePages ?? []), ...(sourceContext.joinPages ?? [])],
+    sourceContext.entityShape,
+  );
   if (admissibleJoinPageUrl || sourceContext.readIsComplete !== false) {
     out.push({
       ...base,
+      sourceUrl: admissibleJoinPageUrl || sourceUrl,
       field: 'joinPageUrl',
       value: admissibleJoinPageUrl,
       confidenceOverride: 0.5,

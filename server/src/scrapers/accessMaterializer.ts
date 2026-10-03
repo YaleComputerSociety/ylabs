@@ -27,7 +27,15 @@ import {
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
   UNDERGRAD_MICROSITE_LANE,
 } from './undergradEvidenceQuoteValidation';
-import { joinPageUrlRefusal, type JoinPageEntity } from './undergradJoinPageAdmission';
+import {
+  isProgrammePageAdmittedAsJoinRoute,
+  isSameJoinRoutePage,
+  joinRouteKind,
+  joinRouteTextAdmits,
+  joinRouteUrlRefusal,
+  textInvitesUndergraduates,
+  type JoinPageEntity,
+} from './undergradJoinPageAdmission';
 import { isRecruitingOrContactPageUrl } from './undergradRosterEvidence';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import {
@@ -405,6 +413,64 @@ function filterArtifactsByValidatedClaims(
   };
 }
 
+interface AccessQuotePage {
+  sourceName: string;
+  url: string;
+  quote: string;
+}
+
+function accessQuotePage(obs: AccessObservation): AccessQuotePage {
+  const value = (obs.value || {}) as { quoteSourceUrl?: unknown };
+  return {
+    sourceName: obs.sourceName,
+    url: toHttpUrl(value.quoteSourceUrl) || toHttpUrl(obs.sourceUrl),
+    quote: undergradAccessEvidenceQuote(obs.value),
+  };
+}
+
+/**
+ * The page an application signal cites for one `joinPageUrl` observation, or none (#4543).
+ * The lane names the join page as the observation's value and records the page it was
+ * reading as its source, so the value is the citation: 212 of 554 stored join-page signals
+ * on served rows cited the page read instead. A source that quotes its access evidence
+ * must back the page with a quote on it that `joinRouteTextAdmits` for the page's kind, or,
+ * for a join page, a quote anywhere on the row that invites undergraduates by name. A
+ * department's own undergraduate research programme names its audience in its address and
+ * needs no quote, and a source that quotes nothing, such as a department page's
+ * application form, is judged on the address alone.
+ * When the named page fails, the row's home page or profile is the route if its quote
+ * invites undergraduates by name.
+ */
+function joinRouteCitation(
+  obs: AccessObservation,
+  accessQuotePages: readonly AccessQuotePage[],
+  entity?: JoinPageEntity,
+): string | undefined {
+  const joinPageUrl = firstUrlValue(obs.value);
+  if (!joinPageUrl) return undefined;
+  const quotePages = accessQuotePages.filter(
+    (page) => page.sourceName === obs.sourceName && page.quote,
+  );
+  if (!joinRouteUrlRefusal(joinPageUrl, entity)) {
+    if (quotePages.length === 0) return joinPageUrl;
+    if (isProgrammePageAdmittedAsJoinRoute(joinPageUrl, entity)) return joinPageUrl;
+    const quotesOnJoinPage = quotePages
+      .filter((page) => isSameJoinRoutePage(page.url, joinPageUrl))
+      .map((page) => page.quote);
+    const kind = joinRouteKind(joinPageUrl, entity);
+    const admitted =
+      quotesOnJoinPage.some((quote) => joinRouteTextAdmits(kind, quote)) ||
+      (kind === 'join-page' && quotePages.some((page) => textInvitesUndergraduates(page.quote)));
+    if (admitted) return joinPageUrl;
+  }
+  return quotePages.find(
+    (page) =>
+      joinRouteKind(page.url, entity) === 'home-or-profile' &&
+      textInvitesUndergraduates(page.quote) &&
+      !joinRouteUrlRefusal(page.url, entity),
+  )?.url;
+}
+
 export function deriveAccessArtifactsFromObservations(
   researchEntityId: string,
   observations: AccessObservation[],
@@ -549,22 +615,24 @@ export function deriveAccessArtifactsFromObservations(
 
   // Collapsed before admission, so a lane's newer read that found no admissible join page
   // (an empty value) replaces the page an older read named instead of standing beside it.
-  const joinPageObservations = collapseLatestWins(
-    byField.get('joinPageUrl') || [],
-    'researchEntity',
-  ).filter(
-    (obs) => firstUrlValue(obs.value) && !joinPageUrlRefusal(firstUrlValue(obs.value), entity),
-  );
-  if (joinPageObservations.length > 0 && positiveAccessEvidence.length > 0) {
-    const score = maxConfidence(joinPageObservations);
+  const accessQuotePages = positiveAccessEvidence.map(accessQuotePage);
+  const joinRoutes = collapseLatestWins(byField.get('joinPageUrl') || [], 'researchEntity')
+    .map((obs) => ({ obs, citation: joinRouteCitation(obs, accessQuotePages, entity) }))
+    .filter((route): route is { obs: AccessObservation; citation: string } =>
+      Boolean(route.citation),
+    );
+  if (joinRoutes.length > 0 && positiveAccessEvidence.length > 0) {
+    const joinPageObservations = joinRoutes.map((route) => route.obs);
+    const best = bestObservation(joinPageObservations);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
         type: 'APPLICATION_FORM_EXISTS',
-        score,
+        score: maxConfidence(joinPageObservations),
         observations: joinPageObservations,
         excerpt: 'A join, opportunities, or application page was found.',
+        sourceUrl: joinRoutes.find((route) => route.obs === best)?.citation,
       }),
     );
   }
@@ -771,7 +839,7 @@ export async function deriveAccessArtifactsForResearchGroup(
   const entity = observations.some((obs) => obs.field === 'joinPageUrl')
     ? ((await ResearchEntity.findOne(
         { _id: researchEntityObjectId },
-        { entityType: 1, kind: 1, websiteUrl: 1, departments: 1 },
+        { entityType: 1, kind: 1, websiteUrl: 1, departments: 1, name: 1, slug: 1 },
       ).lean()) as JoinPageEntity | null)
     : null;
   const artifacts = deriveAccessArtifactsFromObservations(
@@ -1004,6 +1072,11 @@ export interface AccessEvidenceRow extends JoinPageEntity {
 const isReDerivedAccessSignalType = (type: unknown): boolean =>
   RE_DERIVED_ACCESS_SIGNAL_TYPES.includes(type as AccessSignalType);
 
+export interface ReDerivedAccessSignalJudgement {
+  underived: Set<string>;
+  citations: Map<string, string>;
+}
+
 // Upserted and never archived, like the contact signal above, so a stored signal this
 // materializer would no longer derive is withheld at serve time and not counted by the
 // gate; the stored row stays as history. A merged-in row's evidence still counts, because
@@ -1012,12 +1085,25 @@ export async function underivedAccessSignalIds(
   signals: readonly ReDerivedSignalLike[],
   rows: readonly AccessEvidenceRow[],
 ): Promise<Set<string>> {
+  return (await judgeReDerivedAccessSignals(signals, rows)).underived;
+}
+
+/**
+ * `underived` as above, and for each stored application signal the live evidence still
+ * derives, the join page that derivation cites (#4543). A stored signal keeps the page its
+ * last materialization recorded, often the page the lane was reading rather than the join
+ * page it found, so the detail route serves the derived page and a re-cite needs no write.
+ */
+export async function judgeReDerivedAccessSignals(
+  signals: readonly ReDerivedSignalLike[],
+  rows: readonly AccessEvidenceRow[],
+): Promise<ReDerivedAccessSignalJudgement> {
   const rowsById = new Map(rows.map((row) => [idText(row._id), row]));
   const judged = signals.filter(
     (signal) =>
       isReDerivedAccessSignalType(signal.type) && rowsById.has(idText(signal.researchEntityId)),
   );
-  if (judged.length === 0) return new Set();
+  if (judged.length === 0) return { underived: new Set(), citations: new Map() };
   const rowIds = Array.from(new Set(judged.map((signal) => idText(signal.researchEntityId))));
   const mergedInBySurvivor = await listResearchEntityMergedInRowsBySurvivor(rowIds);
   const evidenceRowsById = new Map<string, ContactEvidenceRow[]>(
@@ -1039,6 +1125,7 @@ export async function underivedAccessSignalIds(
   }).lean()) as unknown as AccessObservation[];
 
   const derivedTypesByRow = new Map<string, Set<AccessSignalType>>();
+  const derivedCitationByRowType = new Map<string, string>();
   for (const rowId of rowIds) {
     const keyedRows = evidenceRowsById.get(rowId) || [];
     const rowObservations = liveObservations.filter((observation) =>
@@ -1050,12 +1137,23 @@ export async function underivedAccessSignalIds(
       rowsById.get(rowId),
     );
     derivedTypesByRow.set(rowId, new Set(derived.accessSignals.map((signal) => signal.type)));
+    for (const signal of derived.accessSignals) {
+      if (signal.type === 'APPLICATION_FORM_EXISTS' && signal.sourceUrl) {
+        derivedCitationByRowType.set(`${rowId}:${signal.type}`, signal.sourceUrl);
+      }
+    }
   }
 
   const underived = new Set<string>();
+  const citations = new Map<string, string>();
   for (const signal of judged) {
-    const derivedTypes = derivedTypesByRow.get(idText(signal.researchEntityId));
-    if (!derivedTypes?.has(signal.type as AccessSignalType)) underived.add(idText(signal._id));
+    const rowId = idText(signal.researchEntityId);
+    if (!derivedTypesByRow.get(rowId)?.has(signal.type as AccessSignalType)) {
+      underived.add(idText(signal._id));
+      continue;
+    }
+    const citation = derivedCitationByRowType.get(`${rowId}:${String(signal.type)}`);
+    if (citation) citations.set(idText(signal._id), citation);
   }
-  return underived;
+  return { underived, citations };
 }
