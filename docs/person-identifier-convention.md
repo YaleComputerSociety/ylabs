@@ -96,7 +96,7 @@ It also refuses when the scanner itself is missing, so a broken install fails cl
 A refused draft is kept at `$TMPDIR/gh-guard-<random>/body.md`, readable only by its owner, and the refusal prints that path, so the author can read exactly what to rewrite.
 `scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
 The installer copies the guard into `~/.local/share/ylabs-gh-guard` and the shim runs that copy, falling back to the checkout it was installed from, so moving or deleting a checkout leaves `gh` working (#4258).
-When neither is present the shim names the missing path, refuses every publishing and API command, and passes read-only commands through.
+When neither is present the shim names both missing paths, refuses every publishing and API command, and passes read-only commands through.
 The installer exits non-zero, and `scripts/new-agent-worktree.sh` stops before creating a worktree, when the shim is not the first `gh` on `PATH`.
 There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
