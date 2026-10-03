@@ -17,7 +17,8 @@ const HEAD_FIRST_LAB_NAME = String.raw`((?:Lab|Laboratory|Group)\s+(?:of|for)\s+
 const OTHER_RESEARCH_HOME_NAME = String.raw`(${NAME_WORD}(?:${WORD_GAP}(?:${NAME_CONNECTOR}${WORD_GAP})?${NAME_WORD}){0,5}?${WORD_GAP}Group)(?![\p{L}\p{N}])`;
 const NAME_PHRASE_ENDS_RE =
   /(?:\s*(?:[,.;:!?()\]"”\n—–]|$)|\s+(?:at|in|on|with|that|which|where|whose|who|to|is|was|has|have|and|an?|the|since|from|focus\w*|stud\w*|investigat\w*|examin\w*|explor\w*|uses?|using|seeks?|aims?)\b)/uy;
-const NON_RESEARCH_LAB_RE = /\b(?:teaching|instructional)\b/i;
+const NON_RESEARCH_LAB_RE =
+  /\b(?:teaching|instructional)\b|^(?:animal|computer|wet|dry|shared)\s+lab(?:oratory)?$/i;
 
 const LEADERSHIP_STATEMENT_RE = new RegExp(
   String.raw`${SUBJECT}\s+(?:(?:also|currently|now)\s+)?${LEADERSHIP_VERB}\s+the\s+(?:${LAB_NAME}|${HEAD_FIRST_LAB_NAME}|${OTHER_RESEARCH_HOME_NAME})`,

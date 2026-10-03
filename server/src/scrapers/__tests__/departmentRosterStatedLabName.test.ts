@@ -268,6 +268,7 @@ describe('a stated lab name the sentence does not end on', () => {
   it('does not adopt a teaching or instructional facility', () => {
     expect(statedFor('Dr. Fixture directs the Undergraduate Teaching Laboratory.')).toBeUndefined();
     expect(statedFor('Dr. Fixture directs the Instructional Microscopy Lab.')).toBeUndefined();
+    expect(statedFor('Dr. Fixture directs the Animal Lab.')).toBeUndefined();
   });
 
   it('adopts a research lab named for its method', () => {
