@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   DESCRIPTION_SLOT_ATTESTATION_VOCABULARY,
@@ -196,5 +199,30 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
       unclaimed: 1,
       refusedByGuard: { shared_evidence_url: 2 },
     });
+  });
+
+  it('leaves no unnamed early return in the extraction, so a new guard has to name itself', () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../sources/labMicrositeDescriptionLLMExtractor.ts',
+      ),
+      'utf8',
+    );
+    const start = source.indexOf('export function describeDescriptionExtraction(');
+    const end = source.indexOf('\n}\n', start);
+    const body = source
+      .slice(start, end)
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+    const returns = (body.match(/\breturn\b[^;]*;/g) ?? []).map((statement) =>
+      statement.replace(/\s+/g, ' '),
+    );
+    const unnamed = returns.filter((statement) => !/^return refusedBy\([^)]*\);$/.test(statement));
+
+    expect(start).toBeGreaterThan(-1);
+    expect(returns.length).toBeGreaterThan(unnamed.length);
+    expect(unnamed).toEqual(['return { observations: [] };', 'return { observations };']);
   });
 });
