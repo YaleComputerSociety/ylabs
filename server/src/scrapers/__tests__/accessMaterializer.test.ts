@@ -121,6 +121,96 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.every((signal) => signal.confidence === 'HIGH')).toBe(true);
   });
 
+  describe('roster counts from the microsite lane (#4430)', () => {
+    const LANE = 'lab-microsite-undergrad-llm';
+    const types = (observations: AccessObservation[]) =>
+      deriveAccessArtifactsFromObservations('64f000000000000000000001', observations)
+        .accessSignals.map((signal) => signal.type)
+        .sort();
+
+    it('cites the roster page the count was read from', () => {
+      const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+        obs({
+          field: 'currentUndergradCount',
+          value: 2,
+          sourceName: LANE,
+          sourceUrl: 'https://examplelab.example.org/people',
+        }),
+      ]);
+      expect(result.accessSignals).toMatchObject([
+        { type: 'CURRENT_UNDERGRADS', sourceUrl: 'https://examplelab.example.org/people' },
+      ]);
+    });
+
+    it('derives no current-undergraduates signal from a count citing a join or contact page', () => {
+      for (const sourceUrl of [
+        'https://examplelab.example.org/join-us',
+        'https://examplelab.example.org/opportunities',
+        'https://examplelab.example.org/contact-2/',
+      ]) {
+        expect(
+          types([obs({ field: 'currentUndergradCount', value: 2, sourceName: LANE, sourceUrl })]),
+        ).toEqual([]);
+      }
+    });
+
+    it("lets the lane's newer zero displace an older count stated on a merged-in row", () => {
+      expect(
+        types([
+          obs({
+            _id: 'obs-loser-count',
+            entityKey: 'example-merged-loser',
+            field: 'currentUndergradCount',
+            value: 6,
+            sourceName: LANE,
+            observedAt: new Date('2026-09-01T00:00:00.000Z'),
+          }),
+          obs({
+            _id: 'obs-survivor-count',
+            field: 'currentUndergradCount',
+            value: 0,
+            sourceName: LANE,
+            observedAt: new Date('2026-10-01T00:00:00.000Z'),
+          }),
+        ]),
+      ).toEqual([]);
+    });
+
+    it('turns roster alumni into past-hosting evidence but not fellowship evidence', () => {
+      const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+        obs({
+          field: 'pastUndergradAdvisees',
+          value: [{ programName: 'Lab roster alumni', count: 3 }],
+          sourceName: LANE,
+          sourceUrl: 'https://examplelab.example.org/people',
+          confidence: 0.5,
+        }),
+      ]);
+      expect(result.accessSignals).toMatchObject([
+        { type: 'PAST_UNDERGRADS', sourceUrl: 'https://examplelab.example.org/people' },
+      ]);
+    });
+
+    it('keeps fellowship evidence from the fellowship lane beside roster alumni', () => {
+      expect(
+        types([
+          obs({
+            _id: 'obs-roster-alumni',
+            field: 'pastUndergradAdvisees',
+            value: [{ programName: 'Lab roster alumni', count: 3 }],
+            sourceName: LANE,
+          }),
+          obs({
+            _id: 'obs-fellowship',
+            field: 'pastUndergradAdvisees',
+            value: [{ year: 2025, programName: 'STARS', count: 1 }],
+            sourceName: 'undergrad-fellowships-recipients',
+          }),
+        ]),
+      ).toEqual(['FELLOWSHIP_COMPATIBLE', 'PAST_UNDERGRADS']);
+    });
+  });
+
   it('uses the original observation confidence, not resolved field confidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({

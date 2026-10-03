@@ -1559,3 +1559,34 @@ describe('researchAreas from a graduate-track roster rank below a row-own list',
     expect(resolved?.value).toEqual(trackAreas);
   });
 });
+
+describe('pastUndergradAdvisees from lab roster alumni rank below a fellowship history (#4430)', () => {
+  const now = new Date('2026-10-03T00:00:00Z');
+  const rosterAlumni = {
+    field: 'pastUndergradAdvisees',
+    value: [{ programName: 'Lab roster alumni', count: 4 }],
+    sourceName: 'lab-microsite-undergrad-llm',
+    confidence: 0.9,
+    observedAt: now,
+  };
+  const fellowshipHistory = {
+    field: 'pastUndergradAdvisees',
+    value: [{ year: 2024, programName: 'STARS', count: 1 }],
+    sourceName: 'undergrad-fellowships-recipients',
+    confidence: 0.5,
+    observedAt: new Date('2025-06-01T00:00:00Z'),
+  };
+
+  it('keeps the dated fellowship history over a newer, more confident roster count', () => {
+    const resolved = resolveField('pastUndergradAdvisees', [rosterAlumni, fellowshipHistory], {
+      now,
+    });
+    expect(resolved?.value).toEqual(fellowshipHistory.value);
+  });
+
+  it('serves the roster count when it is the only history the row has', () => {
+    expect(resolveField('pastUndergradAdvisees', [rosterAlumni], { now })?.value).toEqual(
+      rosterAlumni.value,
+    );
+  });
+});

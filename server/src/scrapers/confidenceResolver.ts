@@ -88,8 +88,13 @@ const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
 // roster one-liner; they still win when they are the only available source.
 const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
 const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
-const PROGRAMME_ROSTER_RESEARCH_AREA_SOURCES = new Set(['bbs-research-track']);
-const PROGRAMME_ROSTER_DEMOTION_FIELDS = new Set(['researchAreas']);
+// Sources that fill a field only when no other source states it. A lab roster's alumni
+// count carries no year or programme, so it must not displace a fellowship lane's dated
+// advisee history on the stored field (#4430).
+const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string>>> = {
+  researchAreas: new Set(['bbs-research-track']),
+  pastUndergradAdvisees: new Set(['lab-microsite-undergrad-llm']),
+};
 const PROSE_EXTENSION_BONUS = 1.25;
 
 // A research entity is a lab, faculty research area, or program - never a
@@ -261,29 +266,26 @@ function isSynthesizedProseGroup(group: { sources: Set<string> }): boolean {
   return true;
 }
 
-function isProgrammeRosterGroup(group: { sources: Set<string> }): boolean {
+function isFallbackOnlyGroup(field: string, group: { sources: Set<string> }): boolean {
   if (group.sources.size === 0) return false;
   for (const source of group.sources) {
-    if (!PROGRAMME_ROSTER_RESEARCH_AREA_SOURCES.has(source)) return false;
+    if (!sourceRanksOnlyAsFieldFallback(field, source)) return false;
   }
   return true;
 }
 
 export function sourceRanksOnlyAsFieldFallback(field: string, sourceName: unknown): boolean {
-  return (
-    PROGRAMME_ROSTER_DEMOTION_FIELDS.has(field) &&
-    PROGRAMME_ROSTER_RESEARCH_AREA_SOURCES.has(String(sourceName ?? ''))
-  );
+  return Boolean(FALLBACK_ONLY_SOURCES_BY_FIELD[field]?.has(String(sourceName ?? '')));
 }
 
-function demoteProgrammeRosterGroups(
+function demoteFallbackOnlyGroups(
   field: string,
   groups: Array<{ sources: Set<string>; demoted?: boolean }>,
 ): void {
-  if (!PROGRAMME_ROSTER_DEMOTION_FIELDS.has(field)) return;
-  if (groups.every(isProgrammeRosterGroup)) return;
+  if (!FALLBACK_ONLY_SOURCES_BY_FIELD[field]) return;
+  if (groups.every((group) => isFallbackOnlyGroup(field, group))) return;
   for (const group of groups) {
-    if (isProgrammeRosterGroup(group)) group.demoted = true;
+    if (isFallbackOnlyGroup(field, group)) group.demoted = true;
   }
 }
 
@@ -677,7 +679,7 @@ function rankFieldGroups(
   demotePersonBioProseGroups(field, rankable, descriptionKind);
   demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
   demoteUnusableProseGroups(field, rankable, descriptionKind);
-  demoteProgrammeRosterGroups(field, rankable);
+  demoteFallbackOnlyGroups(field, rankable);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );

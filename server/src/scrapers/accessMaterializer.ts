@@ -25,8 +25,10 @@ import {
   isExplicitUndergradUnavailabilityPhrase,
   isPlausibleUndergradEvidenceQuote,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
+  UNDERGRAD_MICROSITE_LANE,
 } from './undergradEvidenceQuoteValidation';
 import { joinPageUrlRefusal, type JoinPageEntity } from './undergradJoinPageAdmission';
+import { isRecruitingOrContactPageUrl } from './undergradRosterEvidence';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import {
   CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
@@ -458,10 +460,18 @@ export function deriveAccessArtifactsFromObservations(
   }
 
   // The retired cache-backfill lane carried no roster snippet a count could be checked
-  // against, so its counts cannot back a current-undergraduates signal (#3789).
-  const currentUndergradObservations = (byField.get('currentUndergradCount') || []).filter(
+  // against, so its counts cannot back a current-undergraduates signal (#3789). A count
+  // citing a recruiting or contact page was read from a page that lists no one (#4430).
+  // Collapsed first, like the join page below, so a lane's newer read replaces the count an
+  // older read of a merged-in row stated instead of standing beside it.
+  const currentUndergradObservations = collapseLatestWins(
+    byField.get('currentUndergradCount') || [],
+    'researchEntity',
+  ).filter(
     (obs) =>
-      undergradCount(obs.value) > 0 && obs.sourceName !== RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
+      undergradCount(obs.value) > 0 &&
+      obs.sourceName !== RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE &&
+      !isRecruitingOrContactPageUrl(obs.sourceUrl),
   );
   if (currentUndergradObservations.length > 0) {
     const score = maxConfidence(currentUndergradObservations);
@@ -587,21 +597,29 @@ export function deriveAccessArtifactsFromObservations(
     hasPastUndergradAdvisees(obs.value),
   );
   if (pastAdviseeObservations.length > 0) {
-    const score = maxConfidence(pastAdviseeObservations);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:PAST_UNDERGRADS',
         type: 'PAST_UNDERGRADS',
-        score,
+        score: maxConfidence(pastAdviseeObservations),
         observations: pastAdviseeObservations,
       }),
+    );
+  }
+  // Alumni on a lab roster show the lab has hosted undergraduates, not that a fellowship
+  // funded them, so they back PAST_UNDERGRADS only (#4430).
+  const fellowshipAdviseeObservations = pastAdviseeObservations.filter(
+    (obs) => obs.sourceName !== UNDERGRAD_MICROSITE_LANE,
+  );
+  if (fellowshipAdviseeObservations.length > 0) {
+    accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:FELLOWSHIP_COMPATIBLE',
         type: 'FELLOWSHIP_COMPATIBLE',
-        score,
-        observations: pastAdviseeObservations,
+        score: maxConfidence(fellowshipAdviseeObservations),
+        observations: fellowshipAdviseeObservations,
       }),
     );
   }

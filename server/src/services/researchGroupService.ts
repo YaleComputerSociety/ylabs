@@ -32,6 +32,7 @@ import {
   underivedAccessSignalIds,
 } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
+import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliSearchIndex } from '../utils/meiliClient';
@@ -3228,10 +3229,21 @@ const servableAccessSignalCitation = (signal: any, entity?: any): string | undef
   servedCitationUrl(
     'instruction',
     entity?.sourceLinkHealth,
-    isAdmittedProgrammeJoinCitation(signal, entity)
+    isAdmittedProgrammeJoinCitation(signal, entity) || isRosterCountCitation(signal, entity)
       ? publicHttpUrl(signal.source?.url)
       : publicResearchDetailSourceUrl(signal.source?.url, entity),
   );
+
+// A count signal's claim is about the people a lab's roster page lists, so that page is its
+// citation even though a roster listing is refused as the row's own citation (#4430).
+const ROSTER_COUNT_SIGNAL_TYPES: ReadonlySet<string> = new Set([
+  'CURRENT_UNDERGRADS',
+  'PAST_UNDERGRADS',
+]);
+
+const isRosterCountCitation = (signal: any, entity?: any): boolean =>
+  ROSTER_COUNT_SIGNAL_TYPES.has(String(signal?.type)) &&
+  isLabRosterCitationUrl(signal.source?.url, entity);
 
 // A programme-shaped page the join admission keeps as the row's own way in (the row's own
 // website, or its own department's undergraduate research programme) is served as the

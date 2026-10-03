@@ -533,10 +533,20 @@ export function isDisallowedResearchEntitySourceUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
+  return isListingOrIndexUrl(value) || isDisallowedNonListingResearchEntitySourceUrl(value, entity);
+}
+
+/**
+ * Every arm of `isDisallowedResearchEntitySourceUrl` except the listing one, for a citation
+ * whose claim is about the people a lab's own roster page lists (#4430).
+ */
+export function isDisallowedNonListingResearchEntitySourceUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   return (
     isSelfReferentialUrl(value) ||
     isEphemeralDeployHostUrl(value) ||
-    isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
     isInstitutionalAdvancementUrl(value) ||
     isMapOrDirectionsUrl(value) ||

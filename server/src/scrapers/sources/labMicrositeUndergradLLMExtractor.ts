@@ -45,6 +45,7 @@ import {
   rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
 import { contactQuoteStatesAnInstruction } from '../contactInstructionQuoteAdmission';
+import { pageListsPeople, rosterSnippetNamesAPerson } from '../undergradRosterEvidence';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
@@ -120,7 +121,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'roster-section-and-join-route-v2';
+const OBSERVATION_DERIVATION_VERSION = 'roster-page-current-and-past-v3';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -437,8 +438,15 @@ export function buildLLMPrompt(
   return parts.join('\n').slice(0, MAX_PROMPT_CHARS);
 }
 
+// The model has returned a page's zero-width spaces as NUL characters, so a roster line it
+// copied verbatim no longer matched the page it came from (#4430).
+const withoutControlCharacters = (text: string): string =>
+  Array.from(text)
+    .filter((char) => char.charCodeAt(0) >= 0x20 || /\s/.test(char))
+    .join('');
+
 const normalizeQuoteText = (text: string): string =>
-  stripInvisibleFormatCharacters(text)
+  stripInvisibleFormatCharacters(withoutControlCharacters(text))
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2013\u2014]/g, '-')
@@ -693,6 +701,8 @@ const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
   /\bprevious(ly)?\b/i,
   /\bvisiting\s+(under)?grad/i,
   /\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}\b/,
+  /\b\d{1,2}\/(?:19|20)\d{2}\s*[-\u2013\u2014]\s*\d{1,2}\/(?:19|20)\d{2}\b/,
+  /\b(?:19|20)\d{2}\/\d{1,2}\s*[-\u2013\u2014]\s*(?:19|20)\d{2}\/\d{1,2}\b/,
   /\bnow\s+(?!accept|recruit|hir|seek|welcom|tak|open|avail|enroll|offer|host)(?:a\b|an\b|the\b|at\b|with\b|working|serv|senior|director|professor|assistant|associate|principal|chief|head|vp|ceo|cto|president|manager|scientist|research|postdoc|resident|fellow|md\b|phd\b|student|pursuing|completing|attend)/i,
   /\b(?:associate|analyst|consultant|engineer|scientist|manager|director|officer|founder|president|attorney|physician)\s+at\s+(?!yale\b)/i,
 ];
@@ -750,6 +760,26 @@ interface RosterSectionMarker {
   historical: boolean;
 }
 
+const ROSTER_TAB_LABEL =
+  /(?:principal\s+investigators?|post-?docs?|post-?doctoral\s+(?:researchers?|fellows?|associates?|scholars?)|graduate\s+students?|ph\.?\s?d\.?\s+students?|undergrad(?:uate)?\s+(?:students?|researchers?)|research\s+(?:staff|scientists?|associates?)|staff|faculty(?:\s+collaborators?)?|collaborators?|visiting\s+(?:scholars?|students?)|lab\s+managers?)/gi;
+
+const TRAILING_TAB_LABEL_RUN = new RegExp(
+  `(?:${ROSTER_TAB_LABEL.source}\\s*[|/,•·]?\\s*){2,}$`,
+  'i',
+);
+
+// A filtered roster page renders its section names as a tab strip ("Graduate Students
+// Undergraduate Students Alumni") before the panels, so the strip's "Alumni" sits before every
+// current member (#4430). A strip is a run of section labels that the page repeats as headings
+// after it, which an alumni heading that follows a section's members never is.
+function isTabStripLabel(text: string, start: number, end: number): boolean {
+  const run = text.slice(Math.max(0, start - 400), start).match(TRAILING_TAB_LABEL_RUN)?.[0];
+  if (!run) return false;
+  const after = text.slice(end).toLowerCase();
+  const labels = Array.from(run.matchAll(ROSTER_TAB_LABEL), (match) => match[0].toLowerCase());
+  return labels.filter((label) => after.includes(label)).length >= 2;
+}
+
 function rosterSectionMarkers(text: string): RosterSectionMarker[] {
   const historical = Array.from(text.matchAll(HISTORICAL_ROSTER_SECTION_MARKER), (match) => ({
     start: match.index ?? 0,
@@ -763,7 +793,10 @@ function rosterSectionMarkers(text: string): RosterSectionMarker[] {
   })).filter((marker) =>
     historical.every((span) => marker.end <= span.start || marker.start >= span.end),
   );
-  return [...historical, ...current].sort((left, right) => left.start - right.start);
+  return [
+    ...historical.filter((marker) => !isTabStripLabel(text, marker.start, marker.end)),
+    ...current,
+  ].sort((left, right) => left.start - right.start);
 }
 
 /**
@@ -774,6 +807,10 @@ function rosterSectionMarkers(text: string): RosterSectionMarker[] {
  * judged by the nearest section marker before each place it appears, and is historical
  * only when every appearance is, because a site that renders its roster twice (a tab
  * strip, then the panel) puts the first copy after the tab labels.
+ *
+ * Each page is read in one form: the roster text without navigation when the line is on
+ * it, and the unredacted form before the redacted one, because contact redaction can
+ * swallow a heading glued to an address ("lab@example.eduAlumni").
  */
 export function rosterSnippetSitsUnderAHistoricalHeading(
   snippet: string | undefined,
@@ -781,23 +818,19 @@ export function rosterSnippetSitsUnderAHistoricalHeading(
 ): boolean {
   const needle = rosterText(snippet || '');
   if (!needle) return false;
+  const formCarryingNeedle = (raw: string | undefined): string | undefined =>
+    [raw || '', redactDirectContactInfo(raw || '')]
+      .map(rosterText)
+      .find((text) => text.includes(needle));
   let appearances = 0;
   for (const page of pages) {
-    const withoutChrome = [page.rosterText || '', redactDirectContactInfo(page.rosterText || '')]
-      .map(rosterText)
-      .filter((text) => text.includes(needle));
-    const texts = new Set(
-      withoutChrome.length > 0
-        ? withoutChrome
-        : [rosterText(page.text), rosterText(redactDirectContactInfo(page.text))],
-    );
-    for (const text of texts) {
-      const markers = rosterSectionMarkers(text);
-      for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
-        appearances += 1;
-        const nearest = markers.filter((marker) => marker.start < at + needle.length).pop();
-        if (!nearest?.historical) return false;
-      }
+    const text = formCarryingNeedle(page.rosterText) ?? formCarryingNeedle(page.text);
+    if (!text) continue;
+    const markers = rosterSectionMarkers(text);
+    for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+      appearances += 1;
+      const nearest = markers.filter((marker) => marker.start < at + needle.length).pop();
+      if (!nearest?.historical) return false;
     }
   }
   return appearances > 0;
@@ -949,20 +982,94 @@ export function laneJoinPageRefusal(
  *
  *   - When the LLM supplies a per-person `currentUndergradEvidenceQuotes` roster
  *     (the strengthened prompt requires one snippet per counted undergrad), the
- *     count is derived from the subset of snippets that clear both gates.
+ *     count is derived from the distinct snippets that clear both gates, so a line the
+ *     model listed twice is one person.
  *   - Each snippet must also pass rosterSnippetNamesAnUndergraduate: a bare name
  *     counts, while a staff title, a graduate role or a member's own degree does not
- *     (#3789).
+ *     (#3789); and rosterSnippetNamesAPerson, so a section heading counts no one (#4430).
  *   - With no roster the count is zero: the bare LLM integer backed 13 of 20 stored
  *     counts on a hand-read, so it is never trusted on its own (#3789).
  */
 export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
-  const roster = extraction.currentUndergradEvidenceQuotes;
-  if (!Array.isArray(roster)) return 0;
-  return roster.filter(
-    (quote) => isCurrentYaleUndergradEvidence(quote) && rosterSnippetNamesAnUndergraduate(quote),
+  return distinctRosterLines(extraction.currentUndergradEvidenceQuotes).filter(
+    (quote) => isAdmissibleRosterLine(quote) && !isHistoricalUndergradEvidence(quote),
   ).length;
 }
+
+function isAdmissibleRosterLine(quote: string): boolean {
+  return (
+    rosterSnippetNamesAPerson(quote) &&
+    rosterSnippetNamesAnUndergraduate(quote) &&
+    !namesNonYaleInstitution(quote)
+  );
+}
+
+function distinctRosterLines(quotes: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  return (Array.isArray(quotes) ? quotes : []).filter((quote) => {
+    const key = normalizeQuoteText(quote || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export interface RosterUndergraduateEvidence {
+  count: number;
+  sourceUrl: string;
+}
+
+export interface RosterUndergraduateSplit {
+  current: RosterUndergraduateEvidence | null;
+  past: RosterUndergraduateEvidence | null;
+}
+
+function rosterEvidenceFromLines(
+  lines: readonly { quote: string; pages: PromptSourcePage[] }[],
+): RosterUndergraduateEvidence | null {
+  if (lines.length === 0) return null;
+  const coverage = new Map<PromptSourcePage, number>();
+  for (const line of lines) {
+    for (const page of line.pages) coverage.set(page, (coverage.get(page) ?? 0) + 1);
+  }
+  const [citedPage] = Array.from(coverage.entries()).reduce(
+    (best, entry) => (entry[1] > best[1] ? entry : best),
+    Array.from(coverage.entries())[0],
+  );
+  return { count: lines.length, sourceUrl: citedPage.url };
+}
+
+/**
+ * The undergraduates a read's roster lists, split into current members and alumni (#4430).
+ * A line counts only on a fetched page that lists people (`pageListsPeople`), and the count
+ * cites that page: the lane used to cite the page its access quote came from, so a correct
+ * roster count served a join or home page that lists no one. A line under an alumni or
+ * former-members heading, or marked as historical itself, is past-hosting evidence: the
+ * owner keeps it as "has hosted undergraduate researchers" and it never counts as current.
+ */
+export function splitRosterUndergraduates(
+  extraction: LLMExtraction,
+  pages: readonly PromptSourcePage[],
+): RosterUndergraduateSplit {
+  const current: { quote: string; pages: PromptSourcePage[] }[] = [];
+  const past: { quote: string; pages: PromptSourcePage[] }[] = [];
+  for (const quote of distinctRosterLines(extraction.currentUndergradEvidenceQuotes)) {
+    if (!isAdmissibleRosterLine(quote)) continue;
+    const carrying = pages.filter(
+      (page) =>
+        pageContainingQuote(quote, [page]) !== null &&
+        pageListsPeople(page.url, page.rosterText || page.text),
+    );
+    if (carrying.length === 0) continue;
+    const historical =
+      isHistoricalUndergradEvidence(quote) ||
+      rosterSnippetSitsUnderAHistoricalHeading(quote, carrying);
+    (historical ? past : current).push({ quote, pages: carrying });
+  }
+  return { current: rosterEvidenceFromLines(current), past: rosterEvidenceFromLines(past) };
+}
+
+export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
 
 /**
  * Pure: turn an LLMExtraction into the ObservationInput list the materializer
@@ -971,10 +1078,13 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
  *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
  *   - currentUndergradCount: emitted on every read, and zero when no grounded
- *     roster snippet survives the gates in deriveCurrentUndergradCount. The field
+ *     current roster line on a page that lists people survives the gates in
+ *     splitRosterUndergraduates; a positive count cites that roster page. The field
  *     is latest-wins, so a re-read replaces a stale positive (#3789). A zero is
  *     withheld when readIsComplete is false, so a sub-page the home page links to
  *     that failed to fetch cannot erase a count it backed. Confidence 0.5.
+ *   - pastUndergradAdvisees: emitted when the roster lists undergraduate alumni, as
+ *     one entry counting them, cited to the roster page (#4430). Confidence 0.5.
  *   - every quote field: emitted only when the quote is on a fetched page, and
  *     cited to that page (#3592).
  *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
@@ -1047,20 +1157,22 @@ export function extractionToObservations(
   }
   // 'unclear' → no observation
 
-  const currentUndergradCount = deriveCurrentUndergradCount({
-    ...extraction,
-    evidenceQuote: evidenceQuote?.text ?? '',
-    currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
-      (quote) =>
-        pageContainingQuote(quote, pages) !== null &&
-        !rosterSnippetSitsUnderAHistoricalHeading(quote, pages),
-    ),
-  });
-  if (currentUndergradCount > 0 || sourceContext.readIsComplete !== false) {
+  const roster = splitRosterUndergraduates(extraction, pages);
+  if (roster.current || sourceContext.readIsComplete !== false) {
     out.push({
       ...base,
+      sourceUrl: roster.current?.sourceUrl ?? sourceUrl,
       field: 'currentUndergradCount',
-      value: currentUndergradCount,
+      value: roster.current?.count ?? 0,
+      confidenceOverride: 0.5,
+    });
+  }
+  if (roster.past) {
+    out.push({
+      ...base,
+      sourceUrl: roster.past.sourceUrl,
+      field: 'pastUndergradAdvisees',
+      value: [{ programName: ROSTER_ALUMNI_PROGRAM_NAME, count: roster.past.count }],
       confidenceOverride: 0.5,
     });
   }
