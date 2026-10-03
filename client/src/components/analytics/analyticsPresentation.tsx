@@ -42,6 +42,17 @@ export const formatDateTime = (value?: string | null): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
+export const formatUtcDay = (value?: string | null): string => {
+  if (!value) {
+    return 'Never';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString(undefined, { timeZone: 'UTC' });
+};
+
 export const formatEventType = (eventType: string): string => {
   const labelMap: Record<string, string> = {
     research_search: 'Research searches',
@@ -164,15 +175,6 @@ export const formatSearchQueryLabel = (row: { query?: string; filterSummary?: st
 
 export const formatFullName = (fname?: string, lname?: string): string =>
   [fname, lname].filter(Boolean).join(' ');
-
-export const formatSearcherName = (searcher: {
-  fname?: string;
-  lname?: string;
-  netid: string;
-}): string => {
-  const name = formatFullName(searcher.fname, searcher.lname);
-  return name ? `${searcher.netid} (${name})` : searcher.netid;
-};
 
 export const actionPriorityClass = (priority?: string): string => {
   if (priority === 'high') {

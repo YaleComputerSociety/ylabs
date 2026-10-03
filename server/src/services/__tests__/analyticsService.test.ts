@@ -1011,9 +1011,9 @@ describe('getUserAnalytics', () => {
         netid: 'linked01',
         userType: 'graduate',
         displayName: 'Linked Researcher',
-        email: 'linked01@example.edu',
         totalEvents: 1,
       });
+      expect(linked).not.toHaveProperty('email');
       const accountless = result.users.find(
         (user: Record<string, any>) => user.netid === 'accountless01',
       );
@@ -1939,7 +1939,7 @@ describe('search query report grain', () => {
       const collection = client.db('search_query_grain').collection('analyticsevents');
       const timestamp = new Date('2026-03-01T00:00:00.000Z');
 
-      await collection.insertMany([
+      const episodes = [
         {
           eventType: AnalyticsEventType.SEARCH,
           netid: 'student001',
@@ -1992,10 +1992,15 @@ describe('search query report grain', () => {
           metadata: { entityType: 'research_entity', resultCount: 0, filters: {} },
           timestamp,
         },
-      ]);
+      ];
+      await collection.insertMany(
+        ['a', 'b', 'c'].flatMap((cohort) =>
+          episodes.map((episode) => ({ ...episode, netid: `${episode.netid}${cohort}` })),
+        ),
+      );
 
-      const rows = await collection.aggregate(pipeline).toArray();
-      const labelled = rows.map((row) => ({
+      const [{ queries: rows }] = await collection.aggregate(pipeline).toArray();
+      const labelled = rows.map((row: Record<string, any>) => ({
         query: row.query,
         filterSummary: row.filterSummary,
         surface: row.surface,
@@ -2017,13 +2022,15 @@ describe('search query report grain', () => {
             zeroResultSearches: 0,
           },
           { query: 'econ', filterSummary: '', surface: 'program', zeroResultSearches: 0 },
-          { query: 'econ', filterSummary: '', surface: 'research_entity', zeroResultSearches: 1 },
+          { query: 'econ', filterSummary: '', surface: 'research_entity', zeroResultSearches: 3 },
         ]),
       );
       expect(labelled).toHaveLength(4);
 
-      const regionsRow = rows.find((row) => row.filterSummary === 'globalRegions: Africa / Asia');
-      expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
+      const regionsRow = rows.find(
+        (row: Record<string, any>) => row.filterSummary === 'globalRegions: Africa / Asia',
+      );
+      expect(regionsRow).toMatchObject({ totalSearches: 6, uniqueSearchers: 6 });
     } finally {
       await client.close();
       await server?.stop();

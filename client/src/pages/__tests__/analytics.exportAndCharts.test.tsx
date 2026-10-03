@@ -107,7 +107,6 @@ const mockEndpoints = (funnelOverride?: unknown) => {
                 totalSearches: 3,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
-                searchers: [{ netid: 'analyst01', userType: 'undergraduate', searchCount: 3 }],
               },
               {
                 query: '',
@@ -116,7 +115,6 @@ const mockEndpoints = (funnelOverride?: unknown) => {
                 totalSearches: 2,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
-                searchers: [{ netid: 'analyst02', userType: 'undergraduate', searchCount: 2 }],
               },
             ],
             limit: 25,

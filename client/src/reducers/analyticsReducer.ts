@@ -91,7 +91,6 @@ export interface AnalyticsUserActivityRow {
   userType: string;
   fname?: string;
   lname?: string;
-  email?: string;
   totalEvents: number;
   logins: number;
   searches: number;
@@ -112,8 +111,6 @@ export interface AnalyticsUserEvent {
   timestamp: string;
   fellowshipId?: string;
   fellowshipTitle?: string;
-  searchQuery?: string;
-  searchDepartments?: string[];
   metadata?: Record<string, unknown>;
 }
 
@@ -232,14 +229,11 @@ export interface AnalyticsSearchQualityResponse {
   lowResultQueries?: AnalyticsSearchQualityQuery[];
 }
 
-export interface AnalyticsSearchQuerySearcher {
-  netid: string;
-  userType: string;
-  fname?: string;
-  lname?: string;
-  email?: string;
-  searchCount: number;
-  lastSearchedAt?: string | null;
+export interface AnalyticsSuppressedQueryGroups {
+  queryGroups: number;
+  searches: number;
+  zeroResultQueryGroups: number;
+  zeroResultSearches: number;
 }
 
 export interface AnalyticsSearchQueryRow {
@@ -251,12 +245,13 @@ export interface AnalyticsSearchQueryRow {
   zeroResultSearches?: number;
   avgResultCount?: number;
   lastSearchedAt?: string | null;
-  searchers: AnalyticsSearchQuerySearcher[];
 }
 
 export interface AnalyticsSearchQueryResponse {
   queries: AnalyticsSearchQueryRow[];
   limit: number;
+  minDistinctSearchersToShowQuery?: number;
+  suppressedQueries?: AnalyticsSuppressedQueryGroups;
 }
 
 export interface AnalyticsFunnelStage {

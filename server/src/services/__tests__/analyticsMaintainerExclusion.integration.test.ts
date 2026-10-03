@@ -103,12 +103,18 @@ describe('usage analytics over a real store', () => {
 
     expect(funnel.logins).toBe(2);
     expect(funnel.researchSearches).toBe(1);
+    expect(quality.totalSearches).toBe(101 * 3 + 2);
+    expect(quality.suppressedQueries.searches).toBe(101 * 3 + 2);
     expect(quality.byQueryAndEntityType.map((query) => query.query)).not.toContain(
       'maintainer probe',
     );
   });
 
   it('keeps a repeated zero-result query outside the 100 most-searched in action needed', async () => {
+    await AnalyticsEvent.collection.insertMany([
+      zeroResultSearch('stud03', 'rare coverage gap', daysAgo(4)),
+      zeroResultSearch('stud04', 'rare coverage gap', daysAgo(4)),
+    ]);
     const { highSearchLowResults } = await getActionNeededAnalytics();
 
     expect(highSearchLowResults.map((query) => query.query)).toEqual(['rare coverage gap']);

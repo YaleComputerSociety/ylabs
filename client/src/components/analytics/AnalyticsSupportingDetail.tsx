@@ -33,8 +33,8 @@ import {
   formatPercent,
   formatSearchQueryLabel,
   formatSearchSurface,
-  formatSearcherName,
   formatUserType,
+  formatUtcDay,
   formatVisibilityTier,
 } from './analyticsPresentation';
 
@@ -141,6 +141,8 @@ const AnalyticsSupportingDetail = ({
     ...lowResultQueries.map((query) => ({ query, isZeroResult: false })),
   ].slice(0, 5);
   const searchQueryRows = searchQueries?.queries || [];
+  const minDistinctSearchersToShowQuery = searchQueries?.minDistinctSearchersToShowQuery ?? 3;
+  const suppressedQueries = searchQueries?.suppressedQueries;
   const actionCards = actions?.cards || [];
   // Only the server names a stage. A client-side fallback list stood here and
   // could never render, because the funnel response always carries `stages`, so
@@ -180,13 +182,8 @@ const AnalyticsSupportingDetail = ({
       { header: 'Unique Searchers', value: (row) => row.uniqueSearchers },
       { header: 'Zero Results', value: (row) => row.zeroResultSearches || 0 },
       {
-        header: 'Last Search',
-        value: (row) => (row.lastSearchedAt ? formatDateTime(row.lastSearchedAt) : ''),
-      },
-      {
-        header: 'Who Searched',
-        value: (row) =>
-          row.searchers.map((searcher) => `${searcher.netid} (${searcher.searchCount})`).join('; '),
+        header: 'Last Search Day',
+        value: (row) => (row.lastSearchedAt ? formatUtcDay(row.lastSearchedAt) : ''),
       },
     ]);
   };
@@ -644,9 +641,11 @@ const AnalyticsSupportingDetail = ({
           <div>
             <h2 className="yr-display text-2xl font-semibold text-ink">Search Query Analytics</h2>
             <p className="text-sm text-muted">
-              Most popular search queries and the NetIDs behind them for the selected range. One row
-              per query a student settled on: the typing states leading up to it are folded into it,
-              and paging through results is not counted again.
+              Most popular search queries for the selected range, as counts only. One row per query
+              a student settled on: the typing states leading up to it are folded into it, and
+              paging through results is not counted again. A query searched by fewer than{' '}
+              {formatNumber(minDistinctSearchersToShowQuery)} students is counted below but not
+              shown.
             </p>
           </div>
           <button
@@ -678,10 +677,7 @@ const AnalyticsSupportingDetail = ({
                     Zero Results
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
-                    Who Searched
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
-                    Last Search
+                    Last Search Day
                   </th>
                 </tr>
               </thead>
@@ -707,32 +703,16 @@ const AnalyticsSupportingDetail = ({
                       <td className="px-4 py-3 text-right">
                         {formatNumber(query.zeroResultSearches || 0)}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex max-w-xl flex-wrap gap-2">
-                          {query.searchers.slice(0, 8).map((searcher) => (
-                            <span
-                              key={`${query.query}-${searcher.netid}`}
-                              className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-ink-soft"
-                            >
-                              {formatSearcherName(searcher)} - {searcher.searchCount}
-                            </span>
-                          ))}
-                          {query.searchers.length > 8 && (
-                            <span className="px-1 py-1 text-xs text-muted">
-                              +{query.searchers.length - 8} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
                       <td className="px-4 py-3 text-sm text-muted">
-                        {formatDateTime(query.lastSearchedAt)}
+                        {formatUtcDay(query.lastSearchedAt)}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-center text-muted" colSpan={7}>
-                      No tracked search queries for this range.
+                    <td className="px-4 py-6 text-center text-muted" colSpan={6}>
+                      No search query reached {formatNumber(minDistinctSearchersToShowQuery)}{' '}
+                      students in this range.
                     </td>
                   </tr>
                 )}
@@ -740,6 +720,17 @@ const AnalyticsSupportingDetail = ({
             </table>
           </ScrollableTableRegion>
         </div>
+        {suppressedQueries && suppressedQueries.queryGroups > 0 && (
+          <p className="mt-3 text-sm text-muted" data-testid="suppressed-search-queries">
+            {formatNumber(suppressedQueries.queryGroups)} more quer
+            {suppressedQueries.queryGroups === 1 ? 'y' : 'ies'} (
+            {formatNumber(suppressedQueries.searches)} search
+            {suppressedQueries.searches === 1 ? '' : 'es'},{' '}
+            {formatNumber(suppressedQueries.zeroResultSearches)} with zero results) searched by
+            fewer than {formatNumber(minDistinctSearchersToShowQuery)} students, counted but not
+            shown.
+          </p>
+        )}
       </section>
 
       {data.engagement.mostActiveUsers.length > 0 && (
@@ -1112,9 +1103,6 @@ const AnalyticsSupportingDetail = ({
                               {formatDateTime(event.timestamp)}
                             </p>
                           </div>
-                          {event.searchQuery && (
-                            <p className="mt-1 text-sm text-muted">Query: {event.searchQuery}</p>
-                          )}
                           {event.fellowshipId && (
                             <p className="mt-1 text-sm text-muted">
                               Fellowship: {event.fellowshipTitle || event.fellowshipId}

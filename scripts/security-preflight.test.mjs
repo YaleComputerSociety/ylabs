@@ -4911,11 +4911,8 @@ test('analytics user drilldown sanitizes legacy event fields before response', (
     /const fellowshipId = normalizeAnalyticsStoredObjectIdString\(event\?\.fellowshipId\)/,
   );
   assert.doesNotMatch(source, /event\?\.listingId/);
-  assert.match(source, /const searchQuery = sanitizeAnalyticsText\(event\?\.searchQuery\)/);
-  assert.match(
-    source,
-    /const searchDepartments = sanitizeAnalyticsStringArray\(event\?\.searchDepartments\)/,
-  );
+  assert.doesNotMatch(source, /event\?\.searchQuery/);
+  assert.doesNotMatch(source, /event\?\.searchDepartments/);
   assert.match(source, /const metadata = sanitizeAnalyticsMetadata\(event\?\.metadata\)/);
   assert.match(source, /const publicEvents = events\.map\(publicAnalyticsUserEvent\)/);
   assert.match(source, /const enrichedEvents = publicEvents\.map\(/);

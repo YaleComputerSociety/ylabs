@@ -138,6 +138,21 @@ Failing closed would need the event written before the mutation, in the same tra
 The most sensitive mutation, an admin grant or revoke, also keeps its own actor history on the `AdminGrant` document.
 A failed insert logs `console.error` naming the action and target type, and an event refused for an invalid actor or action logs `console.warn`; neither log carries the actor netid or target id.
 
+## Admin search analytics are aggregates only
+
+Decided 2026-10-03 (#4159): an admin sees search-query counts and trends, never who searched for what.
+No search-query row or list may carry an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
+This covers `topSearchQueries` (whose entries carry only `query` and `count`), the search-quality and search-query reports, and the action-needed query lists.
+The overview's `mostActiveUsers` list is user activity rather than search data: it carries no query and links to none.
+The per-user drilldown (`GET /api/analytics/users/:netid`) lists a student's events but leaves every `search`, `research_search` and `research_filter_change` event out of that list; the summary still reports the student's search count.
+A shown query row's `lastSearchedAt` is truncated to its UTC day, so no row can be matched to the moment one student searched.
+A query string, or a filter-only search's filter summary, is shown only once `MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY` (3) distinct students searched it.
+Below that it is folded into `suppressedQueries`, which counts the hidden query groups and their searches and zero-result searches, so the hidden demand stays visible as a number.
+Three is the smallest threshold at which a shown query cannot be read as one student's search, either directly or by a student who knows the other searcher was themself.
+Suppression applies only to the listed rows: totals, the zero-result rate, engagement, `avgResultsPerSearch` and the funnel are computed over every search.
+The stored `netid` on an `analytics_events` row is still required, because engagement attribution windows each student's own events, and the unique-searcher counts, the funnel and the search-episode fold are per student; email is never stored on an event and is joined from `accounts` nowhere in the search reports.
+`server/src/services/__tests__/analyticsAggregatesOnly.integration.test.ts` pins all of this, so a new search-query field or report needs it extended rather than relaxed.
+
 Client route guards:
 
 | Guard | Purpose |

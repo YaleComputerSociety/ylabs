@@ -155,18 +155,16 @@ describe('Analytics page', () => {
               {
                 query: 'machine learning',
                 totalSearches: 3,
-                uniqueSearchers: 2,
-                searchers: [
-                  {
-                    netid: 'fixture_searcher',
-                    userType: 'undergraduate',
-                    fname: 'Fixture',
-                    lname: 'Searcher',
-                    searchCount: 2,
-                  },
-                ],
+                uniqueSearchers: 3,
               },
             ],
+            minDistinctSearchersToShowQuery: 3,
+            suppressedQueries: {
+              queryGroups: 4,
+              searches: 5,
+              zeroResultQueryGroups: 2,
+              zeroResultSearches: 2,
+            },
           },
         });
       }
@@ -200,7 +198,10 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(screen.getByText('machine learning')).toBeTruthy();
     });
-    expect(screen.getByText(/fixture_searcher/)).toBeTruthy();
+    expect(screen.queryByText('Who Searched')).toBeNull();
+    expect(screen.getByTestId('suppressed-search-queries').textContent).toContain(
+      'searched by fewer than 3 students',
+    );
     expect(screen.queryByText(/Listings/i)).toBeNull();
     expect(screen.queryByText(/Favorites/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh Data' }).className).toContain(
