@@ -1334,6 +1334,13 @@ Observations get `superseded` plus `rollback.rolledBackAt`, which both read scop
 Members still listed whose edge or claim was retired are re-materialized in the same pass, so a demoted lead gets its current role edge at once; the center is then re-gated and its search document re-synced, because the gate re-indexes only a row whose tier changed and the document carries the roster's names.
 Role edges that carry no `rosterProvenance` at all predate provenance, and this pass never judges an edge that names no source.
 
+`center-affiliation-llm` runs the same pass over its own claims (#4022), as `CENTER_AFFILIATION_ROSTER_LANE`, scoped to observations and edges naming that source.
+Its claims are relationship keys, and before this pass a key a later read left out stayed live forever and shielded the edge from the roster lane's retirement too.
+One model call is not a repeatable read, so a read lists a live claim of this lane whose person the fetched page text still states, by slug tokens, even when the model omitted it; a claim retires only when two admitted reads omit it and the page no longer names the person.
+A claim whose target key reached the slug length cap may end in a cut-off token, so it is always listed rather than judged absent.
+A read is admitted only when the page fetched, its text fit the prompt untruncated, the model answered with a complete response, and it named at least one person; a truncated page records `partial-read`, a model that names nobody records `empty`, and a failed fetch or model call records nothing.
+A relationship another source still asserts for the same target keeps its edge while this lane's observations retire.
+
 A read can hand such an edge to this pass by adopting it (#3799).
 When the lane materializes a listed member whose identity it resolves to exactly one researcher, through the listing's profile URL or the identity evidence the member's own profile page states (#3802), the canonical upsert already stamps this source's provenance onto that person's provenance-less edge of the listed role, because it matches on person, target and role; `adoptUnprovenancedRoleAssignments` then stamps the person's remaining provenance-less edges on the same center, whose roles the read does not state.
 An adopted edge of an unlisted role gets the membership key `<identity>|<its own role>`, an `observedAt` taken from the edge itself rather than from the read, and `rosterProvenance.adoptedAt`, so the read that adopted it already counts as the first read that omits it and the ordinary two-read rule and freeze guards govern it from then on.

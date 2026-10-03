@@ -7,6 +7,8 @@
  */
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 
+export const SLUG_MAX_LENGTH = 100;
+
 /**
  * Lowercase, ASCII-fold (basic), strip diacritics, and replace any run of
  * non-alphanumeric characters with a single dash. Trims leading/trailing dashes.
@@ -21,6 +23,14 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
  * the two keys never join (#2874).
  */
 export function slugify(input: string): string {
+  return unboundedSlug(input).slice(0, SLUG_MAX_LENGTH);
+}
+
+export function slugTokens(input: string): string[] {
+  return unboundedSlug(input).split('-').filter(Boolean);
+}
+
+function unboundedSlug(input: string): string {
   if (!input) return '';
   return stripInvisibleFormatCharacters(input)
     .normalize('NFKD')
@@ -29,8 +39,7 @@ export function slugify(input: string): string {
     .replace(/['\u2018\u2019]s\b/g, '') // drop possessive 's
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
+    .replace(/^-+|-+$/g, '');
 }
 
 /**

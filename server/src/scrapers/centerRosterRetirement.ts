@@ -66,6 +66,24 @@ export const CENTER_ROSTER_MAX_ABSENT_FRACTION = 0.5;
 export const CENTER_ROSTER_DISCOVERY_RETENTION_MIN_FRACTION = 0.75;
 export const CENTER_ROSTER_RETIREMENT_REASON =
   'center roster retirement: two complete reads of the center roster no longer list this claim (#3781)';
+export const CENTER_AFFILIATION_LLM_SOURCE_NAME = 'center-affiliation-llm';
+export const CENTER_AFFILIATION_RETIREMENT_REASON =
+  'center affiliation retirement: two complete reads of the center page no longer name this claim (#4022)';
+
+export interface CenterRosterLane {
+  sourceName: string;
+  retirementReason: string;
+}
+
+export const CENTERS_INSTITUTES_ROSTER_LANE: CenterRosterLane = {
+  sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
+  retirementReason: CENTER_ROSTER_RETIREMENT_REASON,
+};
+
+export const CENTER_AFFILIATION_ROSTER_LANE: CenterRosterLane = {
+  sourceName: CENTER_AFFILIATION_LLM_SOURCE_NAME,
+  retirementReason: CENTER_AFFILIATION_RETIREMENT_REASON,
+};
 
 export type CenterRosterStopReason =
   | 'not-paginated'
@@ -611,11 +629,14 @@ export interface CenterRosterRetirementDeps {
 const observationEntityKey = (row: { entityKey?: unknown }): string =>
   typeof row.entityKey === 'string' ? row.entityKey.trim() : '';
 
-export async function loadCenterRosterReads(entityKey: string): Promise<CenterRosterRead[]> {
+export async function loadCenterRosterReads(
+  entityKey: string,
+  lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
+): Promise<CenterRosterRead[]> {
   const rows = (await Observation.find({
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
     field: CENTER_ROSTER_HEALTH_FIELD,
-    sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
+    sourceName: lane.sourceName,
     entityKey,
     scrapeRunId: { $exists: true, $ne: null },
     'rollback.rolledBackAt': { $exists: false },
@@ -639,10 +660,11 @@ export async function loadCenterRosterReads(entityKey: string): Promise<CenterRo
 async function loadGovernedObservations(
   entityType: 'researchGroupMember' | 'researchEntityRelationship',
   centerEntityKey: string,
+  lane: CenterRosterLane,
 ): Promise<CenterRosterGovernedObservation[]> {
   const rows = (await Observation.find({
     entityType,
-    sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
+    sourceName: lane.sourceName,
     entityKey: { $regex: `^${escapeRegex(centerEntityKey)}:` },
     scrapeRunId: { $exists: true, $ne: null },
     'rollback.rolledBackAt': { $exists: false },
@@ -668,11 +690,14 @@ async function loadGovernedObservations(
   return observations;
 }
 
-async function loadGovernedEdges(centerEntityId: string): Promise<CenterRosterGovernedEdge[]> {
+async function loadGovernedEdges(
+  centerEntityId: string,
+  lane: CenterRosterLane,
+): Promise<CenterRosterGovernedEdge[]> {
   const rows = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': new mongoose.Types.ObjectId(centerEntityId),
-    'rosterProvenance.sourceName': CENTERS_INSTITUTES_SOURCE_NAME,
+    'rosterProvenance.sourceName': lane.sourceName,
     archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
   })
@@ -708,6 +733,7 @@ export async function loadCenterRosterRetirementInputs(
     'membershipKeysAssertedByOtherSources' | 'personRolesAssertedByOtherSources'
   >,
   reads?: CenterRosterRead[],
+  lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
 ): Promise<CenterRosterRetirementInputs | null> {
   const entity = (await ResearchEntity.findOne({ slug: centerEntityKey, archived: { $ne: true } })
     .select('_id')
@@ -716,25 +742,33 @@ export async function loadCenterRosterRetirementInputs(
   if (!centerEntityId) return null;
   return {
     centerEntityId,
-    reads: reads ?? (await loadCenterRosterReads(centerEntityKey)),
-    memberObservations: await loadGovernedObservations('researchGroupMember', centerEntityKey),
+    reads: reads ?? (await loadCenterRosterReads(centerEntityKey, lane)),
+    memberObservations: await loadGovernedObservations(
+      'researchGroupMember',
+      centerEntityKey,
+      lane,
+    ),
     relationshipObservations: await loadGovernedObservations(
       'researchEntityRelationship',
       centerEntityKey,
+      lane,
     ),
-    edges: await loadGovernedEdges(centerEntityId),
+    edges: await loadGovernedEdges(centerEntityId, lane),
     protectedMembershipKeys: await deps.membershipKeysAssertedByOtherSources(centerEntityKey),
     protectedPersonRoles: await deps.personRolesAssertedByOtherSources(centerEntityKey),
   };
 }
 
-async function retireObservationRows(observationIds: readonly string[]): Promise<void> {
+async function retireObservationRows(
+  observationIds: readonly string[],
+  reason: string,
+): Promise<void> {
   if (observationIds.length === 0) return;
   const ids = observationIds.map((id) => new mongoose.Types.ObjectId(id));
-  await retireObservations({ _id: { $in: ids } }, CENTER_ROSTER_RETIREMENT_REASON);
+  await retireObservations({ _id: { $in: ids } }, reason);
   await Observation.updateMany(
     { _id: { $in: ids }, superseded: true, 'rollback.rolledBackAt': { $exists: false } },
-    { $set: { rollback: { rolledBackAt: new Date(), reason: CENTER_ROSTER_RETIREMENT_REASON } } },
+    { $set: { rollback: { rolledBackAt: new Date(), reason } } },
   );
 }
 
@@ -750,6 +784,7 @@ export async function applyCenterRosterRetirementPlan(
   inputs: CenterRosterRetirementInputs,
   deps: CenterRosterRetirementDeps,
   endedAt: Date,
+  lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
 ): Promise<AppliedCenterRosterRetirement> {
   const applied: AppliedCenterRosterRetirement = {
     archivedRelationships: 0,
@@ -774,13 +809,13 @@ export async function applyCenterRosterRetirementPlan(
     ),
   );
 
-  await retireObservationRows(plan.observationIds);
+  await retireObservationRows(plan.observationIds, lane.retirementReason);
 
   if (plan.retiredEdges.length > 0) {
     await RoleAssignment.updateMany(
       {
         _id: { $in: plan.retiredEdges.map((edge) => new mongoose.Types.ObjectId(edge.edgeId)) },
-        'rosterProvenance.sourceName': CENTERS_INSTITUTES_SOURCE_NAME,
+        'rosterProvenance.sourceName': lane.sourceName,
         state: { $ne: 'HISTORICAL' },
       },
       { $set: { state: 'HISTORICAL', endedAt } },
@@ -815,7 +850,7 @@ export async function applyCenterRosterRetirementPlan(
           targetResearchEntityId: new mongoose.Types.ObjectId(targetId),
           archived: { $ne: true },
         },
-        { $set: attributedArchiveSet(CENTER_ROSTER_RETIREMENT_REASON) },
+        { $set: attributedArchiveSet(lane.retirementReason) },
       );
       applied.archivedRelationships += (result as { modifiedCount?: number }).modifiedCount ?? 0;
     }
@@ -894,9 +929,10 @@ export interface CenterRosterRetirementResult {
 export async function reconcileCenterRosterRetirementsFromRun(
   scrapeRunId: string,
   deps: CenterRosterRetirementDeps,
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; lane?: CenterRosterLane } = {},
 ): Promise<CenterRosterRetirementResult> {
   const dryRun = options.dryRun === true;
+  const lane = options.lane ?? CENTERS_INSTITUTES_ROSTER_LANE;
   let runObjectId: mongoose.Types.ObjectId;
   try {
     runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
@@ -907,7 +943,7 @@ export async function reconcileCenterRosterRetirementsFromRun(
     scrapeRunId: runObjectId,
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
     field: CENTER_ROSTER_HEALTH_FIELD,
-    sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
+    sourceName: lane.sourceName,
   })
     .select('entityKey value observedAt')
     .lean()) as Array<{ entityKey?: unknown; value?: unknown }>;
@@ -924,7 +960,7 @@ export async function reconcileCenterRosterRetirementsFromRun(
       centers.push({ entityKey, admissibility });
       continue;
     }
-    const inputs = await loadCenterRosterRetirementInputs(entityKey, deps);
+    const inputs = await loadCenterRosterRetirementInputs(entityKey, deps, undefined, lane);
     if (!inputs) {
       centers.push({ entityKey, admissibility, verdict: 'entity-missing' });
       continue;
@@ -939,11 +975,11 @@ export async function reconcileCenterRosterRetirementsFromRun(
     };
     if (plan.verdict === 'frozen') {
       console.warn(
-        `[center-roster-retirement] frozen ${sanitizeLogValue(entityKey)} (${plan.freezeReason}): ${plan.counts.governedMemberKeys} member keys, ${plan.counts.governedEdges} edges governed`,
+        `[center-roster-retirement] ${lane.sourceName} frozen ${sanitizeLogValue(entityKey)} (${plan.freezeReason}): ${plan.counts.governedMemberKeys} member keys, ${plan.counts.governedEdges} edges governed`,
       );
     }
     if (!dryRun && plan.verdict === 'retire') {
-      result.applied = await applyCenterRosterRetirementPlan(plan, inputs, deps, new Date());
+      result.applied = await applyCenterRosterRetirementPlan(plan, inputs, deps, new Date(), lane);
     }
     centers.push(result);
   }

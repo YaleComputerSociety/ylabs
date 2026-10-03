@@ -24,6 +24,18 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Observation } from '../../models/observation';
+import { escapeRegex } from '../../utils/regex';
+import { FACULTY_RESEARCH_AREA_SLUG_PREFIX } from '../../utils/researchEntityShellSlug';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_AFFILIATION_LLM_SOURCE_NAME,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+} from '../centerRosterRetirement';
+import { SLUG_MAX_LENGTH, slugTokens } from '../utils/scraperHelpers';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -35,7 +47,8 @@ import {
   centerMemberRelationshipObservationsForEntityKey,
 } from './centersInstitutesScraper';
 
-const SOURCE_KEY = 'center-affiliation-llm';
+const SOURCE_KEY = CENTER_AFFILIATION_LLM_SOURCE_NAME;
+const AFFILIATION_READ_ROLE = 'affiliated';
 const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
@@ -78,10 +91,20 @@ export type CallCenterAffiliationLLMFn = (input: {
 }) => Promise<CenterAffiliationExtraction>;
 export type CenterFinderFn = (options?: { only?: string[] }) => Promise<CandidateCenter[]>;
 
+export interface LiveAffiliationClaim {
+  relationshipKey: string;
+  targetEntityKey: string;
+}
+
+export type LiveAffiliationClaimFinderFn = (
+  centerEntityKey: string,
+) => Promise<LiveAffiliationClaim[]>;
+
 export interface CenterAffiliationLLMExtractorDeps {
   fetchPage?: FetchCenterPageFn;
   callLLM?: CallCenterAffiliationLLMFn;
   centerFinder?: CenterFinderFn;
+  liveClaimFinder?: LiveAffiliationClaimFinderFn;
   apiKey?: string;
   model?: string;
 }
@@ -97,11 +120,83 @@ function normalizeAffiliationRole(role: unknown): CenterMember['role'] {
   return 'affiliated';
 }
 
-function htmlToText(html: string): string {
-  if (!html) return '';
+function htmlToPromptText(html: string): { text: string; truncated: boolean } {
+  if (!html) return { text: '', truncated: false };
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
+  const text = textValue(
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
+  );
+  return { text: text.slice(0, MAX_PROMPT_CHARS), truncated: text.length > MAX_PROMPT_CHARS };
+}
+
+export function personSlugIsStatedOnPage(
+  personSlug: string,
+  pageTokens: ReadonlySet<string>,
+): boolean {
+  const tokens = personSlug.split('-').filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => pageTokens.has(token));
+}
+
+/**
+ * A claim the page still names is listed even when this read's model output omits it,
+ * because one model call is not a repeatable read and its omission alone is not evidence
+ * that the center stopped naming the person.
+ */
+export function affiliationReadMembers(
+  observations: readonly ObservationInput[],
+  liveClaims: readonly LiveAffiliationClaim[],
+  pageText: string,
+): CenterRosterReadMember[] {
+  const listed = new Set(
+    observations
+      .filter((observation) => observation.entityType === 'researchEntityRelationship')
+      .map((observation) => observation.entityKey)
+      .filter((key): key is string => Boolean(key)),
+  );
+  const pageTokens = new Set(slugTokens(pageText));
+  for (const claim of liveClaims) {
+    if (listed.has(claim.relationshipKey)) continue;
+    const personSlug =
+      claim.targetEntityKey.startsWith(FACULTY_RESEARCH_AREA_SLUG_PREFIX) &&
+      claim.targetEntityKey.length < SLUG_MAX_LENGTH
+        ? claim.targetEntityKey.slice(FACULTY_RESEARCH_AREA_SLUG_PREFIX.length)
+        : '';
+    if (!personSlug || personSlugIsStatedOnPage(personSlug, pageTokens)) {
+      listed.add(claim.relationshipKey);
+    }
+  }
+  return Array.from(listed).map((relationshipKey) => ({
+    memberKey: relationshipKey,
+    role: AFFILIATION_READ_ROLE,
+    relationshipKey,
+  }));
+}
+
+export function affiliationReadSnapshotObservation(input: {
+  centerEntityKey: string;
+  sourceUrl: string;
+  members: readonly CenterRosterReadMember[];
+  truncated: boolean;
+  readAt?: Date;
+}): ObservationInput {
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey: input.centerEntityKey,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: input.centerEntityKey,
+      entityKey: input.centerEntityKey,
+      members: input.members,
+      pagesRead: 1,
+      readMode: 'html',
+      stopReason: input.truncated ? 'page-cap' : 'not-paginated',
+      cacheAllowed: false,
+      readAt: input.readAt ?? new Date(),
+    }),
+    sourceUrl: input.sourceUrl,
+  };
 }
 
 /**
@@ -199,7 +294,9 @@ async function defaultCallLLM(input: {
       timeout: 40_000,
     },
   );
-  const content = response.data?.choices?.[0]?.message?.content;
+  const choice = response.data?.choices?.[0];
+  if (choice?.finish_reason === 'length') throw new Error('LLM output was cut off');
+  const content = choice?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterAffiliationExtraction>;
   return {
@@ -243,6 +340,36 @@ async function defaultCenterFinder(options: { only?: string[] } = {}): Promise<C
   }));
 }
 
+async function defaultLiveClaimFinder(centerEntityKey: string): Promise<LiveAffiliationClaim[]> {
+  const rows = (await Observation.find({
+    sourceName: SOURCE_KEY,
+    entityType: 'researchEntityRelationship',
+    field: 'targetEntityKey',
+    entityKey: { $regex: `^${escapeRegex(centerEntityKey)}:` },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+  })
+    .select('entityKey value')
+    .lean()) as Array<{ entityKey?: unknown; value?: unknown }>;
+  return rows
+    .map((row) => ({
+      relationshipKey: textValue(row.entityKey),
+      targetEntityKey: textValue(row.value),
+    }))
+    .filter((claim) => claim.relationshipKey && claim.targetEntityKey);
+}
+
+type CenterReadOutcome = 'fetch-failed' | 'page-too-small' | 'llm-failed' | 'read';
+
+interface CenterReadTally {
+  observationCount: number;
+  entitiesObserved: number;
+  admittedReads: number;
+  partialReads: number;
+  emptyReads: number;
+  outcomes: Record<CenterReadOutcome, number>;
+}
+
 export class CenterAffiliationLLMExtractor implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'Center affiliation LLM (faculty & labs)';
@@ -250,6 +377,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
   private readonly fetchPage: FetchCenterPageFn;
   private readonly callLLM: CallCenterAffiliationLLMFn;
   private readonly centerFinder: CenterFinderFn;
+  private readonly liveClaimFinder: LiveAffiliationClaimFinderFn;
   private readonly apiKey?: string;
   private readonly model: string;
 
@@ -257,6 +385,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.callLLM = deps.callLLM || defaultCallLLM;
     this.centerFinder = deps.centerFinder || defaultCenterFinder;
+    this.liveClaimFinder = deps.liveClaimFinder || defaultLiveClaimFinder;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
   }
@@ -279,8 +408,14 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);
 
-    let observationCount = 0;
-    let entitiesObserved = 0;
+    const tally: CenterReadTally = {
+      observationCount: 0,
+      entitiesObserved: 0,
+      admittedReads: 0,
+      partialReads: 0,
+      emptyReads: 0,
+      outcomes: { 'fetch-failed': 0, 'page-too-small': 0, 'llm-failed': 0, read: 0 },
+    };
 
     const concurrency = resolveSourceConcurrency(
       ctx.options.sourceConcurrency,
@@ -288,52 +423,86 @@ export class CenterAffiliationLLMExtractor implements IScraper {
     );
 
     await mapWithConcurrency(candidates, concurrency, async (center) => {
-      try {
-        let page: { url: string; html: string } | null = null;
-        try {
-          page = await this.fetchPage(center.websiteUrl as string);
-        } catch (error) {
-          ctx.log(
-            `[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`,
-          );
-          return;
-        }
-        const pageText = htmlToText(page?.html || '');
-        if (pageText.length < 120) {
-          ctx.log(`[${center.slug}] page too small/empty; skipping.`);
-          return;
-        }
-
-        const extraction = await this.callLLM({
-          model: this.model,
-          apiKey: this.apiKey as string,
-          centerName: center.name,
-          sourceUrl: page?.url || (center.websiteUrl as string),
-          pageText,
-        });
-        const observations = affiliationExtractionToObservations(extraction, {
-          centerEntityKey: center.slug as string,
-          sourceUrl: page?.url || (center.websiteUrl as string),
-        });
-        if (!observations.length) {
-          ctx.log(`[${center.slug}] no named faculty extracted.`);
-          return;
-        }
-        await ctx.emit(observations);
-        observationCount += observations.length;
-        entitiesObserved += 1;
-        ctx.log(
-          `[${center.slug}] emitted ${observations.length} affiliation relationship observations.`,
-        );
-      } catch (error) {
-        ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
-      }
+      tally.outcomes[await this.readCenter(center, ctx, tally)] += 1;
     });
 
     return {
-      observationCount,
-      entitiesObserved,
-      notes: `Extracted LLM affiliations for ${entitiesObserved} centers.`,
+      observationCount: tally.observationCount,
+      entitiesObserved: tally.entitiesObserved,
+      notes:
+        `Extracted LLM affiliations for ${tally.entitiesObserved} centers; ` +
+        `${tally.admittedReads} complete read(s), ${tally.partialReads} partial, ${tally.emptyReads} empty, ` +
+        `${tally.outcomes['fetch-failed']} fetch failure(s), ${tally.outcomes['page-too-small']} page(s) too small, ` +
+        `${tally.outcomes['llm-failed']} model failure(s).`,
     };
+  }
+
+  private async readCenter(
+    center: CandidateCenter,
+    ctx: ScraperContext,
+    tally: CenterReadTally,
+  ): Promise<CenterReadOutcome> {
+    const centerEntityKey = center.slug as string;
+    let page: { url: string; html: string } | null;
+    try {
+      page = await this.fetchPage(center.websiteUrl as string);
+    } catch (error) {
+      ctx.log(
+        `[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`,
+      );
+      return 'fetch-failed';
+    }
+    const { text: pageText, truncated } = htmlToPromptText(page?.html || '');
+    if (pageText.length < 120) {
+      ctx.log(`[${center.slug}] page too small/empty; skipping.`);
+      return 'page-too-small';
+    }
+    const sourceUrl = page?.url || (center.websiteUrl as string);
+
+    let extraction: CenterAffiliationExtraction;
+    try {
+      extraction = await this.callLLM({
+        model: this.model,
+        apiKey: this.apiKey as string,
+        centerName: center.name,
+        sourceUrl,
+        pageText,
+      });
+    } catch (error) {
+      ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
+      return 'llm-failed';
+    }
+
+    const observations = affiliationExtractionToObservations(extraction, {
+      centerEntityKey,
+      sourceUrl,
+    });
+    const members = observations.length
+      ? affiliationReadMembers(observations, await this.liveClaimFinder(centerEntityKey), pageText)
+      : [];
+    const snapshot = affiliationReadSnapshotObservation({
+      centerEntityKey,
+      sourceUrl,
+      members,
+      truncated,
+    });
+    await ctx.emit([...observations, snapshot]);
+    tally.observationCount += observations.length + 1;
+
+    if (truncated) tally.partialReads += 1;
+    else if (members.length === 0) tally.emptyReads += 1;
+    else tally.admittedReads += 1;
+
+    if (!observations.length) {
+      ctx.log(`[${center.slug}] no named faculty extracted.`);
+      return 'read';
+    }
+    tally.entitiesObserved += 1;
+    ctx.log(
+      `[${center.slug}] emitted ${observations.length} affiliation relationship observations${
+        truncated ? ' (page truncated, read not admitted for retirement)' : ''
+      }.`,
+    );
+    return 'read';
   }
 }

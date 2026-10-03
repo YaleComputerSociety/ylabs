@@ -281,8 +281,11 @@ import {
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import {
+  CENTER_AFFILIATION_ROSTER_LANE,
+  CENTERS_INSTITUTES_ROSTER_LANE,
   CENTERS_INSTITUTES_SOURCE_NAME,
   reconcileCenterRosterRetirementsFromRun,
+  type CenterRosterLane,
   type CenterRosterRetirementDeps,
   type CenterRosterRetirementResult,
 } from './centerRosterRetirement';
@@ -8717,30 +8720,37 @@ async function reconcileOfficialRosterSnapshotsFromRun(
   return archived;
 }
 
-const liveOtherSourceObservations = (filter: Record<string, unknown>) =>
+const liveOtherSourceObservations = (filter: Record<string, unknown>, sourceName: string) =>
   Observation.find({
     ...filter,
     ...materializationReadScopeFilter(),
-    sourceName: { $ne: CENTERS_INSTITUTES_SOURCE_NAME },
+    sourceName: { $ne: sourceName },
   })
     .select('entityKey field value sourceName observedAt confidence sourceUrl')
     .lean() as Promise<any[]>;
 
 async function centerMembershipKeysAssertedByOtherSources(
   centerEntityKey: string,
+  sourceName: string,
 ): Promise<Set<string>> {
-  const slugRows = await liveOtherSourceObservations({
-    entityType: 'researchGroupMember',
-    field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD,
-    value: centerEntityKey,
-  });
+  const slugRows = await liveOtherSourceObservations(
+    {
+      entityType: 'researchGroupMember',
+      field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD,
+      value: centerEntityKey,
+    },
+    sourceName,
+  );
   const memberKeys = uniqueStrings(slugRows.map((row) => textValue(row.entityKey)));
   if (memberKeys.length === 0) return new Set();
-  const rows = await liveOtherSourceObservations({
-    entityType: 'researchGroupMember',
-    entityKey: { $in: memberKeys },
-    field: { $in: ['profileUrl', 'role', 'identityKey', 'membershipKey'] },
-  });
+  const rows = await liveOtherSourceObservations(
+    {
+      entityType: 'researchGroupMember',
+      entityKey: { $in: memberKeys },
+      field: { $in: ['profileUrl', 'role', 'identityKey', 'membershipKey'] },
+    },
+    sourceName,
+  );
   const bySourceAndKey = new Map<string, Record<string, string>>();
   for (const row of rows) {
     const group = `${textValue(row.sourceName)}\u0000${textValue(row.entityKey)}`;
@@ -8760,19 +8770,23 @@ async function centerMembershipKeysAssertedByOtherSources(
 
 async function centerPersonRolesAssertedByOtherSources(
   centerEntityKey: string,
+  sourceName: string,
 ): Promise<Set<string>> {
-  const rows = await liveOtherSourceObservations({
-    entityType: 'researchEntity',
-    entityKey: centerEntityKey,
-    field: {
-      $in: [
-        'inferredDirectorName',
-        'inferredDirectorUserName',
-        'inferredDirectorRole',
-        'inferredDirectorProfileUrl',
-      ],
+  const rows = await liveOtherSourceObservations(
+    {
+      entityType: 'researchEntity',
+      entityKey: centerEntityKey,
+      field: {
+        $in: [
+          'inferredDirectorName',
+          'inferredDirectorUserName',
+          'inferredDirectorRole',
+          'inferredDirectorProfileUrl',
+        ],
+      },
     },
-  });
+    sourceName,
+  );
   const bySource = new Map<string, any[]>();
   for (const row of rows) {
     const source = textValue(row.sourceName);
@@ -8819,19 +8833,26 @@ async function centerPersonRolesAssertedByOtherSources(
 
 async function centerRelationshipTargetIdsAssertedByOtherSources(
   centerEntityKey: string,
+  sourceName: string,
 ): Promise<Set<string>> {
-  const sourceRows = await liveOtherSourceObservations({
-    entityType: 'researchEntityRelationship',
-    field: 'sourceEntityKey',
-    value: centerEntityKey,
-  });
+  const sourceRows = await liveOtherSourceObservations(
+    {
+      entityType: 'researchEntityRelationship',
+      field: 'sourceEntityKey',
+      value: centerEntityKey,
+    },
+    sourceName,
+  );
   const relationshipKeys = uniqueStrings(sourceRows.map((row) => textValue(row.entityKey)));
   if (relationshipKeys.length === 0) return new Set();
-  const targetRows = await liveOtherSourceObservations({
-    entityType: 'researchEntityRelationship',
-    entityKey: { $in: relationshipKeys },
-    field: 'targetEntityKey',
-  });
+  const targetRows = await liveOtherSourceObservations(
+    {
+      entityType: 'researchEntityRelationship',
+      entityKey: { $in: relationshipKeys },
+      field: 'targetEntityKey',
+    },
+    sourceName,
+  );
   const targetIds = new Set<string>();
   for (const targetKey of uniqueStrings(targetRows.map((row) => textValue(row.value)))) {
     const targetId = await resolveCenterRelationshipTargetId(targetKey);
@@ -8847,11 +8868,15 @@ async function resolveCenterRelationshipTargetId(targetEntityKey: string): Promi
 
 export function centerRosterRetirementDeps(
   options: MaterializeOptions,
+  lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
 ): CenterRosterRetirementDeps {
   return {
-    membershipKeysAssertedByOtherSources: centerMembershipKeysAssertedByOtherSources,
-    personRolesAssertedByOtherSources: centerPersonRolesAssertedByOtherSources,
-    relationshipTargetIdsAssertedByOtherSources: centerRelationshipTargetIdsAssertedByOtherSources,
+    membershipKeysAssertedByOtherSources: (centerEntityKey) =>
+      centerMembershipKeysAssertedByOtherSources(centerEntityKey, lane.sourceName),
+    personRolesAssertedByOtherSources: (centerEntityKey) =>
+      centerPersonRolesAssertedByOtherSources(centerEntityKey, lane.sourceName),
+    relationshipTargetIdsAssertedByOtherSources: (centerEntityKey) =>
+      centerRelationshipTargetIdsAssertedByOtherSources(centerEntityKey, lane.sourceName),
     resolveRelationshipTargetId: resolveCenterRelationshipTargetId,
     rematerializeMemberKey: async (memberKey: string) => {
       await materializeEntity('researchGroupMember', { entityKey: memberKey }, options);
@@ -8859,7 +8884,10 @@ export function centerRosterRetirementDeps(
   };
 }
 
-function logCenterRosterRetirement(result: CenterRosterRetirementResult): void {
+function logCenterRosterRetirement(
+  result: CenterRosterRetirementResult,
+  lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
+): void {
   const acted = result.centers.filter((center) => center.verdict === 'retire');
   const frozen = result.centers.filter((center) => center.verdict === 'frozen');
   const notAdmitted = result.centers.filter((center) => !center.verdict);
@@ -8870,7 +8898,7 @@ function logCenterRosterRetirement(result: CenterRosterRetirementResult): void {
     0,
   );
   console.info(
-    `[center-roster-retirement] ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
+    `[center-roster-retirement] ${lane.sourceName} ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
   );
 }
 
@@ -9083,6 +9111,14 @@ export async function materializeFromRun(
   );
   if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerRosterRetirement);
+  }
+  const centerAffiliationRetirement = await reconcileCenterRosterRetirementsFromRun(
+    scrapeRunId,
+    centerRosterRetirementDeps(options, CENTER_AFFILIATION_ROSTER_LANE),
+    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
+  );
+  if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
+    logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
   }
   // Runs beside the centres retirement because it is the same contract over another lane's claims.
   // Lane-wide rather than per run's snapshots, because a claim is absent only when NO track still
