@@ -345,12 +345,6 @@ function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadli
 
 const CYCLE_PROSE_SECTION_IDS = ['lblApplicationInformation', 'lblBriefDescription', 'lblDescription'];
 
-/**
- * The structured Deadline Date names one cycle, and a fund's prose can state the next
- * one (#4171). A later prose cycle replaces a structured deadline that has passed, never
- * an upcoming one, and its opening date is not stated, so the structured opening date
- * belongs to the passed cycle and is dropped.
- */
 function nextStatedApplicationWindow(
   $: cheerio.CheerioAPI,
   referenceDate: Date,
@@ -486,12 +480,6 @@ function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
 
 const RETIRED_FUND_NOTICE = /\bthis fund is no longer available\b/i;
 
-/**
- * CommunityForce answers a withdrawn fund by redirecting its FundDetails page to
- * `FundNotAvailable.aspx`, which states that the fund is no longer available (#4174).
- * That is the portal saying the fund is gone, unlike a login shell or a failed fetch,
- * which say nothing, so only a page with no fund that carries the notice counts.
- */
 export function isRetiredFundPage(html: string): boolean {
   const $ = cheerio.load(html);
   if (sectionText($, 'lblFundName')) return false;

@@ -65,9 +65,6 @@ export const FUND_AUTHORITY_FIELDS: ReadonlySet<string> = new Set([
 // window from the owning lane would be served as closed.
 const APPLICATION_WINDOW_DATE_FIELDS = ['deadline', 'applicationOpenDate'];
 
-// A fund page saying the fund is no longer available retires the program that applies
-// through it, whichever lane owns the row (#4174). Only the retirement carries that
-// authority: the database's `archived: false` on a live fund never revives a row.
 export const FUND_RETIREMENT_FIELD = 'archived';
 
 export function isFundRetirementWrite(field: string, staged: Record<string, unknown>): boolean {

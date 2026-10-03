@@ -172,13 +172,6 @@ const DATE_WITH_YEAR = new RegExp(
 );
 const MAX_LABEL_TO_DATE_CHARS = 40;
 
-/**
- * Every deadline a prose passage states with its year, such as "the fall term deadline is
- * July 30, 2026, and the spring term deadline is January 4, 2027" (#4171). A date counts
- * only when it follows its own deadline label within the same sentence, and a label whose
- * words name another step (letters of recommendation, a decision, an interview) dates
- * that step rather than the application.
- */
 export function statedProseDeadlines(text: string, referenceDate: Date): Date[] {
   const deadlines: Date[] = [];
   for (const sentence of text.replace(/\s+/g, ' ').split(/(?<=[.!?;])\s+/)) {
