@@ -837,11 +837,11 @@ const TIMELINE_STEP_LABEL =
  * words after the date count, because a block that leads with a label and then states the
  * date ("Applications are due February 1") is describing the label being read.
  */
-function withoutDateOfAnotherBlockLabel(
-  match: RegExpMatchArray | undefined,
+function withoutDateOfAnotherBlockLabel<Match extends RegExpMatchArray>(
+  match: Match | undefined,
   window: string,
   side: 'before' | 'after',
-): RegExpMatchArray | undefined {
+): Match | undefined {
   if (!match) return undefined;
   const start = match.index ?? 0;
   const end = start + match[0].length;
