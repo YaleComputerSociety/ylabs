@@ -29,8 +29,15 @@ import { materializeEntity } from '../entityMaterializer';
 
 const LANE = 'lab-microsite-undergrad-llm';
 const PAGE = 'https://syntheticlab.example.org/join';
+const ROSTER = 'https://syntheticlab.example.org/people';
 
-const seed = (entityKey: string, field: string, value: unknown, observedAt = '2026-09-01') =>
+const seed = (
+  entityKey: string,
+  field: string,
+  value: unknown,
+  observedAt = '2026-09-01',
+  sourceUrl = PAGE,
+) =>
   Observation.create({
     entityType: 'researchEntity',
     entityKey,
@@ -38,7 +45,7 @@ const seed = (entityKey: string, field: string, value: unknown, observedAt = '20
     value,
     sourceId: new mongoose.Types.ObjectId(),
     sourceName: LANE,
-    sourceUrl: PAGE,
+    sourceUrl,
     confidence: 0.8,
     observedAt: new Date(`${observedAt}T00:00:00Z`),
     superseded: false,
@@ -55,7 +62,7 @@ async function seedLab(entityKey: string) {
     evidenceSource: 'explicit_text',
     evidenceQuote: 'Undergraduates are welcome to join the lab.',
   });
-  await seed(entityKey, 'currentUndergradCount', 2);
+  await seed(entityKey, 'currentUndergradCount', 2, '2026-09-01', ROSTER);
   const advisees = await seed(entityKey, 'pastUndergradAdvisees', [
     { name: 'Synthetic Advisee', year: 2024 },
   ]);
