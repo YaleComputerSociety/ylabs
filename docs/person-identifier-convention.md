@@ -84,8 +84,11 @@ Fixing it afterwards costs either the tracking context or nothing at all.
 Two arms, with different strengths, because a single mechanism cannot cover both.
 
 **Blocking.** `yarn security:identifiers`, inside `yarn security:preflight`, inside the required `test-and-build` check.
-It fails on a committed data file that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
-It deliberately ignores anything under a test or fixture path, because synthetic identifiers there are intentional, and it ignores source files.
+It fails on a committed data or markup file (`json`, `ndjson`, `csv`, `tsv`, `html`, `htm`, `xml`, `txt`) that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
+Under a test or fixture path the threshold does not apply: one personal-shaped `yale.edu` address in a fixture of those extensions fails, because a captured page is the likeliest place for a real address to be committed (#4203).
+A fixture clears that arm with a synthetic address on `example.invalid`, a local part ending in a reserved synthetic marker, a role or placeholder address, or the synthetic surname roster.
+Source files are left to the body and review path.
+The preflight's denylist of real identifiers that once appeared in tests is stored as SHA-256 digests, so the repository no longer republishes the values it forbids; it hashes each run of up to four word tokens in every test and fixture file and fails on a matching digest.
 
 **Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
 For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, the checkout remote, an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.

@@ -1,5 +1,6 @@
 import nodeAssert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -161,41 +162,67 @@ test('Yarn git dependency allowlist is narrow', () => {
   assert.doesNotMatch(yarnrc, /npmMinimalAgeGate: 0/);
 });
 
+const DENIED_IDENTIFIER_MAX_TOKENS = 4;
+const DENIED_IDENTIFIER_DIGEST_PREFIX = 'ylabs-denied-identifier:';
+
+const digestDeniedIdentifier = (value) =>
+  createHash('sha256').update(`${DENIED_IDENTIFIER_DIGEST_PREFIX}${value}`).digest('hex');
+
+const deniedIdentifierSpans = (source, deniedDigests) => {
+  const tokens = [...source.matchAll(/[A-Za-z0-9]+/g)].map((match) => [
+    match.index,
+    match.index + match[0].length,
+  ]);
+  const offsets = [];
+  tokens.forEach(([start], index) => {
+    for (let width = 1; width <= DENIED_IDENTIFIER_MAX_TOKENS; width += 1) {
+      const last = tokens[index + width - 1];
+      if (!last) break;
+      if (deniedDigests.has(digestDeniedIdentifier(source.slice(start, last[1])))) {
+        offsets.push(start);
+        break;
+      }
+    }
+  });
+  return offsets;
+};
+
 test('test fixtures do not contain known real Yale identifiers', () => {
-  const denied = [
-    'Toma_Tebaldi',
-    'Toma Tebaldi',
-    'yongli-zhang',
-    'anna-arnal-estape',
-    'james-e-hansen',
-    'eric-winer',
-    'Eric P. Winer',
-    'christopher-whitlow',
-    'paul-bloom',
-    'alison-galvani',
-    'lucila-ohno-machado',
-    'john-tsang',
-    'Mehran M. Sadeghi',
-    'Cardiovascular Molecular Imaging Laboratory',
-    'Nadya Dimitrova',
-    'nadya-dimitrova',
-    'Sofia, Bulgaria',
-    'a-higginschen',
-    'lawrence-guan',
-    'br574',
-    'dglahn',
-    'jp2492',
-    'jdp52',
-    'dtm27',
-    't-zhu',
-    'Deb Vargas',
-    'deb-vargas',
-    'deb.vargas',
-    'Fatima El-Tayeb',
-    'fatima-el-tayeb',
-  ];
+  const deniedDigests = new Set([
+    '0be956b84d239431818d981d565833751eadfc8243c528738702bbd01645276a',
+    '12d498aa448ffcc14222d415548d2669f1edb79848ece97d504b67f19dc4d41d',
+    '186cd266eb859fcc2e6af68a26bf7f60f490448f847a15e9cae95e95b6f3435f',
+    '2036a72a78ffafb6cf935aaf65f75d21d790799fe472373a365b5f3ee3e59992',
+    '3eb7ef1eec43cf4bdff95b843d08e9b9aabf3c54222caf2986a0796923b4bc6b',
+    '45dec25df55868a59526bcbeba67b54f1087c88adebaff4edb557f01b844baec',
+    '4ca85e3db3374d1821520be2fe2f51299f35c560b679158965458570e0312f62',
+    '5710b1112278fa0030ca32b4a197a192db29e2cecb34015e3049c1f078898283',
+    '5915afab6d504ccfc04ea57914523002b8d48ac7284c77244856d956d99f868f',
+    '5a5977ef469b8bf0a1990d5506cfbcf213a8a6ba8a8ce1a58717b3fb9d5aef71',
+    '6678bf6a4c5c9caf867bd62759425fb87911ac3ed7af0240638aaac6afc2bc6c',
+    '700e70f60c14782e7d06e8b1f3f950a28da9a59af1905ae6f21af056b95ce809',
+    '71ca453f7e22a56d4f3c47ca34ca006474ac0ad1d5ff3fb2e76d5205c41020c9',
+    '746ae06138628c7fd484d50103a48ee7daf454d9ec41dd0b5d6d782586a6aca9',
+    '78a4fc65456f0c0d3ae296b21579fc6b529a8bcfe0a475000b84b31d2c21049b',
+    '86bdb694eb5c17dce8aef27dc4763b1d9b0396b6a9c21ea3b68c39946d0b6426',
+    '8981918b1affbab2e57deada29a905edfe9a58a0372b4328ff74f12b2b7fd440',
+    '8b1ca1d8c0d6bc1e46896c768ab1400f0fe2b06de7f897640dab0eecd1bdc06d',
+    'adf8f3154475b4b7389c5b491edd8bf544039ead0b5054aeb2aaf535f238d58e',
+    'b235f8806ae681e86446c879b0f788480ff0225866a509f5c6d47f12d6b72bae',
+    'b2536216e3af1863fd19abb07751fec354a2820f2ee3b03e6ebf7d63192385c5',
+    'b671f9c3f7becfc0451bfe50d362213db4b97428e37f9af5b8544aba773c916c',
+    'bd1e89d06ed3ec582d64eecee82dcf9887212951badc6690e78fbdcf5c3a3b2a',
+    'c34f5837a7f2ee3d2c4052cf7f1f1e71f67ea321719cbd9a8f9cfce9c81751ba',
+    'c60f217237615f8e100b2c7df498e921a0e4efcd12656d5792134d8340a3b842',
+    'd2600b890e8cd8b4cb9397b8d97ab5470963e060bece325fc44f2a731ecf2118',
+    'e27df19f288d77589219c11ac58592459062730ac850bf309d74deb8580a6564',
+    'eadd6b20bdddcb50d7727fbfed4e53d5117c2f7bfc355e45412ab4c30778b3d1',
+    'ed9a1b2c67defa3f0721740ecdaa9e4c9c3ac2ca5f0ef13a500beb6085e63eee',
+    'fa75c97500bfe10b1c082cb43c3d81e57f15f7bc5474d1797a6f9e26be6e783b',
+  ]);
   const roots = ['../server/src', '../client/src'];
-  const testFilePattern = /(__tests__|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
+  const testFilePattern =
+    /(__tests__|__fixtures__|\/fixtures\/|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs|json|ndjson|csv|tsv|html?|xml|txt)$/;
 
   const files = [];
   const visit = (dir) => {
@@ -212,13 +239,12 @@ test('test fixtures do not contain known real Yale identifiers', () => {
   for (const root of roots) visit(root);
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    for (const value of denied) {
-      assert.equal(
-        source.includes(value),
-        false,
-        `${file} contains real Yale identifier fixture: ${value}`,
-      );
-    }
+    const deniedSpans = deniedIdentifierSpans(source, deniedDigests);
+    assert.deepEqual(
+      deniedSpans,
+      [],
+      `${file} contains a denylisted real Yale identifier at offsets ${deniedSpans.join(', ')}`,
+    );
     // The four ORCIDs this list used to name are gone, superseded by a shape rule rather
     // than kept as a second authority that drifts: each was checksum-valid and inside
     // ORCID's allocated space, so the rule below catches all four and every value like

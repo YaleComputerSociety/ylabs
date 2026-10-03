@@ -539,7 +539,7 @@ export function candidateIdentifierScanPaths(paths) {
   );
 }
 
-const DATA_FILE_RE = /\.(?:json|ndjson|csv|tsv)$/i;
+const DATA_FILE_RE = /\.(?:json|ndjson|csv|tsv|html?|xml|txt)$/i;
 const TEST_PATH_RE = /(?:^|\/)(?:__tests__|__fixtures__|fixtures|test|tests)(?:\/|$)/;
 
 export const DIRECTORY_DUMP_THRESHOLD = 5;
@@ -547,6 +547,41 @@ export const DIRECTORY_DUMP_THRESHOLD = 5;
 export function isDirectoryDumpCandidate(path) {
   const file = String(path || '');
   return DATA_FILE_RE.test(file) && !TEST_PATH_RE.test(file);
+}
+
+export function isFixtureAddressCandidate(path) {
+  const file = String(path || '');
+  return DATA_FILE_RE.test(file) && TEST_PATH_RE.test(file);
+}
+
+const isPersonalShapedAddress = (localPart) =>
+  !isRoleAddress(localPart) &&
+  !isPlaceholderAddress(localPart) &&
+  !isSyntheticFixtureLocalPart(localPart) &&
+  !mentionsSyntheticFixture(localPart);
+
+export function findFixtureAddressFindings(files) {
+  const findings = [];
+
+  for (const file of files) {
+    if (!isFixtureAddressCandidate(file.path)) continue;
+    if (isExempt(file.content)) continue;
+
+    const addresses = new Set();
+    YALE_EMAIL_RE.lastIndex = 0;
+    for (const match of String(file.content || '').matchAll(YALE_EMAIL_RE)) {
+      if (isPersonalShapedAddress(match[1] || '')) addresses.add(match[0].toLowerCase());
+    }
+    if (addresses.size === 0) continue;
+
+    findings.push({
+      path: file.path,
+      rule: 'fixture-personal-address',
+      distinctAddresses: addresses.size,
+    });
+  }
+
+  return findings;
 }
 
 export function findDirectoryDumpFindings(files, threshold = DIRECTORY_DUMP_THRESHOLD) {
