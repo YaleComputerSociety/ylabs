@@ -135,7 +135,12 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #4162. The only drift is accounts.profile losing college, year and
+    // Reviewed for #4010. The only drift is accounts gaining sessionVersion, an optional
+    // non-negative number that sign-out bumps and deserialize compares against the
+    // session's claim, so a revoked cookie is refused. Accounts written before it
+    // carry none and read as 0. No other collection or property changed.
+    //
+    // Reviewed for #4162 before that. The only drift is accounts.profile losing college, year and
     // major. A login no longer stores them and nothing read them, so the declaration
     // stops describing three personal attributes the account no longer carries.
     // No other collection or property changed.
@@ -172,6 +177,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('09b0bf1139b76a6eadce239441bc1c667e4d33b6719c881c436d39a98a254c58');
+    ).toBe('b1922b529dda8a5691fed4fd0f060021f7ed1a6c6eacc197ae27f2ad3d42bd6f');
   });
 });
