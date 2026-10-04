@@ -291,6 +291,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
+import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
@@ -5435,23 +5436,6 @@ async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefi
     .lean();
   const live = candidates.filter(accountIsLive);
   return live.length === 1 ? live[0] : undefined;
-}
-
-/**
- * Compared with `.toLowerCase()` on both sides, so `Https://WWW.Host/Path/` and
- * `https://host/path` are one identity. Query and fragment are dropped: a Yale
- * person page serves the same person with or without a tracking parameter.
- */
-function officialProfileIdentityUrlKey(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  try {
-    const url = new URL(value.trim());
-    const host = url.hostname.toLowerCase().replace(/^www\./, '');
-    const pathname = url.pathname.replace(/\/+$/, '').toLowerCase();
-    return pathname ? `${host}${pathname}` : '';
-  } catch {
-    return '';
-  }
 }
 
 const OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT = 10;

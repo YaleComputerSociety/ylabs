@@ -280,7 +280,8 @@ Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link
 The verified-profile arm exists because a programme roster mints under a go-by name and the directory account under the legal one, so the two records never share a name; the same live official profile page held as primary identity by both is the evidence that joins them.
 The arm requires `healthStatus: HEALTHY` rather than `verifiedAt`, because every writer and every probe stamps `verifiedAt`, dead or unprobed links included.
 A healthy probe proves only that the page is live, not who it is about, so the vetoes below carry the identity check.
-It folds only into an account-backed record, resolves to nobody when two accounts hold the page, lets the surname veto, and refuses when one title owns research and the other states a trainee rank, because the one measured counterexample was a trainee whose official link pointed at a professor's page.
+It folds only into an account-backed record and applies two vetoes to each holder of the page before counting them: an incompatible surname, and one title owning research while the other states a trainee rank, because the one measured counterexample was a trainee whose official link pointed at a professor's page.
+It resolves to nobody when two accounts survive those vetoes, so a wrong-person holder drops out rather than making the page ambiguous.
 Measured on Development on 2026-10-04, before the arm required a `HEALTHY` link, it folded 9 shells and refused that one pair; the healthy gate cannot fold more, and the count needs re-measuring.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 

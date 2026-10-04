@@ -444,6 +444,20 @@ describe('decideShellMerge verified-profile arm', () => {
     expect(decide(shell(), [account(), second]).reason).toBe('AMBIGUOUS_MULTIPLE_CANONICAL');
   });
 
+  it('does not let a vetoed second holder of the page block the fold', () => {
+    const wrongPerson = account({
+      id: 'e'.repeat(24),
+      accountId: 'f'.repeat(24),
+      displayName: 'Sample Otherfamily',
+    });
+    expect(decide(shell(), [account(), wrongPerson])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
   it('lets the surname veto the page', () => {
     expect(decide(shell({ displayName: 'Sam Otherfamily' }), [account()]).merge).toBe(false);
   });

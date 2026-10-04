@@ -1,4 +1,5 @@
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
+import { officialProfileIdentityUrlKey } from '../scrapers/utils/officialProfileIdentityUrlKey';
 import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
@@ -179,22 +180,10 @@ export function verifiedPrimaryProfileKeys(profileLinks: unknown): string[] {
     if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || healthStatus !== 'HEALTHY') {
       continue;
     }
-    const key = profilePageKey(url);
+    const key = officialProfileIdentityUrlKey(url);
     if (key) keys.add(key);
   }
   return [...keys];
-}
-
-function profilePageKey(url: unknown): string | undefined {
-  if (typeof url !== 'string' || !url.trim()) return undefined;
-  try {
-    const parsed = new URL(url.trim());
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
-    return path ? `${host}${path}` : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function buildVerifiedPrimaryProfileIndex(
@@ -294,8 +283,10 @@ function decideRosterIdentityFold(
  * A shell and an account-backed record that hold the same healthy official primary
  * profile are one person even when their given names differ, because a programme
  * roster mints under a nickname and the directory account under the legal name. The
- * page decides; the surname only vetoes. More than one account-backed holder of the
- * page resolves to nobody, because two accounts are two humans the page cannot split.
+ * page decides; the surname and rank only veto, and they veto per holder, so a holder
+ * reached through a wrong-person link drops out instead of making the page ambiguous.
+ * More than one surviving account-backed holder resolves to nobody, because two accounts
+ * are two humans the page cannot split.
  */
 function decideVerifiedProfileFold(
   shell: ShellIdentity,
@@ -304,12 +295,15 @@ function decideVerifiedProfileFold(
   const keys = verifiedPrimaryProfileKeys(shell.profileLinks);
   if (keys.length === 0) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const shellSurname = displayNameSurname(shell.displayName);
   const holders = new Map<string, VerifiedProfileCandidate>();
   for (const key of keys) {
     for (const candidate of verifiedProfileIndex.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
       if (candidate.tier !== 'ACCOUNT') continue;
       if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+      if (!surnamesCompatible(shellSurname, displayNameSurname(candidate.displayName))) continue;
+      if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
       holders.set(candidate.id, candidate);
     }
   }
@@ -318,14 +312,6 @@ function decideVerifiedProfileFold(
     return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'verified-profile' };
   }
   const [target] = holders.values();
-  const shellSurname = splitName(
-    typeof shell.displayName === 'string' ? shell.displayName : '',
-  ).last;
-  const targetSurname = splitName(
-    typeof target.displayName === 'string' ? target.displayName : '',
-  ).last;
-  if (!surnamesCompatible(shellSurname, targetSurname)) return undefined;
-  if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
   const shellOrcid = cleanOrcid(shell.orcid);
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'verified-profile' };
@@ -340,6 +326,10 @@ function decideVerifiedProfileFold(
     reason: 'MERGEABLE',
     matchedOn: 'verified-profile',
   };
+}
+
+function displayNameSurname(displayName: unknown): string {
+  return splitName(typeof displayName === 'string' ? displayName : '').last;
 }
 
 // A healthy link can still point at the wrong person, and the one measured case was a
