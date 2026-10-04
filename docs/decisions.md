@@ -18,10 +18,10 @@ The collection is environment-local and is read with `yarn --cwd server auth:log
 It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
 Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
 
-## 2026-10-04: The Echo Rule Holds A Language-Model Body And Not An Official One (#4756)
+## 2026-10-04: The Echo Rule Holds A Language-Model Body And Not An Official One (#4756, #4763)
 
 The #1664 echo rule holds a research body that adds fewer than about 4 words beyond the row's own topics.
-#4481 closed on keeping it as it was, #4704 then relaxed it at the gate and the served page for every thin but accurate body, and this decision narrows that relaxation to a body an official or human source wrote (maintainer decision).
+#4481 closed on keeping it as it was, #4704 then relaxed it at the gate and the served page for every thin but accurate body, and this decision narrows that relaxation to a body an official or human source wrote (maintainer decision, landed in #4763).
 An official or human body is one whose `fieldProvenance.fullDescription.sourceName` is present and is not a language-model lane, such as a faculty directory profile, a lab's own page with no model in between, or an operator edit.
 A body a language model wrote keeps the echo rule whatever its grounding grade, because a GROUNDED grade does not tell the "Research focuses on topics including A, B, C" template apart from a body that says something.
 A body with no provenance also keeps the strict verdict, so an unattributed body cannot earn the exemption by its absence.
