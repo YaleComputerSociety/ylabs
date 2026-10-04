@@ -206,7 +206,12 @@ describe('full description adoption asks the serving check (#3437)', () => {
 
   it('still adopts richer prose over a thin but accurate body the served page shows', async () => {
     const thinRow = { ...entityDoc, fullDescription: THIN_ACCURATE_BODY };
-    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity: thinRow });
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        ...thinRow,
+        fieldProvenance: { fullDescription: { sourceName: 'ysm-faculty-directory' } },
+      },
+    });
     expect(representation.quality.full.isUseful).toBe(true);
     expect(representation.strictQuality.full.isUseful).toBe(false);
     expect(servingBarAcceptsFullDescription(thinRow, {}, THIN_ACCURATE_BODY, '')).toBe(false);
