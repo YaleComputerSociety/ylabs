@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SAME_PERSON_ARCHIVE_TOMBSTONE_REASON } from '../../models/entityArchival';
 import { planSamePersonArchiveTombstones } from '../tombstoneSamePersonArchivesCore';
 
 const row = (slug: string, extra: Record<string, unknown> = {}) => ({
@@ -101,5 +102,29 @@ describe('planSamePersonArchiveTombstones (#4696)', () => {
     });
     expect(plan.tombstones.map((tombstone) => tombstone.survivorSlug)).toEqual(['live-profile']);
     expect(plan.held).toEqual([{ slug: 'archived-lab', reason: 'lab-is-not-a-profile-duplicate' }]);
+  });
+
+  it('resumes the survivors of archives an earlier run already pointed', () => {
+    const plan = planSamePersonArchiveTombstones({
+      rows: [
+        row('live-lead'),
+        row('already-pointed', {
+          archived: true,
+          canonicalGroupId: 'id-live-lead',
+          archivedReason: SAME_PERSON_ARCHIVE_TOMBSTONE_REASON,
+        }),
+        row('operator-pointed', {
+          archived: true,
+          canonicalGroupId: 'id-live-lead',
+          archivedReason: 'operator judgement',
+        }),
+      ],
+      leadKeysBySlug: new Map([
+        ['live-lead', ['netid:example.lead']],
+        ['already-pointed', ['netid:example.lead']],
+      ]),
+    });
+    expect(plan.tombstones).toEqual([]);
+    expect(plan.resumedSurvivorIds).toEqual(['id-live-lead']);
   });
 });

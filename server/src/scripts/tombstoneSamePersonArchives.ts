@@ -101,7 +101,12 @@ async function main(): Promise<void> {
       );
       applied.pointed += result.modifiedCount;
     }
-    const survivorIds = [...new Set(plan.tombstones.map((tombstone) => tombstone.survivorId))];
+    const survivorIds = [
+      ...new Set([
+        ...plan.tombstones.map((tombstone) => tombstone.survivorId),
+        ...plan.resumedSurvivorIds,
+      ]),
+    ];
     for (const survivorId of survivorIds) {
       await materializeEntity('researchEntity', { entityId: survivorId }, {});
       applied.rematerialized += 1;
@@ -120,6 +125,7 @@ async function main(): Promise<void> {
     environment: guard.environment,
     db: guard.dbLabel,
     planned: plan.tombstones.length,
+    resumedSurvivors: plan.resumedSurvivorIds.length,
     heldByReason: plan.held.reduce<Record<string, number>>((counts, hold) => {
       counts[hold.reason] = (counts[hold.reason] ?? 0) + 1;
       return counts;

@@ -1,3 +1,4 @@
+import { SAME_PERSON_ARCHIVE_TOMBSTONE_REASON } from '../models/entityArchival';
 import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 
 export interface SamePersonArchiveRow {
@@ -42,6 +43,9 @@ function isNonLabPersonScoped(row: SamePersonArchiveRow): boolean {
  * person's own research: a program or an organization is not the lead's duplicate. A lab is
  * held too, and never chosen as a survivor, because a lead legitimately owns both a lab and
  * a profile, so sharing a lead key does not make one the other's duplicate.
+ *
+ * `resumedSurvivorIds` names the live survivors of archives an earlier run already pointed,
+ * so a run that died after pointing still has those survivors re-materialized and re-gated.
  */
 export function planSamePersonArchiveTombstones(input: {
   rows: readonly SamePersonArchiveRow[];
@@ -49,9 +53,12 @@ export function planSamePersonArchiveTombstones(input: {
 }): {
   tombstones: SamePersonArchiveTombstone[];
   held: Array<{ slug: string; reason: SamePersonArchiveHold }>;
+  resumedSurvivorIds: string[];
 } {
   const liveSlugsByKey = new Map<string, Set<string>>();
   const bySlug = new Map(input.rows.map((row) => [row.slug, row]));
+  const liveIds = new Set(input.rows.filter((row) => !row.archived).map((row) => row.id));
+  const resumedSurvivorIds = new Set<string>();
   for (const row of input.rows) {
     if (row.archived || !isNonLabPersonScoped(row)) continue;
     for (const key of input.leadKeysBySlug.get(row.slug) ?? []) {
@@ -62,6 +69,14 @@ export function planSamePersonArchiveTombstones(input: {
   const tombstones: SamePersonArchiveTombstone[] = [];
   const held: Array<{ slug: string; reason: SamePersonArchiveHold }> = [];
   for (const row of input.rows) {
+    if (
+      row.archived &&
+      row.canonicalGroupId &&
+      row.archivedReason === SAME_PERSON_ARCHIVE_TOMBSTONE_REASON &&
+      liveIds.has(row.canonicalGroupId)
+    ) {
+      resumedSurvivorIds.add(row.canonicalGroupId);
+    }
     if (!row.archived || row.canonicalGroupId || (row.archivedReason ?? '').trim()) continue;
     const keys = input.leadKeysBySlug.get(row.slug) ?? [];
     if (keys.length === 0) continue;
@@ -89,5 +104,5 @@ export function planSamePersonArchiveTombstones(input: {
       survivorSlug: survivor.slug,
     });
   }
-  return { tombstones, held };
+  return { tombstones, held, resumedSurvivorIds: [...resumedSurvivorIds] };
 }
