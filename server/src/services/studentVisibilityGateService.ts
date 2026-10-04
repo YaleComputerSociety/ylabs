@@ -2268,6 +2268,46 @@ export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicatePr
   return { keptCopyById, upcomingWindowByKeptId };
 }
 
+export function duplicateProgramFundMateIds(
+  scopedIds: readonly string[],
+  keptCopyById: ReadonlyMap<string, string>,
+): string[] {
+  const membersByKeptId = new Map<string, Set<string>>();
+  for (const [copyId, keptId] of keptCopyById) {
+    const members = membersByKeptId.get(keptId) ?? new Set<string>([keptId]);
+    members.add(copyId);
+    membersByKeptId.set(keptId, members);
+  }
+  const scoped = new Set(scopedIds);
+  const mates = new Set<string>();
+  for (const id of scoped) {
+    for (const member of membersByKeptId.get(keptCopyById.get(id) ?? id) ?? []) {
+      if (!scoped.has(member)) mates.add(member);
+    }
+  }
+  return [...mates].sort();
+}
+
+async function outOfScopeProgramIdsToRegate(
+  scopedIds: readonly string[],
+  keptCopyById: ReadonlyMap<string, string>,
+): Promise<string[]> {
+  const scoped = new Set(scopedIds);
+  const staleDuplicateSuppressions = (
+    await Fellowship.find({ archived: false, studentVisibilityReasons: 'duplicate_program' })
+      .select('_id')
+      .lean()
+  )
+    .map((program: any) => studentVisibilityGateDocumentId(program._id))
+    .filter((id) => !scoped.has(id) && !keptCopyById.has(id));
+  return [
+    ...new Set([
+      ...duplicateProgramFundMateIds([...scopedIds, ...staleDuplicateSuppressions], keptCopyById),
+      ...staleDuplicateSuppressions,
+    ]),
+  ].sort();
+}
+
 async function planProgramGateUpdates(
   options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
@@ -2281,7 +2321,18 @@ async function planProgramGateUpdates(
     query.lean(),
     loadDuplicateProgramCopies(now),
   ]);
-  const programs = orderedByGateLabel(scopedPrograms, 'title');
+  const planIsScoped = Boolean(options.recordIds?.length || options.sourceName);
+  const fundMateIds = planIsScoped
+    ? await outOfScopeProgramIdsToRegate(
+        scopedPrograms.map((program: any) => studentVisibilityGateDocumentId(program._id)),
+        duplicateProgramCopies.keptCopyById,
+      )
+    : [];
+  const fundMates =
+    fundMateIds.length > 0
+      ? await Fellowship.find({ _id: { $in: fundMateIds }, archived: false }).lean()
+      : [];
+  const programs = orderedByGateLabel([...scopedPrograms, ...fundMates], 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
