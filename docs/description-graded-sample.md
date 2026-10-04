@@ -20,7 +20,7 @@ A verdict pairs a row with a defect judgement, and this repository is public.
 
 ## Rubric
 
-Students scan the card: the served short description cut to the last whole sentence within about 200 characters, otherwise cut at 199 with "…".
+Students scan the browse card: the served card text cut to the last whole sentence within 200 characters, otherwise cut at a word with "…", as `docs/corpus-quality-panel.md` describes.
 The full text shows on the entity page.
 
 | Field | Values | Meaning |

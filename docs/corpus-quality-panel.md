@@ -16,7 +16,7 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
 | Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Browse card cut mid-sentence, Browse card of six words or fewer, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
-Four rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
+The snapshot rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
 #4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is materially cheaper per row; re-timed end to end on 2026-10-02 over a larger served corpus, the whole report took about 27 s.
 The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
