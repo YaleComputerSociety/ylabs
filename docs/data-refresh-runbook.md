@@ -89,6 +89,11 @@ The entrypoint starts a throwaway Meilisearch on `127.0.0.1` with a random key, 
 That index lives only as long as the container and serves nobody, so the stage proves the rebuild works rather than refreshing anything a person reads.
 Beta and Production indexes are still rebuilt by the reindex runbook.
 
+Every index sync the run's materializer makes also lands in that throwaway index, so a hosted run writes the Development database while the Development index keeps the values from before it.
+Rebuild the Development index with `yarn development:search:rebuild` once the run has finished.
+Until then a sorted browse serves each changed card at its old position, a page can come back short because hydration drops rows the stale index still calls served, and `journey:eval` fails `indexed-sort-key-is-fresh` (#4746).
+Measured on 2026-10-04 while a hosted run was materializing: 3,871 of 4,249 Development index documents held an older `lastObservedAt` than their stored row, and 88 that the index read as `student_ready` were no longer served.
+
 The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --confirm-weekly-development-sweep` (`server/src/scripts/weeklyDevelopmentSweep.ts`), which in order:
 
 1. Refuses unless `MONGODBURL` names `Development`, `SCRAPER_ENV` resolves to `development`, and `MONGODBURL`, `OPENAI_API_KEY` and `YALIES_API_KEY` are all set, so a missing key fails in the first second rather than hours into the LLM lanes.

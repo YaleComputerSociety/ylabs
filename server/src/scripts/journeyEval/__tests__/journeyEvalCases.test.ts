@@ -39,6 +39,7 @@ function syntheticContext(rows: SyntheticRow[]): JourneyEvalContext {
     }),
     readStoredRows: async (keys) =>
       new Map(keys.flatMap((key) => (stored.has(key) ? [[key, stored.get(key)!]] : []))),
+    readIndexedSortKeys: async () => new Map(),
     readCorpusFingerprint: async () => steadyCorpus,
     readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
     topicQueryJudgements: null,
@@ -200,6 +201,7 @@ describe('creative-practice-label-attribution case (#4519)', () => {
       }),
       readStoredRows: async (keys) =>
         new Map(keys.flatMap((key) => (stored.has(key) ? [[key, stored.get(key)!]] : []))),
+      readIndexedSortKeys: async () => new Map(),
       readCorpusFingerprint: async () => (fingerprintReads++ === 0 ? corpus.before : corpus.after),
       readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
       topicQueryJudgements: null,
@@ -271,6 +273,7 @@ describe('default-browse-order-is-repeatable case', () => {
         return servedPage(walk[(page ?? 1) - 1]);
       },
       readStoredRows: async () => new Map(),
+      readIndexedSortKeys: async () => new Map(),
       readCorpusFingerprint: async () => steadyCorpus,
       readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
       topicQueryJudgements: null,
