@@ -92,11 +92,11 @@ describe('HostSlotBroker', () => {
     const broker = await startBroker(brokerLimiter);
     const granted = track(
       [client(broker), client(broker), client(broker)].map((limiter) =>
-        limiter.acquire('medicine.yale.edu'),
+        limiter.acquire('ysph.yale.edu'),
       ),
     );
     await waitForLength(granted, 2);
-    expect(brokerLimiter.activeCount('medicine.yale.edu')).toBe(2);
+    expect(brokerLimiter.activeCount('ysph.yale.edu')).toBe(2);
     expect(sleeps).toEqual([400]);
     granted[0]();
     await waitForLength(granted, 3);

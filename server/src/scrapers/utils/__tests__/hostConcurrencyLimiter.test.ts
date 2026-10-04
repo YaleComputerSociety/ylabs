@@ -14,7 +14,7 @@ describe('resolveHostThrottle', () => {
 
   it('tightens concurrency and interval for rate-limited Yale medical hosts', () => {
     expect(resolveHostThrottle('medicine.yale.edu', defaults)).toEqual({
-      concurrency: 2,
+      concurrency: 3,
       minIntervalMs: 400,
     });
     expect(resolveHostThrottle('ysph.yale.edu', defaults)).toEqual({
@@ -25,7 +25,7 @@ describe('resolveHostThrottle', () => {
 
   it('matches the override regardless of host casing', () => {
     expect(resolveHostThrottle('Medicine.Yale.EDU', defaults)).toEqual({
-      concurrency: 2,
+      concurrency: 3,
       minIntervalMs: 400,
     });
   });
@@ -39,6 +39,12 @@ describe('resolveHostThrottle', () => {
     expect(resolveHostThrottle('__proto__', defaults)).toEqual(defaults);
     expect(resolveHostThrottle('constructor', defaults)).toEqual(defaults);
     expect(resolveHostThrottle('toString', defaults)).toEqual(defaults);
+  });
+
+  it('holds medicine.yale.edu at the 3 in flight its refusal probe admitted, and ysph.yale.edu at 2', () => {
+    const generous = { concurrency: 8, minIntervalMs: 0 };
+    expect(resolveHostThrottle('medicine.yale.edu', generous).concurrency).toBe(3);
+    expect(resolveHostThrottle('ysph.yale.edu', generous).concurrency).toBe(2);
   });
 
   it('never loosens a default that is already tighter than the override', () => {
@@ -104,7 +110,7 @@ describe('HostConcurrencyLimiter', () => {
     let peak = 0;
     const jobs = Array.from({ length: 6 }, () =>
       withHostSlot(
-        'https://medicine.yale.edu/profile/x',
+        'https://ysph.yale.edu/profile/x',
         async () => {
           active += 1;
           peak = Math.max(peak, active);
@@ -129,8 +135,8 @@ describe('HostConcurrencyLimiter', () => {
         clock += ms;
       },
     });
-    (await limiter.acquire('medicine.yale.edu'))();
-    (await limiter.acquire('medicine.yale.edu'))();
+    (await limiter.acquire('ysph.yale.edu'))();
+    (await limiter.acquire('ysph.yale.edu'))();
     expect(sleeps).toEqual([400]);
   });
 
@@ -141,7 +147,7 @@ describe('HostConcurrencyLimiter', () => {
       const startedAt = Date.now();
       const grants: number[] = [];
       const jobs = Array.from({ length: 6 }, () =>
-        limiter.acquire('medicine.yale.edu').then((release) => {
+        limiter.acquire('ysph.yale.edu').then((release) => {
           grants.push(Date.now() - startedAt);
           release();
         }),
@@ -165,7 +171,7 @@ describe('HostConcurrencyLimiter', () => {
       const startedAt = Date.now();
       const grants: number[] = [];
       const jobs = Array.from({ length: 3 }, () =>
-        limiter.acquire('medicine.yale.edu').then((release) => {
+        limiter.acquire('ysph.yale.edu').then((release) => {
           grants.push(Date.now() - startedAt);
           release();
         }),
@@ -250,5 +256,16 @@ describe('HostConcurrencyLimiter', () => {
     const limiter = new HostConcurrencyLimiter(1);
     const result = await withHostSlot('not-a-url', async () => 'ok', limiter);
     expect(result).toBe('ok');
+  });
+});
+
+describe('HostConcurrencyLimiter without host overrides', () => {
+  it('lets a probe hold an overridden host at the cap it asks for', async () => {
+    const limiter = new HostConcurrencyLimiter(4, { applyHostOverrides: false });
+    const releases = await Promise.all(
+      Array.from({ length: 4 }, () => limiter.acquire('ysph.yale.edu')),
+    );
+    expect(limiter.activeCount('ysph.yale.edu')).toBe(4);
+    for (const release of releases) release();
   });
 });

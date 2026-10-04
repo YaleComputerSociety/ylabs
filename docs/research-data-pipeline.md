@@ -105,7 +105,7 @@ To re-run one failed source cheaply, run it by hand and pass `--use-cache` yours
 #### Page reuse within one sweep
 
 The three exhaustive Development modes reuse a page one source child fetched earlier in the same sweep instead of asking the site again (#3568), and `--no-page-reuse` turns it off.
-It is scoped to an explicit list, `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`), the two hosts in `HOST_THROTTLE_OVERRIDES`: each caps the sweep at 2 requests in flight and sends no `ETag` or `Last-Modified`, so the #3557 validator cache (`utils/httpValidatorCache.ts`) can never store their pages.
+It is scoped to an explicit list, `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`), the two hosts in `HOST_THROTTLE_OVERRIDES`: each caps the sweep at a few requests in flight (3 for `medicine.yale.edu` since #4611, 2 for `ysph.yale.edu`) and sends no `ETag` or `Last-Modified`, so the #3557 validator cache (`utils/httpValidatorCache.ts`) can never store their pages.
 The list is deliberately not derived from `HOST_THROTTLE_OVERRIDES`, so throttling another host does not turn reuse on for it.
 On 2026-09-26 `medicine.yale.edu` carried about 18,600 discovery requests shared by `ysm-faculty-directory` and the roster's `ysm-*` profile enrichment, and later `official-profile-pi-backfill` and `ysm-mesh-keyword` re-read the same school-wide `/profile/` pages.
 

@@ -15,10 +15,51 @@ export const PROBE_EXTRA_HOSTS = 4;
 
 export const PROBE_REFUSAL_STATUSES: ReadonlySet<number> = new Set([403, 429]);
 
+export const PROBE_MAX_IN_FLIGHT = 4;
+
+export interface HostProbeOptions {
+  host?: string;
+  inFlight?: number;
+}
+
+export function parseHostProbeArgs(argv: string[]): {
+  options: HostProbeOptions;
+  problems: string[];
+} {
+  const options: HostProbeOptions = {};
+  const problems: string[] = [];
+  for (const arg of argv) {
+    if (arg === '--') continue;
+    if (arg.startsWith('--host=')) {
+      const host = arg.slice('--host='.length).trim().toLowerCase();
+      if (!isYaleHost(host))
+        problems.push(`--host must name a yale.edu host; got ${host || 'nothing'}`);
+      else options.host = host;
+    } else if (arg.startsWith('--in-flight=')) {
+      const inFlight = Number(arg.slice('--in-flight='.length));
+      if (!Number.isInteger(inFlight) || inFlight < 1 || inFlight > PROBE_MAX_IN_FLIGHT) {
+        problems.push(`--in-flight must be an integer from 1 to ${PROBE_MAX_IN_FLIGHT}`);
+      } else {
+        options.inFlight = inFlight;
+      }
+    } else {
+      problems.push(
+        `Unknown host probe argument: ${arg}; the probe takes only --host=<host> and --in-flight=<n>`,
+      );
+    }
+  }
+  if (
+    options.inFlight !== undefined &&
+    !options.host &&
+    !problems.some((p) => p.startsWith('--host'))
+  ) {
+    problems.push('--in-flight needs --host, so a raised load reaches one host only');
+  }
+  return { options, problems };
+}
+
 export function hostProbeArgumentProblems(argv: string[]): string[] {
-  return argv
-    .filter((arg) => arg !== '--')
-    .map((arg) => `Unknown host probe argument: ${arg}; the probe takes no arguments`);
+  return parseHostProbeArgs(argv).problems;
 }
 
 export function hostProbeEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
@@ -213,6 +254,7 @@ export function formatHostProbeResultLine(result: {
   startedAt: string;
   wallTimeMs: number;
   codeSha: string | null;
+  inFlight?: number;
   hosts: HostProbeSummary[];
 }): string {
   return `${HOST_PROBE_RESULT_MARKER} ${JSON.stringify(result)}`;

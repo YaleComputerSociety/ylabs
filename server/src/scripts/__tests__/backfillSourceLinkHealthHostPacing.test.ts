@@ -229,7 +229,7 @@ describe('probeUncachedUrlsByHost', () => {
     it('probes the budgeted host at its concurrency and every other host one at a time', async () => {
       const h = slowHarness();
       const urls = [
-        ...Array.from({ length: 6 }, (_, i) => `https://medicine.yale.edu/profile/${i}/`),
+        ...Array.from({ length: 6 }, (_, i) => `https://ysph.yale.edu/profile/${i}/`),
         ...Array.from({ length: 6 }, (_, i) => `https://one.yale.edu/${i}`),
       ];
 
@@ -244,10 +244,10 @@ describe('probeUncachedUrlsByHost', () => {
         }),
       );
 
-      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(2);
+      expect(h.maxInFlightByHost.get('ysph.yale.edu')).toBe(2);
       expect(h.maxInFlightByHost.get('one.yale.edu')).toBe(1);
       expect(h.result.checked).toBe(12);
-      const medicineGaps = gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? []);
+      const medicineGaps = gapsBetween(h.requestStartsByHost.get('ysph.yale.edu') ?? []);
       expect(medicineGaps).toHaveLength(5);
       expect(medicineGaps.every((gap) => gap >= 400)).toBe(true);
       expect(gapsBetween(h.requestStartsByHost.get('one.yale.edu') ?? [])).toEqual([
@@ -260,7 +260,7 @@ describe('probeUncachedUrlsByHost', () => {
 
       await runToCompletion(
         probeUncachedUrlsByHost(
-          Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          Array.from({ length: 3 }, (_, i) => `https://ysph.yale.edu/lab/${i}/`),
           new Map(),
           {
             checkLink: h.checkLink,
@@ -273,7 +273,7 @@ describe('probeUncachedUrlsByHost', () => {
         ),
       );
 
-      expect(gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? [])).toEqual([900, 900]);
+      expect(gapsBetween(h.requestStartsByHost.get('ysph.yale.edu') ?? [])).toEqual([900, 900]);
     });
 
     it('spaces every request of a probe, not only its start', async () => {
@@ -281,7 +281,7 @@ describe('probeUncachedUrlsByHost', () => {
 
       await runToCompletion(
         probeUncachedUrlsByHost(
-          Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          Array.from({ length: 3 }, (_, i) => `https://ysph.yale.edu/lab/${i}/`),
           new Map(),
           {
             checkLink: h.checkLink,
@@ -294,10 +294,10 @@ describe('probeUncachedUrlsByHost', () => {
         ),
       );
 
-      const gaps = gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? []);
+      const gaps = gapsBetween(h.requestStartsByHost.get('ysph.yale.edu') ?? []);
       expect(gaps).toHaveLength(5);
       expect(gaps.every((gap) => gap >= 400)).toBe(true);
-      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(2);
+      expect(h.maxInFlightByHost.get('ysph.yale.edu')).toBe(2);
     });
 
     it('stays serial on every host when no budget is supplied', async () => {
@@ -305,7 +305,7 @@ describe('probeUncachedUrlsByHost', () => {
 
       await runToCompletion(
         probeUncachedUrlsByHost(
-          Array.from({ length: 4 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          Array.from({ length: 4 }, (_, i) => `https://ysph.yale.edu/lab/${i}/`),
           new Map(),
           {
             checkLink: h.checkLink,
@@ -317,11 +317,11 @@ describe('probeUncachedUrlsByHost', () => {
         ),
       );
 
-      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(1);
+      expect(h.maxInFlightByHost.get('ysph.yale.edu')).toBe(1);
     });
 
     it('reads the budget from the host throttle overrides only', () => {
-      expect(measuredHostBudget('medicine.yale.edu')).toEqual({
+      expect(measuredHostBudget('ysph.yale.edu')).toEqual({
         concurrency: 2,
         minIntervalMs: 400,
       });

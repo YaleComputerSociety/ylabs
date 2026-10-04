@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
 import { connectScriptMongo } from '../db/connections';
 import {
+  HostRateLimiter,
   defaultAxiosRequest,
   fetchPageWithPolicy,
   type HttpRequestFn,
 } from '../scrapers/utils/httpFetch';
+import { HOST_THROTTLE_OVERRIDES } from '../scrapers/utils/hostConcurrencyLimiter';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
@@ -14,8 +16,8 @@ import {
   classifyProbeRequest,
   formatHostProbeResultLine,
   formatHostProbeTable,
-  hostProbeArgumentProblems,
   hostProbeEnvironmentProblems,
+  parseHostProbeArgs,
   summarizeHostProbe,
   PROBE_URLS_PER_HOST,
   type HostProbeRequestRecord,
@@ -66,7 +68,7 @@ async function sampleDevelopmentUrls(): Promise<ProbeUrlSampler> {
   return sampler;
 }
 
-async function probeUrl(url: string): Promise<HostProbeRequestRecord> {
+async function probeUrl(url: string, limiter?: HostRateLimiter): Promise<HostProbeRequestRecord> {
   const statuses: Array<number | null> = [];
   const observingRequest: HttpRequestFn = async (target, config) => {
     try {
@@ -79,7 +81,7 @@ async function probeUrl(url: string): Promise<HostProbeRequestRecord> {
     }
   };
   const started = Date.now();
-  const succeeded = await fetchPageWithPolicy(url, { request: observingRequest }).then(
+  const succeeded = await fetchPageWithPolicy(url, { request: observingRequest, limiter }).then(
     () => true,
     () => false,
   );
@@ -91,22 +93,33 @@ async function probeUrl(url: string): Promise<HostProbeRequestRecord> {
   };
 }
 
+function raisedLoadLimiter(host: string, inFlight: number): HostRateLimiter {
+  return new HostRateLimiter({
+    maxConcurrency: inFlight,
+    minIntervalMs: HOST_THROTTLE_OVERRIDES[host]?.minIntervalMs ?? 400,
+    applyHostOverrides: false,
+  });
+}
+
 async function probeHost(
   host: string,
   urls: string[],
   urlsInDevelopment: number,
+  inFlight?: number,
 ): Promise<HostProbeSummary> {
   const started = Date.now();
   const records: HostProbeRequestRecord[] = [];
+  const limiter = inFlight ? raisedLoadLimiter(host, inFlight) : undefined;
+  const workers = inFlight ?? PER_HOST_IN_FLIGHT;
   let next = 0;
   const worker = async () => {
     while (next < urls.length) {
       const url = urls[next];
       next += 1;
-      records.push(await probeUrl(url));
+      records.push(await probeUrl(url, limiter));
     }
   };
-  await Promise.all(Array.from({ length: Math.min(PER_HOST_IN_FLIGHT, urls.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(workers, urls.length) }, worker));
   const summary = summarizeHostProbe({
     host,
     urlsInDevelopment,
@@ -120,10 +133,8 @@ async function probeHost(
 }
 
 export async function runHostThrottleProbe(argv: string[]): Promise<number> {
-  const problems = [
-    ...hostProbeArgumentProblems(argv),
-    ...hostProbeEnvironmentProblems(process.env),
-  ];
+  const parsed = parseHostProbeArgs(argv);
+  const problems = [...parsed.problems, ...hostProbeEnvironmentProblems(process.env)];
   if (problems.length > 0) {
     for (const problem of problems) console.error(`[host-probe] refusing: ${problem}`);
     return 1;
@@ -138,13 +149,14 @@ export async function runHostThrottleProbe(argv: string[]): Promise<number> {
     await mongoose.disconnect();
   }
 
-  const hosts = chooseProbeHosts(sampler.hostCounts());
+  const { host: onlyHost, inFlight } = parsed.options;
+  const hosts = onlyHost ? [onlyHost] : chooseProbeHosts(sampler.hostCounts());
   console.log(
-    `[host-probe] probing ${hosts.length} hosts, up to ${PROBE_URLS_PER_HOST} pages each, read-only`,
+    `[host-probe] probing ${hosts.length} hosts, up to ${PROBE_URLS_PER_HOST} pages each at ${inFlight ?? PER_HOST_IN_FLIGHT} in flight, read-only`,
   );
   const summaries = await Promise.all(
     hosts.map((host) =>
-      probeHost(host, sampler.sampleFor(host), sampler.hostCounts().get(host) ?? 0),
+      probeHost(host, sampler.sampleFor(host), sampler.hostCounts().get(host) ?? 0, inFlight),
     ),
   );
   const wallTimeMs = Date.now() - startedAt.getTime();
@@ -154,6 +166,7 @@ export async function runHostThrottleProbe(argv: string[]): Promise<number> {
       startedAt: startedAt.toISOString(),
       wallTimeMs,
       codeSha: readCodeSha() ?? null,
+      inFlight: inFlight ?? PER_HOST_IN_FLIGHT,
       hosts: summaries,
     }),
   );

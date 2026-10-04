@@ -7,6 +7,7 @@ import {
   formatHostProbeResultLine,
   formatHostProbeTable,
   hostProbeArgumentProblems,
+  parseHostProbeArgs,
   hostProbeEnvironmentProblems,
   percentile,
   summarizeHostProbe,
@@ -22,6 +23,32 @@ describe('hostProbeArgumentProblems', () => {
       expect.stringMatching(/Unknown host probe argument: --probe-hosts/),
     ]);
     expect(hostProbeArgumentProblems(['--hosts', 'a.yale.edu'])).toHaveLength(2);
+  });
+});
+
+describe('parseHostProbeArgs', () => {
+  it('reads one Yale host and an in-flight count for a raised-load probe', () => {
+    expect(parseHostProbeArgs(['--host=Medicine.Yale.edu', '--in-flight=3'])).toEqual({
+      options: { host: 'medicine.yale.edu', inFlight: 3 },
+      problems: [],
+    });
+    expect(parseHostProbeArgs(['--host=ysph.yale.edu']).options).toEqual({
+      host: 'ysph.yale.edu',
+    });
+  });
+
+  it('refuses a raised load without a host, a non-Yale host, or an out-of-range count', () => {
+    expect(parseHostProbeArgs(['--in-flight=3']).problems).toEqual([
+      expect.stringMatching(/--in-flight needs --host/),
+    ]);
+    expect(parseHostProbeArgs(['--host=example.com']).problems).toEqual([
+      expect.stringMatching(/yale\.edu host/),
+    ]);
+    for (const count of ['0', '5', '2.5', 'three']) {
+      expect(
+        parseHostProbeArgs(['--host=medicine.yale.edu', `--in-flight=${count}`]).problems,
+      ).toEqual([expect.stringMatching(/from 1 to 4/)]);
+    }
   });
 });
 

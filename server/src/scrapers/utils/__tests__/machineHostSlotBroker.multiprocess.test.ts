@@ -10,7 +10,7 @@ import { MachineHostSlotLimiter, machineHostSlotPaths } from '../machineHostSlot
 
 const CLIENT_SCRIPT = path.resolve(__dirname, 'fixtures/machineHostSlotClient.ts');
 const SERVER_ROOT = path.resolve(__dirname, '../../../..');
-const OVERRIDDEN_HOST = 'medicine.yale.edu';
+const OVERRIDDEN_HOST = 'ysph.yale.edu';
 
 interface ClientLine {
   pid: number;

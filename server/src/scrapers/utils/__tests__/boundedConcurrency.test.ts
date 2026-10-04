@@ -81,18 +81,18 @@ describe('YSM profile walk timing model on medicine.yale.edu (#3568)', () => {
     return { elapsedMs: Date.now() - startedAt, maxInFlight, minGapMs };
   }
 
-  it('cuts the fetch time by about 30 percent while holding the host to its override of 2 in flight and 400 ms spacing', async () => {
+  it('cuts the fetch time while holding the host to its override of 3 in flight and 400 ms spacing', async () => {
     const serial = await simulate(1);
     vi.useRealTimers();
     const prefetched = await simulate(4);
 
     expect(serial.maxInFlight).toBe(1);
-    expect(prefetched.maxInFlight).toBe(2);
+    expect(prefetched.maxInFlight).toBe(3);
     expect(prefetched.minGapMs).toBeGreaterThanOrEqual(400);
     expect(serial.elapsedMs).toBe(PROFILES * (0.8 * 400 + 0.2 * 2340));
     const speedUp = serial.elapsedMs / prefetched.elapsedMs;
-    expect(speedUp).toBeGreaterThan(1.4);
-    expect(speedUp).toBeLessThan(1.5);
+    expect(speedUp).toBeGreaterThan(1.6);
+    expect(speedUp).toBeLessThan(1.7);
     expect(prefetched.elapsedMs).toBeGreaterThanOrEqual(PROFILES * 400);
   });
 });
