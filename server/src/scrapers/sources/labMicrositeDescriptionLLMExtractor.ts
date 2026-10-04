@@ -135,7 +135,10 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { isRelatedEntityTeaserTextOnPage } from '../../utils/relatedEntityTeaserCards';
+import {
+  isRelatedEntityTeaserTextOnPage,
+  removeRelatedEntityTeaserCards,
+} from '../../utils/relatedEntityTeaserCards';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -1263,10 +1266,14 @@ function usefulShortDescription(value: unknown, fullDescription: string): string
   return isServableCardLine(derived, fullDescription) ? derived : '';
 }
 
-export function htmlToText(html: string): string {
+export function htmlToText(html: string, pageUrl?: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
+  // Another unit's teaser cards are not this page's text: left in, the model reads a
+  // listing page as about several units and refuses its own prose, and the grounding
+  // check accepts a sibling's blurb (#4823).
+  removeRelatedEntityTeaserCards($, pageUrl);
   const body = $('body')[0] || $.root()[0];
   return extractElementTextWithBlockSeparators(body).slice(0, MAX_PROMPT_CHARS);
 }
@@ -2309,7 +2316,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           computePageSetTextDigest(pages, (fetched) => {
             const prose = extractDescriptionPageProse(fetched, kind);
             return [
-              htmlToText(fetched.html),
+              htmlToText(fetched.html, fetched.url),
               prose?.fullDescription ?? '',
               prose?.shortDescription ?? '',
             ].join('\n');
@@ -2352,7 +2359,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
         const bestCrawledProse = selectBestDescriptionPageProse(crawledProse, kind);
 
-        const primaryPageText = htmlToText(primaryPage.html);
+        const primaryPageText = htmlToText(primaryPage.html, primaryPage.url);
 
         // When the primary page has deterministic prose of its own and a crawled
         // research page already beats it, the winner is settled without the LLM,
@@ -2436,7 +2443,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // They are therefore extracted from that page too: grounding the primary
         // page's methods against a crawled winner's text would discard all of
         // them and lose the winning page's own method language (#2176).
-        const pageText = page === primaryPage ? primaryPageText : htmlToText(page.html);
+        const pageText = page === primaryPage ? primaryPageText : htmlToText(page.html, page.url);
         const citedPageExtraction =
           page === primaryPage
             ? llmExtraction

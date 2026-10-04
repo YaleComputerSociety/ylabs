@@ -547,3 +547,20 @@ describe('a personal homepage bio is narrowed to the research it states', () => 
     expect(researchSentencesOfBiographyBody(prose)).toBe(prose);
   });
 });
+
+describe("htmlToText leaves out other units' teaser cards (#4823)", () => {
+  const card = (href: string, text: string) =>
+    `<li><div class="cores-card listing-item"><h2><a href="${href}">Other unit</a></h2><p>${text}</p></div></li>`;
+  const html = `<body><main><p>We test samples for veterinary pathogens by PCR and serology.</p><ul>${card('/cores/b', 'Offers targeted metabolomics and isotope flux analysis.')}${card('/cores/c', 'Provides high-throughput screening with small molecules.')}</ul></main></body>`;
+
+  it('drops sibling-unit teaser text when the page URL is known', () => {
+    const text = htmlToText(html, 'https://research.example.edu/cores/a');
+    expect(text).toContain('veterinary pathogens');
+    expect(text).not.toContain('metabolomics');
+    expect(text).not.toContain('high-throughput screening');
+  });
+
+  it('keeps every card when the page URL is unknown', () => {
+    expect(htmlToText(html)).toContain('metabolomics');
+  });
+});
