@@ -16,7 +16,6 @@ import { normalizeOfficialProfileDestination } from '../services/leadProfileIden
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { researchStatementSentences } from '../utils/careerBiographyDescription';
-import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -116,33 +115,28 @@ const provenanceOf = (
   return provenance[field];
 };
 
+// The verbs that state what a person researches. The card-lead verb list behind
+// `describesResearchFocus` also counts "supports" and "uses", which open an office's card
+// as readily as a lab's, so it cannot be the witness that a row states no research.
+const CARD_STATES_RESEARCH =
+  /\b(?:studies|investigates|examines|explores|develops|researches|analy[sz]es)\b|\bresearch\b/i;
+
 /**
- * Whether either stored description makes an explicit research statement in its own
- * subject, the second witness an administrative title needs before the row can be
- * archived. The research-focus phrase test reads only the card's short description,
- * because over a long office biography it matches "focused on" or "supports".
+ * Whether the row's own description states research, the second witness an
+ * administrative title needs before the row can be archived: an explicit research
+ * statement in either description, or a research verb or the word research on the card.
  */
 export function descriptionStatesResearch(entity: {
   shortDescription?: unknown;
   fullDescription?: unknown;
 }): boolean {
-  if (describesResearchFocus(entity.shortDescription)) return true;
+  const card = typeof entity.shortDescription === 'string' ? entity.shortDescription : '';
+  if (CARD_STATES_RESEARCH.test(card)) return true;
   return [entity.shortDescription, entity.fullDescription].some(
     (value) => researchStatementSentences(value).length > 0,
   );
 }
 
-/**
- * The citation that gave the row its identity, which is the only one whose person's
- * title may speak for the row.
- *
- * `slug` provenance only. Both mint gates write `slug` and `name` from the same
- * base, so for this population a `name` fallback adds nothing, and where it does
- * fire the row's `name` is by definition a value some other lane wrote - the
- * name-graft class this repo already tracks separately. It fired for 255 live rows
- * on Development, so dropping it is a real narrowing of what may be archived, in
- * the conservative direction.
- */
 export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): string | undefined {
   const url = provenanceOf(entity, 'slug')?.sourceUrl;
   return isPersonProfileIdentityUrl(url) ? String(url) : undefined;

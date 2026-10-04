@@ -138,16 +138,22 @@ describe('reason scope', () => {
 });
 
 describe('descriptionStatesResearch', () => {
-  it('reads a research statement anywhere, and a research-focus phrase on the card only', () => {
-    expect(
-      descriptionStatesResearch({
-        shortDescription: 'Studies how fixtures shape outcomes in clinical trials.',
-      }),
-    ).toBe(true);
+  it('reads a research verb or the word research on the card, and a research statement anywhere', () => {
+    for (const shortDescription of [
+      'Studies how fixtures shape outcomes in clinical trials.',
+      'Investigates fixture mechanisms in clinical trials.',
+      'Research focuses on fixture design.',
+      'Develops and applies a fixture index to scale up programs.',
+    ]) {
+      expect(descriptionStatesResearch({ shortDescription })).toBe(true);
+    }
+  });
+
+  it('does not read an office card that supports or uses as research', () => {
     expect(
       descriptionStatesResearch({
         shortDescription:
-          'Provides advising and manages the office platform for students and alumni.',
+          'Supports students and alumni through advising and uses an office platform for programming.',
         fullDescription: 'The office supports students and is focused on career outcomes.',
       }),
     ).toBe(false);
