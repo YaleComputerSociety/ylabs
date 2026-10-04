@@ -78,10 +78,10 @@ export interface UndergradResearchPostingScraperDeps {
 
 /**
  * Curated, public posting-index pages. Each must publish per-posting title,
- * hiring home, deadline, and apply URL. The source seed is disabled by default
- * (like the official research-home roster): an operator confirms each page is
- * reliably public and enables it on Development after verifying the live
- * capture, per docs/scraper-deployment-runbook.md.
+ * hiring home, deadline, and apply URL. The source is manual-only (like the
+ * official research-home roster): an operator confirms each page is reliably
+ * public and returns it to the sweep after verifying the live capture, per
+ * docs/scraper-deployment-runbook.md.
  *
  * Empty on purpose (#3550): the one page configured by #1568 never existed, and
  * no official public Yale page publishes postings in this shape. Add a page only

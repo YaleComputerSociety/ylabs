@@ -138,7 +138,6 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
     readsRowsWrittenBy: ['dept-faculty-roster'],
   },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
-  { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },

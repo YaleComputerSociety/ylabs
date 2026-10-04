@@ -14,6 +14,7 @@
 import type mongoose from 'mongoose';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isManualOnlySweepSource } from './manualOnlySweepSources';
+import { isRetiredSourceName } from './sourceDispatch';
 import type { ScraperMetrics } from './types';
 
 export const BARREN_RUN_STREAK_FAILURE_THRESHOLD = 3;
@@ -30,7 +31,7 @@ export interface RunYieldFacts {
 }
 
 export interface YieldExpectationSource {
-  enabled?: boolean;
+  name?: string;
   coverage?: { tier?: string } | null;
 }
 
@@ -120,17 +121,24 @@ export function barrenUnitStreak(runsNewestFirst: RunYieldFacts[], unit: string)
 
 /**
  * Mirrors `classifySourceFreshness`: a source with no re-crawl expectation has no
- * yield expectation either.
+ * yield expectation either. Retirement is read from the name rather than the stored
+ * `enabled` flag, because a stored flag that disagrees with retirement is exactly the
+ * drift that once exempted two live sweep sources from this guard (#4025).
  */
 export function sourceIsExpectedToYield(source: YieldExpectationSource): boolean {
-  if (source.enabled === false) return false;
+  if (typeof source.name === 'string' && isRetiredSourceName(source.name)) return false;
   return source.coverage?.tier !== 'MANUAL_OVERRIDE';
 }
 
-export function sourceIsExpectedToRecur(
-  source: YieldExpectationSource & { name?: string },
-): boolean {
+export function sourceIsExpectedToRecur(source: YieldExpectationSource): boolean {
   return sourceIsExpectedToYield(source) && !isManualOnlySweepSource(source.name);
+}
+
+function namedYieldSource(args: {
+  sourceName: string;
+  source: YieldExpectationSource;
+}): YieldExpectationSource {
+  return { ...args.source, name: args.source.name ?? args.sourceName };
 }
 
 export function resolveBarrenStreakFailure(args: {
@@ -139,7 +147,7 @@ export function resolveBarrenStreakFailure(args: {
   currentRun: RunYieldFacts;
   priorRunsNewestFirst: RunYieldFacts[];
 }): BarrenStreakFailure | undefined {
-  if (!sourceIsExpectedToYield(args.source)) return undefined;
+  if (!sourceIsExpectedToYield(namedYieldSource(args))) return undefined;
   if (classifyRunYield(args.currentRun) !== 'barren') return undefined;
 
   const streak = 1 + barrenRunStreak(args.priorRunsNewestFirst);
@@ -161,7 +169,7 @@ export function resolveBarrenUnitStreakFailures(args: {
   currentRun: RunYieldFacts;
   priorRunsNewestFirst: RunYieldFacts[];
 }): BarrenStreakFailure[] {
-  if (!sourceIsExpectedToYield(args.source)) return [];
+  if (!sourceIsExpectedToYield(namedYieldSource(args))) return [];
   const counts = unitYieldCounts(args.currentRun.metrics);
   if (!counts) return [];
 
