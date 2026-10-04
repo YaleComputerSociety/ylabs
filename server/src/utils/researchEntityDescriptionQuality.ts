@@ -1574,14 +1574,7 @@ function computeFullDescriptionQuality(
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
   if (text && isGenericStudentProjectRecruitmentTemplate(text)) flags.push('generic-lead');
-  if (
-    text &&
-    !isConciseSpecificResearchDescription(text) &&
-    !publicResearchEntityDescriptionText(text) &&
-    !hasExplicitProfileResearchFocus(text) &&
-    !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text) &&
-    !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text)
-  ) {
+  if (text && lacksResearchStatement(text)) {
     if (flags.length === 0) flags.push('synthetic-placeholder');
   }
 
@@ -1590,6 +1583,60 @@ function computeFullDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+const lacksResearchStatement = (text: string): boolean =>
+  !isConciseSpecificResearchDescription(text) &&
+  !publicResearchEntityDescriptionText(text) &&
+  !hasExplicitProfileResearchFocus(text) &&
+  !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text) &&
+  !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text);
+
+// A body that is short, or that restates the row's own topics, is thin but not
+// wrong, and the owner decided such a row is shown rather than held (2026-10-04).
+// The write paths keep the strict verdict so a lane still prefers richer prose;
+// only the visibility gate and the served page read this.
+const THIN_BODY_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'too-short',
+  'area-echo-fallback',
+]);
+const MIN_THIN_BODY_WORDS = 6;
+
+// Shapes that read as a page fragment rather than prose. The thin flags used to
+// hold them incidentally, so they are named here instead.
+const COLON_BEFORE_TERMINAL_PATTERN = /:\s*[.!?]?\s*$/;
+const LABEL_CAPTION_LEAD_PATTERN =
+  /^(?:(?:Medical\s+)?Research\s+Interests?|Areas?\s+of\s+(?:Interest|Expertise|Research)|Interests|Perspectives|Keywords?|Specialt(?:y|ies)|Expertise)\b\s*:?\s*(?=[A-Z])/;
+const DEGREE_RECEIPT_ONLY_PATTERN =
+  /^[^.!?]{0,80}\b(?:earned|received|obtained|completed|holds)\s+(?:(?:his|her|their|a|an)\s+)?(?:Ph\.?\s?D\.?|doctorate|M\.?D\.?|J\.?D\.?|M\.?A\.?|B\.?A\.?|B\.?S\.?|M\.?S\.?|degree)\b[^.!?]*[.!?]?$/i;
+const EVIDENCE_RATIONALE_PATTERN =
+  /\bas\s+(?:evidenced|indicated|reflected|suggested)\s+by\s+(?:(?:its|his|her|their|the)\s+)?(?:inclusion|listing|mention|appearance|prior\s+work)\b/i;
+
+const TOPIC_STATEMENT_PATTERN =
+  /^(?:(?:Clinical|Basic|Translational|Epidemiological|Experimental|Theoretical)(?:\s+and\s+\w+)?\s+)*research\s+(?:in|on)\s|^Scholar\s+of\s|\bsubject\s+areas?\s+(?:are|include)\s/i;
+
+const readsAsPageFragment = (text: string): boolean =>
+  COLON_BEFORE_TERMINAL_PATTERN.test(text) ||
+  !/[.!?]\s*$/.test(text) ||
+  LABEL_CAPTION_LEAD_PATTERN.test(text) ||
+  DEGREE_RECEIPT_ONLY_PATTERN.test(text) ||
+  EVIDENCE_RATIONALE_PATTERN.test(text);
+
+/**
+ * A body the strict bar refuses only for being thin: short (at least six words) or a
+ * restatement of the row's own topics, carrying a research-focus phrase, and not a
+ * page fragment. A staff or appointment profile states no research and stays held.
+ */
+export function isThinButAccurateBody(quality: FieldQuality): boolean {
+  const { text, flags } = quality;
+  if (quality.isUseful || !text || flags.length === 0) return false;
+  if (!flags.every((flag) => THIN_BODY_FLAGS.has(flag))) return false;
+  if (wordCount(text) < MIN_THIN_BODY_WORDS) return false;
+  return (
+    (hasResearchFocusPhrase(text) || TOPIC_STATEMENT_PATTERN.test(text)) &&
+    !lacksResearchStatement(text) &&
+    !readsAsPageFragment(text)
+  );
 }
 
 export function fullDescriptionQuality(
@@ -3489,4 +3536,39 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     if (shortened && shortDescriptionQuality(shortened, rawFull).isUseful) return shortened;
   }
   return '';
+}
+
+const LEADING_DATELINE_PATTERN =
+  /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}(?=[A-Z\s:|-])/;
+const PARENTHESIZED_YEAR_PATTERN = /\((?:19|20)\d{2}\)/g;
+const DISCIPLINE_OF =
+  '(?:history|philosophy|sociology|anthropology|economics|politics|ethics|law|psychology|literature)\\s+of\\s+';
+
+const escapeForPattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// "Studies medicine, ..." over a body that only says "history of medicine".
+function dropsTheDisciplineOfItsTopic(card: string, full: string): boolean {
+  const topic = card.match(/^Studies\s+([a-z][a-z-]+)\b/)?.[1];
+  if (!topic || !full) return false;
+  const withDiscipline = new RegExp(`\\b${DISCIPLINE_OF}${escapeForPattern(topic)}\\b`, 'gi');
+  if (!withDiscipline.test(full)) return false;
+  return !new RegExp(`\\b${escapeForPattern(topic)}\\b`, 'i').test(
+    full.replace(withDiscipline, ''),
+  );
+}
+
+/**
+ * A card that is a page fragment rather than a summary: a dateline glued to a
+ * headline, a list of dated titles, the model's evidence rationale, or a topic whose
+ * discipline was cut off.
+ */
+export function isCardPageFragment(card: unknown, fullDescription: unknown): boolean {
+  const text = textValue(card);
+  if (!text) return false;
+  return (
+    LEADING_DATELINE_PATTERN.test(text) ||
+    (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2 ||
+    EVIDENCE_RATIONALE_PATTERN.test(text) ||
+    dropsTheDisciplineOfItsTopic(text, textValue(fullDescription))
+  );
 }
