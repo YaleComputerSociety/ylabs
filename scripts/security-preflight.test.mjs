@@ -5403,6 +5403,8 @@ test('client CAS return state is path-only before redirect query construction', 
     signInButtonSource,
     /const redirectParam = returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''/,
   );
+  assert.match(signInButtonSource, /const returnPath = normalizeReturnPath\(/);
+  assert.match(signInButtonSource, /savedPath: sessionStorage\.getItem\('logoutReturnPath'\)/);
   assert.match(
     signInButtonSource,
     /if \(mountReturn\.savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
