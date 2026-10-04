@@ -430,6 +430,22 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
     });
 
+    it('does not read a budget line that pays research assistants as an assistantship', () => {
+      const fellowship = {
+        title: 'Fixture Institute Fellowship',
+        description: 'Supports independent summer research by undergraduate and graduate students.',
+        applicationInformation:
+          'The budget may list airfare, supplies, stipends for field or research assistants, and other research expenses.',
+      };
+      expect(classifyProgram(fellowship)).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
+      expect(
+        classifyProgram({
+          ...fellowship,
+          description: 'Selected students work as research assistants on faculty projects.',
+        }),
+      ).toMatchObject({ programKind: 'RA_PROGRAM' });
+    });
+
     it('leaves a page that lists many awards for archive review', () => {
       expect(
         classifyProgram({
