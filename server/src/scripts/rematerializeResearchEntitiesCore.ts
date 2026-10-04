@@ -1,7 +1,4 @@
-import {
-  fieldProvenanceEntries,
-  fieldProvenanceEntryNamesALaneWithoutEvidence,
-} from '../models/fieldProvenanceBacking';
+import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
 import {
   RESEARCH_ENTITY_CONTACT_FIELDS,
   observationIsKeyedToRow,
@@ -9,6 +6,7 @@ import {
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
+import { fieldProvenanceEntryIsUnbacked } from '../scrapers/neverBackedFieldProvenance';
 import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
@@ -492,8 +490,8 @@ export function slugsCarryingUnbackedProvenance(
   const slugs = new Set<string>();
   for (const row of rows) {
     if (typeof row.slug !== 'string' || !row.slug) continue;
-    const unbacked = fieldProvenanceEntries(row.fieldProvenance).some(([, entry]) =>
-      fieldProvenanceEntryNamesALaneWithoutEvidence(entry),
+    const unbacked = fieldProvenanceEntries(row.fieldProvenance).some(([field, entry]) =>
+      fieldProvenanceEntryIsUnbacked(field, entry),
     );
     if (unbacked) slugs.add(row.slug);
   }
@@ -518,14 +516,14 @@ export function provenanceReconciliationChanges(
   const remaining = new Map(fieldProvenanceEntries(after));
   const changes: RematerializeFieldChange[] = [];
   for (const [field, entry] of fieldProvenanceEntries(before)) {
-    if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
+    if (!fieldProvenanceEntryIsUnbacked(field, entry)) continue;
     const sourceName = (entry as { sourceName?: unknown } | null)?.sourceName ?? null;
     if (!remaining.has(field)) {
       changes.push({ field: `fieldProvenance.${field}`, before: sourceName, after: undefined });
       continue;
     }
     const observationId = recordedObservationId(remaining.get(field));
-    if (observationId) {
+    if (observationId && observationId !== recordedObservationId(entry)) {
       changes.push({
         field: `fieldProvenance.${field}`,
         before: sourceName,

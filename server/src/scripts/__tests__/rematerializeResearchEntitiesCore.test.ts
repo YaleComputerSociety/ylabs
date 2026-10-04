@@ -356,6 +356,23 @@ describe('the unbacked-provenance cohort (#3769)', () => {
     });
   });
 
+  it('selects a row whose entry credits a grant lane with a field grants may not assert', () => {
+    const grant = { sourceName: 'nsf-award-search', observationId: 'synthetic-observation' };
+    expect(
+      slugsCarryingUnbackedProvenance([
+        { slug: 'row-name', fieldProvenance: { name: grant } },
+        { slug: 'row-grants', fieldProvenance: { recentGrants: grant } },
+      ]),
+    ).toEqual(['row-name']);
+  });
+
+  it('reports a retired grant entry, and not an unchanged one a lock kept', () => {
+    const grant = { sourceName: 'nih-reporter', observationId: 'synthetic-observation' };
+    expect(
+      provenanceReconciliationChanges({ name: grant, sourceUrls: grant }, { sourceUrls: grant }),
+    ).toEqual([{ field: 'fieldProvenance.name', before: 'nih-reporter', after: undefined }]);
+  });
+
   it('reports nothing for an unrecorded entry the pass left alone', () => {
     expect(provenanceReconciliationChanges({ departments: lane }, { departments: lane })).toEqual(
       [],
