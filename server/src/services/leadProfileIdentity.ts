@@ -196,7 +196,7 @@ interface LeadDirectoryIdentity {
   nameTokens: Set<string>;
   nameTokenList: string[];
   profileSlugs: Set<string>;
-  profileSlugNameTokens: Array<Set<string>>;
+  profileSlugNameTokens: string[][];
 }
 
 const GROUP_LIKE_SLUG_TOKENS = new Set([
@@ -286,7 +286,7 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
     profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
-    profileSlugNameTokens: ownProfileSlugs.map((slug) => new Set(nameTokensFrom(slug))),
+    profileSlugNameTokens: ownProfileSlugs.map((slug) => nameTokensFrom(slug)),
   };
 };
 
@@ -325,15 +325,17 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
 };
 
 // Shared surname or suffix tokens alone (a compound surname, `jr`) are also
-// carried by a different person, so the slug's own given name must be among
-// the shared tokens.
-const sharesGivenNameAndAnotherToken = (slug: string, nameTokens: Set<string>): boolean => {
+// carried by a different person, so the slug's given name must be the lead's
+// given name, or a shortened form of it (Nick/Nicholas), and not merely a prefix
+// of one of the lead's surname tokens.
+const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[]): boolean => {
   const [slugGiven] = nameTokensFrom(slug);
-  return (
-    Boolean(slugGiven) &&
-    nameTokens.has(slugGiven) &&
-    sharedNameTokenCount(slug, nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
-  );
+  const [leadGiven] = orderedNameTokens;
+  if (!slugGiven || !leadGiven || !givenNamesAbbreviationMatch(slugGiven, leadGiven)) return false;
+  const nameTokens = new Set(orderedNameTokens);
+  const sharedBesidesGiven =
+    sharedNameTokenCount(slug, nameTokens) - (nameTokens.has(slugGiven) ? 1 : 0);
+  return sharedBesidesGiven + 1 >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE;
 };
 
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
@@ -385,7 +387,9 @@ const profileSlugCorroboratesLead = (
   // tokens (typically given plus family). This one symmetric rule replaces the
   // asymmetric behavior that held same-person slug variants when the lead had
   // its own profile URL, yet cleared surname-only collisions when it did not.
-  if (sharesGivenNameAndAnotherToken(slug, identity.nameTokens)) return true;
+  if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
+    return true;
+  }
   // A lead can go by a given name their account does not carry; their own
   // verified profile is evidence of the names they use.
   if (

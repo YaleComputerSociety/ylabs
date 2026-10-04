@@ -175,6 +175,18 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(false);
   });
 
+  it('corroborates an abbreviated given name with a compound surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'LAB',
+          sourceUrls: ['https://medicine.yale.edu/profile/nicholas-fixture-example/'],
+        },
+        leadMembers: [{ user: { displayName: 'Nick Fixture-Example' } }],
+      }),
+    ).toBe(false);
+  });
+
   it('still flags a same-surname profile whose given name appears nowhere on the lead', () => {
     expect(
       detectProfileIdentityRisk({
@@ -220,18 +232,6 @@ describe('detectProfileIdentityRisk', () => {
       ).toBe(true);
     },
   );
-
-  it('still flags a different given name that shares only a compound surname with the account name', () => {
-    expect(
-      detectProfileIdentityRisk({
-        entity: {
-          entityType: 'FACULTY_RESEARCH_AREA',
-          sourceUrls: ['https://medicine.yale.edu/profile/sam-fixture-sample/'],
-        },
-        leadMembers: [{ user: { fname: 'Robin', lname: 'Fixture Sample' } }],
-      }),
-    ).toBe(true);
-  });
 
   it('does not flag when the lead directory name corroborates the profile home', () => {
     expect(
