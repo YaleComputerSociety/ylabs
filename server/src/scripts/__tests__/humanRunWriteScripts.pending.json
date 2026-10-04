@@ -15,7 +15,6 @@
   "migrate:mongo-naming",
   "migrate:signal-consolidation",
   "observations:cross-source-conflict-review",
-  "observations:materialize-pi-attributed-users",
   "observations:materialize-profile-page-joined-users",
   "observations:normalize-fingerprints",
   "observations:purge-miskeyed-profile-descriptions",

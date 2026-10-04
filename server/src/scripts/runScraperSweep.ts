@@ -243,6 +243,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming {
     | 'organization-identity-website-retire'
     | 'shared-roster-website-retire'
     | 'refusal-lane-attribution'
+    | 'pi-attributed-researcher-mint'
     | 'inferred-pi-lead-reclaim'
     | 'visibility-gate'
     | 'search-rebuild'
@@ -1499,6 +1500,19 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'refusals:attribute-lanes',
     artifactName: 'development-refusal-lane-attribution.json',
     buildArgs: () => ['--apply', '--confirm-attribute-refusal-lanes'],
+    isEnabled: () => true,
+  },
+  {
+    // Ordered before `inferred-pi-lead-reclaim` so the reclaim can link the researchers this
+    // mints in the same sweep. A PI attribution can name a person who has no researcher yet,
+    // and the scrape mints one only while it re-observes that person's `user` evidence, so a
+    // stored attribution otherwise stays leadless: the last sweep's reclaim reported every
+    // lagging row unresolved while 103 of these keys would have minted. `--mint-only` leaves
+    // the researchers the same keys already reach to the scrape that observes them.
+    name: 'pi-attributed-researcher-mint',
+    command: 'observations:materialize-pi-attributed-users',
+    artifactName: 'development-pi-attributed-researcher-mint.json',
+    buildArgs: () => ['--apply', '--confirm-materialize-pi-attributed-users', '--mint-only'],
     isEnabled: () => true,
   },
   {
