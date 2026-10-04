@@ -521,6 +521,34 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.joinPageUrl).toBe('https://fixture.yale.edu/scholars/applications');
   });
 
+  it('observes the administering office a program page states, and only that (#4589)', () => {
+    const config = {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity' as const,
+      title: 'Fixture Scholars',
+    };
+    const page = (statement: string) => `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <p>${statement}</p>
+      </main>
+    `;
+    const officeObserved = (statement: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseStructuredOpportunityPage(page(statement), config),
+      ).find((obs) => obs.field === 'contactOffice')?.value;
+
+    expect(
+      officeObserved('The program is administered by the Department of Fixture Studies.'),
+    ).toBe('Department of Fixture Studies');
+    expect(officeObserved('The program is administered by Pat Fixture.')).toBeUndefined();
+    expect(officeObserved('Questions go to the program office.')).toBeUndefined();
+  });
+
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
     const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'history',

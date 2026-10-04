@@ -74,6 +74,8 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
+import { statedAdministeringOffice } from '../utils/administeringOffice';
+import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
   resolveFundYearOfStudy,
   type FundEligibilityProse,
@@ -106,6 +108,7 @@ export interface StudentGrantsFund {
   eligibilityStatesOnlyContactDirections?: boolean;
   restrictionsToUseOfAward?: string;
   awardAmount?: string;
+  contactOffice?: string;
   deadline?: Date;
   applicationOpenDate?: Date;
   applicationRoute: FundApplicationRoute;
@@ -362,9 +365,9 @@ function nextStatedApplicationWindow(
   return deadline === structuredDeadline ? structured : { deadline };
 }
 
-function awardAmountText($: cheerio.CheerioAPI): string | undefined {
+function awardAmountHeader($: cheerio.CheerioAPI): string | undefined {
   const text = sectionText($, 'lblAwardAmount')?.replace(/^award amount\s*:?\s*/i, '');
-  return text && /\$|\d/.test(text) ? text.slice(0, 120) : undefined;
+  return text && /\$|\d/.test(text) ? text : undefined;
 }
 
 /**
@@ -393,18 +396,22 @@ export function parseFundDetailPage(
     yearOfStudyFilter,
   );
   const eligibility = sectionTextWithoutContactDirections($, 'lblSpecialEligibilityRequirements');
+  const prose = {
+    description: sectionProse($, 'lblBriefDescription'),
+    fullSourceDescription: fundFullSourceDescription($),
+    applicationInformation: sectionProse($, 'lblApplicationInformation'),
+    eligibility: sanitizedObservedFellowshipProse(eligibility.text),
+    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward'),
+  };
 
   return {
     sourceKey: sourceKeyForFund(fund.url),
     title,
     url,
-    description: sectionProse($, 'lblBriefDescription'),
-    fullSourceDescription: fundFullSourceDescription($),
-    applicationInformation: sectionProse($, 'lblApplicationInformation'),
-    eligibility: sanitizedObservedFellowshipProse(eligibility.text),
+    ...prose,
     eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
-    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward'),
-    awardAmount: awardAmountText($),
+    awardAmount: fundAwardAmount(awardAmountHeader($), Object.values(prose)),
+    contactOffice: statedAdministeringOffice(Object.values(prose)),
     deadline,
     applicationOpenDate: opensAt,
     applicationRoute: resolveFundApplicationRoute(
@@ -437,6 +444,7 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     fullSourceDescription: fund.fullSourceDescription || '',
     restrictionsToUseOfAward: fund.restrictionsToUseOfAward || '',
     awardAmount: fund.awardAmount || '',
+    ...(fund.contactOffice ? { contactOffice: fund.contactOffice } : {}),
     deadline: fund.deadline?.toISOString() || '',
     applicationOpenDate: fund.applicationOpenDate?.toISOString() || '',
     ...(fund.applicationRoute.kind === 'fund-page' ? {} : { route: fund.applicationRoute }),
@@ -540,6 +548,7 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('eligibility', fund.eligibility),
     observation('restrictionsToUseOfAward', fund.restrictionsToUseOfAward),
     observation('awardAmount', fund.awardAmount),
+    observation('contactOffice', fund.contactOffice),
     observation('applicationLink', applicationLink),
     observation('links', fundLinks(fund, applicationLink)),
     observation('deadline', fund.deadline),

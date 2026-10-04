@@ -41,6 +41,7 @@ import {
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
 import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { statedAdministeringOffice } from '../utils/administeringOffice';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -75,6 +76,7 @@ export interface DepartmentUndergradResearchRecord {
   contactName?: string;
   contactEmail?: string;
   contactRole?: string;
+  contactOffice?: string;
   joinPageUrl?: string;
   pageTitle?: string;
 }
@@ -717,6 +719,7 @@ export function parseStructuredOpportunityPage(
       undergradAccessEvidence: true,
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
+      contactOffice: statedAdministeringOffice([text]),
       joinPageUrl,
       pageTitle: pageOwnTitle($),
     },
@@ -766,6 +769,9 @@ function programRecordToFellowshipObservations(
       value: record.contactEmail,
       confidenceOverride: 0.75,
     });
+  }
+  if (record.contactOffice) {
+    observations.push({ ...base, field: 'contactOffice', value: record.contactOffice });
   }
   if (record.pageTitle) {
     observations.push({ ...base, field: 'sourcePageTitle', value: record.pageTitle });
