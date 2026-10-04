@@ -3278,6 +3278,14 @@ describe('a person-scoped biography that states no research', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  it('is not held when the card names a method applied to a research question', () => {
+    const result = visibility(
+      biography,
+      'Applies lettering analysis and archival survey to study how public signs shape civic memory.',
+    );
+    expect(result.reasons).not.toContain('biography_without_research');
+  });
+
   it('is not held when the card states the research', () => {
     const result = visibility(biography, 'Studies graphic design and public art.');
     expect(result.reasons).not.toContain('biography_without_research');

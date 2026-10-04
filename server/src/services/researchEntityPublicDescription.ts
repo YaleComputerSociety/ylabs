@@ -471,6 +471,11 @@ function withThinButAccurateBodyUsable(
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }
 
+// "Applies cryo-EM and crystallography to study ...": a card that names a method
+// applied to a research question, which `describesResearchFocus` does not read.
+const METHOD_APPLIED_TO_RESEARCH_CARD =
+  /^(?:Applies|Uses|Combines|Employs)\b[^.]{0,160}\bto\s+(?:study|understand|investigate|examine|explore|model|measure)\b/;
+
 /**
  * A person-scoped row whose served body is a CV or a biography and, after narrowing,
  * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
@@ -495,5 +500,5 @@ export function servedBodyIsBiographyWithoutResearch(
   }
   if (researchStatementSentences(body, { activityAnchors: true }).length > 0) return false;
   const card = textValue(representation.servedCard);
-  return !describesResearchFocus(card);
+  return !(describesResearchFocus(card) || METHOD_APPLIED_TO_RESEARCH_CARD.test(card));
 }
