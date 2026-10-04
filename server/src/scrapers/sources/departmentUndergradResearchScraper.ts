@@ -314,6 +314,22 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       title: 'ISPS Dahl Scholars',
     },
     {
+      key: 'global-affairs-undergraduate-research-award',
+      url: 'https://jackson.yale.edu/academics-admissions/global-affairs-major/undergraduate-research',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+      parser: 'structured-opportunity',
+      title: 'Jackson School Undergraduate Research Award',
+    },
+    {
+      key: 'gsas-summer-undergraduate-research-fellowship',
+      url: 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program',
+      department: 'Graduate School of Arts and Sciences',
+      school: 'Graduate School of Arts and Sciences',
+      parser: 'structured-opportunity',
+      title: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
+    },
+    {
       key: 'sociology',
       url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
       department: 'Sociology',
@@ -553,6 +569,23 @@ function pageOwnTitle($: cheerio.CheerioAPI): string | undefined {
   return documentTitle || normalizeText($('h1').first().text()) || undefined;
 }
 
+function seededOpportunityHeading(
+  $: cheerio.CheerioAPI,
+  pageTitle: string | undefined,
+  seededTitle: string | undefined,
+): string | undefined {
+  if (!pageTitle || !seededTitle) return undefined;
+  const page = pageTitle.toLowerCase();
+  const seeded = seededTitle.toLowerCase();
+  return $('h2, h3, h4')
+    .toArray()
+    .map((heading) => normalizeText($(heading).text()))
+    .find((heading) => {
+      const lower = heading.toLowerCase();
+      return lower.length > page.length && lower.includes(page) && seeded.includes(lower);
+    });
+}
+
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
   return `department-undergrad-research-${slugify(config.department || config.key)}`.slice(0, 100);
 }
@@ -703,6 +736,7 @@ export function parseStructuredOpportunityPage(
   const contactEmail = firstEmail(text);
   const joinPageUrl = bestApplicationUrl($, config.url);
   const description = departmentGuidanceDescription(config, text);
+  const pageTitle = pageOwnTitle($);
 
   return [
     {
@@ -721,7 +755,7 @@ export function parseStructuredOpportunityPage(
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
       contactOffice: statedAdministeringOffice([text]),
       joinPageUrl,
-      pageTitle: pageOwnTitle($),
+      pageTitle: seededOpportunityHeading($, pageTitle, config.title) || pageTitle,
     },
   ];
 }
