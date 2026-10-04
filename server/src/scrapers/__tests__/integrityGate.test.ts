@@ -76,35 +76,38 @@ describe('runPostMaterializationIntegrityGate', () => {
     expect(summary.countLabels.activeArtifactsOnArchivedEntities).toBe('707');
   });
 
-  it('labels duplicate people as a lower bound when an identity scan reaches its cap', async () => {
+  it('counts duplicate people from the whole identity population, not the loaded sample', async () => {
     modelMocks.aggregate.mockReset();
     modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
       const scansIdentity = pipeline.some((stage) => stage?.$group?.personIds);
       if (!scansIdentity) return [];
-      const scanLimit = pipeline[pipeline.length - 1]?.$limit ?? 0;
-      return Array.from({ length: scanLimit }, (_, index) => ({
-        _id: `synthetic-${index}`,
-        personIds: [`person-${index}-a`, `person-${index}-b`],
-      }));
-    });
-
-    const summary = await runPostMaterializationIntegrityGate({});
-
-    expect(summary.counts.duplicatePeople).toBeGreaterThan(0);
-    expect(summary.countLabels.duplicatePeople).toBe(`at least ${summary.counts.duplicatePeople}`);
-  });
-
-  it('keeps an exact label for duplicate people below the identity scan cap', async () => {
-    modelMocks.aggregate.mockReset();
-    modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
-      const scansIdentity = pipeline.some((stage) => stage?.$group?.personIds);
-      if (!scansIdentity) return [];
+      if (pipeline[pipeline.length - 1]?.$count) return [{ total: 6000 }];
       return [{ _id: 'synthetic', personIds: ['person-a', 'person-b'] }];
     });
 
     const summary = await runPostMaterializationIntegrityGate({});
 
-    expect(summary.counts.duplicatePeople).toBe(3);
-    expect(summary.countLabels.duplicatePeople).toBe('3');
+    expect(summary.counts.duplicatePeople).toBe(18000);
+    expect(summary.countLabels.duplicatePeople).toBe('18000');
+  });
+
+  it('labels same-PI duplicates as a lower bound when the lead scan reaches its cap', async () => {
+    modelMocks.aggregate.mockReset();
+    modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
+      const scansLeads = pipeline.some((stage) => stage?.$group?._id?.personId === '$personId');
+      if (!scansLeads) return [];
+      const scanLimit = pipeline[pipeline.length - 1]?.$limit ?? 0;
+      return Array.from({ length: scanLimit }, (_, index) => ({
+        _id: { personId: `synthetic-lead-${index}` },
+        personDisplayName: 'Synthetic Lead',
+        entities: [],
+      }));
+    });
+
+    const summary = await runPostMaterializationIntegrityGate({});
+
+    expect(summary.countLabels.samePiSameNameResearchEntities).toBe(
+      `at least ${summary.counts.samePiSameNameResearchEntities}`,
+    );
   });
 });

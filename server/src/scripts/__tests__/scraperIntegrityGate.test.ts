@@ -280,7 +280,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
     });
 
     expect(summary.counts.currentMembersOnArchivedEntities).toBe(1391);
-    expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391');
+    expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391 (sample of 25)');
     expect(summary.samples.currentMembersOnArchivedEntities).toHaveLength(25);
     expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
     expect(summary.failureNames).toEqual(['currentMembersOnArchivedEntities']);
