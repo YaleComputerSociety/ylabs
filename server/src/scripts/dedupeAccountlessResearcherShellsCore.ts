@@ -328,8 +328,22 @@ function decideVerifiedProfileFold(
   };
 }
 
+const GENERATIONAL_SUFFIX = /^(?:jr|sr|ii|iii|iv)$/i;
+
+// Copies of one record differ only in roster noise after the name: a credential after a
+// comma, a generational suffix, a trailing period.
+function surnameReadPastRosterNoise(displayName: unknown): string {
+  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  const tokens = beforeCredentials
+    .split(/\s+/)
+    .map((token) => token.replace(/\.+$/, ''))
+    .filter(Boolean);
+  while (tokens.length > 1 && GENERATIONAL_SUFFIX.test(tokens[tokens.length - 1])) tokens.pop();
+  return splitName(tokens.join(' ')).last;
+}
+
 function displayNameSurname(displayName: unknown): string {
-  return splitName(typeof displayName === 'string' ? displayName : '').last;
+  return surnameReadPastRosterNoise(displayName);
 }
 
 // A healthy link can still point at the wrong person, and the one measured case was a
@@ -586,7 +600,9 @@ function clusterRefusal(
       .filter((verdict) => verdict !== 'states_no_rank'),
   );
   if (verdicts.size > 1) return 'TITLE_CONFLICT';
-  const surnames = members.map((member) => clusterSurname(member.displayName)).filter(Boolean);
+  const surnames = members
+    .map((member) => surnameReadPastRosterNoise(member.displayName))
+    .filter(Boolean);
   if (
     surnames.some((surname, index) =>
       surnames.slice(index + 1).some((other) => !surnamesCompatible(surname, other)),
@@ -595,20 +611,6 @@ function clusterRefusal(
     return 'SURNAME_CONFLICT';
   }
   return undefined;
-}
-
-const GENERATIONAL_SUFFIX = /^(?:jr|sr|ii|iii|iv)$/i;
-
-// Copies of one record differ only in roster noise after the name: a credential after a
-// comma, a generational suffix, a trailing period.
-function clusterSurname(displayName: unknown): string {
-  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
-  const tokens = beforeCredentials
-    .split(/\s+/)
-    .map((token) => token.replace(/\.+$/, ''))
-    .filter(Boolean);
-  while (tokens.length > 1 && GENERATIONAL_SUFFIX.test(tokens[tokens.length - 1])) tokens.pop();
-  return splitName(tokens.join(' ')).last;
 }
 
 const objectIdSeconds = (id: string): number =>
