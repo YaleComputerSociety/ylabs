@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LANE_PAGE_HEALTH_FIELD } from '../lanePageHealth';
 import * as contentHashGate from '../contentHashGate';
 import {
   DEFAULT_MODEL,
@@ -50,7 +51,11 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
         ...overrides,
       },
       emit: async (obs) => {
-        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+        emitted.push(
+          ...(Array.isArray(obs) ? obs : [obs]).filter(
+            (observation) => observation.field !== LANE_PAGE_HEALTH_FIELD,
+          ),
+        );
       },
       log: (msg) => logs.push(msg),
     },
