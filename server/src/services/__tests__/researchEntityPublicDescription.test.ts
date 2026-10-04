@@ -824,7 +824,7 @@ describe('serving the card in place of a researchless biography', () => {
 
 describe('a written body with no grounded card (#4788 follow-up)', () => {
   const body =
-    'Studies how coastal salt marshes store carbon in sediment, how tidal flooding and sea level rise reshape the roots and stems of cordgrass and other marsh grasses, how grazing crabs and snails thin marsh platforms, and how nitrogen from upstream farms changes sediment microbes, using field plots, sediment cores, warming experiments and decades of remote sensing along the Atlantic coast.';
+    'While studying how coastal salt marshes store carbon in sediment, the lab asks how tidal flooding and sea level rise reshape the roots and stems of cordgrass and other marsh grasses, how grazing crabs and snails thin marsh platforms, and how nitrogen from upstream farms changes sediment microbes, using field plots, sediment cores, warming experiments and decades of remote sensing along the Atlantic coast.';
   const entityWithBodyFrom = (sourceName: string) => ({
     name: 'Synthetic Marsh Lab',
     kind: 'lab',
