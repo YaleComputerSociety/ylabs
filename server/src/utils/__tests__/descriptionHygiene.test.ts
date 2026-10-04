@@ -2053,6 +2053,29 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
     expect(isCitationAuthorListDumpText(PROSE_THEN_PUBLICATIONS)).toBe(false);
   });
 
+  it('detects a bibliography entry whose authors are full given names (#4623)', () => {
+    const FULL_NAME_ENTRY =
+      'Avery Quill, Blake Rowan, Casey Marrow, Devon Pellis. Mean-field inference for sparse linear models: Geometric and statistical properties.';
+    const OXFORD_AND_ENTRY =
+      'Avery Quill, Blake Rowan, Casey J. Marrow, and Devon Pellis-Hart. Identifying cellular niches in spatial transcriptomic data.';
+    expect(isCitationAuthorListDumpText(FULL_NAME_ENTRY)).toBe(true);
+    expect(isCitationAuthorListDumpText(OXFORD_AND_ENTRY)).toBe(true);
+    expect(sanitizeResearchEntityDescription(FULL_NAME_ENTRY)).toBe('');
+  });
+
+  it('keeps a staff title list and prose that names collaborators (#4623)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Assistant Director, Financial Aid. Deputy Coordinator, Student Affairs. Avery joined the school in 2024.',
+      ),
+    ).toBe(false);
+    expect(
+      isCitationAuthorListDumpText(
+        'Avery Quill, Blake Rowan, and Casey Marrow lead the group, which studies sparse linear models.',
+      ),
+    ).toBe(false);
+  });
+
   it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(

@@ -119,6 +119,18 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     );
   });
 
+  it('refuses a full-name author citation as a bibliography entry and so attests refused (#4623)', () => {
+    const outcome = refusalFor(
+      'Avery Quill, Blake Rowan, Casey Marrow, Devon Pellis. Mean-field inference for sparse linear models: Geometric and statistical properties.',
+    );
+
+    expect(outcome.observations).toEqual([]);
+    expect(outcome.refusal).toBe('bibliography_entry');
+    expect(descriptionSlotAttestation({ ...wholeRead, guardRefusal: outcome.refusal })).toBe(
+      'refused',
+    );
+  });
+
   it('keeps empty only for an extraction that produced no usable prose at all', () => {
     const outcome = refusalFor('Too short to judge.');
 
