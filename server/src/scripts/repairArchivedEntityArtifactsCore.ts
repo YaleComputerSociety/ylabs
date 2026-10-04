@@ -5,6 +5,10 @@ import {
   type ResearchEntityTombstoneNode,
   type ResearchEntityTombstoneTerminalCause,
 } from '../services/researchEntityCanonicalTombstone';
+import {
+  planRoleEdgeSettlements,
+  type RoleEdgeSettlement,
+} from '../services/archivedResearchEntityRoleEdges';
 
 export const archivedEntityArtifactTypes = ['RoleAssignment', 'AccessSignal'] as const;
 export type ArchivedEntityArtifactType = (typeof archivedEntityArtifactTypes)[number];
@@ -189,6 +193,7 @@ export function buildArchivedEntityArtifactRepairPlan({
     archiveWithoutCanonical: [],
     skipped: [],
   };
+  const settleableRoleEdges: ArchivedEntityArtifact[] = [];
 
   for (const artifact of artifacts) {
     const disposition = dispositions.get(artifact.researchEntityId);
@@ -210,6 +215,14 @@ export function buildArchivedEntityArtifactRepairPlan({
       archivedReason: disposition.archivedReason,
     };
 
+    if (disposition.repairClass === 'merge-dead-end') {
+      plan.skipped.push({ ...base, id: artifact.id, reason: 'merge-chain-dead-end' });
+      continue;
+    }
+    if (artifact.artifactType === 'RoleAssignment') {
+      settleableRoleEdges.push(artifact);
+      continue;
+    }
     if (
       disposition.repairClass === 'no-canonical' ||
       disposition.repairClass === 'merge-no-live-home'
@@ -217,7 +230,7 @@ export function buildArchivedEntityArtifactRepairPlan({
       plan.archiveWithoutCanonical.push({ ...base, id: artifact.id });
       continue;
     }
-    if (disposition.repairClass === 'merge-dead-end' || !disposition.survivorId) {
+    if (!disposition.survivorId) {
       plan.skipped.push({ ...base, id: artifact.id, reason: 'merge-chain-dead-end' });
       continue;
     }
@@ -240,7 +253,90 @@ export function buildArchivedEntityArtifactRepairPlan({
     if (survivorKey) survivorArtifactByIdentity.set(survivorKey, artifact.id);
   }
 
+  addRoleEdgeSettlementsToPlan(plan, settleableRoleEdges, dispositions, canonicalArtifacts);
   return plan;
+}
+
+// Role edges are planned by the same function an archive runs inline, so the repair and
+// the engine cannot disagree about what a stranded edge becomes (#4752).
+function addRoleEdgeSettlementsToPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+  edges: ArchivedEntityArtifact[],
+  dispositions: ReadonlyMap<string, ArchivedEntityDisposition>,
+  canonicalArtifacts: ArchivedEntityArtifact[],
+): void {
+  const settlements = planRoleEdgeSettlements({
+    edges: edges.map((edge) => ({
+      id: edge.id,
+      archivedEntityId: edge.researchEntityId,
+      personId: edge.personId || '',
+      role: edge.role || '',
+    })),
+    survivorIdFor: (archivedEntityId) => {
+      const disposition = dispositions.get(archivedEntityId);
+      return disposition?.repairClass === 'merge-survivor' ? disposition.survivorId : undefined;
+    },
+    survivorHoldingEdges: canonicalArtifacts
+      .filter((artifact) => artifact.artifactType === 'RoleAssignment')
+      .map((artifact) => ({
+        id: artifact.id,
+        survivorId: artifact.researchEntityId,
+        personId: artifact.personId || '',
+        role: artifact.role || '',
+      })),
+  });
+  for (const settlement of settlements) {
+    const disposition = dispositions.get(settlement.archivedEntityId);
+    if (!disposition) continue;
+    const base: PlanItemBase = {
+      artifactType: 'RoleAssignment',
+      repairClass: disposition.repairClass,
+      archivedEntityId: disposition.archivedEntityId,
+      archivedReason: disposition.archivedReason,
+    };
+    if (settlement.action === 'repoint') {
+      plan.relink.push({
+        ...base,
+        id: settlement.edgeId,
+        canonicalResearchEntityId: settlement.survivorId,
+      });
+    } else if (settlement.action === 'archive-redundant') {
+      plan.mergeAndArchive.push({
+        ...base,
+        duplicateId: settlement.edgeId,
+        canonicalId: settlement.survivorEdgeId,
+        canonicalResearchEntityId: settlement.survivorId,
+      });
+    } else {
+      plan.archiveWithoutCanonical.push({ ...base, id: settlement.edgeId });
+    }
+  }
+}
+
+export function roleEdgeSettlementsFromRepairPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+): RoleEdgeSettlement[] {
+  const isRoleEdge = (item: PlanItemBase) => item.artifactType === 'RoleAssignment';
+  return [
+    ...plan.relink.filter(isRoleEdge).map((item): RoleEdgeSettlement => ({
+      action: 'repoint',
+      edgeId: item.id,
+      archivedEntityId: item.archivedEntityId,
+      survivorId: item.canonicalResearchEntityId,
+    })),
+    ...plan.mergeAndArchive.filter(isRoleEdge).map((item): RoleEdgeSettlement => ({
+      action: 'archive-redundant',
+      edgeId: item.duplicateId,
+      archivedEntityId: item.archivedEntityId,
+      survivorId: item.canonicalResearchEntityId,
+      survivorEdgeId: item.canonicalId,
+    })),
+    ...plan.archiveWithoutCanonical.filter(isRoleEdge).map((item): RoleEdgeSettlement => ({
+      action: 'end',
+      edgeId: item.id,
+      archivedEntityId: item.archivedEntityId,
+    })),
+  ];
 }
 
 export function summarizeArchivedEntityArtifactRepairPlanByClass(
