@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ACTIVE_SOURCE_NAMES, LLM_AUTHORED_SOURCE_NAMES } from '../../scrapers/seedSources';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
+import { sanitizeResearchEntityPublicDescriptionFields } from '../researchEntityDescriptionText';
 import {
   isLlmAuthoredSourceName,
   withoutUnbackedLabSelfDescription,
@@ -123,9 +124,22 @@ describe('withoutUnbackedLabSelfDescription', () => {
     ).toBe(text);
   });
 
-  it('leaves the row alone when a cited URL names a laboratory', () => {
-    const text = 'The Okonkwo-Vale Lab studies estuaries.';
-    expect(recast(text, { sourceUrls: ['https://okonkwovalelab.example.edu/'] })).toBe(text);
+  it('still recasts when a cited URL alone names a laboratory', () => {
+    expect(
+      recast('The Okonkwo-Vale Lab studies estuaries.', {
+        sourceUrls: ['https://example.edu/labs/okonkwovale/'],
+      }),
+    ).toBe('Wren Okonkwo-Vale studies estuaries.');
+  });
+
+  it('leaves a mention alone when the lab name continues past the word', () => {
+    for (const text of [
+      'The Okonkwo-Vale Laboratory for Coastal Geology investigates estuaries.',
+      'The Okonkwo-Vale Lab members study estuaries.',
+      'Students join the Okonkwo-Vale Lab group in summer.',
+    ]) {
+      expect(recast(text)).toBe(text);
+    }
   });
 
   it('leaves a row typed LAB alone', () => {
@@ -154,6 +168,19 @@ describe('isLlmAuthoredSourceName', () => {
 });
 
 describe('served description of a faculty research row', () => {
+  it('recasts the lab claim left heading the body after a biography opener is stripped', () => {
+    const entity: Record<string, unknown> = facultyResearch({
+      fullDescription:
+        'Wren Okonkwo-Vale is an associate professor of Geology. The Okonkwo-Vale Lab studies tidal sediment transport in estuaries, combining field coring with flume experiments.',
+    });
+    expect(sanitizeResearchEntityPublicDescriptionFields({ ...entity }).fullDescription).toBe(
+      'Wren Okonkwo-Vale studies tidal sediment transport in estuaries, combining field coring with flume experiments.',
+    );
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.fullDescription).toMatch(/^Wren Okonkwo-Vale studies tidal sediment/);
+    expect(representation.cardDescription).not.toBe('');
+  });
+
   it('no longer claims an unbacked lab on the public representation', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: facultyResearch({

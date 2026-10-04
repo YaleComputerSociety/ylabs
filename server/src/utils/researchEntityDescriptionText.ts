@@ -2330,7 +2330,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         // body in the source bio's voice on rows whose stored text never opened
         // with a pronoun at all, which is where most of #1871's rows came from.
         next[field] = revoicedThirdPersonBody(
-          revoicedFirstPersonBody(biographyRepair.value, next, field),
+          withoutUnbackedLabSelfDescription(
+            revoicedFirstPersonBody(biographyRepair.value, next, field),
+            next,
+            field,
+          ),
           next,
           field,
         );

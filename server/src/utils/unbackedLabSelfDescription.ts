@@ -23,6 +23,9 @@ const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 
 const LAB_WORD = 'Lab(?:oratory)?';
 
+const LAB_NAME_CONTINUATION =
+  /^\s+(?:(?:for|of)\s+[A-Z]|[A-Z]|(?:members?|group|groups|team|teams|website|site|page|staff|alumni)\b)/;
+
 const LEADER_APPOSITIVE = /,\s*(?:led|directed|headed|run)\s+by\s+[^,]+,/;
 
 function textValue(value: unknown): string {
@@ -43,15 +46,6 @@ function facultyResearchPersonName(entity: Record<string, any>): string {
   const person = name.replace(/\s+Faculty Research$/i, '').trim();
   if (person === name) return '';
   return person.split(/\s+/).length >= 2 ? person : '';
-}
-
-function urlNamesALaboratory(value: unknown): boolean {
-  try {
-    const url = new URL(textValue(value));
-    return /lab(?:oratory|s)?\b/i.test(`${url.hostname}${url.pathname}`);
-  } catch {
-    return false;
-  }
 }
 
 function personTokens(person: string): string[] {
@@ -87,12 +81,6 @@ function runNamesOnlyThisPerson(run: string, person: string): boolean {
 }
 
 function nonLlmEvidenceNamesTheLab(entity: Record<string, any>, person: string): boolean {
-  const urls = [
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ];
-  if (urls.some(urlNamesALaboratory)) return true;
   const labMention = namedLabPattern(person, '');
   return DESCRIPTION_FIELDS.some(
     (field) =>
@@ -145,6 +133,9 @@ export function withoutUnbackedLabSelfDescription(
     ) => {
       if (!runNamesOnlyThisPerson(givenRun, person)) return match;
       if (/["“‘]$/.test(full.slice(0, offset))) return match;
+      if (!possessiveSuffix && LAB_NAME_CONTINUATION.test(full.slice(offset + match.length))) {
+        return match;
+      }
       recast = true;
       if (possessiveSuffix) return possessive(person);
       return isAtSentenceStart(offset, full) ? person : `${possessive(person)} research`;
