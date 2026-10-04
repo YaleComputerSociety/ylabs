@@ -471,9 +471,6 @@ function withThinButAccurateBodyUsable(
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }
 
-const RESEARCH_VERB_CARD_OPENER =
-  /^(?:Studies|Examines|Investigates|Explores|Researches|Analy[sz]es|Applies|Uses|Develops|Models|Measures|Evaluates)\b/;
-
 /**
  * A person-scoped row whose served body is a CV or a biography and, after narrowing,
  * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
@@ -498,5 +495,5 @@ export function servedBodyIsBiographyWithoutResearch(
   }
   if (researchStatementSentences(body, { activityAnchors: true }).length > 0) return false;
   const card = textValue(representation.servedCard);
-  return !(describesResearchFocus(card) || RESEARCH_VERB_CARD_OPENER.test(card));
+  return !describesResearchFocus(card);
 }

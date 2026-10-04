@@ -835,17 +835,17 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
 
+// A person-scoped page whose body is a CV or biography that states no research
+// (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
+// real and the row returns once a source states the research.
+export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
+
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
 // correctness category each belongs to. The structural suppression shells
 // (generic directory / biography / non-owner-grant) are removed one tier earlier
 // at `suppressed`; they appear here so the repair histogram classifies them as
 // blockers wherever they surface.
-// A person-scoped page whose body is a CV or biography that states no research
-// (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
-// real and the row returns once a source states the research.
-export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
-
 export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'missing_description',
   'missing_card_description',
