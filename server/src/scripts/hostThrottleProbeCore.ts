@@ -9,59 +9,16 @@ export const HOST_PROBE_RESULT_MARKER = 'HOST_PROBE_RESULT';
 
 export const ALWAYS_PROBED_HOSTS = ['medicine.yale.edu', 'ysph.yale.edu'] as const;
 
-export const DEFAULT_PROBE_URLS_PER_HOST = 40;
+export const PROBE_URLS_PER_HOST = 40;
 
-export const DEFAULT_PROBE_EXTRA_HOSTS = 4;
+export const PROBE_EXTRA_HOSTS = 4;
 
 export const PROBE_REFUSAL_STATUSES: ReadonlySet<number> = new Set([403, 429]);
 
-export interface HostProbeArgs {
-  perHost: number;
-  extraHosts: number;
-  hosts: string[];
-}
-
-export function parseHostProbeArgs(argv: string[]): HostProbeArgs {
-  const args: HostProbeArgs = {
-    perHost: DEFAULT_PROBE_URLS_PER_HOST,
-    extraHosts: DEFAULT_PROBE_EXTRA_HOSTS,
-    hosts: [],
-  };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '--' || arg === '--probe-hosts') continue;
-    const [flag, inlineValue] = arg.split('=', 2);
-    const value = inlineValue ?? argv[(index += 1)];
-    if (flag === '--per-host') {
-      args.perHost = positiveInteger(flag, value);
-    } else if (flag === '--extra-hosts') {
-      args.extraHosts = nonNegativeInteger(flag, value);
-    } else if (flag === '--hosts') {
-      args.hosts = String(value ?? '')
-        .split(',')
-        .map((host) => host.trim().toLowerCase())
-        .filter(Boolean);
-    } else {
-      throw new Error(`Unknown host probe argument: ${arg}`);
-    }
-  }
-  return args;
-}
-
-function positiveInteger(flag: string, value: string | undefined): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`${flag} needs a positive integer`);
-  }
-  return parsed;
-}
-
-function nonNegativeInteger(flag: string, value: string | undefined): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${flag} needs a non-negative integer`);
-  }
-  return parsed;
+export function hostProbeArgumentProblems(argv: string[]): string[] {
+  return argv
+    .filter((arg) => arg !== '--')
+    .map((arg) => `Unknown host probe argument: ${arg}; the probe takes no arguments`);
 }
 
 export function hostProbeEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
@@ -130,16 +87,12 @@ export class ProbeUrlSampler {
   }
 }
 
-export function chooseProbeHosts(
-  counts: ReadonlyMap<string, number>,
-  args: Pick<HostProbeArgs, 'hosts' | 'extraHosts'>,
-): string[] {
-  if (args.hosts.length > 0) return [...new Set(args.hosts)];
+export function chooseProbeHosts(counts: ReadonlyMap<string, number>): string[] {
   const chosen: string[] = [...ALWAYS_PROBED_HOSTS];
   const others = [...counts.entries()]
     .filter(([host]) => !chosen.includes(host))
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .slice(0, args.extraHosts)
+    .slice(0, PROBE_EXTRA_HOSTS)
     .map(([host]) => host);
   return [...chosen, ...others];
 }
@@ -157,9 +110,9 @@ export function classifyProbeRequest(
   statuses: Array<number | null>,
   succeeded: boolean,
 ): HostProbeOutcome {
-  const refusedFirst = statuses.length > 0 && isRefusal(statuses[0]);
-  if (succeeded) return refusedFirst || statuses.length > 1 ? 'recovered' : 'ok';
-  return statuses.some(isRefusal) ? 'exhausted' : 'failed';
+  if (succeeded) return statuses.some(isRefusal) ? 'recovered' : 'ok';
+  const lastAnswered = statuses.filter((status) => status !== null).at(-1);
+  return isRefusal(lastAnswered) ? 'exhausted' : 'failed';
 }
 
 function isRefusal(status: number | null | undefined): boolean {

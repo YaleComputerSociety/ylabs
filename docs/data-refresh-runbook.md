@@ -174,9 +174,11 @@ It refuses unless `MONGODBURL` names `Development` and no Beta or Production dat
 
 It always probes `medicine.yale.edu` and `ysph.yale.edu`, plus the four other Yale hosts that Development links to most, taking the first 40 distinct pages per host in `_id` order so two runs probe the same pages.
 Every page goes through `fetchPageWithPolicy`, with the shared per-host limiter and retry budget, two requests in flight per host, because a hand-rolled fetch measures the client rather than the host.
-The table reports, per host, the requests made, how many were refused with 403 or 429 on the first attempt, how many the retry budget recovered, how many were still refused when it ran out, other failures such as a 404, median and p95 latency, and wall time.
+The table reports, per host, the requests made, how many were refused with 403 or 429 on the first attempt, how many refused requests the retry budget recovered, how many were still refused when it ran out, other failures such as a 404, median and p95 latency, and wall time.
+A request that succeeds after a transport error or a 5xx counts as ok, and one that is refused and then ends on a 404 or a 5xx counts as another failure.
+Latency is end-to-end per page, so it includes waiting for the shared per-host limiter and any retry backoff, which is also how the baseline below was measured.
 The last line starts `HOST_PROBE_RESULT` and carries the same numbers as JSON; the output names hosts and counts only, never a page URL.
-`--per-host <n>`, `--extra-hosts <n>`, and `--hosts a.yale.edu,b.yale.edu` change the sample.
+The probe takes no arguments, so every run measures the same sample as the baseline.
 
 To run it on the Render cron job:
 

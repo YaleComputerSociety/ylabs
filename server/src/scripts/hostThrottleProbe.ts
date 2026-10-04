@@ -14,10 +14,10 @@ import {
   classifyProbeRequest,
   formatHostProbeResultLine,
   formatHostProbeTable,
+  hostProbeArgumentProblems,
   hostProbeEnvironmentProblems,
-  parseHostProbeArgs,
   summarizeHostProbe,
-  type HostProbeArgs,
+  PROBE_URLS_PER_HOST,
   type HostProbeRequestRecord,
   type HostProbeSummary,
 } from './hostThrottleProbeCore';
@@ -50,8 +50,8 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-async function sampleDevelopmentUrls(perHost: number): Promise<ProbeUrlSampler> {
-  const sampler = new ProbeUrlSampler(perHost);
+async function sampleDevelopmentUrls(): Promise<ProbeUrlSampler> {
+  const sampler = new ProbeUrlSampler(PROBE_URLS_PER_HOST);
   const db = mongoose.connection.db;
   if (!db) throw new Error('Development connection has no database handle');
   for (const source of URL_SOURCES) {
@@ -120,14 +120,10 @@ async function probeHost(
 }
 
 export async function runHostThrottleProbe(argv: string[]): Promise<number> {
-  let args: HostProbeArgs;
-  try {
-    args = parseHostProbeArgs(argv);
-  } catch (error) {
-    console.error(`[host-probe] ${sanitizeLogValue(error)}`);
-    return 1;
-  }
-  const problems = hostProbeEnvironmentProblems(process.env);
+  const problems = [
+    ...hostProbeArgumentProblems(argv),
+    ...hostProbeEnvironmentProblems(process.env),
+  ];
   if (problems.length > 0) {
     for (const problem of problems) console.error(`[host-probe] refusing: ${problem}`);
     return 1;
@@ -137,14 +133,14 @@ export async function runHostThrottleProbe(argv: string[]): Promise<number> {
   await connectScriptMongo(process.env.MONGODBURL!);
   let sampler: ProbeUrlSampler;
   try {
-    sampler = await sampleDevelopmentUrls(args.perHost);
+    sampler = await sampleDevelopmentUrls();
   } finally {
     await mongoose.disconnect();
   }
 
-  const hosts = chooseProbeHosts(sampler.hostCounts(), args);
+  const hosts = chooseProbeHosts(sampler.hostCounts());
   console.log(
-    `[host-probe] probing ${hosts.length} hosts, up to ${args.perHost} pages each, read-only`,
+    `[host-probe] probing ${hosts.length} hosts, up to ${PROBE_URLS_PER_HOST} pages each, read-only`,
   );
   const summaries = await Promise.all(
     hosts.map((host) =>

@@ -6,35 +6,22 @@ import {
   classifyProbeRequest,
   formatHostProbeResultLine,
   formatHostProbeTable,
+  hostProbeArgumentProblems,
   hostProbeEnvironmentProblems,
-  parseHostProbeArgs,
   percentile,
   summarizeHostProbe,
 } from '../hostThrottleProbeCore';
 
 const DEV_URL = 'mongodb+srv://synthetic:secret@cluster.example.net/Development?retryWrites=true';
 
-describe('parseHostProbeArgs', () => {
-  it('defaults to forty pages per host and four extra hosts', () => {
-    expect(parseHostProbeArgs([])).toEqual({ perHost: 40, extraHosts: 4, hosts: [] });
-  });
-
-  it('accepts the entrypoint flag and both flag forms', () => {
-    expect(
-      parseHostProbeArgs([
-        '--probe-hosts',
-        '--per-host=5',
-        '--extra-hosts',
-        '0',
-        '--hosts',
-        'A.yale.edu, b.yale.edu',
-      ]),
-    ).toEqual({ perHost: 5, extraHosts: 0, hosts: ['a.yale.edu', 'b.yale.edu'] });
-  });
-
-  it('refuses unknown flags and bad numbers', () => {
-    expect(() => parseHostProbeArgs(['--apply'])).toThrow(/Unknown/);
-    expect(() => parseHostProbeArgs(['--per-host', '0'])).toThrow(/positive/);
+describe('hostProbeArgumentProblems', () => {
+  it('takes no arguments beyond a separator, so every run probes the same sample', () => {
+    expect(hostProbeArgumentProblems([])).toEqual([]);
+    expect(hostProbeArgumentProblems(['--'])).toEqual([]);
+    expect(hostProbeArgumentProblems(['--probe-hosts'])).toEqual([
+      expect.stringMatching(/Unknown host probe argument: --probe-hosts/),
+    ]);
+    expect(hostProbeArgumentProblems(['--hosts', 'a.yale.edu'])).toHaveLength(2);
   });
 });
 
@@ -85,20 +72,21 @@ describe('ProbeUrlSampler and chooseProbeHosts', () => {
     expect(sampler.hostCounts().has('example.org')).toBe(false);
   });
 
-  it('always probes the throttled hosts first, then the most-linked others', () => {
+  it('always probes the throttled hosts first, then the four most-linked others', () => {
     const counts = new Map([
       ['chem.yale.edu', 5],
       ['physics.yale.edu', 9],
       ['medicine.yale.edu', 100],
       ['eeb.yale.edu', 9],
+      ['math.yale.edu', 7],
+      ['art.yale.edu', 1],
     ]);
-    expect(chooseProbeHosts(counts, { hosts: [], extraHosts: 2 })).toEqual([
+    expect(chooseProbeHosts(counts)).toEqual([
       'medicine.yale.edu',
       'ysph.yale.edu',
       'eeb.yale.edu',
       'physics.yale.edu',
-    ]);
-    expect(chooseProbeHosts(counts, { hosts: ['chem.yale.edu'], extraHosts: 2 })).toEqual([
+      'math.yale.edu',
       'chem.yale.edu',
     ]);
   });
@@ -108,10 +96,18 @@ describe('classifyProbeRequest', () => {
   it('separates first-try success, recovery, exhaustion and other failure', () => {
     expect(classifyProbeRequest([200], true)).toBe('ok');
     expect(classifyProbeRequest([403, 200], true)).toBe('recovered');
-    expect(classifyProbeRequest([null, 200], true)).toBe('recovered');
+    expect(classifyProbeRequest([503, 429, 200], true)).toBe('recovered');
     expect(classifyProbeRequest([403, 403, 403, 403], false)).toBe('exhausted');
+    expect(classifyProbeRequest([429, null, null], false)).toBe('exhausted');
     expect(classifyProbeRequest([404], false)).toBe('failed');
     expect(classifyProbeRequest([], false)).toBe('failed');
+  });
+
+  it('counts recovery and exhaustion only for a request that was refused', () => {
+    expect(classifyProbeRequest([null, 200], true)).toBe('ok');
+    expect(classifyProbeRequest([503, 200], true)).toBe('ok');
+    expect(classifyProbeRequest([403, 404], false)).toBe('failed');
+    expect(classifyProbeRequest([429, 503, 503], false)).toBe('failed');
   });
 });
 
