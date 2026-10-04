@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: The Site Stays Out Of Search Engines, And Link-Preview Fetchers May Read It (#4241)
+
+Search engines stay out of y/labs for now, so `client/public/robots.txt` keeps `User-agent: *` / `Disallow: /` and `client/index.html` keeps `<meta name="robots" content="noindex, nofollow">`.
+Indexing waits for two things a public index would need first: a way for a researcher to be removed from the directory (#4160), and a per-page title, description and canonical URL in the served HTML (#4240).
+Students mostly reach research through links posted in group chats and on social sites, so the link-preview fetchers are allowed: `facebookexternalhit`, `Twitterbot`, `LinkedInBot`, `Discordbot` and `Slackbot-LinkExpanding` each have their own `Allow: /` group.
+Under RFC 9309 a crawler obeys the most specific group that names it and ignores `*`, so the named groups open nothing to a search engine.
+A preview fetcher builds a card rather than an index, and the `noindex` tag keeps any page it reads out of one regardless.
+Slack documents that `Slackbot-LinkExpanding` does not honour robots.txt at all, so its group records intent rather than changing its behaviour.
+`client/src/__tests__/crawlerPolicy.test.ts` pins both halves, so an edit cannot silently open the site to search engines or close it to previews.
+A future change that indexes part of the site must lift the `Disallow` on any path it keeps `noindex`, because a crawler refused by robots.txt never fetches the page and so never reads its `noindex` tag, and a refused URL can still be listed from outside links.
+
 ## 2026-10-04: A Lead Who Moved Institution Is Operator-Reported, Because ORCID Asserts No Relocation (#4614)
 
 The departure class students meet most is a lead who moved to another institution, and every Yale-derived signal reports that row as present, so the departure lane's ceiling for it is 0.
