@@ -151,13 +151,21 @@ test('TypeScript source files do not contain nested import declarations', () => 
   }
 });
 
-test('Yarn git dependency allowlist is narrow', () => {
-  assert.match(
-    yarnrc,
-    /approvedGitRepositories:\s*\n\s*- "https:\/\/github\.com\/coursetable\/passport-cas"/,
-  );
+const isGitResolution = (resolution) => {
+  const source = resolution.slice(resolution.indexOf('@', 1) + 1);
+  return /^(?:git\+|git:|git@|github:)/.test(source) || /#commit=|\.git#/.test(source);
+};
+
+test('Yarn approves no git dependency source', () => {
+  assert.deepEqual(yaml.load(yarnrc).approvedGitRepositories, []);
+  for (const lockfile of ['../yarn.lock', '../server/yarn.lock', '../client/yarn.lock']) {
+    const entries = yaml.load(fs.readFileSync(new URL(lockfile, import.meta.url), 'utf8'));
+    const gitResolutions = Object.values(entries)
+      .map((entry) => entry?.resolution)
+      .filter((resolution) => typeof resolution === 'string' && isGitResolution(resolution));
+    assert.deepEqual(gitResolutions, [], `${lockfile} resolves a dependency from a git source`);
+  }
   assert.match(yarnrc, /npmMinimalAgeGate: 1d/);
-  assert.doesNotMatch(yarnrc, /approvedGitRepositories:\s*\n\s*- "\*\*"/);
   assert.doesNotMatch(yarnrc, /\n\s*- "\*"/);
   assert.doesNotMatch(yarnrc, /npmMinimalAgeGate: 0/);
 });

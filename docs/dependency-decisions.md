@@ -4,6 +4,15 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-04: The `passport-cas` git pin is replaced by an in-repo CAS 1.0 strategy (#4036)
+
+The server installed `passport-cas` from a 2020 git commit, held up by `server` `resolutions` that forced `uuid`, `xml2js`, and `underscore` across majors for it alone, and by the only entry in `approvedGitRepositories`.
+The published `@coursetable/passport-cas` 0.1.4 was rejected rather than adopted, because it interpolates `ticket` and `service` into the validate URL unencoded, which breaks a login whose return path carries a query and lets a crafted ticket inject parameters.
+`CasStrategy` in `server/src/utils/casStrategy.ts` replaces it: CAS 1.0 only, built on `passport.Strategy`, global `fetch`, and `URLSearchParams`, so it adds no dependency.
+The `uuid`, `xml2js`, and `underscore` resolutions are removed, because `yarn why` showed each reached only through `passport-cas`; `verror` and the `@types` packages it pulled leave the lockfile with it, and `axios` stays as a direct dependency.
+`.yarnrc.yml` now reads `approvedGitRepositories: []`, and `scripts/security-preflight.test.mjs` fails if any lockfile resolves a dependency from a git source.
+`skills/auth-security/SKILL.md` records the strategy's behaviour.
+
 ## 2026-10-03: Prettier moves to 3.9 as a formatting-only change (#4038)
 
 `prettier` moves from its exact `3.8.3` pin to an exact `3.9.9` pin, and `yarn format` is rerun over the globs `format:check` enforces.

@@ -18,6 +18,14 @@ export const REVIEWED_OUTBOUND_FETCHES = new Map([
       reason: 'connects to the IP address the proxy already vetted with ssrfSafeLookup',
     },
   ],
+  [
+    'server/src/utils/casStrategy.ts',
+    {
+      calls: 1,
+      reason:
+        'asks the operator-configured SSOBASEURL /validate endpoint, which deployed runtimes require to be public https; only the encoded query string varies and redirects are refused',
+    },
+  ],
 ]);
 
 const SOURCE_FILE = /\.(?:ts|mts|cts|js|mjs|cjs)$/;
