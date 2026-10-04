@@ -167,6 +167,7 @@ import {
   withoutFellowshipFieldsAssertedAbsent,
   type FellowshipAbsenceClear,
 } from './fellowshipFieldAbsence';
+import { planFellowshipUnbackedFieldClears } from './fellowshipUnbackedFieldClear';
 import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
@@ -632,6 +633,8 @@ interface MaterializeResult {
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
   fellowshipAbsenceClears?: FellowshipAbsenceClear[];
+  /** Fellowship fields this pass cleared because no live observation states them (#4586). */
+  fellowshipUnbackedClears?: string[];
   accessSignalChanges?: AccessSignalChangePlan;
 }
 
@@ -6101,6 +6104,7 @@ export interface ProjectFromLogResult {
   relinkedProvenance: Record<string, Record<string, unknown>>;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   fellowshipAbsenceClears?: FellowshipAbsenceClear[];
+  fellowshipUnbackedClears?: string[];
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -6826,6 +6830,7 @@ export async function projectFromLog(
   let fieldsWritten = 0;
   let unbackedResearchAreas: UnbackedResearchAreaOutcome | undefined;
   let fellowshipAbsenceClears: FellowshipAbsenceClear[] = [];
+  let fellowshipUnbackedClears: string[] = [];
   const derivedKind = isResearchEntityObservationType(entityType)
     ? derivedResearchGroupKind(
         manuallyLockedFields.includes('entityType') ? undefined : resolved.entityType?.value,
@@ -7713,6 +7718,18 @@ export async function projectFromLog(
       delete confidenceByField[clear.field];
       fieldsWritten++;
     }
+    fellowshipUnbackedClears = planFellowshipUnbackedFieldClears({
+      stored: entityDoc as Record<string, unknown> | null,
+      staged: set,
+      unset,
+      liveObservedFields: new Set(resolverObs.map((o) => o.field)),
+      readRowUnderOwnIdentity: input.readRowUnderOwnIdentity === true,
+    });
+    for (const field of fellowshipUnbackedClears) {
+      unset[field] = '';
+      delete confidenceByField[field];
+      fieldsWritten++;
+    }
     const classification = planFellowshipClassification({
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
@@ -7793,6 +7810,7 @@ export async function projectFromLog(
     retiredProvenanceFields,
     relinkedProvenance,
     ...(fellowshipAbsenceClears.length > 0 ? { fellowshipAbsenceClears } : {}),
+    ...(fellowshipUnbackedClears.length > 0 ? { fellowshipUnbackedClears } : {}),
     ...(unbackedResearchAreas &&
     !input.provenanceOnly &&
     (!scopedFields || scopedFields.includes('researchAreas'))
@@ -8559,7 +8577,9 @@ export async function materializeEntity(
   const readRowUnderOwnIdentity =
     Boolean(entityDoc) &&
     (mergedInKeys.length > 0 ||
-      (Boolean(identifier.entityKey) && identifier.entityKey === textValue(entityDoc?.slug)) ||
+      (Boolean(identifier.entityKey) &&
+        identifier.entityKey ===
+          textValue(entityType === 'fellowship' ? entityDoc?.sourceKey : entityDoc?.slug)) ||
       (Boolean(identifier.entityId) && identifier.entityId === entityIdString));
   const researchAreasHaveNoLiveEvidence =
     isResearchEntityObservationType(entityType) &&
@@ -8622,6 +8642,9 @@ export async function materializeEntity(
       : {}),
     ...(projection.fellowshipAbsenceClears
       ? { fellowshipAbsenceClears: projection.fellowshipAbsenceClears }
+      : {}),
+    ...(projection.fellowshipUnbackedClears
+      ? { fellowshipUnbackedClears: projection.fellowshipUnbackedClears }
       : {}),
   };
 

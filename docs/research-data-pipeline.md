@@ -1065,6 +1065,32 @@ The other 4 claims name a field the row already stores nothing for.
 Running the real `computeProgramStudentVisibility` on each of the 15 rows with the cleared field removed keeps every tier unchanged, and none of the rows carries a `studentVisibilityOverrideTier`.
 Both gold benchmarks replay to the same output fingerprint and the same per-field precision and recall as before the change (`programs-grants-gold-v1`, `programs-fellowships-office-gold-v1`).
 
+### Fellowship evidence-only fields: a summary no observation backs (#4586)
+
+A fellowship field listed in `FELLOWSHIP_EVIDENCE_ONLY_FIELDS` (`scrapers/fellowshipUnbackedFieldClear.ts`) is cleared by the projection when no live observation in the pass states it and the row stores a value.
+The list holds `summary` only.
+
+The defect it closes was measured on Development on 2026-10-03.
+The retired `data-migration/importFellowships.ts` loaded a spreadsheet export of the Student Grants Database in 2026-02 and wrote `summary` straight onto each row.
+The grants lane later adopted those rows, but it observes `description` and has never emitted `summary`, so the imported text stood with no observation behind it under either identity form, not even a superseded one.
+That was 136 live grants-owned rows, 108 of them served, plus 5 fellowships-office rows that no office observation backs; 111 served rows in all, each served the imported text as the brief description.
+Some of that text contradicted the fund page, added claims the page does not make, or named staff the page does not.
+
+The clear is a derivation, not a retraction, so it does not reopen #2647.
+Under latest-wins a lane that stops emitting a field keeps its last observation live, so this rule never withdraws a lane's value; it only stops a value that no observation states at all.
+A second pass plans nothing, so it needs no lock.
+The detail view then shows the backed `description`, and the browse card is derived from it on every serve through `programLikeCardShortDescription`.
+
+It runs only on a pass that read the row under its own identity, its `sourceKey` or its id, because the Student Grants Database pass over an adopted row enters through its own fund key and never reads the owning lane's observations.
+For the same reason a field whose evidence can arrive through a cited fund key (`FUND_AUTHORITY_FIELDS`) cannot be listed, nor can a classifier-derived field, and `assertFellowshipEvidenceOnlyFieldsAreClearable` enforces both at load.
+On 2026-10-03 every live `summary` observation that backs a row sits under that row's own `sourceKey`, so no rival lane's summary is invisible to the own-key pass.
+`description` is not listed: 77 live rows store a `description` with no observation of it, 7 of them served, but the grants lane emits `description` under its fund key onto rows another lane owns, so an own-key pass of the owning lane cannot see that evidence and would clear a value the next fund-key pass writes back.
+
+The materialize result reports the clears per row as `fellowshipUnbackedClears`, and a dry run plans them into `plannedUnset`.
+Two changes ship with it because clearing exposed them.
+The STARS mentoring rule in `programClassifier.ts` matched only the imported summary's wording, so it now also reads the page's own "mentoring program".
+The program card splitter (`programCardSentenceList`) no longer breaks after a single capital initial followed by a lowercase word or another letter ("Alma Q. and", "B.A. ‘64, M.Arch"), which had produced cards that start mid-sentence; the wider `sentenceList` is unchanged because it would re-split 189 of 8033 research descriptions that also feed stored-description guards.
+
 ### Value refusal: how a repair persists without freezing a field
 
 Retraction answers "the source stopped saying it". A refusal answers "the source still says it and it is wrong", which is a different question and was not answerable until #3167.

@@ -365,6 +365,20 @@ describe('classifyProgram internship identity (#2925)', () => {
       });
     });
 
+    it('reads the STARS mentoring program from the page wording alone (#4586)', () => {
+      expect(
+        classifyProgram({
+          title: 'STARS I Academic Year Program',
+          description:
+            'STARS I is a mentoring program that builds a network of support for first-year students interested in STEM.',
+        }),
+      ).toMatchObject({
+        programKind: 'STRUCTURED_PROGRAM',
+        entryMode: 'APPLY_TO_PROGRAM',
+        studentFacingCategory: 'STEM mentoring program',
+      });
+    });
+
     it('reads the STARS academic-year research program as mentor-first rather than travel funding', () => {
       expect(
         classifyProgram({

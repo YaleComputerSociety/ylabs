@@ -438,7 +438,7 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
   const namesStars = /\bSTARS\b/.test(title) || /\/stars\//.test(identityLower);
   if (
     namesStars &&
-    /\bmentoring and support program\b|\brather than a direct research placement\b/.test(lower)
+    /\bmentoring (?:and support )?program\b|\brather than a direct research placement\b/.test(lower)
   ) {
     return structuredProgram({
       programKind: 'STRUCTURED_PROGRAM',
