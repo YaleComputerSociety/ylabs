@@ -145,6 +145,9 @@ It is never an `identifier-exempt:` line, which suppresses the whole body includ
 Never call the real `gh` directly to get past a refusal either.
 
 The gate writes its pull request body from the diff, so it quotes test fixtures, and the guard cannot tell a synthetic fixture from a real person.
+Almost all of that quoting was in the generated evidence appendix rather than the narrative: of 250 strings the guard refused in gate-written bodies over two days, 246 sat in its test logs and pipeline round history (#4666).
+`.no-mistakes.yaml` therefore sets `pr.appendix: minimal`, which publishes only a one-line risk summary and the attestation, and leaves the test logs in the local run log.
+The key needs no-mistakes v1.85.0 or later: an older gate ignores it without an error and keeps publishing the full appendix, so check `no-mistakes --version` and run `no-mistakes update` when it is older.
 When the gate's `pr` step fails on a guard refusal, run `no-mistakes sync --yes` to take the gate's pushed head, then re-run `no-mistakes axi run` with an `--intent` that carries this rule: describe the regression tests by behaviour only and never quote a test fixture string, slug, or name from the diff.
 The rule lowers the odds rather than guaranteeing a clean body, so read the kept draft before re-running.
 
