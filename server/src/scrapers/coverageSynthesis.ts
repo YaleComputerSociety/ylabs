@@ -7,7 +7,7 @@ import {
   MAX_CARD_SOURCE_CHARS,
   cardGroundingScore,
 } from '../utils/groundedCardSynthesis';
-import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { fullDescriptionMeetsEvidenceBar } from '../utils/researchEntityDescriptionQuality';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 
@@ -215,7 +215,7 @@ export async function coverageSynthesisDecision(
   if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
     return refuse('grounding-overlap-below-floor');
   }
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+  if (!fullDescriptionMeetsEvidenceBar(description, input.researchAreas, input.entityType)) {
     return refuse('quality-bar');
   }
   // Last, so every arm above keeps the attribution it had and this one's count is

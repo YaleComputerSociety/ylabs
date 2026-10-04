@@ -165,7 +165,7 @@ const DOTTED_INITIALISM_TAIL = /(?:^|[\s(])(?:[A-Z]\.){2,}\s+$/;
 const LOWERCASE_HEAD = /^[a-z]/;
 
 // A sentence ends at terminal punctuation followed by whitespace, so "U." inside
-// "U.S." and the "?" of a title such as "What Have They Built You to Do?: The ..."
+// "U.S." and the "?" of a title such as "Where Did It Go?: A History of Maps"
 // are not ends; neither is "U.S. " before a lowercase continuation.
 function isAbbreviationSplit(segment: string, next: string): boolean {
   return (

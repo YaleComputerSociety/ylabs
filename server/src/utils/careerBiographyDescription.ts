@@ -245,25 +245,35 @@ const RESEARCH_TOPICS_SENTENCE =
 const RESEARCH_ACTIVITY_SENTENCE =
   /^(?:He|She|They|We|I|(?:His|Her|Their|Our|My)\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research|scholarship)|(?:Dr\.?\s+|Professor\s+)?[A-Z][\p{L}'’-]+(?:['’]s\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research))?)\s+(?:has\s+|have\s+)?(?:(?:also|currently|primarily|mainly|further)\s+)?(?:studies|investigates|examines|explores|analy[sz]es|evaluates|models|develops|focus(?:es|ed)|concerns|addresses|asks|seeks|aims|works\s+on|combines|employs|applies|uses\s+(?:diverse\s+|a\s+)?(?:research\s+)?(?:methods|methodologies|approaches|techniques)|uses\s+\w+(?:\s+\w+)?\s+to\s+(?:study|understand|examine|investigate))\b/u;
 
+const CV_RECORD_SENTENCE =
+  /\b(?:teach(?:es|ing)?\s+(?:\w+\s+){0,2}(?:courses?|classes|seminars?)|(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?B\.?A|J\.?D|M\.?D|Ph\.?\s?D)\b|(?:has|have)\s+published\b|author\s+of\b|(?:co-?)?editors?\s+of\b|(?:received|won)\s+(?:the|an?)\s+[^.]{0,60}\b(?:awards?|prizes?|medals?)\b)/i;
+
 /**
  * The sentences of a biography that state, in their own subject, what the person
  * researches: "Her area of academic research is ...", "The focus of his current
- * research is ...", and the research sentences that follow such a statement ("She
- * studies how firms respond ..."). A profile that pastes a CV (degree line, book
- * list, awards, past appointments) usually still carries such sentences, and they
- * are the only part a student opened the page to read. Returns nothing unless at
- * least one explicit research statement is present, because a subject frame is what
- * makes lifting sentences out safe: its start is a real sentence start, so a false
+ * research is ...", and the prose that follows such a statement ("She studies how
+ * firms respond ...", "Using spectroscopy, her group has uncovered ..."), less the
+ * career facts and CV records (teaching load, degrees, publication record, editorships,
+ * prizes) mixed into it. A profile that pastes a CV (degree line, book list, awards,
+ * past appointments) usually still carries such sentences, and they are the only
+ * part a student opened the page to read. Returns nothing unless at least one
+ * explicit research statement is present, because a subject frame is what makes
+ * lifting sentences out safe: its start is a real sentence start, so a false
  * boundary inside a book title or degree cannot produce the fragment that
  * opener-stripping did.
  */
 export function researchStatementSentences(value: unknown): string[] {
   const sentences = splitDescriptionSentences(textValue(value));
-  if (!sentences.some((sentence) => RESEARCH_STATEMENT_SENTENCE.test(sentence))) return [];
+  const firstStatement = sentences.findIndex((sentence) =>
+    RESEARCH_STATEMENT_SENTENCE.test(sentence),
+  );
+  if (firstStatement < 0) return [];
   return sentences.filter(
-    (sentence) =>
+    (sentence, index) =>
       RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
       RESEARCH_TOPICS_SENTENCE.test(sentence) ||
-      (RESEARCH_ACTIVITY_SENTENCE.test(sentence) && !isCareerFactSentence(sentence)),
+      (!isCareerFactSentence(sentence) &&
+        (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
+          (index > firstStatement && !CV_RECORD_SENTENCE.test(sentence)))),
   );
 }

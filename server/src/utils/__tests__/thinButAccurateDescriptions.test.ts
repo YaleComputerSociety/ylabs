@@ -59,7 +59,7 @@ describe('a thin but accurate body is usable', () => {
 
   it('keeps a past-appointment body that states an area of expertise', () => {
     const body =
-      'An expert in gender, health and international human rights, Fixture previously taught at Example University, where she was faculty director of an example center.';
+      'An expert in coastal law and maritime trade, Fixture previously taught at Example University, where she was faculty director of an example center.';
     expect(fullDescriptionQuality(body).flags).not.toContain('synthetic-placeholder');
   });
 });
@@ -139,7 +139,7 @@ describe('page-fragment cards are replaced from the body', () => {
 describe('sentence tiling keeps dotted initialisms and titles whole', () => {
   it('does not split inside "U.S." before a lowercase continuation', () => {
     const text =
-      'Studies race in U.S. political culture, including U.S. imperialism and the juridical structures of U.S. citizenship.';
+      'Studies labor in U.S. port cities, including U.S. trade policy and the legal history of U.S. shipping.';
     expect(partitionSentencesForFiltering(text)).toEqual([text]);
   });
 
@@ -169,6 +169,16 @@ describe('research statements of a biography', () => {
     expect(researchStatementSentences(body)).toEqual([
       "Robin Fixture's research focuses on industrial organization.",
       'She studies how firms respond to public policies.',
+    ]);
+  });
+
+  it('keeps every research sentence that follows a statement, not only the ones naming a research verb', () => {
+    const body =
+      'Robin Fixture is Example Professor of Chemistry. Her research focuses on catalysis. Using spectroscopy, her group has uncovered how metal surfaces bind carbon dioxide. These insights guide catalyst design.';
+    expect(researchStatementSentences(body)).toEqual([
+      'Her research focuses on catalysis.',
+      'Using spectroscopy, her group has uncovered how metal surfaces bind carbon dioxide.',
+      'These insights guide catalyst design.',
     ]);
   });
 });

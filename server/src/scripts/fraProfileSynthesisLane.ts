@@ -30,6 +30,7 @@ import {
 } from './grantCorpusSynthesisCore';
 import {
   describesResearchFocus,
+  fullDescriptionMeetsEvidenceBar,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
@@ -472,7 +473,7 @@ async function attemptProfileSynthesis(
   // The synthesizer's quality gate ran on the pre-repair text, and repair drops
   // words ("Her research focuses on X" -> "Focuses on X"), so a value that just
   // cleared the length floor can fall back under it here.
-  if (!fullDescriptionQuality(description, entity.researchAreas, entity.entityType).isUseful) {
+  if (!fullDescriptionMeetsEvidenceBar(description, entity.researchAreas, entity.entityType)) {
     return {
       snippets: snippets.length,
       skipped: 'repaired text no longer clears the description-quality bar',

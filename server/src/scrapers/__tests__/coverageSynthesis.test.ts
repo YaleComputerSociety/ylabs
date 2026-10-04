@@ -7,6 +7,7 @@ import {
   type CoverageSnippet,
   type CoverageSynthesisLLMFn,
 } from '../coverageSynthesis';
+import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 
 const SNIPPETS: CoverageSnippet[] = [
   {
@@ -216,6 +217,20 @@ describe('synthesizeCoverageDescription', () => {
     });
     expect(accepted.refusal).toBeNull();
     expect(accepted.result).not.toBeNull();
+  });
+
+  it('refuses a grounded body that only restates the row topics, though a stored one would be served', async () => {
+    const researchAreas = ['Coastal Wetlands', 'Estuary Ecology', 'Salt Marshes'];
+    const body =
+      'Clinical and basic research on coastal wetlands and estuary ecology including salt marshes, with field and laboratory studies.';
+    const decision = await coverageSynthesisDecision({
+      snippets: [{ text: body, sourceUrl: 'https://example.edu/wetlands', sourceName: 'lab-page' }],
+      entityName: 'Wetlands Lab',
+      researchAreas,
+      callLLM: stub({ fullDescription: body, usedSnippetIndexes: [0] }),
+    });
+    expect(decision.refusal).toBe('quality-bar');
+    expect(fullDescriptionQuality(body, researchAreas).isUseful).toBe(true);
   });
 
   it('returns null when no snippets cited', async () => {

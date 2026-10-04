@@ -48,7 +48,7 @@ import { contactQuoteStatesAnInstruction } from '../contactInstructionQuoteAdmis
 import { pageListsPeople, rosterSnippetNamesAPerson } from '../undergradRosterEvidence';
 import {
   deriveShortDescriptionFromFullDescription,
-  fullDescriptionQuality,
+  fullDescriptionMeetsEvidenceBar,
   isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
@@ -1321,7 +1321,7 @@ function cleanResearchSummary(raw: string | undefined): string {
  */
 function cleanStudentFacingDescription(researchSummary: string): string {
   const cleaned = publicResearchEntityDescriptionText(researchSummary);
-  if (!cleaned || !fullDescriptionQuality(cleaned).isUseful) return '';
+  if (!cleaned || !fullDescriptionMeetsEvidenceBar(cleaned)) return '';
   return cleaned;
 }
 

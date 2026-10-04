@@ -1684,6 +1684,21 @@ export function fullDescriptionQuality(
   );
 }
 
+/**
+ * The bar a lane's newly written body must clear before it is stored as evidence.
+ * Stricter than `fullDescriptionQuality(...).isUseful`, which is the serve-time
+ * verdict: a thin or topic-echoing body that is already stored is shown, but a lane
+ * must not write one, because a synthesized body that only restates the row's chips
+ * is not shown to be accurate (#1625).
+ */
+export function fullDescriptionMeetsEvidenceBar(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: ResearchEntityType,
+): boolean {
+  return fullDescriptionQuality(value, researchAreas, entityType).flags.length === 0;
+}
+
 const FULL_DESCRIPTION_LEAD_CLAUSE_RE =
   /^(?:(?:the|this|in\s+the)\s+(?:[\p{L}][\p{L}\s.'’-]{0,60}?\s+)?(?:lab|laboratory|group|program|fellowship|research)\b[,:]?\s*(?:we\s+)?|(?:our|my)\s+(?:research|lab|laboratory|group|program|fellowship)\s+|[\p{L}][\p{L}.'’-]*(?:\s+[\p{L}][\p{L}.'’-]*){0,3}'s\s+(?:research|lab|laboratory|work|group)\s+|we\s+)/iu;
 
@@ -1904,6 +1919,15 @@ function dropsTheDisciplineOfItsTopic(card: string, full: string): boolean {
 const LEADING_DATELINE_PATTERN =
   /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}(?=[A-Z\s:|-])/;
 
+function cardPageFragmentFlags(card: string, full: string): DescriptionQualityFlag[] {
+  const flags: DescriptionQualityFlag[] = [];
+  if (LEADING_DATELINE_PATTERN.test(card)) flags.push('source-news-fragment');
+  if ((card.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2) flags.push('paper-fragment');
+  if (INCLUSION_RATIONALE_PATTERN.test(card)) flags.push('synthetic-placeholder');
+  if (dropsTheDisciplineOfItsTopic(card, full)) flags.push('ungrounded-topic-short');
+  return flags;
+}
+
 function computeShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
@@ -1931,12 +1955,7 @@ function computeShortDescriptionQuality(
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
-  if (text && LEADING_DATELINE_PATTERN.test(text)) flags.push('source-news-fragment');
-  if (text && (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2) {
-    flags.push('paper-fragment');
-  }
-  if (text && INCLUSION_RATIONALE_PATTERN.test(text)) flags.push('synthetic-placeholder');
-  if (text && dropsTheDisciplineOfItsTopic(text, full)) flags.push('ungrounded-topic-short');
+  if (text) flags.push(...cardPageFragmentFlags(text, full));
   if (
     text &&
     isTopicLabelListEligibleEntityType(options?.entityType) &&
@@ -3624,10 +3643,5 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
 export function isStoredCardPageFragment(card: unknown, fullDescription: unknown): boolean {
   const text = textValue(card);
   if (!text) return false;
-  return (
-    LEADING_DATELINE_PATTERN.test(text) ||
-    (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2 ||
-    INCLUSION_RATIONALE_PATTERN.test(text) ||
-    dropsTheDisciplineOfItsTopic(text, textValue(fullDescription))
-  );
+  return cardPageFragmentFlags(text, textValue(fullDescription)).length > 0;
 }
