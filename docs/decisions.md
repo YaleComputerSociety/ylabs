@@ -12,7 +12,8 @@ A source that now reads the survivor never reads the merged-in key again, so mat
 A merged-in key's state is already the survivor's (#3560), so a complete read of the survivor by the same source is that source's current statement about what the observation backs.
 The #2647 concern that silence is not absence one key over still holds, and it is met by the guards rather than by the key: a retraction still needs the read to assert absence of the field, so a survivor read that is merely silent stays `absence-not-witnessed`, and the drop guard and the liveness screen are unchanged.
 The sharing runs one way only: a merged-in key's read is never given to the survivor or to a sibling merged-in key, so a duplicate's absence claim never judges the survivor's own evidence.
-Measured as a dry run on Development, `dept-faculty-roster` observations judged not re-read fell from 1,368 to 1,223, and retained retractions rose from 38 to 67 before the liveness screen and by 1 after it.
+Measured as a dry run on Development with this one-way rule, `dept-faculty-roster` observations judged not re-read fell from 1,368 to 1,336 and retractions before the liveness screen rose from 38 to 41, with none newly retained after it; sharing reads between sibling merged-in keys as well would have moved 145 and retracted 29 more, which is the cross-page risk the one-way rule refuses.
+Most of the 873 `dept-faculty-roster` website observations on archived keys are re-read only under another archived key, because the lane still files new reads under stale slugs, so the remaining population belongs to the lane's key choice rather than to retraction.
 The field-retraction section of [`research-data-pipeline.md`](research-data-pipeline.md) owns the mechanism.
 
 ## 2026-10-03: A Merged-In Row's Type Backs A Survivor's Matching Type, And Never Restates It (#3381)
