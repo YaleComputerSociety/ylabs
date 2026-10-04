@@ -422,6 +422,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Humanities/social-science funding analogue of the NIH/NSF lanes; enriches entity context but is not undergraduate-access evidence alone.',
   },
+  'crossref-grants': {
+    priority: 6,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Funder-registered Crossref grant records for private and international funders the federal lanes miss; resolved by ORCID first, facility-time records refused, fellowships attached only through an ORCID match. Enriches entity context but is not undergraduate-access evidence alone.',
+  },
   'doe-osti': {
     priority: 6,
     tier: 'THIRD_PARTY_ENRICHMENT',

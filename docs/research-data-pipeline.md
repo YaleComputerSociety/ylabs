@@ -58,6 +58,11 @@ USAspending publishes no principal-investigator field, so across the 293 Yale DO
 Development held 4 runs for it and 0 observations, so its name is in `RETIRED_SOURCE_NAMES`: `scrape:seed-sources` disables the `sources` row and the historical `scrape_runs` stay for audit.
 DOE funding reaches the corpus through `doe-osti` instead.
 
+`crossref-grants` reads the grant records funders register with Crossref for Yale-affiliated lead investigators (#4593).
+It reaches private and international funders no federal lane covers, such as the American Cancer Society, the American Heart Association and the Human Frontier Science Program, and each record resolves to the funder's own public award page.
+A `facilities` record is instrument time at a user facility rather than funding, so it is refused: on 2026-10-03 that was 52 of 326 Yale records, all Advanced Photon Source allocations.
+A fellowship or salary award names the trainee rather than the lab head, so it attaches only through an ORCID match and never through the name matcher.
+
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
 The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
 The fellowship engine currently only spans the `discovery` phase.
@@ -444,6 +449,9 @@ Add a field here when the materializer plans it and the product serves it; `infe
 The list doubles as the `--only-fields` allowlist, so widening it mints a write scope as well as a report column, and a field the materializer co-derives needs its whole closure in that scope or the scoped write lands one half of a pair.
 Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written together, so `--only-fields=kind` and `--only-fields=entityType` both write that pair (issue #2144) and `--only-fields=departments` also writes the `school`, `schools` and `orgAffiliationLabels` that `applyResearchEntityOrgUnitCanonicalization` recomputes from it, rather than leaving the stored `schools` facet describing the old departments.
 The four grant fields (`recentGrants`, `recentGrantPeriods`, `recentGrantCount` and `fundingAgencies`) are one closure too, because `aggregateResearchEntityGrantEvidence` derives all four from one award union, so a count written without its list would disagree (#4418).
+That union keys an award by `grantAwardIdentity` (`server/src/scrapers/utils/grantAwardIdentity.ts`): the award number with case and punctuation dropped, scoped to its funder, with an NIH application number collapsed to its core project number and a DOE number keeping one identity with or without its `DE-` prefix, so an award two lanes report under two spellings is listed and counted once (#4593).
+When one award arrives twice, the record that ends later is kept.
+A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.
 A scoped pass also scopes what runs after the projection (#3874).
 Lead-PI school inheritance (`lead-pi-school-inheritance`) runs only when the expanded scope names `school` or `departments`, and otherwise appends no observation and writes no field; before this, a pass scoped to `researchAreas` wrote `departments` on 2 Development rows.
 The inferred-PI and inferred-director lead edges, the access-signal upserts, and the department-roster shell fold are skipped, because they write no field and the report compares fields, so any write they made would be invisible.
@@ -1864,7 +1872,8 @@ Do not match a full source given name to a different Yale first name by initial 
 NIH PI matching applies the same leading-given-token rule; a lab named only after a surname (`Arnsten Lab`) never attaches a PI on the surname alone, because a shared surname can identify the wrong person, so it fails closed to ambiguity whenever any surname-compatible Yale faculty exists and to absence when none match (issue #562).
 
 The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
-The NIH, NSF, NEH and DOE lanes treat the safe-absence case as a counted refusal and mint nothing (#3561, #3565).
+The NIH, NSF, NEH, DOE and Crossref grant lanes treat the safe-absence case as a counted refusal and mint nothing (#3561, #3565, #4593).
+The Crossref grant lane resolves the investigator's ORCID first through `resolveResearcherIdForOrcid`, which matches `identifiers.orcid` exactly and refuses when the holder's surname disagrees with the record's, and only an investigator with no ORCID match reaches the name matcher.
 No grant scraper emits research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
 Canonical-home enrichment emits grant evidence without replacing official identity or source URL fields.
 Ambiguous Yale user matches and an archived or non-current lead membership on a live row are ineligible, not safe absences.

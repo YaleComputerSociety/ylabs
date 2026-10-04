@@ -291,6 +291,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
+import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
 import {
@@ -1590,8 +1591,19 @@ export function materializedFieldValue(
 
 const grantIdentity = (value: unknown): string => {
   const grant = objectRecord(value);
-  const id = textValue(grant.id);
-  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
+  return grantAwardIdentity(grant) ?? `record:${JSON.stringify(grant)}`;
+};
+
+const grantEndTime = (value: unknown): number => {
+  const time = new Date(objectRecord(value).endDate as any).getTime();
+  return Number.isFinite(time) ? time : -Infinity;
+};
+
+const keepLaterEndingGrant = (grants: Map<string, unknown>, grant: unknown): void => {
+  const identity = grantIdentity(grant);
+  const held = grants.get(identity);
+  if (held !== undefined && grantEndTime(held) > grantEndTime(grant)) return;
+  grants.set(identity, grant);
 };
 
 const RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS = new Set([
@@ -1635,7 +1647,7 @@ export function aggregateResearchEntityGrantEvidence(observations: MaterializerO
     if (GRANT_COUNTING_FIELDS.has(String(observation.field))) countingSources.add(sourceName);
     if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
       hasGrantSnapshot = true;
-      for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
+      for (const grant of observation.value) keepLaterEndingGrant(grants, grant);
     }
     if (observation.field === 'recentGrantPeriods' && Array.isArray(observation.value)) {
       periodSources.add(sourceName);
