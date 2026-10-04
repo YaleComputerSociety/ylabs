@@ -821,3 +821,33 @@ describe('serving the card in place of a researchless biography', () => {
     expect(representation.invariant.cardDescriptionUseful).toBe(true);
   });
 });
+
+describe('a written body with no grounded card (#4788 follow-up)', () => {
+  const body =
+    'Studies how coastal salt marshes store carbon in sediment, how tidal flooding and sea level rise reshape the roots and stems of cordgrass and other marsh grasses, how grazing crabs and snails thin marsh platforms, and how nitrogen from upstream farms changes sediment microbes, using field plots, sediment cores, warming experiments and decades of remote sensing along the Atlantic coast.';
+  const entityWithBodyFrom = (sourceName: string) => ({
+    name: 'Synthetic Marsh Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    fullDescription: body,
+    researchAreas: ['Wetlands', 'Carbon Sequestration', 'Tidal Flooding'],
+    sourceUrls: ['https://example.yale.edu/marsh'],
+    fieldProvenance: { fullDescription: { sourceName } },
+  });
+
+  it('holds the row on a missing card instead of serving a topic-chip summary', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: entityWithBodyFrom('coverage-synthesis-llm'),
+    });
+    expect(representation.servedCard).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(representation.quality.cardState).not.toBe('complete');
+  });
+
+  it('keeps the topic-chip summary for a copied body', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: entityWithBodyFrom('lab-website'),
+    });
+    expect(representation.servedCard).toMatch(/^Studies /);
+  });
+});
