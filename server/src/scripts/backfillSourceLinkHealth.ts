@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
+import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -180,6 +181,7 @@ export interface SourceLinkHealthBackfillResult {
    * implies, usually because a host throttled it (#2762).
    */
   preservedDecisiveVerdicts: number;
+  indexSyncFailures: number;
   byStatus: Record<string, number>;
   samples: Array<{
     slug: string;
@@ -363,6 +365,7 @@ export async function runSourceLinkHealthBackfill(options: {
     updated: 0,
     errors: 0,
     preservedDecisiveVerdicts: 0,
+    indexSyncFailures: 0,
     byStatus: {},
     samples: [],
   };
@@ -564,6 +567,8 @@ export async function runSourceLinkHealthBackfill(options: {
 
         if (!options.dryRun) {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });
+          const browseRank = await recomputeBrowseRankForEntities([entity._id]);
+          result.indexSyncFailures += browseRank.indexSyncFailures;
         }
         result.updated += 1;
       } catch (error) {
@@ -612,6 +617,12 @@ async function main(): Promise<void> {
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    if (result.indexSyncFailures > 0) {
+      console.error(
+        `${result.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,
+      );
+      process.exitCode = 1;
+    }
   } finally {
     await mongoose.disconnect();
   }
