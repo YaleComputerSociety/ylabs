@@ -29,8 +29,10 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { ScrapeRun } from '../../models/scrapeRun';
 import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
+import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 
 type ProjectedSurvivor = {
   name?: string;
@@ -60,7 +62,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
     await Signal.deleteMany({});
@@ -289,7 +291,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     expect(projected.websiteUrl).toBe('https://examplelead-lab.yale.edu/');
   });
 
-  it('keeps the survivor own departments against a newer higher-confidence loser roster', async () => {
+  it('keeps the survivor own department first when a newer higher-confidence loser roster appends one (#4694)', async () => {
     const survivor = await seedMerge('dept-example-lead');
     await seedObservation(
       'example-lead-lab',
@@ -314,10 +316,11 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
-    expect(stored?.departments ?? []).not.toContain('Other Studies');
+    expect(stored?.departments?.[0]).toBe('Example Studies');
+    expect(stored?.departments ?? []).toContain('Other Studies');
   });
 
-  it('keeps a stored survivor department no survivor observation backs', async () => {
+  it('keeps a stored survivor department first and appends a merged-in roster appointment (#4694)', async () => {
     const survivor = await seedMerge('dept-example-lead');
     await ResearchEntity.updateOne(
       { _id: survivor._id },
@@ -331,7 +334,153 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     await materializeEntity('researchEntity', { entityKey: 'dept-example-lead' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
-    expect(stored?.departments).toEqual(['Example Studies']);
+    expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+  });
+
+  it('appends a merged-in roster appointment when another merged-in source wins the departments', async () => {
+    const survivor = await seedMerge('dept-example-lead');
+    await seedObservation(
+      'dept-example-lead',
+      'departments',
+      ['Example Studies'],
+      'ysm-faculty-directory',
+      {
+        confidence: 0.95,
+        observedAt: new Date('2026-06-01T00:00:00Z'),
+      },
+    );
+    await seedObservation('dept-example-lead', 'departments', ['Law'], 'dept-faculty-roster', {
+      confidence: 0.6,
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+    expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+  });
+
+  it('drops a stale merged-in appointment an earlier rebuild appended to the stored departments', async () => {
+    const survivor = await seedMerge('dept-example-lead');
+    await ResearchEntity.updateOne(
+      { _id: survivor._id },
+      { $set: { departments: ['Example Studies'] } },
+    );
+    await seedObservation('dept-example-lead', 'departments', ['Law'], 'dept-faculty-roster', {
+      confidence: 0.7,
+      observedAt: new Date('2026-03-01T00:00:00Z'),
+    });
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const appended = await ResearchEntity.findById(survivor._id).lean<{
+      departments?: string[];
+    }>();
+    expect(appended?.departments).toEqual(['Example Studies', 'Law']);
+
+    await ResearchEntity.create({
+      slug: 'dept-example-lead-medicine',
+      name: 'Example Lead Research',
+      kind: 'individual',
+      archived: true,
+      canonicalGroupId: survivor._id,
+    });
+    await seedObservation(
+      'dept-example-lead-medicine',
+      'departments',
+      ['Medicine'],
+      'dept-faculty-roster',
+      { confidence: 0.7, observedAt: new Date('2026-06-01T00:00:00Z') },
+    );
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+    expect(stored?.departments).toEqual(['Example Studies', 'Medicine']);
+  });
+
+  describe('a merged-in roster appointment the lane now reads under the person key (#4694)', () => {
+    const seedRosters = async (aliasReadAt: Date, personKeyRow = 'example-lead-lab') => {
+      const survivor = await seedMerge('dept-example-lead');
+      await seedObservation(
+        personKeyRow,
+        'inferredPiUserKey',
+        'netid:example.lead',
+        'dept-faculty-roster',
+      );
+      await seedObservation(
+        'example-lead-lab',
+        'departments',
+        ['Example Studies'],
+        'dept-faculty-roster',
+        {
+          observedAt: new Date('2026-06-01T00:00:00Z'),
+        },
+      );
+      await seedObservation('dept-example-lead', 'departments', ['Law'], 'dept-faculty-roster', {
+        observedAt: aliasReadAt,
+      });
+      return survivor;
+    };
+    const seedPersonRead = async (departments: string[], observedAt: Date) => {
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:example.lead',
+        field: 'departments',
+        value: departments,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.yale.edu/people/',
+        confidence: 0.7,
+        observedAt,
+        superseded: false,
+      });
+    };
+
+    it('keeps the appointment while a person-keyed read of the same department is current', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
+      await seedPersonRead(['Law'], new Date('2026-06-02T00:00:00Z'));
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+    });
+
+    it('keeps the appointment when only a merged-in row observes the person key', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'), 'dept-example-lead');
+      await seedPersonRead(['Law'], new Date('2026-06-02T00:00:00Z'));
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+    });
+
+    it('ignores a person-keyed read from an invalidated scrape run', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
+      await seedPersonRead(['Law'], new Date('2026-06-02T00:00:00Z'));
+      const run = await ScrapeRun.create({
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        status: 'failure',
+        invalidated: true,
+      });
+      await Observation.updateMany({ entityType: 'user' }, { $set: { scrapeRunId: run._id } });
+      resetInvalidatedScrapeRunCache();
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies']);
+    });
+
+    it('drops a stale appointment no current read of that department dates', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
+      await seedPersonRead(['Other Studies'], new Date('2026-06-02T00:00:00Z'));
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies']);
+    });
   });
 
   describe("a merged-in citation of the lead's verified primary profile (#4695)", () => {

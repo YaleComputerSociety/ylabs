@@ -5224,6 +5224,7 @@ export interface MergedSurvivorEvidence {
   survivorLaneOwnsWebsite: boolean;
   droppedLoserWebsiteValues: unknown[];
   loserRosterAppointments: any[];
+  survivorReadOnARoster: boolean;
   mergedInSourceUrlValues: string[];
 }
 
@@ -5283,6 +5284,7 @@ export async function mergedSurvivorEvidence(
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
+    survivorReadOnARoster: false,
     mergedInSourceUrlValues: [],
   };
   if (!survivorId) return unmerged;
@@ -5439,9 +5441,9 @@ export async function mergedSurvivorEvidence(
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
-    if (survivorReadOnARoster && isRosterAppointment(observation)) {
+    if (isRosterAppointment(observation)) {
       loserRosterAppointments.push(observation);
-      return false;
+      if (survivorReadOnARoster) return false;
     }
     if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
@@ -5502,6 +5504,7 @@ export async function mergedSurvivorEvidence(
       (value) => !survivorStatedWebsites.has(websiteIdentity(value)),
     ),
     loserRosterAppointments,
+    survivorReadOnARoster,
   };
 }
 
@@ -6325,6 +6328,9 @@ export interface ProjectFromLogInput {
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
+  survivorReadOnARoster?: boolean;
+  rosterPersonKeys?: readonly unknown[];
+  chunkPrefetch?: MaterializationReadSource;
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
@@ -6628,9 +6634,59 @@ export const DEPARTMENT_ROSTER_APPOINTMENT_SOURCE = 'dept-faculty-roster';
 export const DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS = 14;
 
 /**
+ * After a research row is merged or re-keyed, the roster keeps reading its page but files
+ * the person's appointment under the person key, so the row's own department observation
+ * stops being refreshed and falls outside the currency window while the page still lists
+ * the person (#4694). A person-keyed roster read naming the same department is therefore
+ * a read of that appointment: it dates it, and it never adds a department of its own.
+ */
+async function personKeyedRosterDepartmentReads(
+  keys: unknown[],
+  prefetch?: MaterializationReadSource,
+): Promise<ResolverObservation[]> {
+  const personKeys = [...new Set(keys.map((key) => textValue(key)).filter(Boolean))];
+  if (personKeys.length === 0) return [];
+  const personObservations =
+    routedObservationsForKeysAndIds('user', personKeys, [], prefetch) ??
+    (await Observation.find({
+      entityType: 'user',
+      entityKey: { $in: personKeys },
+      field: 'departments',
+      sourceName: DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+      ...materializationReadScopeFilter(),
+    }).lean());
+  const reads = (personObservations as any[]).filter(
+    (observation) =>
+      observation.field === 'departments' &&
+      observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+  ) as Array<ResolverObservation & { scrapeRunId?: unknown }>;
+  return partitionObservationsByInvalidatedRun(reads, await invalidatedScrapeRunIds()).kept;
+}
+
+export function rosterAppointmentReadTime(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): number {
+  const departmentsOf = (value: unknown) =>
+    (Array.isArray(value) ? value : [value])
+      .map((item) => textValue(item).trim().toLowerCase())
+      .filter(Boolean);
+  const own = new Date(observation.observedAt as any).getTime() || 0;
+  const departments = new Set(departmentsOf(observation.value));
+  return Math.max(
+    own,
+    ...personReads
+      .filter((read) => departmentsOf(read.value).some((department) => departments.has(department)))
+      .map((read) => new Date(read.observedAt as any).getTime() || 0),
+  );
+}
+
+/**
  * Each department roster page that lists a person is an independent appointment, so
  * a roster-won `departments` is the union of every roster department still being
- * read, not the one page ranked first (#3621). The resolver weighs each page's list
+ * read, not the one page ranked first (#3621). A survivor that reads no roster of its
+ * own takes its merged-in rows' current roster appointments the same way, appended
+ * after its own departments, because that is the only roster evidence it has (#4694). The resolver weighs each page's list
  * as a rival value, so a cross-listing displaced the home department whenever it was
  * read last.
  *
@@ -6645,19 +6701,32 @@ async function combineDepartmentRosterAppointments(input: {
   set: Record<string, unknown>;
   entityDoc: any;
   rosterReads: readonly ResolverObservation[];
+  mergedInRosterReads: readonly ResolverObservation[];
+  survivorReadOnARoster: boolean;
+  rosterPersonKeys: readonly unknown[];
+  chunkPrefetch?: MaterializationReadSource;
   manuallyLockedFields: string[];
 }): Promise<void> {
   const field = 'departments';
   const { set, entityDoc } = input;
-  if (input.manuallyLockedFields.includes(field) || !Array.isArray(set[field])) return;
-  if (
-    textValue(objectRecord(set[`fieldProvenance.${field}`]).sourceName) !==
-    DEPARTMENT_ROSTER_APPOINTMENT_SOURCE
-  ) {
+  if (input.manuallyLockedFields.includes(field)) return;
+  const winnerIsARoster =
+    textValue(objectRecord(set[`fieldProvenance.${field}`]).sourceName) ===
+    DEPARTMENT_ROSTER_APPOINTMENT_SOURCE;
+  const winnerValue = Array.isArray(set[field])
+    ? set[field]
+    : !(field in set) && Array.isArray(entityDoc?.[field])
+      ? entityDoc[field]
+      : undefined;
+  if (!Array.isArray(winnerValue)) return;
+  if (!winnerIsARoster && (input.survivorReadOnARoster || input.mergedInRosterReads.length === 0)) {
     return;
   }
   const rosterReads = refusedResolverObservations(
-    input.rosterReads.filter(
+    (winnerIsARoster
+      ? [...input.rosterReads, ...input.mergedInRosterReads]
+      : input.mergedInRosterReads
+    ).filter(
       (observation) =>
         observation.field === field &&
         observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE &&
@@ -6665,15 +6734,26 @@ async function combineDepartmentRosterAppointments(input: {
     ),
     entityDoc?.fieldValueRefusals,
   ).kept;
-  const readTime = (observation: ResolverObservation) =>
+  const ownReadTime = (observation: ResolverObservation) =>
     new Date(observation.observedAt as any).getTime() || 0;
-  const newestRead = Math.max(0, ...rosterReads.map(readTime));
+  // The floor stays on each read's own date, so a person-keyed read can only bring an
+  // appointment back into the window, never push another one out of it.
+  const newestRead = Math.max(0, ...rosterReads.map(ownReadTime));
   const currencyFloor = newestRead - DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS * 86_400_000;
+  const anyReadIsStale = [...rosterReads, ...input.mergedInRosterReads].some(
+    (observation) => ownReadTime(observation) < currencyFloor,
+  );
+  const personReads = anyReadIsStale
+    ? await personKeyedRosterDepartmentReads([...input.rosterPersonKeys], input.chunkPrefetch)
+    : [];
+  const readTime = (observation: ResolverObservation) =>
+    rosterAppointmentReadTime(observation, personReads);
   const namesADepartment = await departmentValueNamesADepartment(
     'school' in set ? set.school : entityDoc?.school,
   );
+  const isCurrent = (observation: ResolverObservation) => readTime(observation) >= currencyFloor;
   const currentAppointments = rosterReads
-    .filter((observation) => readTime(observation) >= currencyFloor)
+    .filter(isCurrent)
     .sort(
       (left, right) =>
         readTime(right) - readTime(left) ||
@@ -6684,13 +6764,36 @@ async function combineDepartmentRosterAppointments(input: {
   const canonicalizer = await getOrgUnitCanonicalizer();
   const departmentKey = (value: string) =>
     canonicalizer.canonicalizeDepartments([value]).values[0] ?? value.trim().toLowerCase();
-  const winner = (set[field] as unknown[]).map((value) => textValue(value)).filter(Boolean);
+  const keysNamedBy = (observations: readonly ResolverObservation[]) =>
+    new Set(
+      observations.flatMap((observation) =>
+        (Array.isArray(observation.value) ? observation.value : [observation.value])
+          .map((item) => textValue(item))
+          .filter(Boolean)
+          .map(departmentKey),
+      ),
+    );
+  const winner = (winnerValue as unknown[]).map((value) => textValue(value)).filter(Boolean);
+  const winnerKeys = new Set(winner.map(departmentKey));
+  const winnerIsStored = !Array.isArray(set[field]);
+  const currentKeys = keysNamedBy(input.mergedInRosterReads.filter(isCurrent));
+  const survivorKeys = keysNamedBy(
+    input.rosterReads.filter((observation) => observation.field === field),
+  );
+  const staleMergedInKeys = winnerIsStored
+    ? [...keysNamedBy(input.mergedInRosterReads.filter((read) => !isCurrent(read)))].filter(
+        (key) => !currentKeys.has(key) && !survivorKeys.has(key),
+      )
+    : [];
   const byKey = new Map<string, string>();
   for (const item of [...winner, ...currentAppointments]) {
     const key = departmentKey(item);
-    if (!byKey.has(key)) byKey.set(key, item);
+    if (!byKey.has(key) && !staleMergedInKeys.includes(key)) byKey.set(key, item);
   }
-  if (byKey.size === new Set(winner.map(departmentKey)).size) return;
+  if (byKey.size === 0) return;
+  if (byKey.size === winnerKeys.size && [...byKey.keys()].every((key) => winnerKeys.has(key))) {
+    return;
+  }
   const storedKeys = Array.isArray(entityDoc?.[field])
     ? (entityDoc[field] as unknown[]).map((value) => departmentKey(textValue(value)))
     : [];
@@ -7176,6 +7279,9 @@ export async function projectFromLog(
     mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
     loserRosterReads = [],
+    survivorReadOnARoster = false,
+    rosterPersonKeys = [],
+    chunkPrefetch,
   } = input;
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};
@@ -7329,7 +7435,11 @@ export async function projectFromLog(
     await combineDepartmentRosterAppointments({
       set,
       entityDoc,
-      rosterReads: [...resolverObs, ...loserRosterReads],
+      rosterReads: resolverObs,
+      mergedInRosterReads: loserRosterReads,
+      survivorReadOnARoster,
+      rosterPersonKeys,
+      chunkPrefetch,
       manuallyLockedFields,
     });
   }
@@ -8679,6 +8789,7 @@ export async function materializeEntity(
   let droppedLoserWebsiteValues: unknown[] = [];
   let mergedInLeadProfileUrls: string[] = [];
   let loserRosterReads: ResolverObservation[] = [];
+  let survivorReadOnARoster = false;
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
     obs = merged.observations;
@@ -8697,6 +8808,7 @@ export async function materializeEntity(
       confidence: o.confidence,
       observedAt: o.observedAt,
     }));
+    survivorReadOnARoster = merged.survivorReadOnARoster;
     if (obs.length === 0) {
       return {
         entityType,
@@ -9022,6 +9134,11 @@ export async function materializeEntity(
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     loserRosterReads,
+    survivorReadOnARoster,
+    rosterPersonKeys: researchAreaEvidenceObservations
+      .filter((observation: any) => observation.field === 'inferredPiUserKey')
+      .map((observation: any) => observation.value),
+    chunkPrefetch: options.chunkPrefetch,
     mergedInRows,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
