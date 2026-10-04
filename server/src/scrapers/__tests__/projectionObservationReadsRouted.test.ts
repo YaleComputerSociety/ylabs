@@ -34,6 +34,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read either: zero hits over the same 147 rows. Value-keyed as well, but the reachability is what decides it.',
   },
   {
+    fn: 'researcherReachedByUserIdentity',
+    reason:
+      'On the inferred-PI lead path, reached only from `planInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so THE BENCHMARK NEVER MAKES THIS READ: it replays rows with `dryRun: true`. It reads `user` observations under the key a PI attribution names, a different entity from the row being projected, so an entity-keyed source for that row cannot answer it (#4697).',
+  },
+  {
     fn: 'listingsSharingProfileUrl',
     reason:
       'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by value across every listing that carries one profile URL, whose purpose is to find listings other than the one being projected, so an entity-keyed source cannot answer it.',
@@ -77,6 +82,11 @@ const ENTITY_READ_CALL =
   /\bResearchEntity\.(find|findOne|findById|exists|countDocuments|distinct|aggregate)\s*\(/g;
 
 const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
+  {
+    fn: 'planInferredPiMembership',
+    reason:
+      "Reads the row's own name for the eponym check on the two PI-key routes #4697 adds, only after the original walk resolves nobody. Reached from the projection inside `if (!options.dryRun)` and from the reclaim stage, so the benchmark, which replays with `dryRun: true`, never makes this read.",
+  },
   {
     fn: 'inheritSchoolFromLeadPi',
     reason:

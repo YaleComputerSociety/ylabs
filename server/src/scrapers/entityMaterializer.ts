@@ -33,6 +33,7 @@ import {
   partitionObservationsByInvalidatedRun,
 } from './invalidatedScrapeRuns';
 import { Fellowship } from '../models/fellowship';
+import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 import {
   buildResearchAreasCardSummary,
   entityDocShortDescriptionForRestatementGuard,
@@ -71,6 +72,8 @@ import {
 } from '../utils/researchEntityNameNormalization';
 import {
   NO_SURNAME_ROSTER,
+  eponymMatchesIdentity,
+  eponymousLabNameSurnameCandidates,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
@@ -3011,10 +3014,15 @@ export async function planInferredPiMembership(
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
-  for (const observation of piKeyObservations) {
-    const resolution = await resolveInferredPiKeyIdentity(
-      inferredPiUserKeyIdentity(observation.value),
+  let entityName: string | undefined;
+  const loadEntityName = async (): Promise<string> => {
+    entityName ??= textValue(
+      ((await ResearchEntity.findById(researchEntityId).select('name').lean()) as any)?.name,
     );
+    return entityName;
+  };
+  for (const observation of piKeyObservations) {
+    const resolution = await resolveInferredPiUserKey(observation.value, loadEntityName);
     if (resolution.status !== 'matched' || !resolution.researcherId) continue;
     const facts = buildInferredPiLeadFacts(researchEntityId, {
       ...observation,
@@ -3140,14 +3148,20 @@ function inferredPiUserKeyIdentity(value: unknown): InferredPiKeyIdentity {
  * the name, because the map is evidence that the address names two identities, and a name
  * the corpus happens to hold once would otherwise pick a person the directory contradicts.
  */
+type InferredPiKeyResolution = ResearcherPersonNameResolution & {
+  aliasNamesSeveralNetids?: boolean;
+};
+
 async function resolveInferredPiKeyIdentity(
   identity: InferredPiKeyIdentity,
-): Promise<ResearcherPersonNameResolution> {
+): Promise<InferredPiKeyResolution> {
   if (identity.netid) {
     const byNetid = await resolveResearcherIdForPersonName('', { netid: identity.netid });
     if (byNetid.status === 'matched') return byNetid;
     const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
-    if (aliasMapping.status === 'ambiguous') return { status: 'ambiguous' };
+    if (aliasMapping.status === 'ambiguous') {
+      return { status: 'ambiguous', aliasNamesSeveralNetids: true };
+    }
     if (aliasMapping.status === 'resolved' && aliasMapping.netid !== identity.netid) {
       const byHealedNetid = await resolveResearcherIdForPersonName('', {
         netid: aliasMapping.netid,
@@ -3158,6 +3172,105 @@ async function resolveInferredPiKeyIdentity(
   const name = identity.name || identity.emailAliasName || '';
   if (!name) return { status: 'absent' };
   return resolveResearcherIdForPersonName(name, {});
+}
+
+const NAMESPACED_USER_KEY_PATTERN = /^[a-z][a-z-]*:/i;
+const BARE_ROSTER_ALIAS_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+const YALE_EMAIL_PATTERN = /^([a-z0-9][a-z0-9._-]*)@(?:[a-z0-9-]+\.)*yale\.edu$/i;
+
+/**
+ * The `user` entityKey a stored `inferredPiUserKey` names. Department rosters and the YSM
+ * directory have stored the same identity three ways - `netid:<alias>`, the bare alias, and
+ * the Yale email address - while `user` observations are keyed only by the first, so a bare
+ * or email key matched no `user` key and the person it names was never reached (#4697).
+ * Derived on every read rather than rewritten, so the stored evidence stays as observed.
+ */
+export function userEntityKeyForInferredPiUserKey(value: unknown): string {
+  const raw = textValue(value);
+  if (!raw || NAMESPACED_USER_KEY_PATTERN.test(raw)) return raw;
+  const email = raw.match(YALE_EMAIL_PATTERN);
+  if (email) return `netid:${email[1].toLowerCase()}`;
+  if (BARE_ROSTER_ALIAS_PATTERN.test(raw)) return `netid:${raw.toLowerCase()}`;
+  return raw;
+}
+
+async function researcherReachedByUserIdentity(
+  userEntityKey: string,
+): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
+  const read = await Observation.find({
+    entityType: 'user',
+    entityKey: userEntityKey,
+    ...materializationReadScopeFilter(),
+  }).lean();
+  const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  if (kept.length === 0) return undefined;
+  const join = await joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept);
+  if (!join.researcher?._id) return undefined;
+  return { researcherId: join.researcher._id, observedTitle: join.title };
+}
+
+async function namesAnotherPersonsLab(entityName: string, personName: string): Promise<boolean> {
+  const eponyms = eponymousLabNameSurnameCandidates(entityName);
+  if (eponyms.length === 0) return false;
+  const identity = personIdentityTokens(personName);
+  if (eponyms.some((eponym) => eponymMatchesIdentity(eponym, identity))) return false;
+  const knownSurnames = await loadKnownPersonSurnameRoster();
+  return eponyms.some((eponym) => knownSurnames.has(eponym));
+}
+
+async function researcherCanLeadEntity(
+  researcherId: mongoose.Types.ObjectId,
+  entityName: string,
+  observedTitle?: string,
+): Promise<boolean> {
+  const researcher: any = await Researcher.findById(researcherId)
+    .select('displayName profile.title')
+    .lean();
+  if (!researcher) return false;
+  const title = textValue(researcher.profile?.title) || textValue(observedTitle);
+  if (cannotOwnResearchHome(title)) return false;
+  return !(await namesAnotherPersonsLab(entityName, textValue(researcher.displayName)));
+}
+
+/**
+ * Resolves a stored PI key to a researcher. The netid, alias-map and key-name walk runs
+ * first on the key as stored, and whatever it matches stands exactly as before.
+ * Two routes are added after it. Both refuse a researcher whose title cannot own a
+ * research home, since a lead edge on such a person is retired again by
+ * `retireNonOwnerPiEdges`, and a researcher other than the person an eponymous lab name
+ * names as a known researcher's surname, because a roster that lists a lab member under the
+ * PI field yields a key that is faithfully that member's (measured: 3 of the first 22 rows
+ * these routes reached). The surname roster keeps a topical name from reading as a person's:
+ *   - a bare or email key, read in `user`-key form (`userEntityKeyForInferredPiUserKey`);
+ *   - the identity join the `user` materializer itself uses (email account, official
+ *     profile page, full observed name), so the reclaim reaches the researcher the
+ *     materializer already enriches for this key rather than reporting it unresolved.
+ * An alias the directory maps to several netids still stops the walk.
+ */
+async function resolveInferredPiUserKey(
+  value: unknown,
+  entityName: () => Promise<string>,
+): Promise<ResearcherPersonNameResolution> {
+  const asStored = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(value));
+  if (asStored.status === 'matched' || asStored.aliasNamesSeveralNetids) return asStored;
+  const userKey = userEntityKeyForInferredPiUserKey(value);
+  if (userKey !== textValue(value)) {
+    const asUserKey = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(userKey));
+    if (asUserKey.aliasNamesSeveralNetids) return asStored;
+    if (asUserKey.status === 'matched' && asUserKey.researcherId) {
+      return (await researcherCanLeadEntity(asUserKey.researcherId, await entityName()))
+        ? asUserKey
+        : asStored;
+    }
+  }
+  const joined = await researcherReachedByUserIdentity(userKey);
+  if (!joined) return asStored;
+  const canLead = await researcherCanLeadEntity(
+    joined.researcherId,
+    await entityName(),
+    joined.observedTitle,
+  );
+  return canLead ? { status: 'matched', researcherId: joined.researcherId } : asStored;
 }
 
 function coerceRosterProvenanceDate(value: unknown): Date | undefined {
@@ -5597,21 +5710,35 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
   return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
 }
 
-async function materializeUserIdentityToResearcher(
+export interface UserIdentityJoinResult {
+  resolved: ReturnType<typeof resolveAllFields>;
+  netid: string | undefined;
+  displayName: string;
+  title: string | undefined;
+  primaryDepartment: string | undefined;
+  imageUrl: string | undefined;
+  websiteUrl: string | undefined;
+  orcid: string | undefined;
+  profileUrls: Record<string, unknown> | undefined;
+  account: any;
+  researcher: any;
+  identityJoin: UserIdentityJoin | undefined;
+  personNameHeldByNobody: boolean;
+  identityJoinedOnEmailAlone: boolean;
+  identityJoinedOnOfficialProfileUrlAlone: boolean;
+}
+
+/**
+ * The read-only half of `materializeUserIdentityToResearcher`: which existing researcher a
+ * person's `user` observations reach, and by which join. The inferred-PI lead resolver
+ * calls it too, so a PI key that names a `user` key reaches the same researcher the user
+ * materializer enriches rather than a narrower netid-then-name lookup (#4697).
+ */
+export async function joinUserIdentityToExistingResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
-  options: MaterializeOptions = {},
-): Promise<MaterializeResult> {
-  const skipped = (reason: string): MaterializeResult => ({
-    entityType: 'user',
-    ...identifier,
-    fieldsWritten: 0,
-    conflicts: 0,
-    created: false,
-    resolved: {},
-    skipped: reason,
-  });
-
+  now: Date = new Date(),
+): Promise<UserIdentityJoinResult> {
   const materializationObs = obs.filter(
     (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
   );
@@ -5622,7 +5749,7 @@ async function materializeUserIdentityToResearcher(
     confidence: o.confidence,
     observedAt: o.observedAt,
   }));
-  const resolved = resolveAllFields(resolverObs, { now: options.now ?? new Date() });
+  const resolved = resolveAllFields(resolverObs, { now });
   const resolvedValue = (field: string): unknown => resolved[field]?.value;
 
   const netid =
@@ -5730,6 +5857,60 @@ async function materializeUserIdentityToResearcher(
       if (researcher) identityJoin = 'official-profile-page';
     }
   }
+  return {
+    resolved,
+    netid,
+    displayName,
+    title,
+    primaryDepartment,
+    imageUrl,
+    websiteUrl,
+    orcid,
+    profileUrls,
+    account,
+    researcher,
+    identityJoin,
+    personNameHeldByNobody,
+    identityJoinedOnEmailAlone,
+    identityJoinedOnOfficialProfileUrlAlone,
+  };
+}
+
+async function materializeUserIdentityToResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+  options: MaterializeOptions = {},
+): Promise<MaterializeResult> {
+  const skipped = (reason: string): MaterializeResult => ({
+    entityType: 'user',
+    ...identifier,
+    fieldsWritten: 0,
+    conflicts: 0,
+    created: false,
+    resolved: {},
+    skipped: reason,
+  });
+
+  const join = await joinUserIdentityToExistingResearcher(
+    identifier,
+    obs,
+    options.now ?? new Date(),
+  );
+  const {
+    resolved,
+    displayName,
+    title,
+    primaryDepartment,
+    imageUrl,
+    websiteUrl,
+    orcid,
+    profileUrls,
+    personNameHeldByNobody,
+    identityJoinedOnEmailAlone,
+    identityJoinedOnOfficialProfileUrlAlone,
+    account,
+  } = join;
+  let { researcher, identityJoin } = join;
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
 
   // #2129 refuses to mint a person from a bare directory identity, and that stays.
