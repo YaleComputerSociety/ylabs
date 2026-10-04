@@ -338,6 +338,34 @@ export function chunkProjectionDriftCensusIds<T>(
   return batches;
 }
 
+export interface ProjectionDriftCensusRowReads {
+  aggregateIds(
+    pipeline: PipelineStage[],
+    options: typeof PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  ): PromiseLike<Array<{ _id: unknown }>>;
+  findRows(filter: Record<string, unknown>): PromiseLike<Array<Record<string, unknown>>>;
+}
+
+export async function* loadProjectionDriftCensusRows(
+  { sample, slugs, includeArchived }: { sample: number; slugs: string[]; includeArchived: boolean },
+  reads: ProjectionDriftCensusRowReads,
+): AsyncGenerator<Record<string, unknown>> {
+  if (slugs.length > 0) {
+    // The archived filter stays out of the slug query so a requested archived row
+    // loads and reports `skipped: archived-entity` rather than vanishing from the
+    // report with nothing saying it was asked for.
+    yield* await reads.findRows({ slug: { $in: slugs } });
+    return;
+  }
+  const sampledIds = await reads.aggregateIds(
+    projectionDriftCensusSamplePipeline(sample, includeArchived),
+    PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  );
+  for (const batch of chunkProjectionDriftCensusIds(sampledIds.map((row) => row._id))) {
+    yield* await reads.findRows({ _id: { $in: batch } });
+  }
+}
+
 export function scaleProjectionDriftRowCount(
   rows: number,
   rowsDrawn: number,

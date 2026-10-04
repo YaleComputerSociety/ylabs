@@ -13,11 +13,9 @@ import {
   rematerializeSkipReasonForEntity,
 } from './rematerializeResearchEntitiesCore';
 import {
-  chunkProjectionDriftCensusIds,
   classifyEntityProjectionDrift,
+  loadProjectionDriftCensusRows,
   parseProjectionDriftCensusArgs,
-  PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
-  projectionDriftCensusSamplePipeline,
   projectionDriftReportsForUnloadedSlugs,
   projectionDriftSkipReasonForResult,
   scaleProjectionDriftCensusToCorpus,
@@ -31,31 +29,6 @@ dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
-
-async function* loadCensusRows(
-  sample: number,
-  slugs: string[],
-  includeArchived: boolean,
-): AsyncGenerator<Record<string, unknown>> {
-  if (slugs.length > 0) {
-    // The archived filter stays out of the slug query so a requested archived row
-    // loads and reports `skipped: archived-entity` rather than vanishing from the
-    // report with nothing saying it was asked for.
-    yield* await ResearchEntity.find({ slug: { $in: slugs } }).lean<
-      Array<Record<string, unknown>>
-    >();
-    return;
-  }
-  const sampledIds = await ResearchEntity.aggregate<{ _id: unknown }>(
-    projectionDriftCensusSamplePipeline(sample, includeArchived),
-    PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
-  );
-  for (const batch of chunkProjectionDriftCensusIds(sampledIds.map((row) => row._id))) {
-    yield* await ResearchEntity.find({ _id: { $in: batch } }).lean<
-      Array<Record<string, unknown>>
-    >();
-  }
-}
 
 async function censusRow(
   stored: Record<string, unknown>,
@@ -104,7 +77,11 @@ async function main() {
     args.includeArchived ? {} : { archived: { $ne: true } },
   );
   const entities: ProjectionDriftEntityReport[] = [];
-  for await (const row of loadCensusRows(args.sample, args.slugs, args.includeArchived)) {
+  for await (const row of loadProjectionDriftCensusRows(args, {
+    aggregateIds: (pipeline, options) =>
+      ResearchEntity.aggregate<{ _id: unknown }>(pipeline, options),
+    findRows: (filter) => ResearchEntity.find(filter).lean<Array<Record<string, unknown>>>(),
+  })) {
     try {
       entities.push(await censusRow(row, args.includeArchived));
     } catch (error) {

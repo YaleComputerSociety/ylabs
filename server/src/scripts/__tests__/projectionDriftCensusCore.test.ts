@@ -1,11 +1,10 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { MATERIALIZER_MANAGED_FIELDS } from '../../scrapers/entityMaterializer';
 import {
   chunkProjectionDriftCensusIds,
   classifyEntityProjectionDrift,
+  loadProjectionDriftCensusRows,
   PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
   projectionDriftCensusSamplePipeline,
   isProjectionBookkeepingKey,
@@ -388,11 +387,71 @@ describe('projection drift census sample read', () => {
   });
 });
 
-describe('projection drift census script', () => {
-  it('reads the sample through the disk-spilling options rather than a bare aggregate', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', 'projectionDriftCensus.ts'), 'utf8');
-    expect(source).toContain('PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS');
-    expect(source).toContain('projectionDriftCensusSamplePipeline(');
-    expect(source).not.toMatch(/\$sample:/);
+describe('loadProjectionDriftCensusRows', () => {
+  const recordingReads = (sampledIds: number[]) => {
+    const aggregateCalls: unknown[][] = [];
+    const findFilters: Array<Record<string, unknown>> = [];
+    return {
+      aggregateCalls,
+      findFilters,
+      reads: {
+        aggregateIds: async (...call: unknown[]) => {
+          aggregateCalls.push(call);
+          return sampledIds.map((_id) => ({ _id }));
+        },
+        findRows: async (filter: Record<string, unknown>) => {
+          findFilters.push(filter);
+          const batch = (filter._id as { $in: number[] }).$in;
+          return batch.map((id) => ({ _id: id, slug: `row-${id}` }));
+        },
+      },
+    };
+  };
+
+  const collect = async (rows: AsyncIterable<Record<string, unknown>>) => {
+    const out: Array<Record<string, unknown>> = [];
+    for await (const row of rows) out.push(row);
+    return out;
+  };
+
+  it('draws the sample through the disk-spilling id pipeline and loads rows in bounded batches', async () => {
+    const ids = Array.from({ length: 450 }, (_, index) => index);
+    const { aggregateCalls, findFilters, reads } = recordingReads(ids);
+
+    const rows = await collect(
+      loadProjectionDriftCensusRows({ sample: 450, slugs: [], includeArchived: false }, reads),
+    );
+
+    expect(aggregateCalls).toEqual([
+      [projectionDriftCensusSamplePipeline(450, false), PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS],
+    ]);
+    expect(findFilters.map((filter) => (filter._id as { $in: number[] }).$in.length)).toEqual([
+      200, 200, 50,
+    ]);
+    expect(rows.map((row) => row._id)).toEqual(ids);
+  });
+
+  it('loads requested slugs directly without sampling or an archived filter', async () => {
+    const aggregateCalls: unknown[] = [];
+    const findFilters: unknown[] = [];
+    const rows = await collect(
+      loadProjectionDriftCensusRows(
+        { sample: 10, slugs: ['fixture-a', 'fixture-b'], includeArchived: false },
+        {
+          aggregateIds: async (...call) => {
+            aggregateCalls.push(call);
+            return [];
+          },
+          findRows: async (filter) => {
+            findFilters.push(filter);
+            return [{ slug: 'fixture-a' }, { slug: 'fixture-b' }];
+          },
+        },
+      ),
+    );
+
+    expect(aggregateCalls).toEqual([]);
+    expect(findFilters).toEqual([{ slug: { $in: ['fixture-a', 'fixture-b'] } }]);
+    expect(rows.map((row) => row.slug)).toEqual(['fixture-a', 'fixture-b']);
   });
 });
