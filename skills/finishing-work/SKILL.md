@@ -61,7 +61,7 @@ Every `react-hooks` recommended rule, including `react-hooks/refs` and `react-ho
 Use `client/src/hooks/useLoadEffect.ts` for a loader effect and `client/src/hooks/useMediaQuery.ts` for a media query rather than suppressing either rule.
 The one recorded suppression of `react-hooks/set-state-in-effect` is the URL-to-state reconcile in `client/src/pages/research.tsx`, which must run in effect order with the paging effects and carries its rationale beside the `eslint-disable-next-line`.
 Any new suppression of either rule needs the same written rationale on the line above it.
-Expect a lint error to fail the required check before any suite runs.
+Expect a lint error to turn the `checks` job red within seconds; the required `test-and-build` context reports only once every job, the server shards included, has finished.
 `yarn verify` runs steps 2-12 in series, with the full server suite unsharded as step 7; keep it in sync with this list if `ci.yml` changes.
 `scripts/security-preflight.test.mjs` pins every check running in exactly one job, lint and the client suite sitting in different jobs that start at once, the lint step's position ahead of the guards, the shard divisor matching the matrix, every job sitting in `test-and-build`'s `needs`, that gate script failing on any failed, cancelled, or skipped result, and the smoke failing when its background browser install failed, so a change that contradicts this list fails step 12.
 

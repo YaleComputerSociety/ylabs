@@ -13,6 +13,9 @@ import { captureStartupError, initializeErrorTracking } from './utils/errorTrack
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
 import { serverListenHost } from './utils/environment';
 import { registerGracefulShutdown } from './serverShutdown';
+import { worktreePortConflict } from './utils/worktreePortGuard';
+import { resolveServerPackageRoot } from './utils/serverPackageRoot';
+import path from 'node:path';
 
 dotenv.config({ quiet: true });
 initializeErrorTracking();
@@ -27,6 +30,14 @@ const failStartup = async (error: unknown) => {
 };
 
 const startApp = async () => {
+  const portConflict = worktreePortConflict({
+    port,
+    repoRoot: path.dirname(resolveServerPackageRoot(import.meta.url)),
+  });
+  if (portConflict) {
+    console.error(portConflict);
+    process.exit(1);
+  }
   try {
     await initializeConnections(mongoOptions);
 
