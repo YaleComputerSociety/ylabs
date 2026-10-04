@@ -407,6 +407,23 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       );
     });
 
+    it('cites one page when two merged-in paths reach the same profile destination', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);
+      await seedObservation('dept-example-lead', 'sourceUrls', [
+        'https://medicine.yale.edu/profile/example-lead/',
+        'https://medicine.yale.edu/bbs/profile/example-lead/',
+      ]);
+      await seedLead(survivor._id, 'https://medicine.yale.edu/profile/example-lead');
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ sourceUrls?: string[] }>();
+
+      expect(
+        (stored?.sourceUrls ?? []).filter((url) => url.includes('/profile/example-lead')),
+      ).toHaveLength(1);
+    });
+
     it('leaves out a merged-in profile that is not the lead verified one', async () => {
       const survivor = await seedMerge('dept-example-lead');
       await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);
