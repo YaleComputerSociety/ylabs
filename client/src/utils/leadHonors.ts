@@ -8,7 +8,7 @@ export const formatLeadHonors = (
     (honor: any) => typeof honor?.label === 'string' && honor.label.trim(),
   );
   const isRecent = (honor: any) =>
-    typeof honor.year === 'number' && honor.year >= currentYear - RECENT_HONOR_YEARS;
+    typeof honor.year === 'number' && honor.year > currentYear - RECENT_HONOR_YEARS;
   const recent = honors
     .filter(isRecent)
     .map((honor: any) => `${honor.label.trim()} (${honor.year})`);

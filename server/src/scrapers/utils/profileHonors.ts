@@ -76,7 +76,8 @@ export const PROFILE_HONOR_CATALOG: readonly HonorCatalogEntry[] = [
     key: 'ias',
     label: 'Institute for Advanced Study',
     kind: 'fellowship',
-    pattern: /(?<!Radcliffe )(?<!Netherlands )(?<!Collegium )\bInstitute for Advanced Study\b/i,
+    pattern:
+      /(?<!\b(?!The\b|Princeton\b)[A-Z][\w'’.-]*\s+)\bInstitute for Advanced Study\b(?!\s+(?:in|at)\s+(?!Princeton\b)[A-Z])/,
   },
   {
     key: 'radcliffe',
@@ -161,13 +162,35 @@ export const PROFILE_HONOR_CATALOG: readonly HonorCatalogEntry[] = [
 
 const HONORS_HEADING =
   /^\s*(?:selected\s+)?(?:honou?rs?|awards?|fellowships?|prizes?|distinctions?|recognitions?)(?:\s*(?:,|and|&)\s*(?:honou?rs?|awards?|fellowships?|prizes?|distinctions?|recognitions?|grants?))*\s*:?\s*$/i;
-const RECEIPT_VERB =
-  /\b(?:awarded|received|receiving|receives|recipient|won|wins|winner|elected|named|holds?|held|honou?red|granted|fellow(?:ship)?s? (?:at|from|of)|(?:was|is|has been|became) (?:an?|the) [^.]{0,40}fellow|member of|(?:work|research|scholarship|project|book)s? (?:has|have)? ?(?:been |was |were |is )?(?:supported|funded) by)\b/i;
+const RECEIPT_VERBS =
+  /\b(?:awarded|received|receiving|receives|recipient|won|wins|winner|elected|named|holds?|held|honou?red|granted|fellow(?:ship)?s? (?:at|from|of)|(?:was|is|has been|became) (?:an?|the) [^.]{0,40}fellow|member of|(?:work|research|scholarship|project|book)s? (?:has|have)? ?(?:been |was |were |is )?(?:supported|funded) by)\b/gi;
+const RECEIPT_WINDOW_CHARS = 160;
+const RECEIPT_GAP_BREAK =
+  /\b(?:about|wrote|writes|written|biograph\w*|stud(?:y|ies|ied|ying)|interview\w*|taught|teach(?:es|ing)?|edit(?:s|ed|ing)|translat\w*|curat\w*|who|whom|whose)\b/i;
+const RELATIVE_CLAUSE_TAIL = /\b(?:who|whom|which|that)\s+(?:(?:has|have|had)\s+(?:been\s+)?)?$/i;
 const PERSON_SUBJECT = /\b(?:he|she|they|his|her|their|professor|prof\.|dr\.)\b/i;
 const REFUSED_CONTEXT =
   /\b(?:nominat\w*|finalist|shortlist\w*|longlist\w*|advis\w*|mentor\w*|judg\w*|jur(?:y|or)|committee|chair(?:ed|s|ing)? (?:of|the) (?:[a-z]+ )?(?:committee|panel|jury|selection)|director of|selection|applicants?|students?|undergraduates?|alumn\w*|mellon mays|program officer|panel(?:ist)?|reviewer|proceedings of|journal of)\b/i;
 const YEAR = /\b(19[5-9]\d|20\d\d)\b/g;
 const NEAR_YEAR_CHARS = 60;
+const RECENT_HONOR_YEARS = 5;
+
+export function isRecentHonor(honor: { year?: number }, currentYear: number): boolean {
+  return typeof honor.year === 'number' && honor.year > currentYear - RECENT_HONOR_YEARS;
+}
+
+function receiptPrecedes(unit: string, honorStart: number): boolean {
+  let receipt: RegExpMatchArray | undefined;
+  for (const match of unit.matchAll(RECEIPT_VERBS)) {
+    if ((match.index ?? 0) >= honorStart) break;
+    receipt = match;
+  }
+  if (!receipt) return false;
+  const verbStart = receipt.index ?? 0;
+  if (honorStart - verbStart > RECEIPT_WINDOW_CHARS) return false;
+  if (RELATIVE_CLAUSE_TAIL.test(unit.slice(0, verbStart))) return false;
+  return !RECEIPT_GAP_BREAK.test(unit.slice(verbStart + receipt[0].length, honorStart));
+}
 
 function yearNear(
   text: string,
@@ -192,9 +215,9 @@ function yearNear(
 const collapse = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 function surnameOf(personName: string): string {
-  const tokens = collapse(personName)
-    .replace(/[,.]/g, ' ')
-    .split(' ')
+  const tokens = personName
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/[^\p{L}'’-]+/u)
     .filter((token) => token.length > 1);
   return tokens[tokens.length - 1] ?? '';
 }
@@ -214,7 +237,6 @@ function honorsIn(
 ): ProfileHonor[] {
   if (REFUSED_CONTEXT.test(unit)) return [];
   if (requireReceipt) {
-    if (!RECEIPT_VERB.test(unit)) return [];
     const namesPerson =
       PERSON_SUBJECT.test(unit) || (surname && new RegExp(`\\b${surname}\\b`, 'i').test(unit));
     if (!namesPerson) return [];
@@ -224,6 +246,7 @@ function honorsIn(
     const match = entry.pattern.exec(unit);
     if (!match) continue;
     const start = match.index;
+    if (requireReceipt && !receiptPrecedes(unit, start)) continue;
     const year = yearNear(unit, start, start + match[0].length, currentYear);
     found.push({
       key: entry.key,

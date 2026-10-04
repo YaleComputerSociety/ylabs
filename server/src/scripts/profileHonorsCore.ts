@@ -1,5 +1,11 @@
 import type { FraProfileSynthesisEntity } from './fraProfileSynthesisLane';
-import { personNamesAgree } from './fraProfileSynthesisCore';
+import {
+  isOfficialYalePersonPageUrl,
+  leadProfileUrlNamesLead,
+  personNamesAgree,
+  selectLeadProfileUrls,
+  type FraProfileSynthesisLead,
+} from './fraProfileSynthesisCore';
 import { extractProfileHonors, type ProfileHonor } from '../scrapers/utils/profileHonors';
 
 export const PROFILE_HONORS_SOURCE_NAME = 'official-profile-honors';
@@ -48,13 +54,34 @@ export function parseProfileHonorsArgs(argv: readonly string[]): ProfileHonorsAr
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
-/** The person a row's profile page is about: the lead its title names, else the title. */
-export function profilePersonName(entity: ProfileHonorsEntity): string {
+/** The lead the row's title names, the only person whose page may supply its honors. */
+export function profileHonorsLead(
+  entity: ProfileHonorsEntity,
+): FraProfileSynthesisLead | undefined {
   const titles = [entity.displayName, entity.name];
-  const lead = (entity.leads ?? []).find((candidate) =>
+  return (entity.leads ?? []).find((candidate) =>
     titles.some((title) => personNamesAgree(title, candidate.name)),
   );
-  return text(lead?.name) || text(entity.displayName) || text(entity.name);
+}
+
+/**
+ * The official Yale pages that are that lead's own, cited by the row first. A bare
+ * `/profile/` citation is not enough here, unlike in the FRA synthesis lane, because a
+ * LAB row routinely cites a co-director's or a member's profile.
+ */
+export function profileHonorsUrlsOf(entity: ProfileHonorsEntity): string[] {
+  const lead = profileHonorsLead(entity);
+  if (!lead) return [];
+  const cited = (Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []).filter(
+    (url): url is string =>
+      typeof url === 'string' &&
+      isOfficialYalePersonPageUrl(url) &&
+      leadProfileUrlNamesLead(url, lead),
+  );
+  return [
+    ...cited,
+    ...selectLeadProfileUrls([lead], entity.sourceUrls, [entity.displayName, entity.name]),
+  ];
 }
 
 export function storedHonors(entity: ProfileHonorsEntity): ProfileHonor[] {
@@ -71,17 +98,18 @@ export type ProfileHonorsOutcome =
   | { kind: 'write'; sourceUrl: string; honors: ProfileHonor[] };
 
 /**
- * Reads the first profile page that loads and decides whether the row's stored honors
+ * Reads the first of the lead's own profile pages that loads and decides whether the row's stored honors
  * change. An unreadable page writes nothing, because a failed read is not evidence the
  * honors are gone; a page that reads and states none clears honors the row still holds.
  */
 export async function readProfileHonors(
   entity: ProfileHonorsEntity,
-  profileUrls: readonly string[],
   fetchHtml: (url: string) => Promise<string>,
   currentYear: number,
 ): Promise<ProfileHonorsOutcome> {
-  if (profileUrls.length === 0) return { kind: 'noProfilePage' };
+  const lead = profileHonorsLead(entity);
+  const profileUrls = profileHonorsUrlsOf(entity);
+  if (!lead || profileUrls.length === 0) return { kind: 'noProfilePage' };
   for (const url of profileUrls) {
     let html: string;
     try {
@@ -89,7 +117,7 @@ export async function readProfileHonors(
     } catch {
       continue;
     }
-    const honors = extractProfileHonors(html, profilePersonName(entity), currentYear);
+    const honors = extractProfileHonors(html, lead.name, currentYear);
     const changed = honorsSignature(honors) !== honorsSignature(storedHonors(entity));
     return changed
       ? { kind: 'write', sourceUrl: url, honors }

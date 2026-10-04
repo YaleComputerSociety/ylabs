@@ -11,7 +11,8 @@ import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { fraProfileSynthesisLeads, profileUrlsOf } from './fraProfileSynthesisLane';
+import { fraProfileSynthesisLeads } from './fraProfileSynthesisLane';
+import { isRecentHonor } from '../scrapers/utils/profileHonors';
 import {
   PROFILE_HONORS_CONFIDENCE,
   PROFILE_HONORS_ENTITY_TYPES,
@@ -69,14 +70,13 @@ async function main(): Promise<void> {
   await runWithBoundedConcurrency(targets, PAGE_READ_CONCURRENCY, async (entity) => {
     const outcome = await readProfileHonors(
       entity,
-      profileUrlsOf(entity),
       async (url) => (await fetchPageWithPolicy(url)).html,
       currentYear,
     );
     tally[outcome.kind]++;
     if (outcome.kind === 'write' || outcome.kind === 'unchanged') {
       if (outcome.honors.length > 0) tally.withHonors++;
-      if (outcome.honors.some((honor) => (honor.year ?? 0) >= currentYear - 5)) tally.withRecent++;
+      if (outcome.honors.some((honor) => isRecentHonor(honor, currentYear))) tally.withRecent++;
     }
     if (outcome.kind === 'write') {
       const slug = String(entity.slug);

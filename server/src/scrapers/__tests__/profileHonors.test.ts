@@ -76,6 +76,46 @@ describe('extractProfileHonors', () => {
     ).toEqual(['radcliffe']);
   });
 
+  it('does not read another Institute for Advanced Study as the Princeton institute', () => {
+    expect(
+      keys(page('<p>She was a fellow at the Paris Institute for Advanced Study in 2022.</p>')),
+    ).toEqual([]);
+    expect(
+      keys(page('<p>He held a fellowship at the Institute for Advanced Study in Toulouse.</p>')),
+    ).toEqual([]);
+    expect(
+      keys(page('<p>She was a member of the Institute for Advanced Study in Princeton.</p>')),
+    ).toEqual(['ias']);
+  });
+
+  it('needs the receipt to bind to the honor rather than sit elsewhere in the sentence', () => {
+    expect(
+      keys(
+        page(
+          '<p>She held a visiting post in Paris and wrote a biography of a Pulitzer Prize winner.</p>',
+        ),
+      ),
+    ).toEqual([]);
+    expect(keys(page('<p>She interviewed scientists who won the Nobel Prize.</p>'))).toEqual([]);
+    expect(
+      keys(
+        page(
+          '<p>She was elected to the American Academy of Arts and Sciences and the American Philosophical Society.</p>',
+        ),
+      ).sort(),
+    ).toEqual(['amacad', 'aps']);
+  });
+
+  it('reads a person whose name carries punctuation without failing', () => {
+    expect(
+      extractProfileHonors(
+        page('<p>Placeholder received the Bancroft Prize.</p>'),
+        'Avery Placeholder (she/her)',
+        2026,
+      ).map((h) => h.key),
+    ).toEqual(['bancroft']);
+  });
+
   it('needs the sentence to be about the person', () => {
     expect(keys(page('<p>The department was awarded an NEH grant for its archive.</p>'))).toEqual(
       [],
