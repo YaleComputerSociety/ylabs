@@ -14,6 +14,7 @@ import {
   weeklySweepCorpusSnapshotStatuses,
   weeklySweepModes,
   weeklySweepRunStatuses,
+  weeklySweepSearchIndexStatuses,
 } from './storedVocabularies';
 
 export const WEEKLY_SWEEP_RUN_COLLECTION = 'weekly_sweep_runs';
@@ -133,6 +134,13 @@ const weeklySweepRunSchema = new mongoose.Schema(
       storageAfter: { type: storageReadingSchema, required: false },
       snapshotCacheDropped: { type: Boolean, required: true, default: false },
       refusal: { type: String, required: false },
+      codeFreshness: {
+        ok: { type: Boolean, required: false },
+        codeSha: { type: String, required: false },
+        targetSha: { type: String, required: false },
+        newestLaneCommitSha: { type: String, required: false },
+        refusal: { type: String, required: false },
+      },
     },
     modes: { type: [modeRunSchema], default: [] },
     sources: { type: [sourceRunSchema], default: [] },
@@ -152,6 +160,10 @@ const weeklySweepRunSchema = new mongoose.Schema(
         required: requiredOnceFinished,
       },
       exitCode: { type: Number, required: false },
+    },
+    searchIndex: {
+      status: { type: String, enum: weeklySweepSearchIndexStatuses, required: false },
+      remedy: { type: String, required: false },
     },
     error: { type: String, required: false },
   },

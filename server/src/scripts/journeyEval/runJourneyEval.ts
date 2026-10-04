@@ -108,7 +108,8 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     undergradSampleSeed: DEFAULT_UNDERGRAD_SAMPLE_SEED,
     undergradSampleSize: DEFAULT_UNDERGRAD_SAMPLE_SIZE,
   };
-  for (const token of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
     if (token.startsWith('--window=')) args.window = Number(token.slice('--window='.length));
     else if (token.startsWith('--facet-values='))
       args.facetValues = Number(token.slice('--facet-values='.length));
@@ -131,6 +132,7 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     else if (token.startsWith('--undergrad-sample-size='))
       args.undergradSampleSize = Number(token.slice('--undergrad-sample-size='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
+    else if (token === '--output') args.output = argv[++index];
   }
   return args;
 }

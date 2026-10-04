@@ -12,7 +12,14 @@ import {
   RESEARCH_SWEEP_SOURCES,
   declareMaterializationReadScopeForChildren,
   readSweepHeadSha,
+  sweepSearchIndexOutcome,
 } from './runScraperSweep';
+import {
+  gitRunnerIn,
+  readSweepCodeFreshness,
+  SWEEP_TARGET_SHA_VARIABLE,
+  type SweepCodeFreshness,
+} from './sweepCodeFreshness';
 import {
   evaluateStorageHeadroom,
   measureClusterStorage,
@@ -26,7 +33,9 @@ import {
   buildWeeklySweepArgs,
   buildWeeklySweepRunRecord,
   buildWeeklySweepRunStartRecord,
+  codeFreshnessRefusalPreflight,
   findSweepSummaryPath,
+  formatWeeklySweepRefusalLine,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
   weeklySweepChildEnvironment,
@@ -206,13 +215,19 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     for (const problem of problems) console.error(`[weekly-sweep] ${problem}`);
     return 1;
   }
-  const codeSha = readSweepHeadSha(REPO_ROOT);
+  const codeFreshness = readSweepCodeFreshness({
+    git: gitRunnerIn(REPO_ROOT),
+    targetSha: process.env[SWEEP_TARGET_SHA_VARIABLE],
+  });
+  const codeSha = codeFreshness.codeSha ?? readSweepHeadSha(REPO_ROOT);
   console.log(`[weekly-sweep] code ${codeSha ?? 'unknown'}`);
+  reportCodeFreshness(codeFreshness);
   console.log(`[weekly-sweep] modes: ${args.modes.join(', ')}`);
   const jobDir = fs.mkdtempSync(
     path.join(fs.realpathSync(process.env.TMPDIR || '/tmp'), 'ylabs-weekly-sweep-'),
   );
   if (args.dryRun) {
+    if (!codeFreshness.ok) return 1;
     if (!(await preflight(args, jobDir)).ok) return 1;
     for (const mode of args.modes) {
       console.log(`[weekly-sweep] would run: yarn ${buildWeeklySweepArgs(mode).join(' ')}`);
@@ -237,11 +252,14 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   let exitCode = 1;
   let error: string | undefined;
   try {
-    preflightRecord = await preflight(args, jobDir);
+    preflightRecord = codeFreshness.ok
+      ? { ...(await preflight(args, jobDir)), codeFreshness }
+      : codeFreshnessRefusalPreflight(codeFreshness);
     if (preflightRecord.ok) {
       outcomes = runSweeps(jobDir, args.modes);
       exitCode = weeklySweepExitCode(outcomes);
       if (exitCode === 0) corpusSnapshot = takeCorpusSnapshot();
+      reportSearchIndexOutcome();
     }
   } catch (caught) {
     error = sanitizeLogValue(caught);
@@ -256,9 +274,29 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     preflight: preflightRecord,
     outcomes,
     corpusSnapshot,
+    ...(outcomes.length > 0 ? { searchIndex: sweepSearchIndexOutcome() } : {}),
     ...(error ? { error } : {}),
   });
   return recorded ? exitCode : 1;
+}
+
+function reportCodeFreshness(codeFreshness: SweepCodeFreshness): void {
+  if (codeFreshness.ok) {
+    console.log(
+      `[weekly-sweep] code contains ${codeFreshness.newestLaneCommitSha}, the newest beta commit touching the scrapers or the materializer`,
+    );
+    return;
+  }
+  console.error(`[weekly-sweep] REFUSING TO START: ${codeFreshness.refusal}`);
+  console.error(formatWeeklySweepRefusalLine(codeFreshness));
+}
+
+function reportSearchIndexOutcome(): void {
+  const searchIndex = sweepSearchIndexOutcome();
+  if (searchIndex.status !== 'resync-required') return;
+  console.error(
+    `[weekly-sweep] the Development search index was NOT updated by this run; run \`${searchIndex.remedy}\` from a checkout that reaches it (docs/data-refresh-runbook.md)`,
+  );
 }
 
 if (isDirectScriptInvocation(import.meta.url, 'weeklyDevelopmentSweep')) {

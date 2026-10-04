@@ -10,6 +10,9 @@ import {
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
   buildWeeklySweepRunRecord,
+  codeFreshnessRefusalPreflight,
+  formatWeeklySweepRefusalLine,
+  WEEKLY_SWEEP_REFUSED_MARKER,
   RENDER_CRON_RUN_LIMIT_MS,
   WEEKLY_SWEEP_ERROR_TEXT_LIMIT,
   findSweepSummaryPath,
@@ -290,6 +293,50 @@ describe('buildWeeklySweepRunRecord', () => {
       corpusSnapshot: { status: 'skipped' },
       ...overrides,
     });
+
+  it('records a stale-code refusal as a refused run naming the lane commit it lacks', () => {
+    const codeFreshness = {
+      ok: false,
+      codeSha: 'old0000',
+      targetSha: 'old0000',
+      newestLaneCommitSha: 'lane1111',
+      refusal: 'the sweep would run old0000, which does not contain lane1111',
+    };
+    const record = recordFrom({
+      codeSha: 'old0000',
+      exitCode: 1,
+      preflight: codeFreshnessRefusalPreflight(codeFreshness),
+      outcomes: [],
+    });
+
+    expect(record.status).toBe('refused');
+    expect(record.codeSha).toBe('old0000');
+    expect(record.refusals).toEqual([codeFreshness.refusal]);
+    expect(record.preflight.codeFreshness).toEqual(codeFreshness);
+    expect(record.modes).toEqual([]);
+    expect(formatWeeklySweepRefusalLine(codeFreshness)).toBe(
+      `${WEEKLY_SWEEP_REFUSED_MARKER} ${JSON.stringify(codeFreshness)}`,
+    );
+  });
+
+  it('records the commit a fresh run checked and that the search index needs a re-sync', () => {
+    const codeFreshness = {
+      ok: true,
+      codeSha: 'abc123',
+      targetSha: 'abc123',
+      newestLaneCommitSha: 'lane1111',
+    };
+    const record = recordFrom({
+      preflight: { ...okPreflight, codeFreshness },
+      searchIndex: { status: 'resync-required', remedy: 'yarn development:search:rebuild' },
+    });
+
+    expect(record.preflight.codeFreshness).toEqual(codeFreshness);
+    expect(record.searchIndex).toEqual({
+      status: 'resync-required',
+      remedy: 'yarn development:search:rebuild',
+    });
+  });
 
   it('flattens each source, stage and phase into queryable rows with their timings', () => {
     const record = recordFrom();

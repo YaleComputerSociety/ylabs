@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { requiresDeployedRuntimeSecurity } from './environment';
+import { SearchIndexWritesDeferredError, searchIndexWritesDeferred } from './searchIndexWrites';
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
   dotenv.config({ quiet: true });
 }
@@ -82,6 +83,7 @@ const warnOnceOnLegacyKeyFallback = (config: MeiliConnectionConfig, env: NodeJS.
 const meiliClientPromises = new Map<MeiliKeyRole, Promise<any>>();
 
 const getMeiliClientForRole = async (role: MeiliKeyRole) => {
+  if (searchIndexWritesDeferred()) throw new SearchIndexWritesDeferredError();
   let clientPromise = meiliClientPromises.get(role);
   if (!clientPromise) {
     clientPromise = (async () => {

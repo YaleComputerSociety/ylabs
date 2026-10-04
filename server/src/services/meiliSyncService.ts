@@ -3,6 +3,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import { buildResearchEntitySearchIndexDocumentsWithMemberNames } from './researchEntitySearchIndexService';
@@ -144,7 +145,7 @@ const settleDocumentWrite = async (
 
 export const syncEntity = async (entityType: string, doc: any): Promise<boolean> => {
   const config = getConfig(entityType);
-  if (!config || !doc) return false;
+  if (!config || !doc || searchIndexWritesDeferred()) return false;
 
   try {
     const index = await getMeiliIndex(config.indexName);
@@ -185,7 +186,7 @@ export const syncEntity = async (entityType: string, doc: any): Promise<boolean>
  */
 export const syncEntities = async (entityType: string, docs: any[]): Promise<number> => {
   const config = getConfig(entityType);
-  if (!config || !docs || docs.length === 0) return 0;
+  if (!config || !docs || docs.length === 0 || searchIndexWritesDeferred()) return 0;
 
   try {
     const index = await getMeiliIndex(config.indexName);
