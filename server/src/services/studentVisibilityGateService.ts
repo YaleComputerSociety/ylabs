@@ -76,7 +76,6 @@ import {
 } from '../scrapers/accessMaterializer';
 import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from '../scrapers/rowKeyedContactEvidence';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
-import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
@@ -1150,12 +1149,6 @@ export function reachOutPlausibleSignalCreditsActionEvidence(input: {
   const { signal, entity } = input;
   if (signal.archived === true) return false;
   if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
-  if (
-    typeof signal.derivationKey === 'string' &&
-    IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
-  ) {
-    return false;
-  }
   if (hasHttpSourceUrl(signal.source?.url)) return false;
   const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
   if (evidenceIds.length === 0) return false;
@@ -2056,7 +2049,6 @@ async function planResearchEntityGateUpdates(
             $nin: withheldAccessSignalIds.map((id) => new mongoose.Types.ObjectId(id)),
           },
           'source.url': { $regex: '^https?://', $options: 'i' },
-          derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },
         },
       },
       {

@@ -119,6 +119,7 @@ One extensible, source-attributed, typed fact about a research entity.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
 Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
 The five undergraduate-logistics claim types that also lived here are retired (#3088), so `signalTypes` is now exactly `accessSignalTypes`.
+`LAB_MANAGER_LISTED`, `PROGRAM_MANAGER_LISTED`, `APPLICATION_ONLY`, `NO_EVIDENCE` and the `RECURRING_PROGRAM` signal type were dropped from the enum because no lane ever wrote one; `RECURRING_PROGRAM` remains a program category (#4585).
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; materializer logic must not cross-infer one type from another.
 

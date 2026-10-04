@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWayInBadges, buildWayInBadgesFromEntity } from '../researchDiscoveryAdapters';
-import type { PathwaySearchHit } from '../../types/pathway';
+import { buildWayInBadgesFromEntity } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchGroup';
 
 const entity = (fields: Partial<ResearchEntity>): ResearchEntity =>
@@ -77,25 +76,5 @@ describe('buildWayInBadgesFromEntity', () => {
     });
 
     expect(buildWayInBadgesFromEntity(everything)).toEqual(['Undergrad evidence']);
-  });
-});
-
-describe('buildWayInBadges hosting signals (#3593)', () => {
-  const pathwayWith = (signalType: string) =>
-    ({ evidence: [{ signalType }], bestNextStepCategory: '' }) as unknown as PathwaySearchHit;
-
-  it('reads undergraduate evidence from past undergraduates only', () => {
-    expect(buildWayInBadges(undefined, [pathwayWith('PAST_UNDERGRADS')])).toContain(
-      'Undergrad evidence',
-    );
-    for (const held of ['CURRENT_UNDERGRADS', 'FACULTY_SUPERVISION']) {
-      expect(buildWayInBadges(undefined, [pathwayWith(held)])).not.toContain('Undergrad evidence');
-    }
-  });
-
-  it('keeps supervised student projects as their own badge', () => {
-    expect(
-      buildWayInBadges(undefined, [pathwayWith('FACULTY_SUPERVISES_STUDENT_PROJECTS')]),
-    ).toEqual(['Student project evidence']);
   });
 });

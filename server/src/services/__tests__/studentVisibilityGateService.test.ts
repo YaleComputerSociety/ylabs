@@ -31,7 +31,6 @@ import {
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
 import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
-import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -1885,18 +1884,6 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
             ...validReachOutSignal.source,
             url: 'https://chemistry.yale.edu/profile/ab123',
           },
-        },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-  });
-
-  it('does not credit an identified-lead-fallback derivation as action evidence (#1359)', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: {
-          ...validReachOutSignal,
-          derivationKey: ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
         },
         entity: officialPageEntity,
       }),
