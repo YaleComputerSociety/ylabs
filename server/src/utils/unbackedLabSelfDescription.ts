@@ -56,14 +56,14 @@ function personTokens(person: string): string[] {
     .filter(Boolean);
 }
 
-// Lowercase surname particles, so "the van Altena Lab" is read as one name rather than
-// leaving "the van" behind when only "Altena Lab" is recast.
+// Lowercase surname particles, so "the van Brecht Lab" is read as one name rather than
+// leaving "the van" behind when only "Brecht Lab" is recast.
 const SURNAME_PARTICLE = '(?:van|von|de|der|den|del|della|da|di|du|la|le|al|el|ben|bin)';
 
 function namedLabPattern(person: string, flags: string): RegExp {
   const tokens = personTokens(person);
   const surname = escapeRegExp(tokens[tokens.length - 1]);
-  // The lookbehind keeps a hyphenated pair ("Lusk-King Lab") whole: its second half
+  // The lookbehind keeps a hyphenated pair ("Marsh-Okonkwo Lab") whole: its second half
   // is never this person's lab on its own.
   return new RegExp(
     `(\\b[Tt]he\\s+)?((?:(?:[A-Z][\\p{L}.'’-]*|${SURNAME_PARTICLE})\\s+){0,4})(?<![\\p{L}'’-])${surname}\\s+${LAB_WORD}\\b(['’]s)?`,
@@ -102,7 +102,7 @@ function isAtSentenceStart(offset: number, full: string): boolean {
  * The description with every unbacked "<person> Lab" self-reference recast onto the
  * person, or the text unchanged when the rule does not apply.
  *
- * A subject becomes the person ("The Pettigrew Lab studies" -> "Melinda Pettigrew
+ * A subject becomes the person ("The Okonkwo-Vale Lab studies" -> "Wren Okonkwo-Vale
  * studies"), a possessive becomes theirs, and a mid-sentence mention becomes their
  * research. A sentence-initial "The lab" or a "the lab's" that only carries the claim
  * forward is recast the same way once a named mention was found. Another person's lab
