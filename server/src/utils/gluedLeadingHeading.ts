@@ -38,7 +38,7 @@ export function withoutGluedLeadingHeading(value: string): string {
   const text = value.replace(/\s+/g, ' ').trim();
   let stripped = withoutOneGluedLeadingHeading(text);
   if (stripped === text) return value;
-  for (let next = withoutOneGluedLeadingHeading(stripped); next !== stripped; ) {
+  for (let next = withoutOneGluedLeadingHeading(stripped); next !== stripped;) {
     stripped = next;
     next = withoutOneGluedLeadingHeading(stripped);
   }

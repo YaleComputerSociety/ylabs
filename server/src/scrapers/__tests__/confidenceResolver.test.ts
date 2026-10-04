@@ -917,8 +917,14 @@ describe('person-bio demotion for fullDescription', () => {
     const ranked = resolveFieldRanked(
       'fullDescription',
       [
-        { ...obs(TITLED_NAME_RESEARCH, 'ysm-faculty-directory', 0.55), observedAt: D('2026-02-01') },
-        { ...obs(CAREER_BIOGRAPHY, 'lab-microsite-description-llm', 0.55), observedAt: D('2026-02-07') },
+        {
+          ...obs(TITLED_NAME_RESEARCH, 'ysm-faculty-directory', 0.55),
+          observedAt: D('2026-02-01'),
+        },
+        {
+          ...obs(CAREER_BIOGRAPHY, 'lab-microsite-description-llm', 0.55),
+          observedAt: D('2026-02-07'),
+        },
       ],
       { now: D('2026-02-08'), descriptionEntityKind: 'person' },
     );
