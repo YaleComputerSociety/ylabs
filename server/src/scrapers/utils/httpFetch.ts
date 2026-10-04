@@ -190,7 +190,7 @@ function setCookieHeaders(header: unknown): string[] | undefined {
   return typeof header === 'string' && header ? [header] : undefined;
 }
 
-const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
+export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
   const agents = ssrfSafeAgents();
   const res =
     config.method === 'POST'

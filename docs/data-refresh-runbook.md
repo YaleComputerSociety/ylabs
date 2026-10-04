@@ -165,6 +165,40 @@ Render stops a cron run after 12 hours.
 The research sweep alone took 414 minutes on 2026-09-28, so read the first run's duration before trusting both modes to fit; if they do not, split them into two cron jobs on different days.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
+
+### Probing Yale Hosts From The Runner
+
+Measure the runner's own refusal rate before its first real sweep, because a rate measured from a residential address does not transfer to a hosted egress.
+`yarn --cwd server scrape:probe-hosts` (`server/src/scripts/hostThrottleProbe.ts`) is read-only: it reads page URLs from Development's `research_entities` and `researchers`, fetches them, and writes nothing to any database.
+It refuses unless `MONGODBURL` names `Development` and no Beta or Production database URL is set.
+
+It always probes `medicine.yale.edu` and `ysph.yale.edu`, plus the four other Yale hosts that Development links to most, taking the first 40 distinct pages per host in `_id` order so two runs probe the same pages.
+Every page goes through `fetchPageWithPolicy`, with the shared per-host limiter and retry budget, two requests in flight per host, because a hand-rolled fetch measures the client rather than the host.
+The table reports, per host, the requests made, how many were refused with 403 or 429 on the first attempt, how many the retry budget recovered, how many were still refused when it ran out, other failures such as a 404, median and p95 latency, and wall time.
+The last line starts `HOST_PROBE_RESULT` and carries the same numbers as JSON; the output names hosts and counts only, never a page URL.
+`--per-host <n>`, `--extra-hosts <n>`, and `--hosts a.yale.edu,b.yale.edu` change the sample.
+
+To run it on the Render cron job:
+
+1. Set the service's **Docker Command** to `--probe-hosts`; the entrypoint runs the probe instead of the sweep and starts no Meilisearch.
+2. Click **Trigger Run** and read the table at the end of the run's log. It takes about a minute.
+3. Restore the **Docker Command** to what it was, so the next scheduled run is a sweep rather than another probe.
+
+Compare the table with the laptop baseline below.
+A first-attempt refusal rate well above the baseline means the hosted egress is treated differently, so read the first sweep's `throttleRetry` exhausted counts per source before trusting its coverage.
+
+Laptop baseline, measured from a residential address on 2026-10-03, 40 pages per host, total wall time 31 seconds:
+
+| host | requests | first 403/429 | recovered | exhausted | other failed | median ms | p95 ms |
+|---|---|---|---|---|---|---|---|
+| medicine.yale.edu | 40 | 0 | 0 | 0 | 1 | 477 | 4438 |
+| ysph.yale.edu | 40 | 0 | 0 | 0 | 0 | 796 | 1109 |
+| economics.yale.edu | 40 | 0 | 0 | 0 | 0 | 1038 | 1568 |
+| macmillan.yale.edu | 40 | 0 | 0 | 0 | 0 | 1057 | 5461 |
+| engineering.yale.edu | 40 | 0 | 0 | 0 | 0 | 801 | 2556 |
+| som.yale.edu | 40 | 0 | 0 | 0 | 0 | 894 | 1536 |
+
+Refusal from these hosts varies by time of day: #4466 recorded 30 to 50 percent per request at times from the same address, so one probe is a reading rather than a rate, and a zero here does not mean a sweep will see none.
 Render keeps logs for a limited time and a cron container's disk is discarded, so the `weekly_sweep_runs` row is the durable record of a run, alongside Development's own per-source `scrape_runs`.
 Alerting on a failed or missing weekly run is the remaining part of #4507.
 

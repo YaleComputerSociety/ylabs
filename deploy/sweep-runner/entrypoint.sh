@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${1:-}" = "--probe-hosts" ]; then
+  shift
+  cd /app
+  exec yarn --cwd server scrape:probe-hosts "$@"
+fi
+
 meili_dir="$(mktemp -d)"
 MEILISEARCH_API_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 export MEILISEARCH_API_KEY
