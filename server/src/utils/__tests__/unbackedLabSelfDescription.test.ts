@@ -4,6 +4,7 @@ import { buildResearchEntityPublicDescriptionRepresentation } from '../../servic
 import { sanitizeResearchEntityPublicDescriptionFields } from '../researchEntityDescriptionText';
 import {
   isLlmAuthoredSourceName,
+  recastUnbackedLabSelfDescription,
   withoutUnbackedLabSelfDescription,
 } from '../unbackedLabSelfDescription';
 
@@ -22,9 +23,9 @@ const facultyResearch = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const recast = (text: string, overrides: Record<string, unknown> = {}, field = 'fullDescription') =>
-  withoutUnbackedLabSelfDescription(text, facultyResearch(overrides), field);
+  recastUnbackedLabSelfDescription(text, facultyResearch(overrides), field);
 
-describe('withoutUnbackedLabSelfDescription', () => {
+describe('recastUnbackedLabSelfDescription', () => {
   it('recasts a sentence-initial lab subject onto the person', () => {
     expect(recast('The Okonkwo-Vale Lab studies tidal sediment transport.')).toBe(
       'Wren Okonkwo-Vale studies tidal sediment transport.',
@@ -73,7 +74,7 @@ describe('withoutUnbackedLabSelfDescription', () => {
 
   it('recasts a surname that carries a lowercase particle as one name', () => {
     expect(
-      withoutUnbackedLabSelfDescription(
+      recastUnbackedLabSelfDescription(
         "The van Okonkwo Lab's work maps estuaries.",
         facultyResearch({ name: 'Wren van Okonkwo Faculty Research' }),
         'fullDescription',
@@ -84,7 +85,7 @@ describe('withoutUnbackedLabSelfDescription', () => {
   it('leaves a hyphenated lab pair whose second half is the surname', () => {
     const text = 'The Marchetti-Vale Lab studies estuaries.';
     expect(
-      withoutUnbackedLabSelfDescription(
+      recastUnbackedLabSelfDescription(
         text,
         facultyResearch({ name: 'Wren Vale Faculty Research' }),
         'fullDescription',
@@ -164,7 +165,7 @@ describe('withoutUnbackedLabSelfDescription', () => {
   it('leaves a row typed LAB alone', () => {
     const text = 'The Okonkwo-Vale Lab studies estuaries.';
     expect(
-      withoutUnbackedLabSelfDescription(
+      recastUnbackedLabSelfDescription(
         text,
         { ...facultyResearch(), name: 'Okonkwo-Vale Lab', entityType: 'LAB', kind: 'lab' },
         'fullDescription',
@@ -198,6 +199,17 @@ describe('served description of a faculty research row', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
     expect(representation.fullDescription).toMatch(/^Wren Okonkwo-Vale studies tidal sediment/);
     expect(representation.cardDescription).not.toBe('');
+  });
+
+  it('withoutUnbackedLabSelfDescription keeps a body the recast would shrink under the floor', () => {
+    const body =
+      'The Okonkwo-Vale Lab, led by Professor Wren Okonkwo-Vale, studies tidal estuaries.';
+    expect(withoutUnbackedLabSelfDescription(body, facultyResearch(), 'fullDescription')).toBe(
+      body,
+    );
+    expect(withoutUnbackedLabSelfDescription(body, facultyResearch(), 'shortDescription')).toBe(
+      'Wren Okonkwo-Vale studies tidal estuaries.',
+    );
   });
 
   it('keeps a body whose recast would fall under the served length floor', () => {

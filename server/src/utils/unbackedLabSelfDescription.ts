@@ -145,7 +145,7 @@ function isAtSentenceStart(offset: number, full: string): boolean {
  * forward is recast the same way once a named mention was found. Another person's lab
  * is never touched, because only the row's own person matches.
  */
-export function withoutUnbackedLabSelfDescription(
+export function recastUnbackedLabSelfDescription(
   value: unknown,
   entity: Record<string, any> | null | undefined,
   field: string,
@@ -188,4 +188,30 @@ export function withoutUnbackedLabSelfDescription(
   next = next.replace(/\bthe lab['’]s\b/g, possessive(person));
   next = next.replace(/(^|[.!?]\s+)The lab\b(?=\s+[a-z])/g, '$1This research');
   return next;
+}
+
+// Mirrors the `too-short` floor in `fullDescriptionQuality`: a body under it withholds
+// the whole row, so changing that floor also requires updating this one. Restated
+// because `researchEntityDescriptionQuality` imports the module that calls this one.
+const SERVABLE_FULL_DESCRIPTION_MIN_WORDS = 12;
+
+const BODY_FIELDS: ReadonlySet<string> = new Set([
+  'fullDescription',
+  'profileSynthesisDescription',
+]);
+
+/**
+ * The recast description, or the stored text when recasting would shrink a body under
+ * the servable floor: dropping the claim must never cost the row its whole body.
+ */
+export function withoutUnbackedLabSelfDescription(
+  value: unknown,
+  entity: Record<string, any> | null | undefined,
+  field: string,
+): string {
+  const text = typeof value === 'string' ? value : '';
+  const recast = recastUnbackedLabSelfDescription(text, entity, field);
+  if (recast === text || !BODY_FIELDS.has(field)) return recast;
+  const recastWordCount = recast.split(/\s+/).filter(Boolean).length;
+  return recastWordCount < SERVABLE_FULL_DESCRIPTION_MIN_WORDS ? text : recast;
 }

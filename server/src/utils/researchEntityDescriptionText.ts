@@ -37,21 +37,6 @@ const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
 
 const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
 
-// Mirrors the `too-short` floor in `fullDescriptionQuality`: a body under it withholds
-// the whole row, so changing that floor also requires updating this one.
-const SERVABLE_FULL_DESCRIPTION_MIN_WORDS = 12;
-
-function withoutUnbackedLabClaimKeepingServableLength(
-  value: string,
-  entity: Record<string, any>,
-  field: string,
-): string {
-  const recast = withoutUnbackedLabSelfDescription(value, entity, field);
-  if (recast === value) return recast;
-  if (!(HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) return recast;
-  const recastWordCount = recast.split(/\s+/).filter(Boolean).length;
-  return recastWordCount < SERVABLE_FULL_DESCRIPTION_MIN_WORDS ? value : recast;
-}
 // This is a curated allowlist, not a mechanical inflection table: some
 // inflections of a listed verb carry no research signal in bio prose
 // ("currently developing a new feature" in a filmmaker CV), so a missing
@@ -2346,7 +2331,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         // body in the source bio's voice on rows whose stored text never opened
         // with a pronoun at all, which is where most of #1871's rows came from.
         next[field] = revoicedThirdPersonBody(
-          withoutUnbackedLabClaimKeepingServableLength(
+          withoutUnbackedLabSelfDescription(
             revoicedFirstPersonBody(biographyRepair.value, next, field),
             next,
             field,
@@ -2359,7 +2344,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       }
       const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
       const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
-      const withFirstPersonReVoice = withoutUnbackedLabClaimKeepingServableLength(
+      const withFirstPersonReVoice = withoutUnbackedLabSelfDescription(
         revoicedFirstPersonBody(withResearchLeadRepair, next, field),
         next,
         field,
