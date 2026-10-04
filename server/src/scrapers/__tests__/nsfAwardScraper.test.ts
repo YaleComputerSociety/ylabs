@@ -483,7 +483,7 @@ describe('NsfAwardScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(fetchPage).toHaveBeenCalledTimes(2 + GRANT_WINDOW_PAGE_ATTEMPTS);
-    expect(fetchPage.mock.calls.slice(2).every((call) => call[0] === 50)).toBe(true);
+    expect(fetchPage.mock.calls.slice(2).every((call) => call[0] === 51)).toBe(true);
     expect(emitted).toHaveLength(0);
     expect(result.observationCount).toBe(0);
     expect(result.notes).toMatch(/window incomplete/);
@@ -517,7 +517,7 @@ describe('NsfAwardScraper.run', () => {
   });
 
   it('fails closed when NSF serves fewer awards than it reports', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD], totalCount: 40 });
+    const fetchPage = vi.fn().mockResolvedValue({ awards: [GRANT_AWARD], totalCount: 40 });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
@@ -532,5 +532,76 @@ describe('NsfAwardScraper.run', () => {
     expect(emitted).toHaveLength(0);
     expect(result.notes).toMatch(/fewer awards served than NSF reports/);
     expect(result.notes).toMatch(/fetched 1 of 40 reported/);
+  });
+
+  const pagesByOffset = (
+    byOffset: Record<number, (call: number) => unknown[]>,
+    totalCount: number,
+  ) => {
+    const calls = new Map<number, number>();
+    return vi.fn(async (offset: number) => {
+      const call = calls.get(offset) ?? 0;
+      calls.set(offset, call + 1);
+      return { awards: byOffset[offset]?.(call) ?? [], totalCount };
+    });
+  };
+
+  it('pages from the first record NSF serves', async () => {
+    const fetchPage = pagesByOffset({ 1: () => [GRANT_AWARD] }, 2);
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(fetchPage.mock.calls[0][0]).toBe(1);
+    expect(result.failedClosed).toBeUndefined();
+    expect(result.entitiesObserved).toBe(1);
+  });
+
+  it('completes the window by re-paging when one pass drops an award a later pass serves', async () => {
+    const page1 = fullPage('a');
+    const tail = fullPage('b');
+    const fetchPage = pagesByOffset({ 1: () => page1, 26: (call) => [tail[call]] }, 28);
+
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(4);
+    expect(result.failedClosed).toBeUndefined();
+    expect(result.entitiesObserved).toBe(27);
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(result.notes).toMatch(/fetched 27 of 28 reported across 4 page\(s\) in 2 pass\(es\)/);
+  });
+
+  it('fails closed when a repeated award stands in for one NSF dropped on every pass', async () => {
+    const page1 = fullPage('a');
+    const fetchPage = pagesByOffset({ 1: () => page1, 26: () => [page1[0]] }, 27);
+
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.failedClosed).toBe(true);
+    expect(result.notes).toMatch(/fewer awards served than NSF reports/);
+    expect(result.notes).toMatch(/fetched 25 of 27 reported/);
   });
 });
