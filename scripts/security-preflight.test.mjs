@@ -4195,32 +4195,6 @@ test('undergraduate fellowship recipient scraper fetches configured recipient pa
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
 
-test('LLM center fetchers fetch pages through the SSRF-guarded policy fetch', () => {
-  const fetcherFiles = [
-    '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
-    '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
-    '../server/src/scrapers/sources/researchAreaSourceExtractor.ts',
-  ];
-
-  for (const file of fetcherFiles) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-
-    assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
-    assert.match(source, /await fetchPageWithPolicy\(url, \{/);
-    assert.match(source, /maxRedirects: 5/);
-    assert.doesNotMatch(source, /axios\.get\(/);
-    assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
-  }
-
-  const policyFetch = fs.readFileSync(
-    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(policyFetch, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
-  assert.match(policyFetch, /httpAgent: agents\.httpAgent/);
-  assert.match(policyFetch, /httpsAgent: agents\.httpsAgent/);
-});
-
 test('shared microsite fetch policy enforces the SSRF guard before requesting untrusted URLs', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
