@@ -939,9 +939,10 @@ describe('https landing (#4649)', () => {
   });
 
   it('records no landing for a link that was not redirected to https', () => {
-    expect(
-      classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+    expect(classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP })).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
   });
 
   it('records no landing on a verdict that is not HEALTHY', () => {
@@ -953,7 +954,9 @@ describe('https landing (#4649)', () => {
   it('refuses a landing on another host or another page', () => {
     expect(httpsLandingOf(HTTP, 'https://elsewhere.example.edu/fixtureperson/')).toBeUndefined();
     expect(httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/other-page/')).toBeUndefined();
-    expect(httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/fixtureperson/?tab=2')).toBeUndefined();
+    expect(
+      httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/fixtureperson/?tab=2'),
+    ).toBeUndefined();
   });
 
   it('accepts only an http request landing on https', () => {

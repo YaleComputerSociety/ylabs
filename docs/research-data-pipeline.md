@@ -1496,7 +1496,7 @@ A fresh certificate failure replaces a stored `HEALTHY` for the same `https:` UR
 When an `https:` probe fails verification and no plain-HTTP spelling is already a candidate, the pass probes that spelling too, and serve time (`servedResearchWebsiteUrl`) offers it only when it is verified `HEALTHY`; otherwise the stored URL is linked unchanged.
 
 The reverse direction runs on the host's own redirect rather than on a guess (#4649).
-When a plain-HTTP probe comes back `HEALTHY` after its host redirected it to `https:` on the same host and the same path, apart from `www.`, letter case and a trailing slash, the entry records that landing as `httpsLandingUrl`.
+When a plain-HTTP probe comes back `HEALTHY` after its host redirected it to `https:` on the same host, the same path and the same query string, apart from `www.`, letter case and a trailing slash, the entry records that landing as `httpsLandingUrl`.
 Serve time offers the landing in place of the stored `http:` website, so a student lands on the page the server canonically answers on.
 An `https:` spelling that merely answers `200` beside a plain-HTTP site that never redirects is not adopted, because a shared host can answer `https:` with a different site.
 The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
