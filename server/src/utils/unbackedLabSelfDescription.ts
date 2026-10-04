@@ -26,6 +26,8 @@ const LAB_WORD = 'Lab(?:oratory)?';
 const LAB_NAME_CONTINUATION =
   /^\s+(?:(?:for|of)\s+[A-Z]|[A-Z]|(?:members?|group|groups|team|teams|website|site|page|staff|alumni)\b)/;
 
+const ANOTHER_NAMED_LAB = /\b(?!The\b)[A-Z][\p{L}'’-]*\s+Lab(?:oratory)?\b/u;
+
 const LEADER_APPOSITIVE = /,\s*(?:led|directed|headed|run)\s+by\s+[^,]+,/;
 
 function textValue(value: unknown): string {
@@ -142,8 +144,9 @@ function isAtSentenceStart(offset: number, full: string): boolean {
  * A subject becomes the person ("The Okonkwo-Vale Lab studies" -> "Wren Okonkwo-Vale
  * studies"), a possessive becomes theirs, and a mid-sentence mention becomes their
  * research. A sentence-initial "The lab" or a "the lab's" that only carries the claim
- * forward is recast the same way once a named mention was found. Another person's lab
- * is never touched, because only the row's own person matches.
+ * forward is recast the same way once a named mention was found, unless another named lab
+ * remains for it to refer to. Another person's lab is never touched, because only the
+ * row's own person matches.
  */
 export function recastUnbackedLabSelfDescription(
   value: unknown,
@@ -184,9 +187,15 @@ export function recastUnbackedLabSelfDescription(
     new RegExp(`(^|[.!?]\\s+)(${escapeRegExp(person)})${LEADER_APPOSITIVE.source}`, 'g'),
     '$1$2',
   );
-  next = next.replace(/\bThe lab['’]s\b/g, possessive(person));
-  next = next.replace(/\bthe lab['’]s\b/g, possessive(person));
-  next = next.replace(/(^|[.!?]\s+)The lab\b(?=\s+[a-z])/g, '$1This research');
+  if (ANOTHER_NAMED_LAB.test(next)) return next;
+  next = next.replace(/\b[Tt]he lab['’]s\b/g, possessive(person));
+  next = next.replace(
+    /(^|[.!?]\s+)The lab\b(?=\s+[a-z])/g,
+    (match: string, lead: string, offset: number, full: string) =>
+      LAB_NAME_CONTINUATION.test(full.slice(offset + match.length))
+        ? match
+        : `${lead}This research`,
+  );
   return next;
 }
 

@@ -56,6 +56,22 @@ describe('recastUnbackedLabSelfDescription', () => {
     ).toBe('Wren Okonkwo-Vale models estuaries. This research also maps marshes.');
   });
 
+  it('leaves a generic lab subject whose lab noun continues it', () => {
+    expect(recast('The Okonkwo-Vale Lab studies estuaries. The lab members collect cores.')).toBe(
+      'Wren Okonkwo-Vale studies estuaries. The lab members collect cores.',
+    );
+  });
+
+  it('leaves a generic lab follow-up when another named lab remains to refer to', () => {
+    expect(
+      recast(
+        "The Okonkwo-Vale Lab partners with the Marchetti Lab, sharing the lab's flume. The lab also maps marshes.",
+      ),
+    ).toBe(
+      "Wren Okonkwo-Vale partners with the Marchetti Lab, sharing the lab's flume. The lab also maps marshes.",
+    );
+  });
+
   it('recasts the card as well as the body', () => {
     expect(recast('The Okonkwo-Vale Lab studies estuaries.', {}, 'shortDescription')).toBe(
       'Wren Okonkwo-Vale studies estuaries.',
