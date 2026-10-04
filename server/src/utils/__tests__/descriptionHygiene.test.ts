@@ -3418,8 +3418,17 @@ describe('short description whole-sentence cap (#2184)', () => {
     expect(sanitizeResearchEntityShortDescription(source)).toBe(LEAD);
   });
 
-  it('refuses rather than cutting at an abbreviation when the sentence passes the card ceiling (#2184/#1878)', () => {
+  it('cuts a sentence past the card ceiling at a clause, never at an abbreviation (#2184/#1878)', () => {
     const pastCeiling = `Dr. Kwan integrates population genomics and field ecology ${'to understand how marine invertebrate populations adapt to warming coastal waters, '.repeat(3)}across seasons.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    const card = clampShortDescriptionToWholeSentences(pastCeiling);
+    expect(card.startsWith('Dr. Kwan integrates population genomics and field ecology')).toBe(true);
+    expect(card.endsWith('coastal waters.')).toBe(true);
+    expect(card.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+  });
+
+  it('refuses a sentence past the card ceiling that has no clause to cut at (#2184)', () => {
+    const pastCeiling = `Dr. Kwan integrates ${'population genomics field ecology marine invertebrate adaptation '.repeat(6)}across seasons.`;
     expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
     expect(clampShortDescriptionToWholeSentences(pastCeiling)).toBe('');
   });

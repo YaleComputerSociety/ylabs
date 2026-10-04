@@ -34,7 +34,11 @@ import {
 } from '../models/researchAccessTypes';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
+import {
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import {
   LEAD_GUARD_WITHHELD_PROSE,
   type LeadGuardWithheldProse,
@@ -256,12 +260,30 @@ export function groundedShortDescriptionString(
  * refusal above covers that case and must not be relaxed into "empty means the
  * body".
  */
+const bodyIsPastCardCeiling = (value: unknown): boolean => {
+  const text = String(value || '');
+  return (
+    text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+    text.split(/\s+/).filter(Boolean).length > MAX_CARD_SHORT_DESCRIPTION_WORDS
+  );
+};
+
 function surrenderingTheCardReachesTheBody(
   served: Record<string, any>,
   entityType: ResearchEntityType | undefined,
 ): boolean {
   if (!servedShortDescriptionString(served.fullDescription)) return false;
-  const fallback = servedShortDescriptionFallback(served, entityType);
+  // A body past the card ceiling reaches the card only through the clause cut, a
+  // last resort the gate does not count, so surrendering there would hold the row.
+  const fallback = bodyIsPastCardCeiling(served.fullDescription)
+    ? resolveServedShortDescriptionOutcome({
+        shortDescription: '',
+        fullDescription: served.fullDescription,
+        researchAreas: served.researchAreas,
+        entityType,
+        kind: served.kind,
+      }).card
+    : servedShortDescriptionFallback(served, entityType);
   if (!fallback) return false;
   return !isResearchAreasChipSummary(fallback, served);
 }

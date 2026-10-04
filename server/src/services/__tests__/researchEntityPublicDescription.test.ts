@@ -498,9 +498,8 @@ describe('the gate judges the card the serve sanitizer produces (#3097)', () => 
 
     const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
 
-    expect(representation.servedCard).toBe('');
-    expect(representation.invariant.reasons).toContain('missing_public_card_description');
-    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+    expect(representation.servedCard).not.toContain('Office of Health Equity Research');
+    expect(representation.servedCard).toBe(entity.fullDescription);
   });
 
   it('refuses a row whose only carding chip research-area hygiene drops', () => {
