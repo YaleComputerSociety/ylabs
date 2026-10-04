@@ -2021,9 +2021,11 @@ The pass reports the class as `non_hosting_trainee_title`.
 
 Administrative staff are a decided class too (2026-10-04), reported as `administrative_staff_title`, and they need two witnesses because an office title alone cannot say the person does no research.
 The title names an administrative head noun over an administrative object (career services, academic, student or faculty affairs, financial aid, finance, administration, education technology, medical education, admissions, communications, alumni, human resources), names no research anywhere, and carries no rank that owns research.
-The row's own description must also state no research: no explicit research statement in either description (`researchStatementSentences`) and no research-focus phrase on the card's short description (`describesResearchFocus`, which over a long office biography reads "focused on" or "supports" as research).
+The row's own description must also state no research: no explicit research statement in either description (`researchStatementSentences`), and no research verb in any inflection (study, investigate, examine, explore, develop, research, analyze) or the word research or researchers on the card's short description.
+The card-lead verb list behind `describesResearchFocus` is not the witness, because it also counts "supports" and "uses", which open an office's card as readily as a lab's.
 A row failing the second witness refuses as `description-states-research`.
-Measured on Development on 2026-10-04: 6 archives planned, 2 of them served, and 5 rows refused because their card describes research; those descriptions are a separate attribution question rather than a reason to retire.
+Measured on Development on 2026-10-04, before the second witness moved from the card-lead verb list to research verbs (#4735): 6 archives planned, 2 of them served, and 5 rows refused because their card describes research; those descriptions are a separate attribution question rather than a reason to retire.
+The research-verb witness has not been re-measured on Development, so these counts may now differ.
 
 A row minted from a shared roster listing (`isSharedPeopleRosterUrl`) has no page about one person, so it used to refuse as `no-identity-profile-url` whatever its lead's rank.
 When exactly one person holds a live edge on such a row and that person has exactly one verified official primary page, the pass borrows that page as the identity (`soleLeadIdentityFor`): the page's live title observations decide, and the person's stored `profile.title` stands in only when the page has none.

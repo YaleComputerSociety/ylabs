@@ -16,7 +16,6 @@ import { normalizeOfficialProfileDestination } from '../services/leadProfileIden
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { researchStatementSentences } from '../utils/careerBiographyDescription';
-import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -116,17 +115,23 @@ const provenanceOf = (
   return provenance[field];
 };
 
+// The verbs that state what a person researches, in any inflection. The card-lead verb list behind
+// `describesResearchFocus` also counts "supports" and "uses", which open an office's card
+// as readily as a lab's, so it cannot be the witness that a row states no research.
+const CARD_STATES_RESEARCH =
+  /\b(?:stud(?:y|ies|ying)|investigat(?:e|es|ing)|examin(?:e|es|ing)|explor(?:e|es|ing)|develop(?:s|ing)?|analy[sz](?:e|es|ing)|research(?:es|ers?|ing)?)\b/i;
+
 /**
- * Whether either stored description makes an explicit research statement in its own
- * subject, the second witness an administrative title needs before the row can be
- * archived. The research-focus phrase test reads only the card's short description,
- * because over a long office biography it matches "focused on" or "supports".
+ * Whether the row's own description states research, the second witness an
+ * administrative title needs before the row can be archived: an explicit research
+ * statement in either description, or a research verb or the word research on the card.
  */
 export function descriptionStatesResearch(entity: {
   shortDescription?: unknown;
   fullDescription?: unknown;
 }): boolean {
-  if (describesResearchFocus(entity.shortDescription)) return true;
+  const card = typeof entity.shortDescription === 'string' ? entity.shortDescription : '';
+  if (CARD_STATES_RESEARCH.test(card)) return true;
   return [entity.shortDescription, entity.fullDescription].some(
     (value) => researchStatementSentences(value).length > 0,
   );
