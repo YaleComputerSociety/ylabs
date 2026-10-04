@@ -3,6 +3,7 @@
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
+import type { LoginSignalBucket } from '../models/storedVocabularies';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config({ quiet: true });
@@ -103,8 +104,13 @@ export interface YaliesEmployee {
   department: string;
 }
 
+export type StudentLoginSignal = Extract<
+  LoginSignalBucket,
+  `undergrad_${string}` | `grad_${string}`
+>;
+
 export type YaliesLookup =
-  | { kind: 'student'; identity: YaliesIdentity }
+  | { kind: 'student'; identity: YaliesIdentity; signal: StudentLoginSignal }
   | { kind: 'employee'; employee: YaliesEmployee }
   | { kind: 'not_found' }
   | { kind: 'unavailable' };
@@ -131,6 +137,24 @@ function studentIdentity(record: YaliesRecord, netid: string): YaliesIdentity {
     userType: record.school_code === 'YC' ? 'undergraduate' : 'graduate',
     userConfirmed: true,
   };
+}
+
+const firstText = (value: unknown): string =>
+  Array.isArray(value) ? value.map(text).find(Boolean) || '' : text(value);
+
+/**
+ * Only the bucket label leaves this module: the major and curriculum it reads stay here, so
+ * the #4162 property holds while the login tally (#4744) measures personalization reach.
+ */
+export function classifyStudentLoginSignal(record: YaliesRecord): StudentLoginSignal {
+  if (record.school_code !== 'YC') {
+    return firstText(record.curriculum) ? 'grad_with_curriculum' : 'grad_without_curriculum';
+  }
+  if (record.leave === true || record.visitor === true) return 'undergrad_leave_or_visitor';
+  const major = firstText(record.major);
+  if (!major) return 'undergrad_no_major';
+  if (major.toLowerCase() === 'undeclared') return 'undergrad_undeclared';
+  return 'undergrad_usable_major';
 }
 
 function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
@@ -197,7 +221,11 @@ const requestYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
   if (!hasName || !text(record.email)) return NOT_FOUND;
 
   if (record.year && record.school_code) {
-    return { kind: 'student', identity: studentIdentity(record, responseNetid) };
+    return {
+      kind: 'student',
+      identity: studentIdentity(record, responseNetid),
+      signal: classifyStudentLoginSignal(record),
+    };
   }
   if (text(record.title)) {
     return { kind: 'employee', employee: employeeRecord(record, responseNetid) };

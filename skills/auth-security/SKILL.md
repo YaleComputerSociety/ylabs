@@ -29,6 +29,9 @@ A login that resolves a record replaces `profile` wholesale and so sheds them; a
 Accounts stored before the fix that never sign in again keep the values until a one-off cleanup runs, which is an operator decision rather than something a login may do for them.
 `yarn --cwd server accounts:purge-retired-login-profile-fields --environment=<env>` is that cleanup: it is dry-run by default, and a dry run is read-only, so it is also how the population is counted before anyone decides to clear it.
 Count it in Production rather than Development, because a Development login does not go through CAS and so never wrote these values: on 2026-10-01, 0 of 4,179 Development accounts held any of the three.
+Each CAS login also increments one per-UTC-day bucket in `login_signal_tallies` (`services/loginSignalTallyService.ts`), counting how many logins carry a usable major or graduate curriculum for browse personalization (#4744).
+The bucket is computed inside `yaliesService.ts` by `classifyStudentLoginSignal`, so the major and curriculum never leave it; the row stores the date and counts only, the write is fire-and-forget and skipped while Mongo is disconnected, and `yarn --cwd server auth:login-signal-tally` reads it.
+It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.

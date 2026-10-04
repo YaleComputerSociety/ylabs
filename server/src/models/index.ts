@@ -37,6 +37,7 @@ export { Observation, type ObservedEntityType } from './observation';
 export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
 export { WeeklySweepRun, WEEKLY_SWEEP_RUN_COLLECTION } from './weeklySweepRun';
+export { LoginSignalTally, LOGIN_SIGNAL_TALLY_COLLECTION } from './loginSignalTally';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

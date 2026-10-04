@@ -171,3 +171,16 @@ export function isPersonScopedResearchEntityShape(row: {
   const kind = typeof row.kind === 'string' ? row.kind.trim().toLowerCase() : '';
   return kind !== '' && PERSON_SCOPED_RESEARCH_ENTITY_KINDS.has(kind);
 }
+
+export const loginSignalBuckets = [
+  'undergrad_usable_major',
+  'undergrad_undeclared',
+  'undergrad_no_major',
+  'undergrad_leave_or_visitor',
+  'grad_with_curriculum',
+  'grad_without_curriculum',
+  'other_or_faculty',
+  'yalies_not_found',
+  'yalies_unavailable',
+] as const;
+export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
