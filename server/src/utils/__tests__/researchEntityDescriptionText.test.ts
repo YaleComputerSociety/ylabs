@@ -1570,9 +1570,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
-    expect(sanitized.fullDescription).toContain(
-      'area of academic research is labor economics',
-    );
+    expect(sanitized.fullDescription).toContain('area of academic research is labor economics');
     expect(sanitized.fullDescription).toContain(
       'The focus of her current research is wage setting in example retail markets.',
     );
