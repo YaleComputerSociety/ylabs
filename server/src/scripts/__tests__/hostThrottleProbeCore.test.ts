@@ -12,7 +12,7 @@ import {
   summarizeHostProbe,
 } from '../hostThrottleProbeCore';
 
-const DEV_URL = 'mongodb+srv://synthetic:secret@cluster.example.net/Development?retryWrites=true';
+const DEV_URL = 'mongodb+srv://user:pass@cluster.example.net/Development';
 
 describe('hostProbeArgumentProblems', () => {
   it('takes no arguments beyond a separator, so every run probes the same sample', () => {
