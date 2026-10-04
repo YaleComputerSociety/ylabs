@@ -17,7 +17,9 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 });
 
 import { Observation } from '../../models/observation';
+import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { resetKnownPersonSurnameRosterCache } from '../../utils/researchHomeNameIdentityRoster';
 import { materializeEntity } from '../entityMaterializer';
 
@@ -58,6 +60,8 @@ describe('materializeEntity derives the faculty research name when nothing asser
     for (const name of ['observations', 'research_entities']) {
       await db.collection(name).deleteMany({});
     }
+    await RoleAssignment.deleteMany({});
+    await Researcher.deleteMany({});
     resetKnownPersonSurnameRosterCache();
   });
 
@@ -145,12 +149,27 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((await persisted()).name).toBe(LAB_NAME);
   });
 
+  const seedLead = async (entityId: unknown) => {
+    const lead = await Researcher.create({ displayName: 'Rafferty Duchamp', archived: false });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      evidenceClaimIds: [],
+      confidence: 0.9,
+      reviewStatus: 'UNREVIEWED',
+      archived: false,
+      state: 'CURRENT',
+    });
+  };
+
   it('leaves a LAB row alone when it links its own website', async () => {
-    await seedEntity({
+    const seeded = await seedEntity({
       kind: 'lab',
       entityType: 'LAB',
       websiteUrl: 'https://www.example.com/rafferty-duchamp/',
     });
+    await seedLead(seeded._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -161,7 +180,7 @@ describe('materializeEntity derives the faculty research name when nothing asser
   });
 
   it('reclassifies a LAB row nothing backs as faculty research under the person-scoped name', async () => {
-    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -174,7 +193,7 @@ describe('materializeEntity derives the faculty research name when nothing asser
   });
 
   it('re-derives the same reclassification on a second pass', async () => {
-    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -186,7 +205,7 @@ describe('materializeEntity derives the faculty research name when nothing asser
   });
 
   it('reclassifies again when a live observation keeps asserting the LAB type alone', async () => {
-    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'entityType', value: 'LAB' });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -194,8 +213,19 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((await persisted()).entityType).toBe('FACULTY_RESEARCH_AREA');
   });
 
-  it('keeps a LAB row whose live name observation asserts the lab', async () => {
+  it('keeps a leadless LAB row nothing backs, because no lead names it', async () => {
     await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const entity = await persisted();
+    expect(entity.name).toBe(LAB_NAME);
+    expect(entity.entityType).toBe('LAB');
+  });
+
+  it('keeps a LAB row whose live name observation asserts the lab', async () => {
+    await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'name', value: LAB_NAME });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -206,11 +236,12 @@ describe('materializeEntity derives the faculty research name when nothing asser
   });
 
   it('keeps a LAB row whose citations name a laboratory', async () => {
-    await seedEntity({
+    const entity = await seedEntity({
       kind: 'lab',
       entityType: 'LAB',
       sourceUrls: ['https://duchamplab.example.edu/people/'],
     });
+    await seedLead(entity._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
@@ -218,8 +249,39 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((await persisted()).entityType).toBe('LAB');
   });
 
+  it('reclassifies a LAB row named for its lead by surname alone', async () => {
+    const entity = await seedEntity({ name: 'Duchamp Lab', kind: 'lab', entityType: 'LAB' });
+    await seedLead(entity._id);
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(FACULTY_RESEARCH_NAME);
+    expect(stored.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps a LAB row whose unbacked name is a topic rather than its lead', async () => {
+    const entity = await seedEntity({
+      name: 'Computational Vision Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    await seedLead(entity._id);
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe('Computational Vision Lab');
+    expect(stored.entityType).toBe('LAB');
+  });
+
   it('leaves a LAB row with a locked type alone', async () => {
-    await seedEntity({ kind: 'lab', entityType: 'LAB', manuallyLockedFields: ['entityType'] });
+    await seedLead(
+      (await seedEntity({ kind: 'lab', entityType: 'LAB', manuallyLockedFields: ['entityType'] }))
+        ._id,
+    );
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });

@@ -80,6 +80,7 @@ import {
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElse,
+  personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
@@ -6716,11 +6717,13 @@ function documentAsProjected(
   const view: Record<string, any> = { ...(entityDoc ?? {}) };
   const fieldProvenance: Record<string, unknown> = { ...(entityDoc?.fieldProvenance ?? {}) };
   for (const [key, value] of Object.entries(set)) {
-    if (key.startsWith('fieldProvenance.')) fieldProvenance[key.slice('fieldProvenance.'.length)] = value;
+    if (key.startsWith('fieldProvenance.'))
+      fieldProvenance[key.slice('fieldProvenance.'.length)] = value;
     else view[key] = value;
   }
   for (const key of Object.keys(unset)) {
-    if (key.startsWith('fieldProvenance.')) delete fieldProvenance[key.slice('fieldProvenance.'.length)];
+    if (key.startsWith('fieldProvenance.'))
+      delete fieldProvenance[key.slice('fieldProvenance.'.length)];
     else delete view[key];
   }
   view.fieldProvenance = fieldProvenance;
@@ -6736,6 +6739,12 @@ function documentAsProjected(
  * A live observation asserting a lab keeps the row as it is, matching #4641 for rows
  * already typed `FACULTY_RESEARCH_AREA`. No field is locked; the type and name are a
  * derivation from the absence of lab evidence and come back if that evidence appears.
+ *
+ * Only the lead's eponym is renamed: every word before "Lab" has to be a word of the
+ * lead's own name. A topic or programme name ("Computational Vision Lab") is the row's
+ * own designation even with nothing citing it, and reads as a bare person name by
+ * shape alone, so it stays held. A leadless row stays held too; `missing_lead` would
+ * hold it whatever its name.
  */
 function reclassifyUnbackedLabAsFacultyResearch(input: {
   set: Record<string, unknown>;
@@ -6758,16 +6767,13 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
     entityType: 'FACULTY_RESEARCH_AREA',
     kind: mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA'),
   };
-  const derivedName =
-    personScopedResearchEntityNameFromLeadPersonName({
-      ...facultyResearchIdentity,
-      slug: projected.slug,
-      leadPersonName: input.leadPersonName,
-    }) ||
-    personScopedResearchEntityNameFromPersonName({
-      ...facultyResearchIdentity,
-      candidateName: textValue(projected.name).replace(/\s+lab(?:oratory)?$/i, ''),
-    });
+  const eponym = textValue(projected.name).replace(/\s+lab(?:oratory)?$/i, '');
+  if (!eponymNamesOnlyTheLead(eponym, input.leadPersonName)) return 0;
+  const derivedName = personScopedResearchEntityNameFromLeadPersonName({
+    ...facultyResearchIdentity,
+    slug: projected.slug,
+    leadPersonName: input.leadPersonName,
+  });
   if (!derivedName) return 0;
 
   set.entityType = facultyResearchIdentity.entityType;
@@ -6782,6 +6788,12 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
     set.displayName = derivedName;
   }
   return 1;
+}
+
+function eponymNamesOnlyTheLead(eponym: string, leadPersonName: unknown): boolean {
+  const eponymTokens = personIdentityTokens(eponym);
+  const leadTokens = new Set(personIdentityTokens(leadPersonName));
+  return eponymTokens.length > 0 && eponymTokens.every((token) => leadTokens.has(token));
 }
 
 /**

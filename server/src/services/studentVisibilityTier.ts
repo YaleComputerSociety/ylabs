@@ -356,7 +356,9 @@ function citedUrls(entity: Record<string, any>): string[] {
  * legitimate again the moment the name is reconciled with the evidence. The
  * materializer performs that reconciliation with this same predicate
  * (`reclassifyUnbackedLabAsFacultyResearch`), so a row reaches the gate held here
- * only when no lead or person name lets it derive the faculty research name.
+ * only when the materializer leaves it a lab: a live `name` or `displayName`
+ * observation asserts the lab, its `entityType`, `kind` or `name` is locked, or its
+ * name is not the row's own lead's name plus "Lab".
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
