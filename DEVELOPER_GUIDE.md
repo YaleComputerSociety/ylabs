@@ -515,7 +515,7 @@ When adding a new reducer:
 ### CI
 
 Pull requests into `main` or `beta`, and pushes to `beta`, trigger [.github/workflows/ci.yml](.github/workflows/ci.yml).
-Its job layout (`checks`, the sharded `server-tests`, and the required `test-and-build` aggregate) and step order are recorded in [skills/finishing-work/SKILL.md](skills/finishing-work/SKILL.md), and the `beta` push run is described in [docs/release-process.md](docs/release-process.md#the-post-merge-signal-on-beta).
+Its job layout, including the required `test-and-build` aggregate, and step order are recorded in [skills/finishing-work/SKILL.md](skills/finishing-work/SKILL.md), and the `beta` push run is described in [docs/release-process.md](docs/release-process.md#the-post-merge-signal-on-beta).
 
 The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab.
 Which contexts must pass before merging is set by the repository rulesets, not classic branch protection; see the Merging section of [AGENTS.md](AGENTS.md).
