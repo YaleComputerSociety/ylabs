@@ -56,7 +56,7 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.offersBothLinks).toBe(false);
   });
 
-  it('gives the only action to the homepage over a place to apply', () => {
+  it('gives the button to the homepage and links a place to apply beneath it', () => {
     const beside = resolveResearchDetailActionLinks({
       ...base,
       hasApplyPage: true,
@@ -65,6 +65,7 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     });
     expect(beside.showsWebsiteCta).toBe(true);
     expect(beside.offersApplyPage).toBe(false);
+    expect(beside.offersJoinLinkBesideWebsite).toBe(true);
 
     const withoutWebsite = resolveResearchDetailActionLinks({
       ...base,
@@ -73,6 +74,16 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     });
     expect(withoutWebsite.showsWebsiteCta).toBe(false);
     expect(withoutWebsite.offersApplyPage).toBe(true);
+    expect(withoutWebsite.offersJoinLinkBesideWebsite).toBe(false);
+
+    const orgEngagement = resolveResearchDetailActionLinks({
+      ...base,
+      hasApplyPage: true,
+      websiteUrl: WEBSITE,
+      preferOrgEngagementOutreach: true,
+      officialSource: { url: 'https://org.example.test/get-involved' },
+    });
+    expect(orgEngagement.offersJoinLinkBesideWebsite).toBe(false);
   });
 
   it('keeps an own-button profile below a place to apply when there is no homepage', () => {
@@ -140,6 +151,7 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
       showsProfileButton: false,
       offersOrgEngagementPage: false,
       offersApplyPage: false,
+      offersJoinLinkBesideWebsite: false,
       activityCheckUrl: WEBSITE,
       leadCardLinksProfile: true,
       slotsShareOneDestination: false,

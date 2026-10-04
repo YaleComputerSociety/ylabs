@@ -134,7 +134,8 @@ They should not create a research-paper section, display metrics, or replace the
 
 Reaching out is constant and primary: always offer a way to contact the research entity, never gating outreach.
 The lead card carries the person: their official profile and, when one is served, their email.
-The "How to get involved" block offers exactly one action: the research's own homepage where it has one, because a homepage is a better way in than a page deep inside it, and otherwise a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type).
+The "How to get involved" block offers exactly one button: the research's own homepage where it has one, because a homepage is a better way in than a page deep inside it, and otherwise a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type).
+When the research has both a homepage and a join page the server vetted (`APPLICATION_FORM_EXISTS`), the join page sits beneath the button as a secondary "See how to join" link rather than a second button (#4753).
 When no lead card carries the profile, the official profile takes the website's place as that one action only while no place to apply competes; when one does, the homepage takes the action ahead of it, or the place to apply does when there is no homepage.
 An organization that coordinates involvement centrally offers its get-involved page as the one action, and its director's profile stays on the lead card.
 Every other page, including a lead's personal homepage, is listed under sources rather than offered as a second button.

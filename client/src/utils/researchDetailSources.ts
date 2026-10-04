@@ -865,6 +865,14 @@ const eligibleOutreachSources = (
  * offers as the place to apply. Screened exactly like the official-page slot, but
  * chosen for its kind rather than its rank, so it never displaces that slot's pick.
  */
+export const vettedJoinPageUrls = (
+  accessSignals: ReadonlyArray<{ signalType?: unknown; sourceUrl?: unknown }> = [],
+): string[] =>
+  accessSignals
+    .filter((signal) => signal?.signalType === 'APPLICATION_FORM_EXISTS')
+    .map((signal) => (typeof signal.sourceUrl === 'string' ? signal.sourceUrl : ''))
+    .filter(Boolean);
+
 export const resolveOutreachApplySource = (
   sources: ResearchDetailSource[],
   claimedActionUrls: Array<string | undefined>,
@@ -872,15 +880,22 @@ export const resolveOutreachApplySource = (
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
   leadPersonNames: readonly string[] = [],
-): ResearchDetailSource | undefined =>
-  eligibleOutreachSources(
+  joinPageUrls: readonly string[] = [],
+): ResearchDetailSource | undefined => {
+  const eligible = eligibleOutreachSources(
     sources,
     claimedActionUrls,
     leadIdentityUnderReview,
     entityType,
     rankingContext,
     leadPersonNames,
-  ).find((source) => isApplyOrJoinSourceUrl(source.url));
+  );
+  const vetted = new Set(joinPageUrls.map((url) => actionDedupeKey(url)).filter(Boolean));
+  return (
+    eligible.find((source) => vetted.has(actionDedupeKey(source.url))) ||
+    eligible.find((source) => isApplyOrJoinSourceUrl(source.url))
+  );
+};
 
 export const resolveOutreachOfficialSource = (
   sources: ResearchDetailSource[],

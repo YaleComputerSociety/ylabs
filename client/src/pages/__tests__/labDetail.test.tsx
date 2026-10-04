@@ -1257,7 +1257,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('How to get involved')).toBeNull();
   });
 
-  it('offers only the research homepage, not the join page too, beside a lead card that links the profile', async () => {
+  it('offers the research homepage with the join page as a secondary link beside a lead card that links the profile', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1283,12 +1283,14 @@ describe('LabDetail page', () => {
 
     expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
     const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
-    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
     expect(
-      screen
-        .getAllByRole('link', { name: 'Visit research website' })
-        .map((link) => link.getAttribute('href')),
-    ).toEqual([RESEARCH_WEBSITE_URL]);
+      within(getInvolvedBlock)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['Visit research website', RESEARCH_WEBSITE_URL],
+      ['See how to join', JOIN_PAGE_URL],
+    ]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
@@ -1311,7 +1313,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('opened above')).toBeNull();
   });
 
-  it('offers the research homepage over a join page and over an own-button profile', async () => {
+  it('offers the research homepage over an own-button profile and links the join page beneath it', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1328,9 +1330,58 @@ describe('LabDetail page', () => {
       within(getInvolvedBlock)
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
-    ).toEqual([RESEARCH_WEBSITE_URL]);
+    ).toEqual([RESEARCH_WEBSITE_URL, JOIN_PAGE_URL]);
     expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
+  it('links the served join page beneath the homepage even when its path does not say join', async () => {
+    const vettedJoinPageUrl = 'https://join-lab.example.test/undergraduate-research-opportunities';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+      accessSignals: [
+        {
+          signalType: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          excerpt: 'A join, opportunities, or application page was found.',
+          sourceUrl: vettedJoinPageUrl,
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
+      vettedJoinPageUrl,
+    );
+  });
+
+  it('offers the served join page as the button when the row has no homepage', async () => {
+    const vettedJoinPageUrl = 'https://join-lab.example.test/opportunities';
+    renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, websiteUrl: '', sourceUrls: [OFFICIAL_PROFILE_URL] },
+      accessSignals: [
+        {
+          signalType: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          excerpt: 'A join, opportunities, or application page was found.',
+          sourceUrl: vettedJoinPageUrl,
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
+      vettedJoinPageUrl,
+    );
+    expect(screen.queryByRole('link', { name: 'See how to join' })).toBeNull();
   });
 
   it('offers a working mailto email link without recording outreach', async () => {
