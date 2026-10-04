@@ -50,9 +50,7 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 export const STAFF_MINTED_ENTITY_ARCHIVE_REASON = 'research-entity:retire-staff-minted-entities';
 
 export type StaffMintedEntityReason =
-  | 'non_research_staff_title'
-  | 'research_support_staff_title'
-  | 'student_title';
+  'non_research_staff_title' | 'research_support_staff_title' | 'student_title';
 
 export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityReason[] = [
   'non_research_staff_title',

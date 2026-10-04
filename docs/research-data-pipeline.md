@@ -1988,7 +1988,7 @@ That residue is pre-#2304 trainee data rather than the research-support class th
 
 Student titles are the exception, because they have that predicate (#4654).
 `isStudentTitle` matches a stated enrollment in, or graduation from, a degree programme (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `Master's Student`, a bare `IDE Alumni`), and no `FACULTY_KEYWORDS` entry spells any of them, so the hyphen problem cannot arise.
-The pass reports them as `student_title`, after the same whole-title faculty yield, and spares a title that names students as the population it serves (`namesARankItServesRatherThanHolds`).
+The pass reports them as `student_title`, after the same whole-title faculty yield, and only when `titleResearchOwnership` does not read the title as owning research and the title names no administrative head noun (director, dean, chair, chief, head, manager, coordinator, advisor) anywhere, so a dean or director who serves students is never archived as one.
 The same spellings were added to the mint screen, which previously refused `PhD Student` but not `Ph.D. Student`.
 
 Any title that states a faculty appointment anywhere yields, and this is the one place the retirement side is deliberately stricter than the mint gate.
