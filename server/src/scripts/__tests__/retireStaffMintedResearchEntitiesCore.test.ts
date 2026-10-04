@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import {
   isPersonProfileIdentityUrl,
   planStaffMintedEntityRetirement,
+  officialProfileUrlSpellings,
   soleLeadIdentityFor,
   staffMintedEntityReasonFor,
   summarizeStaffMintedEntityRefusals,
@@ -345,7 +347,7 @@ describe('soleLeadIdentityFor', () => {
       mintUrl: roster,
       rolePersonIds: ['p'.repeat(24)],
       leadById: lead(),
-      observedTitlesByUrl: new Map(),
+      observedTitlesByDestination: new Map(),
       ...over,
     });
 
@@ -359,9 +361,31 @@ describe('soleLeadIdentityFor', () => {
 
   it('prefers the live titles observed on the lead page over the stored title', () => {
     expect(
-      borrow({ observedTitlesByUrl: new Map([[page, new Set(['Professor of Fixtures'])]]) })!
-        .titles,
+      borrow({
+        observedTitlesByDestination: new Map([
+          [normalizeOfficialProfileDestination(page), new Set(['Professor of Fixtures'])],
+        ]),
+      })!.titles,
     ).toEqual(['Professor of Fixtures']);
+  });
+
+  it('reads the live titles recorded under another spelling of the lead page', () => {
+    const recordedAs = 'http://www.dept.example.edu/profile/p-3001';
+    expect(officialProfileUrlSpellings(page)).toContain(recordedAs);
+    const borrowed = borrow({
+      observedTitlesByDestination: new Map([
+        [
+          normalizeOfficialProfileDestination(recordedAs),
+          new Set(['Professor of Fixtures', 'Research Associate 3']),
+        ],
+      ]),
+    })!;
+    expect(borrowed.titles).toEqual(['Professor of Fixtures', 'Research Associate 3']);
+    expect(
+      planStaffMintedEntityRetirement([
+        candidate({ identityProfileUrl: borrowed.url, storedTitles: borrowed.titles }),
+      ]).toArchive,
+    ).toEqual([]);
   });
 
   it('borrows nothing for two people, an unverified page, or a mint citation that is not a shared listing', () => {

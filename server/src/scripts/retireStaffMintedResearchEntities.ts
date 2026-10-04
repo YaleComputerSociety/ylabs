@@ -12,6 +12,7 @@ import { archivedEntityUpdate, LIVE_ENTITY_FILTER } from '../models/entityArchiv
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -20,6 +21,7 @@ import {
   STAFF_MINTED_ENTITY_ARCHIVE_REASON,
   STAFF_MINTED_ENTITY_REASON_PRECEDENCE,
   isPersonProfileIdentityUrl,
+  officialProfileUrlSpellings,
   soleLeadIdentityFor,
   type SoleLeadRecord,
   planStaffMintedEntityRetirement,
@@ -212,6 +214,31 @@ export function entriesInReasonScope<T extends { reason: StaffMintedEntityReason
   return entries.filter((entry) => reasons.includes(entry.reason));
 }
 
+async function addLiveTitlesByDestination(
+  titlesByDestination: Map<string, Set<string>>,
+  pageUrls: readonly string[],
+): Promise<void> {
+  const spellings = [...new Set(pageUrls.flatMap(officialProfileUrlSpellings))];
+  if (spellings.length === 0) return;
+  for (const observation of await Observation.find({
+    field: 'title',
+    entityType: 'user',
+    sourceUrl: { $in: spellings },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+  })
+    .select('sourceUrl value')
+    .lean()) {
+    const url = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
+    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
+    if (!url || !value) continue;
+    const destination = normalizeOfficialProfileDestination(url);
+    const held = titlesByDestination.get(destination) || new Set<string>();
+    held.add(value);
+    titlesByDestination.set(destination, held);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseRetireStaffMintedEntitiesArgs(process.argv.slice(2));
   // Resolved before the database is opened, so an unwritable report path fails the
@@ -244,29 +271,14 @@ async function main(): Promise<void> {
   }
 
   const identityUrls = [...new Set(identityUrlById.values())];
-  const titlesByUrl = new Map<string, Set<string>>();
+  const titlesByDestination = new Map<string, Set<string>>();
   // Every live title, from every lane, rather than the most recent one: the verdict
   // is unanimity across them, so the set matters and recency does not. Live only is
   // the pair every other retirement pass carries when it reads a stored value as
   // current, because a superseded or rolled-back title is a claim the lane has
   // withdrawn. On Development it changes no verdict and moves 33 identity pages into
   // `no-stored-title`, which refuses.
-  for (const observation of await Observation.find({
-    field: 'title',
-    entityType: 'user',
-    sourceUrl: { $in: identityUrls },
-    superseded: { $ne: true },
-    'rollback.rolledBackAt': { $exists: false },
-  })
-    .select('sourceUrl value')
-    .lean()) {
-    const url = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
-    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
-    if (!url || !value) continue;
-    const held = titlesByUrl.get(url) || new Set<string>();
-    held.add(value);
-    titlesByUrl.set(url, held);
-  }
+  await addLiveTitlesByDestination(titlesByDestination, identityUrls);
 
   // Which people the identity page itself names, so a role edge attaching that
   // person can be told from one attaching somebody else. `profileLinks` is the join,
@@ -340,31 +352,14 @@ async function main(): Promise<void> {
       .map((link) => link?.url)
       .filter((url): url is string => typeof url === 'string' && url !== ''),
   );
-  for (const observation of leadPageUrls.length
-    ? await Observation.find({
-        field: 'title',
-        entityType: 'user',
-        sourceUrl: { $in: [...new Set(leadPageUrls)] },
-        superseded: { $ne: true },
-        'rollback.rolledBackAt': { $exists: false },
-      })
-        .select('sourceUrl value')
-        .lean()
-    : []) {
-    const url = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
-    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
-    if (!url || !value) continue;
-    const held = titlesByUrl.get(url) || new Set<string>();
-    held.add(value);
-    titlesByUrl.set(url, held);
-  }
+  await addLiveTitlesByDestination(titlesByDestination, leadPageUrls);
   let identitiesReadFromSoleLead = 0;
   const identityFor = (id: string): { url?: string; titles: string[]; personIds: string[] } => {
     const url = identityUrlById.get(id);
     if (url) {
       return {
         url,
-        titles: [...(titlesByUrl.get(url) || [])],
+        titles: [...(titlesByDestination.get(normalizeOfficialProfileDestination(url)) || [])],
         personIds: identityPersonIdsByUrl.get(url) || [],
       };
     }
@@ -372,7 +367,7 @@ async function main(): Promise<void> {
       mintUrl: mintUrlById.get(id),
       rolePersonIds: roleEdgePersonIdsById.get(id) || [],
       leadById,
-      observedTitlesByUrl: titlesByUrl,
+      observedTitlesByDestination: titlesByDestination,
     });
     if (!borrowed) return { titles: [], personIds: [] };
     identitiesReadFromSoleLead += 1;

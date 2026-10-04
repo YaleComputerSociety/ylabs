@@ -47,6 +47,7 @@ import {
 } from '../scrapers/utils/titleResearchOwnership';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
+import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 export const STAFF_MINTED_ENTITY_ARCHIVE_REASON = 'research-entity:retire-staff-minted-entities';
@@ -345,7 +346,7 @@ export function soleLeadIdentityFor(input: {
   mintUrl: unknown;
   rolePersonIds: readonly string[];
   leadById: ReadonlyMap<string, SoleLeadRecord>;
-  observedTitlesByUrl: ReadonlyMap<string, ReadonlySet<string>>;
+  observedTitlesByDestination: ReadonlyMap<string, ReadonlySet<string>>;
 }): { url: string; titles: string[]; personIds: string[] } | undefined {
   if (typeof input.mintUrl !== 'string' || !isSharedPeopleRosterUrl(input.mintUrl))
     return undefined;
@@ -365,11 +366,33 @@ export function soleLeadIdentityFor(input: {
   });
   if (primary.length !== 1) return undefined;
   const url = String(primary[0].url);
-  const observed = [...(input.observedTitlesByUrl.get(url) ?? [])];
+  const observed = [
+    ...(input.observedTitlesByDestination.get(normalizeOfficialProfileDestination(url)) ?? []),
+  ];
   const stored = typeof lead?.title === 'string' ? lead.title.trim() : '';
   return {
     url,
     titles: observed.length > 0 ? observed : stored ? [stored] : [],
     personIds: people,
   };
+}
+
+export function officialProfileUrlSpellings(url: string): string[] {
+  const spellings = new Set([url]);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [...spellings];
+  }
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const path = parsed.pathname.replace(/\/+$/, '');
+  for (const scheme of ['https:', 'http:']) {
+    for (const prefix of ['', 'www.']) {
+      for (const slash of ['', '/']) {
+        spellings.add(`${scheme}//${prefix}${host}${path}${slash}${parsed.search}`);
+      }
+    }
+  }
+  return [...spellings];
 }
