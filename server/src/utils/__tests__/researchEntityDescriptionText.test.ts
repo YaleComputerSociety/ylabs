@@ -1625,6 +1625,22 @@ describe('isDeceasedOrEmeritusLeadBiography', () => {
 });
 
 describe('isCredentialOrTitleLeadBiography', () => {
+  it('does not flag a whole body that is one appointment sentence naming its topics (#4635)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      ),
+    ).toBe(false);
+  });
+
+  it('still flags a topic-naming opener followed by CV sentences (#4635)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Jane Doe is an Assistant Professor of Medicine who is studying B cells in kidney disease. Dr. Doe received her MD and PhD at an example university.',
+      ),
+    ).toBe(true);
+  });
+
   it('flags a name-lead opening with a lowercase "professor" title (#1638)', () => {
     expect(
       isCredentialOrTitleLeadBiography(

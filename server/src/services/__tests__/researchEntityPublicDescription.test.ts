@@ -390,6 +390,10 @@ describe('a thin first-person appointment line that names its topics serves (#46
       'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
     );
     expect(representation.invariant.pass).toBe(true);
+    expect(
+      toPublicResearchEntityDto(representation.entity, { leadMemberNames: ['Alex Rivera'] })
+        .fullDescription,
+    ).toBe(representation.entity.fullDescription);
   });
 });
 
