@@ -245,11 +245,48 @@ const RESEARCHER_WHOSE_FOCUS_SENTENCE =
 const RESEARCH_TOPICS_SENTENCE =
   /^(?:(?:Active|Current|Ongoing|Recent)\s+)*(?:current\s+)?(?:research\s+(?:topics|areas|projects|questions)|projects)\s+(?:are|include)\b/i;
 
+const PERSON_SENTENCE_SUBJECT =
+  "(?:(?:Dr\\.?|Professor)\\s+)?(?:He|She|They|I|We|[A-Z][\\p{L}'’-]+(?:\\s+[A-Z][\\p{L}'’.-]+){0,3})";
+
+// "She has research interests in ...", "Dr. Lee has longstanding interests in the research of
+// immunology", "He is particularly interested in ...": a research statement whose subject is
+// the person holding the interest rather than the interest itself.
+const RESEARCH_INTEREST_HOLDER_SENTENCE = new RegExp(
+  `^${PERSON_SENTENCE_SUBJECT}\\s+(?:also\\s+)?(?:(?:has|have)\\s+(?:(?:longstanding|long-standing|long|broad|wide-ranging|particular|special|current|primary|ongoing)\\s+)?(?:research\\s+)?interests?\\s+in|(?:is|are)\\s+(?:particularly\\s+|especially\\s+|primarily\\s+)?interested\\s+in)\\b(?!\\s+(?:supervising|advising|mentoring|working\\s+with|hearing\\s+from|recruiting|hosting))`,
+  'u',
+);
+
+// "He has published numerous works on such topics as ...": the topics a scholar's record is
+// about, which is the research statement a humanities profile often gives instead of one.
+const PUBLISHED_TOPICS_SENTENCE = new RegExp(
+  `^${PERSON_SENTENCE_SUBJECT}\\s+(?:has|have)\\s+(?:also\\s+)?(?:published|written)\\b[^.]{0,80}?\\bon\\s+(?:such\\s+)?(?:topics|subjects|themes|questions)\\s+(?:as|including)\\b`,
+  'u',
+);
+
+// "<name>'s fields of study include ...": the person's own statement of their fields.
+const FIELDS_OF_STUDY_SENTENCE = new RegExp(
+  `^${PERSON_SENTENCE_SUBJECT}['’]s?\\s+(?:(?:main|primary|principal|current)\\s+)?(?:fields?|areas?)\\s+of\\s+(?:study|interest|research|expertise|specialization)\\s+(?:include|includes|are|is|span|spans)\\b`,
+  'u',
+);
+
+// "<name> is a historian of modern architecture and ...": how a good body orients the
+// reader before describing the work, and the sentence that says what the person studies.
+const DISCIPLINE_ORIENTATION_SENTENCE = new RegExp(
+  `^${PERSON_SENTENCE_SUBJECT}\\s+is\\s+an?\\s+(?:[\\p{L}-]+(?:,|\\s+and)?\\s+){0,4}(?:historian|scholar|critic|theorist|philosopher|anthropologist|sociologist|economist|biologist|chemist|physicist|scientist|researcher|epidemiologist|ethnographer|archaeologist|linguist|musicologist|geographer|psychologist|ecologist|ethicist|demographer)s?\\s+(?:of|who|whose|specializing|working|focused)\\b`,
+  'u',
+);
+
+const isPersonResearchStatementSentence = (sentence: string): boolean =>
+  RESEARCH_INTEREST_HOLDER_SENTENCE.test(sentence) ||
+  PUBLISHED_TOPICS_SENTENCE.test(sentence) ||
+  FIELDS_OF_STUDY_SENTENCE.test(sentence) ||
+  DISCIPLINE_ORIENTATION_SENTENCE.test(sentence);
+
 const RESEARCH_ACTIVITY_SENTENCE =
   /^(?:He|She|They|We|I|(?:His|Her|Their|Our|My)\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research|scholarship)|(?:Dr\.?\s+|Professor\s+)?[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){0,2}(?:['’]s\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research))?)\s+(?:has\s+|have\s+)?(?:(?:also|currently|primarily|mainly|further)\s+)?(?:studies|investigates|examines|explores|analy[sz]es|evaluates|models|develops|focus(?:es|ed)|concerns|addresses|asks|seeks|aims|works\s+(?:on|in)|speciali[sz]es\s+in|combines|employs|applies|uses\s+(?:diverse\s+|a\s+)?(?:research\s+)?(?:methods|methodologies|approaches|techniques)|uses\s+\w+(?:\s+\w+)?\s+to\s+(?:study|understand|examine|investigate))\b/u;
 
 const CV_RECORD_SENTENCE =
-  /\b(?:teach(?:es|ing)?\s+(?:\w+\s+){0,2}(?:courses?|classes|seminars?)|(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?B\.?A|J\.?D|M\.?D|Ph\.?\s?D)\b|(?:has|have)\s+published\b|author\s+of\b|(?:co-?)?editors?\s+of\b|(?:received|won)\s+(?:the|an?)\s+[^.]{0,60}\b(?:awards?|prizes?|medals?)\b|\b(?:publications|books|works)\s+include\b|\([^()]{0,80}\b(?:19|20)\d{2}\)|\b(?:is|was)\s+an?\s+(?:\w+\s+)?(?:fellow|member)\s+of\b|\b(?:born|educated|elected|appointed|awarded)\b|\btook\s+(?:his|her|their)\s+[A-Z]{2,4}\b|\b(?:chaired|inaugural|keynoter|panelist|most\s+cited)\b|\b(?:he|she|they)\s+(?:also\s+)?published\b|^In\s+(?:19|20)\d{2}\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b|\b(?:is|was)\s+(?:the|a)\s+(?:\w+\s+){0,2}chair\b)/i;
+  /\b(?:teach(?:es|ing)?\s+(?:\w+\s+){0,2}(?:courses?|classes|seminars?)|(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?B\.?A|J\.?D|M\.?D|Ph\.?\s?D)\b|(?:has|have)\s+published\b|author\s+of\b|(?:co-?)?editors?\s+of\b|(?:received|won)\s+(?:the|an?)\s+[^.]{0,60}\b(?:awards?|prizes?|medals?)\b|\b(?:publications|books|works)\s+include\b|\([^()]{0,80}\b(?:19|20)\d{2}\)|\b(?:is|was)\s+(?:also\s+)?an?\s+(?:\w+\s+)?(?:fellow|member)\s+of\b|\b(?:born|educated|elected|appointed|awarded)\b|\btook\s+(?:his|her|their)\s+[A-Z]{2,4}\b|\b(?:chaired|inaugural|keynoter|panelist|most\s+cited)\b|\b(?:he|she|they)\s+(?:also\s+)?published\b|^In\s+(?:19|20)\d{2}\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b|\b(?:is|was)\s+(?:the|a)\s+(?:\w+\s+){0,2}chair\b|\b(?:editorial|advisory)\s+boards?\b|\bco-?founder\b|\bgave\s+the\b[^.]{0,80}\blectures?\b|\bSelected\s+(?:Recent\s+)?Publications\b|\bedd?s?\.\s|\bpresented\s+(?:his|her|their)\s+(?:work|research)\b|\bCV\b|\bsearch\s+for\b|^(?:I|We)\s+(?:spent|wrote|worked|served|taught)\b|\b(?:has|have|['’]ve)\s+(?:also\s+)?(?:written|edited|translated)\b|\b(?:associate\s+)?editor\s+(?:for|of)\b|\bfeatured\s+guest\b|\bIn\s+(?:his|her|their|my)\s+(?:free|spare|leisure)\s+time\b|\benjoys?\s+spending\s+time\b|\b(?:received|earned|obtained|completed)\s+(?:(?:his|her|their|a|an|both)\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?F\.?A|M\.?D|J\.?D|M\.?P\.?H|M\.?B\.?A|Ph\.?\s?D|D\.?Phil)\b|\b(?:de\s+Gruyter|Brill|Routledge|Press|OUP|CUP)\b[^.]{0,40}\b(?:19|20)\d{2}\b|\b(?:Leiden|Oxford|Cambridge|London|New\s+York)\s+(?:19|20)\d{2}\b|^(?:[A-Z]\.\s?){1,3}[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+)?\s+and\s+(?:[A-Z]\.\s?){1,3}|\bconsultant\s+(?:to|for)\b|\b(?:has|have)\s+(?:also\s+)?taught\s+at\b)/i;
 
 /**
  * The sentences of a biography that state, in their own subject, what the person
@@ -276,6 +313,7 @@ export function researchStatementSentences(
     (sentence) =>
       RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
       RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+      isPersonResearchStatementSentence(sentence) ||
       (activityAnchors &&
         RESEARCH_ACTIVITY_SENTENCE.test(sentence) &&
         !isCareerFactSentence(sentence) &&
@@ -286,6 +324,7 @@ export function researchStatementSentences(
     (sentence, index) =>
       RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
       RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+      isPersonResearchStatementSentence(sentence) ||
       RESEARCH_TOPICS_SENTENCE.test(sentence) ||
       (!isCareerFactSentence(sentence) &&
         (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
@@ -298,7 +337,7 @@ const DEGREE_LINE_PATTERN =
 const DATED_TITLE_PATTERN = /\((?:[^()]*,\s*)?(?:19|20)\d{2}\)/g;
 const MIN_DATED_TITLES = 3;
 const CV_CAREER_SENTENCE_PATTERN =
-  /\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?D|Ph\.?\s?D|doctorate|degree|residency|fellowship|training)\b|\b(?:joined|served\s+as)\b|\bis\s+the\s+author\s+of\b|\b(?:award|prize|medal)\b.{0,60}\b(?:19|20)\d{2}\b|\bwon\s+the\b|\b(?:received|won)\s+the\s+[^.]{0,80}\b(?:Award|Prize|Medal)\b|\belected\s+(?:a\s+)?(?:fellow|member)\b|\bchaired\b|\b(?:keynoter|keynote\s+speaker|panelist)\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b/i;
+  /\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?D|Ph\.?\s?D|doctorate|degree|residency|fellowship|training)\b|\b(?:joined|served\s+as)\b|\bis\s+the\s+author\s+of\b|\b(?:award|prize|medal)\b.{0,60}\b(?:19|20)\d{2}\b|\bwon\s+the\b|\b(?:received|won)\s+the\s+[^.]{0,80}\b(?:Award|Prize|Medal)\b|\belected\s+(?:a\s+)?(?:fellow|member)\b|\bchaired\b|\b(?:keynoter|keynote\s+speaker|panelist)\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b|\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:M\.?F\.?A|D\.?M\.?A|M\.?Arch|D\.?Phil)\b|\b(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?F\.?A|M\.?D|J\.?D|Ph\.?\s?D)\.?\s+(?:in\s+[^.]{0,60}?\s+)?from\b|\b(?:has|have)\s+(?:also\s+)?taught\s+at\b|\b(?:has|have)\s+(?:also\s+)?published\s+(?:in|widely|extensively|numerous)\b|\bconsultant\s+(?:to|for|on)\b|\bFulbright\b|\b(?:editorial|advisory)\s+boards?\b/i;
 const MIN_CV_CAREER_SENTENCES = 2;
 
 /**
