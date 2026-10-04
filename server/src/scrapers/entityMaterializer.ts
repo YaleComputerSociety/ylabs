@@ -6884,7 +6884,7 @@ export function servingBarAcceptsFullDescription(
     leadPersonName,
   );
   return (
-    representation.invariant.fullDescriptionUseful &&
+    representation.strictQuality.full.isUseful &&
     textValue(servedResearchEntityCopy(representation.entity, leadMemberNames).fullDescription)
       .length > 0
   );
@@ -6896,8 +6896,13 @@ export function servingBarAcceptsDescriptionPair(
   candidateText: string,
   leadPersonName: string,
 ): boolean {
-  return servingRepresentationForCandidate(entityDoc, projected, candidateText, leadPersonName)
-    .representation.invariant.pass;
+  const { representation } = servingRepresentationForCandidate(
+    entityDoc,
+    projected,
+    candidateText,
+    leadPersonName,
+  );
+  return representation.invariant.pass && representation.strictQuality.full.isUseful;
 }
 
 export async function projectFromLog(

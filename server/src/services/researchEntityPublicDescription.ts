@@ -261,7 +261,7 @@ function derivePublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
-  const quality = withThinButAccurateBodyUsable(strictQuality);
+  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -394,6 +394,7 @@ export const researchEntityServesPublicDetail = (entity: Record<string, any>): b
  */
 function withThinButAccurateBodyUsable(
   quality: ResearchEntityDescriptionQuality,
+  programLike: boolean,
 ): ResearchEntityDescriptionQuality {
   if (!isThinButAccurateBody(quality.full)) return quality;
   const full = { ...quality.full, isUseful: true };
@@ -407,5 +408,6 @@ function withThinButAccurateBodyUsable(
     flags: cardFlags,
     isUseful: quality.short.isUseful || cardIsSound,
   };
-  return { ...quality, full, short, cardState: short.isUseful ? 'complete' : quality.cardState };
+  const cardComplete = short.isUseful || (programLike && !short.text);
+  return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }

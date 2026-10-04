@@ -44,7 +44,7 @@ export function createDescriptionCardJudge(): DescriptionCardJudge {
       buildResearchEntityPublicDescriptionRepresentation({
         entity,
         leadMembers: row.leadMembers,
-      }).quality.cardState === 'complete'
+      }).strictQuality.cardState === 'complete'
     );
   };
 }
