@@ -33,6 +33,14 @@ Each CAS login also increments one per-UTC-day bucket in `login_signal_tallies` 
 The bucket is computed inside `yaliesService.ts` by `classifyStudentLoginSignal`, so the major and curriculum never leave it; the row stores the date and counts only, the write is fire-and-forget and skipped while Mongo is disconnected, and `yarn --cwd server auth:login-signal-tally` reads it.
 It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
+One scraper path still mints an `Account`: `resolveOrCreateAccountId` in `scrapers/canonicalMembershipMaterializer.ts` upserts one with status `UNKNOWN` for a roster identity that carries both a netid and an email.
+An account netid must be a Yale netid (`looksLikeYaleNetid` in `utils/yaleNetid.ts`), and `models/account.ts` enforces that with hooks on every Mongoose write path, `save`, `insertMany` and the update and replace queries, rather than with the schema `match`, so an upsert without `runValidators` is refused too (#4773).
+That is the shape of the defect: on 2026-08-27, between #2122 and #2129, the user-identity materializer upserted 170 accounts keyed on an email local part, because the user observations were keyed `netid:<local part>` (#2831) and that upsert ran no validators.
+152 of them share an email with the person's real-netid account, which made two live accounts claim one address, so the email joins in `entityMaterializer.ts` refused that person.
+`yarn --cwd server accounts:merge-local-part-netid-twins` repairs a pair whose twin is unambiguous: it repoints every reference in `ACCOUNT_ID_REFERENCE_FIELDS` to the real-netid account, leaves a research plan whose target the twin already holds on the archived account, and archives the local-part account with `archivedReason` and `mergedIntoAccountId`.
+It never deletes, and it reports rather than merges a pair where both accounts link a researcher, the local part has a login, a researcher holds the local part as `identifiers.netid`, any netid-keyed history row names it, or the pair is off-shape.
+It is dry-run by default; `--apply` needs `--confirm-merge-local-part-netid-twins`, a `--max-apply` cap and the Development database, because Beta and Production receive accounts only through sync and promotion.
+The raw-driver copies in promotion and sync bypass the hooks on purpose, since they copy stored rows rather than mint them.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.

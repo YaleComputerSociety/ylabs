@@ -20,6 +20,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
   if (value instanceof mongoose.Types.ObjectId) return value;
@@ -352,7 +353,7 @@ async function resolveOrCreateAccountId(
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const netid = normalizedNetid(identity.netid);
   const email = normalizedEmail(identity.email);
-  if (!netid || !email) return undefined;
+  if (!netid || !email || !looksLikeYaleNetid(netid)) return undefined;
   try {
     const account = await Account.findOneAndUpdate(
       { netid },
