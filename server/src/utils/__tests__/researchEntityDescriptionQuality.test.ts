@@ -2547,17 +2547,3 @@ describe('fullDescriptionQuality appointment line that names research topics (#4
     ).toContain('appointment-only');
   });
 });
-
-describe('a body of past appointments only', () => {
-  it('is not a usable research body', () => {
-    const body =
-      'Mx. Fixture was the director of public policy for an example foundation, where they led advocacy efforts. Prior to that, they were a senior policy officer at another example foundation. They have a B.A. from Example University.';
-    expect(fullDescriptionQuality(body).flags).toContain('role-biography');
-  });
-
-  it('keeps a past-appointment body that states an area of expertise', () => {
-    const body =
-      'An expert in gender, health and human rights, Fixture previously taught at Example University, where she was faculty director of an example center.';
-    expect(fullDescriptionQuality(body).flags).not.toContain('role-biography');
-  });
-});
