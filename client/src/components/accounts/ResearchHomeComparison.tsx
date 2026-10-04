@@ -20,6 +20,7 @@ import {
   sanitizeResearchEntityCopy,
 } from '../../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
+import { formatTopicChipLabel } from '../../utils/displayText';
 import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
@@ -291,7 +292,7 @@ const ResearchHomeComparison = ({
               key={area}
               className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
             >
-              {area}
+              {formatTopicChipLabel(area)}
             </li>
           ))}
         </ul>
