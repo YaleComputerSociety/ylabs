@@ -5439,9 +5439,9 @@ export async function mergedSurvivorEvidence(
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
-    if (survivorReadOnARoster && isRosterAppointment(observation)) {
+    if (isRosterAppointment(observation)) {
       loserRosterAppointments.push(observation);
-      return false;
+      if (survivorReadOnARoster) return false;
     }
     if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
@@ -6628,9 +6628,50 @@ export const DEPARTMENT_ROSTER_APPOINTMENT_SOURCE = 'dept-faculty-roster';
 export const DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS = 14;
 
 /**
+ * After a research row is merged or re-keyed, the roster keeps reading its page but files
+ * the person's appointment under the person key, so the row's own department observation
+ * stops being refreshed and falls outside the currency window while the page still lists
+ * the person (#4694). A person-keyed roster read naming the same department is therefore
+ * a read of that appointment: it dates it, and it never adds a department of its own.
+ */
+async function personKeyedRosterDepartmentReads(keys: unknown[]): Promise<ResolverObservation[]> {
+  const personKeys = [...new Set(keys.map((key) => textValue(key)).filter(Boolean))];
+  if (personKeys.length === 0) return [];
+  return (await Observation.find({
+    entityType: 'user',
+    entityKey: { $in: personKeys },
+    field: 'departments',
+    sourceName: DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+    superseded: false,
+  })
+    .select('field value sourceName confidence observedAt')
+    .lean()) as unknown as ResolverObservation[];
+}
+
+export function rosterAppointmentReadTime(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): number {
+  const departmentsOf = (value: unknown) =>
+    (Array.isArray(value) ? value : [value])
+      .map((item) => textValue(item).trim().toLowerCase())
+      .filter(Boolean);
+  const own = new Date(observation.observedAt as any).getTime() || 0;
+  const departments = new Set(departmentsOf(observation.value));
+  return Math.max(
+    own,
+    ...personReads
+      .filter((read) => departmentsOf(read.value).some((department) => departments.has(department)))
+      .map((read) => new Date(read.observedAt as any).getTime() || 0),
+  );
+}
+
+/**
  * Each department roster page that lists a person is an independent appointment, so
  * a roster-won `departments` is the union of every roster department still being
- * read, not the one page ranked first (#3621). The resolver weighs each page's list
+ * read, not the one page ranked first (#3621). A survivor that reads no roster of its
+ * own takes its merged-in rows' current roster appointments the same way, appended
+ * after its own departments, because that is the only roster evidence it has (#4694). The resolver weighs each page's list
  * as a rival value, so a cross-listing displaced the home department whenever it was
  * read last.
  *
@@ -6645,19 +6686,32 @@ async function combineDepartmentRosterAppointments(input: {
   set: Record<string, unknown>;
   entityDoc: any;
   rosterReads: readonly ResolverObservation[];
+  mergedInRosterReads: readonly ResolverObservation[];
   manuallyLockedFields: string[];
 }): Promise<void> {
   const field = 'departments';
   const { set, entityDoc } = input;
-  if (input.manuallyLockedFields.includes(field) || !Array.isArray(set[field])) return;
-  if (
-    textValue(objectRecord(set[`fieldProvenance.${field}`]).sourceName) !==
-    DEPARTMENT_ROSTER_APPOINTMENT_SOURCE
-  ) {
-    return;
-  }
+  if (input.manuallyLockedFields.includes(field)) return;
+  const winnerIsARoster =
+    textValue(objectRecord(set[`fieldProvenance.${field}`]).sourceName) ===
+    DEPARTMENT_ROSTER_APPOINTMENT_SOURCE;
+  const winnerValue = Array.isArray(set[field])
+    ? set[field]
+    : !(field in set) && Array.isArray(entityDoc?.[field])
+      ? entityDoc[field]
+      : undefined;
+  if (!Array.isArray(winnerValue)) return;
+  const survivorReadsARoster = input.rosterReads.some(
+    (observation) =>
+      observation.field === field &&
+      observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+  );
+  if (!winnerIsARoster && (survivorReadsARoster || input.mergedInRosterReads.length === 0)) return;
   const rosterReads = refusedResolverObservations(
-    input.rosterReads.filter(
+    (winnerIsARoster
+      ? [...input.rosterReads, ...input.mergedInRosterReads]
+      : input.mergedInRosterReads
+    ).filter(
       (observation) =>
         observation.field === field &&
         observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE &&
@@ -6665,9 +6719,17 @@ async function combineDepartmentRosterAppointments(input: {
     ),
     entityDoc?.fieldValueRefusals,
   ).kept;
+  const personReads = await personKeyedRosterDepartmentReads([
+    set.inferredPiUserKey,
+    entityDoc?.inferredPiUserKey,
+  ]);
   const readTime = (observation: ResolverObservation) =>
+    rosterAppointmentReadTime(observation, personReads);
+  const ownReadTime = (observation: ResolverObservation) =>
     new Date(observation.observedAt as any).getTime() || 0;
-  const newestRead = Math.max(0, ...rosterReads.map(readTime));
+  // The floor stays on each read's own date, so a person-keyed read can only bring an
+  // appointment back into the window, never push another one out of it.
+  const newestRead = Math.max(0, ...rosterReads.map(ownReadTime));
   const currencyFloor = newestRead - DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS * 86_400_000;
   const namesADepartment = await departmentValueNamesADepartment(
     'school' in set ? set.school : entityDoc?.school,
@@ -6684,7 +6746,7 @@ async function combineDepartmentRosterAppointments(input: {
   const canonicalizer = await getOrgUnitCanonicalizer();
   const departmentKey = (value: string) =>
     canonicalizer.canonicalizeDepartments([value]).values[0] ?? value.trim().toLowerCase();
-  const winner = (set[field] as unknown[]).map((value) => textValue(value)).filter(Boolean);
+  const winner = (winnerValue as unknown[]).map((value) => textValue(value)).filter(Boolean);
   const byKey = new Map<string, string>();
   for (const item of [...winner, ...currentAppointments]) {
     const key = departmentKey(item);
@@ -7329,7 +7391,8 @@ export async function projectFromLog(
     await combineDepartmentRosterAppointments({
       set,
       entityDoc,
-      rosterReads: [...resolverObs, ...loserRosterReads],
+      rosterReads: resolverObs,
+      mergedInRosterReads: loserRosterReads,
       manuallyLockedFields,
     });
   }

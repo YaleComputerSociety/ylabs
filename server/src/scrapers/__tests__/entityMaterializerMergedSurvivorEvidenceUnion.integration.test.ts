@@ -289,7 +289,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     expect(projected.websiteUrl).toBe('https://examplelead-lab.yale.edu/');
   });
 
-  it('keeps the survivor own departments against a newer higher-confidence loser roster', async () => {
+  it('keeps the survivor own department first when a newer higher-confidence loser roster appends one (#4694)', async () => {
     const survivor = await seedMerge('dept-example-lead');
     await seedObservation(
       'example-lead-lab',
@@ -314,10 +314,11 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
-    expect(stored?.departments ?? []).not.toContain('Other Studies');
+    expect(stored?.departments?.[0]).toBe('Example Studies');
+    expect(stored?.departments ?? []).toContain('Other Studies');
   });
 
-  it('keeps a stored survivor department no survivor observation backs', async () => {
+  it('keeps a stored survivor department first and appends a merged-in roster appointment (#4694)', async () => {
     const survivor = await seedMerge('dept-example-lead');
     await ResearchEntity.updateOne(
       { _id: survivor._id },
@@ -331,7 +332,66 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     await materializeEntity('researchEntity', { entityKey: 'dept-example-lead' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
-    expect(stored?.departments).toEqual(['Example Studies']);
+    expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+  });
+
+  describe('a merged-in roster appointment the lane now reads under the person key (#4694)', () => {
+    const seedRosters = async (aliasReadAt: Date) => {
+      const survivor = await seedMerge('dept-example-lead');
+      await seedObservation(
+        'example-lead-lab',
+        'inferredPiUserKey',
+        'netid:example.lead',
+        'dept-faculty-roster',
+      );
+      await seedObservation(
+        'example-lead-lab',
+        'departments',
+        ['Example Studies'],
+        'dept-faculty-roster',
+        {
+          observedAt: new Date('2026-06-01T00:00:00Z'),
+        },
+      );
+      await seedObservation('dept-example-lead', 'departments', ['Law'], 'dept-faculty-roster', {
+        observedAt: aliasReadAt,
+      });
+      return survivor;
+    };
+    const seedPersonRead = async (departments: string[], observedAt: Date) => {
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:example.lead',
+        field: 'departments',
+        value: departments,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.yale.edu/people/',
+        confidence: 0.7,
+        observedAt,
+        superseded: false,
+      });
+    };
+
+    it('keeps the appointment while a person-keyed read of the same department is current', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
+      await seedPersonRead(['Law'], new Date('2026-06-02T00:00:00Z'));
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+    });
+
+    it('drops a stale appointment no current read of that department dates', async () => {
+      const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
+      await seedPersonRead(['Other Studies'], new Date('2026-06-02T00:00:00Z'));
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+      expect(stored?.departments).toEqual(['Example Studies']);
+    });
   });
 
   describe("a merged-in citation of the lead's verified primary profile (#4695)", () => {
