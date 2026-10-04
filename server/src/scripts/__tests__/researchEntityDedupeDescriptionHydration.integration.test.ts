@@ -108,19 +108,17 @@ describe('dedupe merge description hydration (#2208)', () => {
     const twinId = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    await db
-      .collection('research_entities')
-      .insertMany([
-        {
-          ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', THIN_FULL),
-          studentVisibilityTier: 'suppressed',
-        },
-        {
-          ...entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
-          shortDescription: '',
-          studentVisibilityTier: 'suppressed',
-        },
-      ]);
+    await db.collection('research_entities').insertMany([
+      {
+        ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', THIN_FULL),
+        studentVisibilityTier: 'suppressed',
+      },
+      {
+        ...entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
+        shortDescription: '',
+        studentVisibilityTier: 'suppressed',
+      },
+    ]);
 
     const result = await applyResearchEntityDedupeMergeGroup(
       {
