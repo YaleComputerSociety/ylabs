@@ -152,6 +152,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
    * connection timeout instead of asserting.
    */
   warmVocabulary?: () => Promise<unknown>;
+  swapConfirmation?: MeiliSwapConfirmationOptions;
 }
 
 export interface ResearchEntitySearchIndexRebuildResult {
@@ -862,6 +863,87 @@ async function deleteMeiliIndexAndConfirm(
   );
 }
 
+export interface MeiliSwapConfirmationOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const MEILI_SWAP_CONFIRM_POLL_INTERVAL_MS = 500;
+
+const isMeiliTaskNotFoundError = (error: unknown): boolean => {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  return candidate?.cause?.code === 'task_not_found' || candidate?.code === 'task_not_found';
+};
+
+async function meiliIndexCreatedAt(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<string | null> {
+  const raw = (await client.getRawIndex(uid)) as { createdAt?: unknown } | null | undefined;
+  const createdAt = raw?.createdAt;
+  if (createdAt instanceof Date) return createdAt.toISOString();
+  return typeof createdAt === 'string' && createdAt ? createdAt : null;
+}
+
+async function readSwapTaskIfVisible(
+  client: ResearchEntitySearchIndexAdminClient,
+  taskUid: number,
+  timeoutMs: number,
+): Promise<{ status?: string; error?: unknown } | null> {
+  if (typeof client.tasks?.waitForTask !== 'function') return null;
+  try {
+    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+  } catch (error) {
+    if (isMeiliTaskNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+async function swapMeiliIndexesAndConfirm(
+  client: ResearchEntitySearchIndexAdminClient,
+  liveUid: string,
+  stagingUid: string,
+  options: MeiliSwapConfirmationOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS;
+  const pollIntervalMs = options.pollIntervalMs ?? MEILI_SWAP_CONFIRM_POLL_INTERVAL_MS;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const label = `swapIndexes ${liveUid} ${stagingUid}`;
+
+  const stagingCreatedAt = await meiliIndexCreatedAt(client, stagingUid);
+  const enqueued = await client.swapIndexes([{ indexes: [liveUid, stagingUid] }]);
+  const taskUid = (enqueued as { taskUid?: unknown } | null | undefined)?.taskUid;
+  if (typeof taskUid !== 'number') {
+    throw new Error(`Meilisearch ${label} returned no task, so its outcome cannot be confirmed.`);
+  }
+
+  const task = await readSwapTaskIfVisible(client, taskUid, timeoutMs);
+  if (task) {
+    if (task.status === 'succeeded') return;
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
+    );
+  }
+
+  if (!stagingCreatedAt) {
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} is not visible to this key and ${stagingUid} reports no createdAt, so the swap cannot be confirmed.`,
+    );
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if ((await meiliIndexCreatedAt(client, liveUid)) === stagingCreatedAt) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Meilisearch ${label} task ${taskUid} was not confirmed within ${timeoutMs} ms: ${liveUid} does not yet hold the index created as ${stagingUid}.`,
+      );
+    }
+    await sleep(pollIntervalMs);
+  }
+}
+
 async function indexHasStoredEmbedder(index: ResearchEntitySearchIndexLike): Promise<boolean> {
   const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
   return Boolean(
@@ -976,6 +1058,7 @@ async function replaceResearchEntitySearchIndexBySwap(args: {
   targetsPrefixedIndex: boolean;
   populate: (index: any) => Promise<ResearchEntitySearchIndexPopulateResult>;
   catchUp: (liveIndex: any) => Promise<ResearchEntitySearchIndexCatchUpResult>;
+  swapConfirmation?: MeiliSwapConfirmationOptions;
 }): Promise<
   ResearchEntitySearchIndexPopulateResult & { swap: ResearchEntitySearchIndexSwapResult }
 > {
@@ -1036,12 +1119,7 @@ async function replaceResearchEntitySearchIndexBySwap(args: {
       );
       createdLiveIndex = true;
     }
-    await assertMeiliTaskSucceeded(
-      client,
-      await client.swapIndexes([{ indexes: [liveUid, stagingUid] }]),
-      `swapIndexes ${liveUid} ${stagingUid}`,
-      MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
-    );
+    await swapMeiliIndexesAndConfirm(client, liveUid, stagingUid, args.swapConfirmation);
   } catch (error) {
     await deleteMeiliIndexAndConfirm(client, stagingUid).catch((cleanupError) =>
       console.warn(
@@ -1114,6 +1192,7 @@ export async function rebuildResearchEntitySearchIndex(
           await fetchChangedSince(startedAt),
           fetchMemberNames,
         ),
+      swapConfirmation: options.swapConfirmation,
     });
   } else {
     const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);

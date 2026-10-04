@@ -122,7 +122,7 @@ Relevant config:
 | -------------------------- | ---------------------------------------------------------- |
 | `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
 | `MEILISEARCH_SEARCH_API_KEY` | Search-only key for the web service (`search`, `settings.get` on `<prefix>_researchentities`). |
-| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts; exported in the shell, never stored on the web service. |
+| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts, scoped to its environment's `<prefix>_*` indexes (#4859); exported in the shell, never stored on the web service. |
 | `MEILISEARCH_API_KEY`      | Legacy single key; the fallback for either role, logged as a warning when deployed. |
 | `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |

@@ -79,7 +79,7 @@ The server uses two keys with different rights (#4014).
 | Variable | Read by | Rights |
 | -------- | ------- | ------ |
 | `MEILISEARCH_SEARCH_API_KEY` | the web service: search, the similar-research rail, the embedder check, readiness | `search` and `settings.get` on `<prefix>_researchentities` only |
-| `MEILISEARCH_WRITE_API_KEY` | the reindex and the sync and repair scripts (`getMeiliIndex`, `getMeiliClient`) | document, index and settings writes; no key management |
+| `MEILISEARCH_WRITE_API_KEY` | the reindex and the sync and repair scripts (`getMeiliIndex`, `getMeiliClient`) | document, index (including delete and swap) and settings writes on `<prefix>_*` only; no key management |
 | `MEILISEARCH_API_KEY` | legacy fallback for either role | whatever it is, usually the master key |
 
 `server/src/utils/meiliClient.ts` resolves each role's own variable first and falls back to `MEILISEARCH_API_KEY`.
@@ -98,15 +98,18 @@ curl -s -X POST "$MEILISEARCH_HOST/keys" \
 
 curl -s -X POST "$MEILISEARCH_HOST/keys" \
   -H "Authorization: Bearer $MEILI_MASTER_KEY" -H 'Content-Type: application/json' \
-  --data '{"name":"ylabs-<prefix>-reindex","description":"y/labs reindex and sync scripts","actions":["documents.add","documents.get","documents.delete","indexes.create","indexes.get","indexes.update","indexes.delete","indexes.swap","settings.get","settings.update","tasks.get","stats.get"],"indexes":["*"],"expiresAt":null}'
+  --data '{"name":"ylabs-<prefix>-reindex","description":"y/labs reindex and sync scripts","actions":["documents.add","documents.get","documents.delete","indexes.create","indexes.get","indexes.update","indexes.delete","indexes.swap","settings.get","settings.update","tasks.get","stats.get"],"indexes":["<prefix>_*"],"expiresAt":null}'
 ```
 
 Replace `<prefix>` with `beta` or `prod`.
 The search key needs `settings.get` because the web service reads the index's embedder settings to decide whether to run hybrid search.
 
-The write key's `indexes` is `["*"]` rather than `["<prefix>_*"]` on purpose.
-The rebuild swaps a staging index into place and waits for the swap task, and Meilisearch records an index swap with no `indexUid`, so a key scoped to named indexes cannot see that task and the rebuild fails after the swap (measured on Development on 2026-10-03: `Task not found`).
-That is why the write key is never stored on a service: it exists only in the shell session that runs the rebuild.
+Each environment's write key is scoped to `["<prefix>_*"]`, so the `beta` key answers 403 on every `prod_` index and the reverse, and no key but the master key spans both environments (#4859).
+Meilisearch records an index swap with no `indexUid`, so a prefix-scoped key cannot read the swap task (`Task not found`, measured on Development on 2026-10-03).
+The rebuild therefore confirms the swap from state the key can read: an index's `createdAt` moves with its contents in a swap, so the swap is confirmed once the live index reports the `createdAt` the staging index was created with, polled for up to three minutes.
+An unconfirmed swap exits non-zero.
+Measured on the local Meilisearch on 2026-10-04: with a key scoped to one prefix, a full rebuild of 4,193 documents created, filled, swapped and deleted its staging index, and the same key answered 403 on another prefix's index for a read, a document read and a delete; the code before this change failed the same run with `Task ... not found`.
+The write key can delete and swap its environment's indexes, so it is still never stored on the web service: export it in the shell session that runs the rebuild.
 A sync or repair script that only adds or deletes documents works with a key scoped to `["<prefix>_*"]`, if one is ever stored for an automated job.
 
 ### Which Render service gets which variable

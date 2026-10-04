@@ -1497,10 +1497,18 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       liveEmbedders?: Record<string, unknown>;
       failAddDocuments?: boolean;
       reportedDocumentCount?: number;
+      swapTaskHiddenFromKey?: boolean;
+      swapNeverApplies?: boolean;
     } = {},
   ) => {
     const calls: Call[] = [];
     const existing = new Set(args.existing ?? ['researchentities']);
+    const createdAtByUid = new Map<string, string>();
+    let clock = 0;
+    const stampCreatedAt = (uid: string) =>
+      createdAtByUid.set(uid, new Date(Date.UTC(2026, 0, 1, 0, 0, clock++)).toISOString());
+    for (const uid of existing) stampCreatedAt(uid);
+    const hiddenTasks = new Set<number>();
     const documentsByUid = new Map<string, unknown[]>();
     let nextTaskUid = 1;
     const failingTasks = new Set<number>();
@@ -1510,10 +1518,16 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       return { taskUid };
     };
     const tasks = {
-      waitForTask: async (taskUid: number) =>
-        failingTasks.has(taskUid)
+      waitForTask: async (taskUid: number) => {
+        if (hiddenTasks.has(taskUid)) {
+          throw Object.assign(new Error(`Task \`${taskUid}\` not found.`), {
+            cause: { code: 'task_not_found' },
+          });
+        }
+        return failingTasks.has(taskUid)
           ? { status: 'failed', error: { code: 'internal' } }
-          : { status: 'succeeded' },
+          : { status: 'succeeded' };
+      },
     };
     const index = (uid: string) => ({
       updateSettings: async (settings: unknown) => {
@@ -1557,20 +1571,32 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       tasks,
       getRawIndex: async (uid: string) => {
         if (!existing.has(uid)) throw notFound();
-        return { uid };
+        return { uid, createdAt: createdAtByUid.get(uid) };
       },
       createIndex: async (uid: string, options?: unknown) => {
         calls.push({ uid, op: 'createIndex', arg: options });
         existing.add(uid);
+        stampCreatedAt(uid);
         return enqueue();
       },
-      swapIndexes: async (swaps: unknown) => {
+      swapIndexes: async (swaps: Array<{ indexes: [string, string] }>) => {
         calls.push({ uid: '*', op: 'swapIndexes', arg: swaps });
-        return enqueue();
+        if (!args.swapNeverApplies) {
+          for (const { indexes } of swaps) {
+            const [left, right] = indexes;
+            const leftCreatedAt = createdAtByUid.get(left);
+            createdAtByUid.set(left, createdAtByUid.get(right) as string);
+            createdAtByUid.set(right, leftCreatedAt as string);
+          }
+        }
+        const task = enqueue();
+        if (args.swapTaskHiddenFromKey) hiddenTasks.add(task.taskUid);
+        return task;
       },
       deleteIndex: async (uid: string) => {
         calls.push({ uid, op: 'deleteIndex' });
         existing.delete(uid);
+        createdAtByUid.delete(uid);
         return enqueue();
       },
     };
@@ -1583,6 +1609,7 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
   ];
   const rebuild = (client: unknown, changedDuringBuild: unknown[] = []) =>
     rebuildResearchEntitySearchIndex({
+      swapConfirmation: { timeoutMs: 50, pollIntervalMs: 1, sleep: async () => {} },
       warmVocabulary: async () => new Set<string>(),
       pageSize: 5,
       clearExisting: true,
@@ -1643,6 +1670,31 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
     });
     expect(Date.parse(result.finishedAt)).toBeGreaterThanOrEqual(Date.parse(result.startedAt));
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('confirms the swap from the live index when a prefix-scoped key cannot read the swap task (#4859)', async () => {
+    const { client, calls } = makeFakeMeili({ swapTaskHiddenFromKey: true });
+
+    const result = await rebuild(client);
+
+    expect(calls.map((call) => `${call.op} ${call.uid}`).slice(-2)).toEqual([
+      'swapIndexes *',
+      'deleteIndex researchentities_next',
+    ]);
+    expect(result.swap).toMatchObject({ previousIndexDeleted: true });
+  });
+
+  it('fails and swaps nothing it can claim when a hidden swap task never reaches the live index', async () => {
+    const { client, calls } = makeFakeMeili({
+      swapTaskHiddenFromKey: true,
+      swapNeverApplies: true,
+    });
+
+    await expect(rebuild(client)).rejects.toThrow(
+      /swapIndexes researchentities researchentities_next task \d+ was not confirmed within 50 ms/,
+    );
+    expect(calls.at(-1)).toEqual({ uid: 'researchentities_next', op: 'deleteIndex' });
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
   });
 
   it('re-adds a row edited during the build to the live index after the swap', async () => {
