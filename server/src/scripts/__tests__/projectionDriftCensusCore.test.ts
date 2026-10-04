@@ -1,8 +1,13 @@
+import fs from 'fs';
+import path from 'path';
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { MATERIALIZER_MANAGED_FIELDS } from '../../scrapers/entityMaterializer';
 import {
+  chunkProjectionDriftCensusIds,
   classifyEntityProjectionDrift,
+  PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  projectionDriftCensusSamplePipeline,
   isProjectionBookkeepingKey,
   parseProjectionDriftCensusArgs,
   projectionDriftReportsForUnloadedSlugs,
@@ -348,5 +353,46 @@ describe('parseProjectionDriftCensusArgs', () => {
     expect(() => parseProjectionDriftCensusArgs(['--sample=0'])).toThrow('positive integer');
     expect(() => parseProjectionDriftCensusArgs(['--slugs=../etc'])).toThrow('Invalid entity slug');
     expect(() => parseProjectionDriftCensusArgs(['--apply'])).toThrow('Unknown projection drift');
+  });
+});
+
+describe('projection drift census sample read', () => {
+  it('lets the sample spill to disk so a corpus-sized draw cannot exceed the sort memory limit', () => {
+    expect(PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS.allowDiskUse).toBe(true);
+  });
+
+  it('samples ids only, so the random sort never carries whole documents', () => {
+    const pipeline = projectionDriftCensusSamplePipeline(5000, false);
+    const sampleIndex = pipeline.findIndex((stage) => '$sample' in stage);
+    const projectIndex = pipeline.findIndex((stage) => '$project' in stage);
+    expect(pipeline[sampleIndex]).toEqual({ $sample: { size: 5000 } });
+    expect(projectIndex).toBeGreaterThanOrEqual(0);
+    expect(projectIndex).toBeLessThan(sampleIndex);
+    expect(pipeline[projectIndex]).toEqual({ $project: { _id: 1 } });
+  });
+
+  it('excludes archived rows unless asked to include them', () => {
+    expect(projectionDriftCensusSamplePipeline(10, false)[0]).toEqual({
+      $match: { archived: { $ne: true } },
+    });
+    expect(projectionDriftCensusSamplePipeline(10, true)[0]).toEqual({ $match: {} });
+  });
+
+  it('loads sampled rows in bounded batches that cover every id once', () => {
+    const ids = Array.from({ length: 450 }, (_, index) => index);
+    const batches = chunkProjectionDriftCensusIds(ids);
+    expect(batches.map((batch) => batch.length)).toEqual([200, 200, 50]);
+    expect(batches.flat()).toEqual(ids);
+    expect(chunkProjectionDriftCensusIds([])).toEqual([]);
+    expect(() => chunkProjectionDriftCensusIds(ids, 0)).toThrow();
+  });
+});
+
+describe('projection drift census script', () => {
+  it('reads the sample through the disk-spilling options rather than a bare aggregate', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'projectionDriftCensus.ts'), 'utf8');
+    expect(source).toContain('PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS');
+    expect(source).toContain('projectionDriftCensusSamplePipeline(');
+    expect(source).not.toMatch(/\$sample:/);
   });
 });

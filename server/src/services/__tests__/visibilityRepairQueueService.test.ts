@@ -139,7 +139,6 @@ describe('visibilityRepairQueueService', () => {
     expect(classifyVisibilityRepairStage(['generic_directory_shell', 'missing_lead'])).toBe(
       'suppression',
     );
-    expect(classifyVisibilityRepairStage(['content_page_risk'])).toBe('suppression');
     expect(classifyVisibilityRepairStage(['research_infrastructure_only'])).toBe('suppression');
     expect(classifyVisibilityRepairStage(['formalization_only'])).toBe('review_exception');
     expect(classifyVisibilityRepairStage(['formalization_only', 'application_source_only'])).toBe(
@@ -1756,7 +1755,7 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          blockerReasons: ['missing_lead', 'duplicate_name_risk'],
+          blockerReasons: ['missing_lead', 'duplicate_risk'],
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),

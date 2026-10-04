@@ -241,13 +241,11 @@ export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
 ]);
 export const PI_IDENTITY_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_lead',
-  'duplicate_name_risk',
   'duplicate_risk',
   'profile_identity_risk',
 ]);
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
-  'content_page_risk',
   'duplicate_program',
   'common_application_container',
   EXTERNAL_AWARD_CYCLE_STALE_REASON,

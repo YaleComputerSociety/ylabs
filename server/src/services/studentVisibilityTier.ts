@@ -67,7 +67,6 @@ export interface ResearchEntityStudentVisibilityInput {
   openPostedOpportunityCount?: number;
   duplicateRisk?: boolean;
   exactUrlDuplicateRisk?: boolean;
-  contentPageRisk?: boolean;
   /**
    * Every citation on this person-scoped row is one that many other person rows
    * cite byte-identically, so none of them is evidence about this person. Derived
@@ -709,13 +708,11 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   'missing_lead',
   'unusable_name',
-  'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
   'profile_identity_risk',
   'generic_directory_shell',
   'profile_biography_shell',
-  'content_page_risk',
   'non_research_entity',
   'non_research_program',
   'duplicate_program',
@@ -812,7 +809,6 @@ export function computeResearchEntityStudentVisibility({
   openPostedOpportunityCount = 0,
   duplicateRisk = false,
   exactUrlDuplicateRisk = false,
-  contentPageRisk = false,
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
   knownPersonSurnames = NO_SURNAME_ROSTER,
@@ -971,7 +967,6 @@ export function computeResearchEntityStudentVisibility({
   if (permanentlyClosed) reasons.push('permanently_closed');
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
-  if (contentPageRisk) reasons.push('content_page_risk');
   // `source_backed_description` is the one signal that claims a source backs the copy,
   // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
   // the cited page. So a description whose citation had died kept asserting the claim
@@ -1037,7 +1032,6 @@ export function computeResearchEntityStudentVisibility({
   if (
     entity.activeAtYaleCache === false ||
     outsideResearchScope ||
-    contentPageRisk ||
     exactUrlDuplicateRisk ||
     genericDirectoryShell ||
     profileBiographyShell ||

@@ -166,6 +166,16 @@ That keeps an opaque leaf (`/profile/pf93/`) as absence of evidence rather than 
 Another institution's person-profile or faculty-directory page is refused as the entity's research website (`isOffsiteInstitutionPersonProfileUrl`, #2512), because a Yale profile routinely links the same person's faculty page at a previous employer and no identity check can see it: the name matches on both sides, so the #2437 guard passes.
 The refusal is host plus path shape, so a genuine personal or lab site on a non-Yale host is unaffected, and it is applied on the entry boundary both observation builders share rather than per row extractor, because every `dept-faculty-roster` lane mints `labUrl` from a page link and only the official-profile lane checks its shape.
 
+## Repairs: export a pure planner
+
+A repair script that may still write a field exports its planning step as a pure function, so an instrument can ask what it would change without running it (#3398).
+The planner takes the rows and any lookup tables it needs as parameters, returns the plan, and does no IO: no database read, no network fetch, no clock, and no write.
+The entry script does the reads, passes them in, and applies the returned plan, so the planner is the unit the tests cover and the unit an audit can call.
+`planDeadCitationDrop` (`dropSupersededDeadCitationsCore.ts`), `planLeadPiProvenanceReback` (`backfillLeadDepartmentInheritanceCore.ts`) and `planCitationListRewrite` (`retireCitationValueObservations.ts`) have this shape.
+The instrument that consumes it is `scripts:audit-plans-the-projection-declines`, which compares each planned field change to what the projection would plan for the same row.
+Its registry, `AUDITED_REPAIR_SCRIPTS` in `auditPlansTheProjectionDeclines.ts`, lists each repair with either a callable `plan` or an `unknownReason` saying why the audit cannot dry-run it, such as a planner built inside an async read or one whose input needs a network probe.
+Each entry names an npm script that `server/package.json` registers, and `auditPlansTheProjectionDeclinesRegistry.test.ts` fails on a name that does not resolve, so renaming a script means updating its registry entry in the same change.
+
 ## Concurrency: only one writer per source
 
 Every CLI write to a source runs inside that source's `ScrapeJobLock`, through `withScrapeJobLock`.

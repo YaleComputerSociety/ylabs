@@ -1,3 +1,4 @@
+import type { PipelineStage } from 'mongoose';
 import {
   MATERIALIZER_MANAGED_FIELDS,
   materializerProjectionPathIsStorable,
@@ -308,6 +309,33 @@ export function parseProjectionDriftCensusArgs(argv: string[]): ProjectionDriftC
     throw new Error(`Unknown projection drift census argument: ${arg}`);
   }
   return args;
+}
+
+export const PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS = { allowDiskUse: true } as const;
+
+export const PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE = 200;
+
+export function projectionDriftCensusSamplePipeline(
+  sample: number,
+  includeArchived: boolean,
+): PipelineStage[] {
+  return [
+    { $match: includeArchived ? {} : { archived: { $ne: true } } },
+    { $project: { _id: 1 } },
+    { $sample: { size: sample } },
+  ];
+}
+
+export function chunkProjectionDriftCensusIds<T>(
+  ids: readonly T[],
+  size: number = PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE,
+): T[][] {
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('batch size must be positive');
+  const batches: T[][] = [];
+  for (let start = 0; start < ids.length; start += size) {
+    batches.push(ids.slice(start, start + size));
+  }
+  return batches;
 }
 
 export function scaleProjectionDriftRowCount(

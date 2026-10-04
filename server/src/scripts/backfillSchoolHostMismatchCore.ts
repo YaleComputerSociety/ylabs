@@ -1,4 +1,7 @@
-import { applyResearchEntityOrgUnitCanonicalization } from '../scrapers/orgUnitCanonicalization';
+import {
+  applyResearchEntityOrgUnitCanonicalization,
+  SCHOOL_PROFILE_HOSTS,
+} from '../scrapers/orgUnitCanonicalization';
 
 /**
  * Schools with no plausible biomedical overlap, so a recorded value here next
@@ -7,14 +10,18 @@ import { applyResearchEntityOrgUnitCanonicalization } from '../scrapers/orgUnitC
  * Deliberately excludes Faculty of Arts and Sciences and similar schools that
  * legitimately have dual YSM-adjacent appointments.
  */
-export const DISJOINT_SCHOOLS = [
-  'Law School',
-  'Divinity School',
-  'David Geffen School of Drama',
-  'Yale School of Music',
-  'Yale School of Architecture',
-  'Yale School of Art',
+export const DISJOINT_SCHOOL_HOSTS = [
+  'law.yale.edu',
+  'divinity.yale.edu',
+  'drama.yale.edu',
+  'music.yale.edu',
+  'architecture.yale.edu',
+  'art.yale.edu',
 ] as const;
+
+export const DISJOINT_SCHOOLS: readonly string[] = DISJOINT_SCHOOL_HOSTS.map(
+  (host) => SCHOOL_PROFILE_HOSTS[host],
+);
 
 export const SCHOOL_HOST_MAP: Record<string, string> = {
   'medicine.yale.edu': 'School of Medicine',
@@ -72,7 +79,7 @@ function candidateUrls(entity: SchoolHostMismatchEntity): string[] {
  */
 export function findMismatchedHostSchool(entity: SchoolHostMismatchEntity): string | null {
   const recordedSchool = typeof entity.school === 'string' ? entity.school : '';
-  if (!(DISJOINT_SCHOOLS as readonly string[]).includes(recordedSchool)) return null;
+  if (!DISJOINT_SCHOOLS.includes(recordedSchool)) return null;
   if (!hasBiomedicalContent(entity)) return null;
   for (const url of candidateUrls(entity)) {
     const school = SCHOOL_HOST_MAP[hostnameOf(url)];
