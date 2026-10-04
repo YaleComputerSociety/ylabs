@@ -3,6 +3,7 @@ import {
   DEPARTMENT_RESEARCH_AREA_PAGES,
   DepartmentResearchAreasScraper,
   aggregateFacultyThemeAreas,
+  buildDeptAreaCandidateFilter,
   buildDeptAreaMatchIndex,
   deptAreaGraftObservations,
   isFacultyProfileUrl,
@@ -17,6 +18,12 @@ import {
   type DepartmentResearchAreaPage,
 } from '../sources/departmentResearchAreasScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import {
+  buildOrgUnitResolverIndex,
+  createOrgUnitCanonicalizer,
+  orgUnitMatchKey,
+} from '../orgUnitCanonicalization';
+import { OFFICIAL_DEPARTMENT_RENAMES } from '../../scripts/officialDepartmentNames';
 
 const PHYSICS_URL = 'https://physics.yale.edu/research';
 
@@ -78,6 +85,56 @@ describe('DEPARTMENT_RESEARCH_AREA_PAGES registry', () => {
       expect(page.deptName.length).toBeGreaterThan(0);
     }
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('department candidate query', () => {
+  const storedName = 'Synthetic Cells & Development';
+  const canonicalizer = createOrgUnitCanonicalizer(
+    buildOrgUnitResolverIndex([
+      {
+        slug: 'synthetic-cells-development',
+        name: storedName,
+        kind: 'DEPARTMENT',
+        aliases: ['Synthetic Cells, and Development'],
+      },
+    ]),
+  );
+  const page: DepartmentResearchAreaPage = {
+    deptKey: 'synthetic',
+    deptName: 'Synthetic Cells and Development',
+    schoolName: 'Synthetic School',
+    overviewUrl: 'https://synthetic.example.edu/research',
+    peopleIndexUrl: 'https://synthetic.example.edu/people',
+  };
+  const departmentValues = (filter: Record<string, unknown>): string[] => {
+    const or = filter.$or as Record<string, unknown>[];
+    const clause = or.find((entry) => 'departments' in entry) as {
+      departments: { $in: string[] };
+    };
+    return clause.departments.$in;
+  };
+
+  it('matches the stored canonical department name when the lane spells it differently', () => {
+    expect(departmentValues(buildDeptAreaCandidateFilter(page, canonicalizer))).toContain(
+      storedName,
+    );
+  });
+
+  it('keeps the lane spelling when the catalog cannot resolve it', () => {
+    const emptyCatalog = createOrgUnitCanonicalizer(buildOrgUnitResolverIndex([]));
+    expect(departmentValues(buildDeptAreaCandidateFilter(page, emptyCatalog))).toEqual([
+      page.deptName,
+    ]);
+  });
+
+  it('spells every registered department the way the official index names it', () => {
+    for (const registered of DEPARTMENT_RESEARCH_AREA_PAGES) {
+      const official = OFFICIAL_DEPARTMENT_RENAMES.find(
+        (rename) => orgUnitMatchKey(rename.officialName) === orgUnitMatchKey(registered.deptName),
+      );
+      if (official) expect(registered.deptName).toBe(official.officialName);
+    }
   });
 });
 

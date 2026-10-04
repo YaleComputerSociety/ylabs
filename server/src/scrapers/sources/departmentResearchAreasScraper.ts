@@ -43,6 +43,7 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
+import { getOrgUnitCanonicalizer, type OrgUnitCanonicalizer } from '../orgUnitCanonicalization';
 import { getCached, setCached } from '../snapshotCache';
 import {
   isFullProseParagraph,
@@ -103,7 +104,7 @@ export const DEPARTMENT_RESEARCH_AREA_PAGES: DepartmentResearchAreaPage[] = [
   },
   {
     deptKey: 'mcdb',
-    deptName: 'Molecular, Cellular and Developmental Biology',
+    deptName: 'Molecular, Cellular & Developmental Biology',
     schoolName: 'Yale Faculty of Arts and Sciences',
     overviewUrl: 'https://mcdb.yale.edu/research',
     peopleIndexUrl: 'https://mcdb.yale.edu/people/faculty',
@@ -601,24 +602,41 @@ function overviewHostPattern(page: DepartmentResearchAreaPage): RegExp | null {
   }
 }
 
-function defaultEntityFinder(page: DepartmentResearchAreaPage): Promise<DeptAreaCandidateEntity[]> {
+export function storedDepartmentNamesFor(
+  page: DepartmentResearchAreaPage,
+  canonicalizer: OrgUnitCanonicalizer,
+): string[] {
+  const { values } = canonicalizer.canonicalizeDepartments([page.deptName]);
+  return [...new Set([page.deptName, ...values])];
+}
+
+export function buildDeptAreaCandidateFilter(
+  page: DepartmentResearchAreaPage,
+  canonicalizer: OrgUnitCanonicalizer,
+): Record<string, unknown> {
   const hostPattern = overviewHostPattern(page);
-  const or: Record<string, unknown>[] = [{ departments: page.deptName }];
+  const or: Record<string, unknown>[] = [
+    { departments: { $in: storedDepartmentNamesFor(page, canonicalizer) } },
+  ];
   if (hostPattern) {
     or.push({ websiteUrl: hostPattern }, { sourceUrls: hostPattern });
   }
-  return ResearchEntity.find(
-    { archived: { $ne: true }, $or: or },
-    {
-      _id: 1,
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      contactName: 1,
-      websiteUrl: 1,
-      sourceUrls: 1,
-    },
-  )
+  return { archived: { $ne: true }, $or: or };
+}
+
+async function defaultEntityFinder(
+  page: DepartmentResearchAreaPage,
+): Promise<DeptAreaCandidateEntity[]> {
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  return ResearchEntity.find(buildDeptAreaCandidateFilter(page, canonicalizer), {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    displayName: 1,
+    contactName: 1,
+    websiteUrl: 1,
+    sourceUrls: 1,
+  })
     .sort({ _id: 1 })
     .limit(MAX_CANDIDATE_SCAN)
     .lean()
