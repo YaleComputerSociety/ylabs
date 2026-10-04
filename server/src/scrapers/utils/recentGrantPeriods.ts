@@ -1,3 +1,5 @@
+import { grantAwardIdentity } from './grantAwardIdentity';
+
 export interface RecentGrantPeriod {
   id: string;
   agency: string;
@@ -15,7 +17,7 @@ interface DatedAward {
 export function recentGrantPeriodsOf(awards: readonly DatedAward[]): RecentGrantPeriod[] {
   const periods = new Map<string, RecentGrantPeriod>();
   for (const award of awards) {
-    const key = award.id.trim().toLowerCase();
+    const key = grantAwardIdentity(award);
     if (!key || periods.has(key)) continue;
     periods.set(key, {
       id: award.id,

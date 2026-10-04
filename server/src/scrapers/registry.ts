@@ -18,6 +18,7 @@ import { UndergradResearchPostingScraper } from './sources/undergradResearchPost
 import { NihReporterScraper } from './sources/nihReporterScraper';
 import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { NehGrantScraper } from './sources/nehGrantScraper';
+import { CrossrefGrantScraper } from './sources/crossrefGrantScraper';
 import { DoeOstiGrantScraper } from './sources/doeOstiGrantScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
@@ -57,6 +58,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new NihReporterScraper());
   o.register(new NsfAwardScraper());
   o.register(new NehGrantScraper());
+  o.register(new CrossrefGrantScraper());
   o.register(new DoeOstiGrantScraper());
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());

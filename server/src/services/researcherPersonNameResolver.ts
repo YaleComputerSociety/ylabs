@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Researcher } from '../models/researcher';
+import { isValidOrcid, Researcher } from '../models/researcher';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import {
   givenNamesEquivalent,
@@ -25,6 +25,7 @@ export interface ResearcherNameCandidate {
 export interface ResearcherPersonNameResolverDeps {
   findResearchersBySurname: (surnameRegex: RegExp) => Promise<ResearcherNameCandidate[]>;
   resolveResearcherIdByNetid: (netid: string) => Promise<mongoose.Types.ObjectId | undefined>;
+  findResearcherByOrcid: (orcid: string) => Promise<ResearcherNameCandidate | undefined>;
 }
 
 const defaultFindResearchersBySurname = async (
@@ -50,6 +51,23 @@ const defaultResolveResearcherIdByNetid = async (
   return researcher?._id ?? undefined;
 };
 
+const defaultFindResearcherByOrcid = async (
+  orcid: string,
+): Promise<ResearcherNameCandidate | undefined> =>
+  ((await Researcher.findOne(
+    { 'identifiers.orcid': orcid, archived: { $ne: true } },
+    { _id: 1, displayName: 1 },
+  ).lean()) as ResearcherNameCandidate | null) ?? undefined;
+
+export function normalizeOrcid(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const bare = value
+    .trim()
+    .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
+    .toUpperCase();
+  return isValidOrcid(bare) ? bare : undefined;
+}
+
 const asResearcherId = (value: ResearcherNameCandidate['_id']): mongoose.Types.ObjectId =>
   value instanceof mongoose.Types.ObjectId ? value : new mongoose.Types.ObjectId(String(value));
 
@@ -57,6 +75,24 @@ const normalizeNetid = (value: unknown): string | undefined => {
   const netid = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return netid.length > 0 ? netid : undefined;
 };
+
+export async function resolveResearcherIdForOrcid(
+  rawOrcid: string | undefined,
+  claimedName: string,
+  deps?: Partial<ResearcherPersonNameResolverDeps>,
+): Promise<ResearcherPersonNameResolution> {
+  const orcid = normalizeOrcid(rawOrcid);
+  if (!orcid) return { status: 'absent' };
+  const findResearcherByOrcid = deps?.findResearcherByOrcid ?? defaultFindResearcherByOrcid;
+  const holder = await findResearcherByOrcid(orcid);
+  if (!holder) return { status: 'absent' };
+  const claimedSurname = splitName(claimedName).last;
+  const holderSurname = splitName(holder.displayName || '').last;
+  if (claimedSurname && !surnamesCompatible(claimedSurname, holderSurname)) {
+    return { status: 'ambiguous' };
+  }
+  return { status: 'matched', researcherId: asResearcherId(holder._id) };
+}
 
 export async function resolveResearcherIdForPersonName(
   name: string,

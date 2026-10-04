@@ -411,6 +411,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'crossref-grants',
+    displayName: 'Crossref grant records',
+    description:
+      'Reads the grant records funders register with Crossref for Yale-affiliated lead investigators (American Cancer Society, American Heart Association, HFSP, Wellcome, McDonnell, Moore and others) and enriches the existing research row of the investigator, resolved by ORCID first. Refuses facility-time records, attaches fellowships only through an ORCID match, and never mints a row.',
+    baseUrl: 'https://api.crossref.org/types/grant/works',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'doe-osti',
     displayName: 'DOE OSTI (Yale technical reports)',
     description:
