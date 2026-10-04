@@ -20,10 +20,10 @@ import {
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
   buildOrgNameResearchEntityDedupePlan,
+  buildNameAgreedSharedPersonResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
-  filterNameAgreedSharedPersonGroups,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
@@ -2837,10 +2837,7 @@ async function main() {
                 ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
                 : sharedPersonId
                   ? requireNameAgreement
-                    ? filterNameAgreedSharedPersonGroups(
-                        buildSharedPersonIdResearchEntityDedupePlan(piRows),
-                        piRows,
-                      )
+                    ? buildNameAgreedSharedPersonResearchEntityDedupePlan(piRows)
                     : buildSharedPersonIdResearchEntityDedupePlan(piRows)
                   : fundingOnly
                     ? buildFundingResearchEntityDedupePlan(piRows)
@@ -2872,8 +2869,7 @@ async function main() {
   const duplicateCurrentMembers =
     acceptedDecisions ||
     orgNameOnly ||
-    websiteUrlOnly ||
-    profileLabUrlOnly ||
+    unattendedUrlIdentityLane ||
     !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
       ? []
       : await loadDuplicateCurrentMemberRows(limit);

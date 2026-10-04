@@ -109,8 +109,8 @@ export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity)
 
 const entityNameKindWords = new Set(['faculty', 'research', 'lab', 'laboratory', 'group', 'the']);
 
-function entityPersonNameWords(entity: ProfileAreaDuplicateEntity): string[] {
-  return normalizedProfileAreaWords(foldDiacritics(entity.name)).filter(
+export function entityNameWordsWithoutKindNouns(name: string | undefined): string[] {
+  return normalizedProfileAreaWords(foldDiacritics(name)).filter(
     (word) => !entityNameKindWords.has(word),
   );
 }
@@ -129,7 +129,7 @@ function foldDiacritics(value: string | undefined): string {
  * (`faculty.som.yale.edu/peterschott`).
  */
 function urlPathNamesEntityPerson(value: string, entity: ProfileAreaDuplicateEntity): boolean {
-  const nameWords = entityPersonNameWords(entity);
+  const nameWords = entityNameWordsWithoutKindNouns(entity.name);
   if (nameWords.length < 2) return false;
   try {
     const segments = new URL(value.trim()).pathname.split('/').filter(Boolean);
@@ -152,7 +152,8 @@ export function concreteLabWebsiteForEntity(
 ): string | undefined {
   return [entity.websiteUrl, ...(entity.sourceUrls || [])].find(
     (value) =>
-      isConcreteLabWebsiteUrl(value) && !urlPathNamesEntityPerson(value as string, entity),
+      isConcreteLabWebsiteUrl(value) &&
+      !(isProfileAreaShellEntity(entity) && urlPathNamesEntityPerson(value as string, entity)),
   );
 }
 

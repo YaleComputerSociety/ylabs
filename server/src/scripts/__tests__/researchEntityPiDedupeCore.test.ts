@@ -14,7 +14,7 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
-  filterNameAgreedSharedPersonGroups,
+  buildNameAgreedSharedPersonResearchEntityDedupePlan,
   nameAgreementKey,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
@@ -3496,23 +3496,14 @@ describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
   });
 });
 
-describe('filterNameAgreedSharedPersonGroups (#4651)', () => {
+describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
   const row = (entities: Array<{ id: string; name: string; entityType: string }>) => ({
     userId: 'person-1',
     normalizedName: 'same-pi:person-1',
     entities: entities.map((entity) => ({ ...entity, slug: entity.id })),
   });
-  const group = (ids: string[]) => ({
-    userId: 'person-1',
-    normalizedName: 'same-pi:person-1',
-    canonicalEntityId: ids[0],
-    duplicateEntityIds: ids.slice(1),
-    canonicalSlug: ids[0],
-    duplicateSlugs: ids.slice(1),
-    mergedDepartments: [],
-    mergedResearchAreas: [],
-    mergedSourceUrls: [],
-  });
+  const members = (groups: Array<{ canonicalEntityId: string; duplicateEntityIds: string[] }>) =>
+    groups.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds].sort());
 
   it('folds diacritics, punctuation and kind nouns when comparing names', () => {
     expect(nameAgreementKey('Zoë Murić-Núñez Faculty Research')).toBe(
@@ -3521,31 +3512,37 @@ describe('filterNameAgreedSharedPersonGroups (#4651)', () => {
     expect(nameAgreementKey('Ortolan Lab')).toBe(nameAgreementKey('Ortolan Laboratory'));
   });
 
-  it('keeps a group whose members agree on name and type', () => {
-    const rows = [
+  it('groups rows that agree on lead, name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
       row([
         { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
-        { id: 'b', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Laboratory', entityType: 'LAB' },
       ]),
-    ];
-    expect(filterNameAgreedSharedPersonGroups([group(['a', 'b'])], rows)).toHaveLength(1);
+    ]);
+    expect(members(plan)).toEqual([['a', 'b']]);
   });
 
-  it('drops a group whose names differ or whose types differ', () => {
-    const rows = [
+  it('merges the agreeing rows even when the lead also has rows that differ in name or type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'lab-a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'lab-b', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['lab-a', 'lab-b']]);
+  });
+
+  it('plans nothing when no two rows agree on both name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
       row([
         { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
         { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
         { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
       ]),
-    ];
-    expect(filterNameAgreedSharedPersonGroups([group(['lab', 'project'])], rows)).toEqual([]);
-    expect(filterNameAgreedSharedPersonGroups([group(['lab', 'fra'])], rows)).toEqual([]);
-  });
-
-  it('drops a group with a member the rows do not describe', () => {
-    const rows = [row([{ id: 'a', name: 'Ortolan Lab', entityType: 'LAB' }])];
-    expect(filterNameAgreedSharedPersonGroups([group(['a', 'missing'])], rows)).toEqual([]);
+    ]);
+    expect(plan).toEqual([]);
   });
 });
 
