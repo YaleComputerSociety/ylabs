@@ -18,6 +18,7 @@ import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 
@@ -65,6 +66,7 @@ export interface RecomputeBrowseRankResult {
   scoreDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
+  indexSyncDeferred?: number;
   scoresByEntityId: Map<string, number>;
 }
 
@@ -114,6 +116,8 @@ export async function recomputeBrowseRankForEntities(
   let scoreDrifted = 0;
   let refusedNewerScorer = 0;
   let indexSyncFailures = 0;
+  let indexSyncDeferred = 0;
+  const indexWritesDeferred = searchIndexWritesDeferred();
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
@@ -162,7 +166,9 @@ export async function recomputeBrowseRankForEntities(
       continue;
     }
     updated += 1;
-    if (sync) {
+    if (sync && indexWritesDeferred) {
+      indexSyncDeferred += 1;
+    } else if (sync) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
       if (!fresh || !(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
@@ -175,6 +181,7 @@ export async function recomputeBrowseRankForEntities(
     scoreDrifted,
     refusedNewerScorer,
     indexSyncFailures,
+    ...(indexSyncDeferred > 0 ? { indexSyncDeferred } : {}),
     scoresByEntityId,
   };
 }

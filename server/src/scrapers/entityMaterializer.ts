@@ -9920,7 +9920,9 @@ export async function materializeEntity(
     if (!options.dryRun) {
       try {
         const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
-        if (browseRank.updated > 0) indexStale = browseRank.indexSyncFailures > 0;
+        if (browseRank.updated > 0) {
+          indexStale = browseRank.indexSyncFailures + (browseRank.indexSyncDeferred ?? 0) > 0;
+        }
       } catch (error) {
         console.error(
           'Failed to recompute browseRankScore:',

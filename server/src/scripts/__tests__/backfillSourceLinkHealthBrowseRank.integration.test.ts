@@ -77,6 +77,21 @@ describe('source-link-health backfill keeps browse rank current', () => {
     expect(result.indexSyncFailures).toBe(1);
   }, 120000);
 
+  it('counts a resync the hosted runner deferred on purpose as deferred, not failed', async () => {
+    vi.mocked(syncEntity).mockResolvedValue(false);
+    process.env.SEARCH_INDEX_WRITES = 'deferred';
+    try {
+      const result = await runWithVerdict('UNAVAILABLE', 404);
+
+      expect(result.updated).toBe(1);
+      expect(result.indexSyncFailures).toBe(0);
+      expect(result.indexSyncDeferred).toBe(1);
+    } finally {
+      delete process.env.SEARCH_INDEX_WRITES;
+      vi.mocked(syncEntity).mockResolvedValue(true);
+    }
+  }, 120000);
+
   it('leaves browse rank untouched in a dry run', async () => {
     const liveScore = await storedBrowseRankScore();
     await runSourceLinkHealthBackfill({

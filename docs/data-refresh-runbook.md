@@ -109,6 +109,7 @@ Measured on 2026-10-04 while a hosted run was materializing: 3,871 of 4,249 Deve
 
 The entrypoint now starts no index, unsets every `MEILISEARCH_*` variable, and sets `SEARCH_INDEX_WRITES=deferred` (`server/src/utils/searchIndexWrites.ts`).
 With that set, the Meilisearch client refuses to open any connection, every materializer and repair sync records the row as not synced instead of writing, the visibility gate skips its index read and resync and reports `indexDeferred`, and the sweep skips its `search-rebuild` and `search-index-check` stages.
+A resync skipped that way is counted as `indexSyncDeferred` (`entitiesResyncDeferred` in the two text-repair scripts), never as an `indexSyncFailures` failure, so `source-link-health`, `research-homes:backfill-browse-rank` and the other scripts that exit nonzero on an unsynced row do not fail a hosted run for a write it deferred on purpose; the materializer still records such a row as stale.
 Each mode's `summary.json` and the run's `weekly_sweep_runs` row then carry `searchIndex.status: resync-required` with the remedy, and the job's log says the index was not updated.
 
 So a hosted run ends with a re-sync from a checkout whose `server/.env` reaches the Development index:
