@@ -15,6 +15,8 @@ import {
   buildCanonicalNetidIndex,
   buildVerifiedPrimaryProfileIndex,
   decideShellMerge,
+  planAccountlessClusterFolds,
+  type AccountlessClusterRefusal,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
@@ -120,6 +122,13 @@ export interface DedupeAccountlessResearcherShellsResult {
   shellsMerged: number;
   /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
   foldsByMatchedIdentity: Record<ShellFoldIdentity, number>;
+  /** Groups with no account-backed member, folded into a survivor chosen among themselves. */
+  accountlessClusters: {
+    groups: number;
+    foldedGroups: number;
+    folds: number;
+    refusedGroups: Record<AccountlessClusterRefusal, number>;
+  };
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
   /** Entities whose roster the merges edited, and so the population the re-gate covers. */
@@ -235,6 +244,7 @@ export async function dedupeAccountlessResearcherShells(options: {
         'identifiers.netid': 1,
         profileLinks: 1,
         'profile.title': 1,
+        'profile.primaryDepartment': 1,
       },
     },
   ).toArray();
@@ -247,6 +257,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     netid: doc.identifiers?.netid,
     profileLinks: doc.profileLinks,
     title: doc.profile?.title,
+    primaryDepartment: doc.profile?.primaryDepartment,
   }));
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
@@ -315,6 +326,37 @@ export async function dedupeAccountlessResearcherShells(options: {
       mergeTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
+  }
+
+  const outrankingCanonicalIds = new Set(mergeTargetByShellId.values());
+  const clusterCandidates = foldableShells.filter(
+    (entry) => !mergeTargetByShellId.has(entry.id) && !outrankingCanonicalIds.has(entry.id),
+  );
+  const clusterCandidateIds = new Set(clusterCandidates.map((entry) => entry.id));
+  const liveEdgeCounts = new Map<string, number>(
+    (
+      (await RoleAssignment.aggregate([
+        {
+          $match: {
+            personId: {
+              $in: clusterCandidates.map((entry) => new mongoose.Types.ObjectId(entry.id)),
+            },
+            archived: { $ne: true },
+          },
+        },
+        { $group: { _id: '$personId', count: { $sum: 1 } } },
+      ]).toArray()) as any[]
+    ).map((row) => [idKey(row._id), Number(row.count) || 0]),
+  );
+  const clusterPlan = planAccountlessClusterFolds(
+    clusterCandidates.map((entry) => ({
+      ...entry,
+      liveRoleEdges: liveEdgeCounts.get(entry.id) ?? 0,
+    })),
+    researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
+  );
+  for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
+    mergeTargetByShellId.set(shellId, survivorId);
   }
 
   const shellObjectIds = Array.from(mergeTargetByShellId.keys()).map(
@@ -576,6 +618,12 @@ export async function dedupeAccountlessResearcherShells(options: {
     byReason,
     shellsMerged: mergeTargetByShellId.size,
     foldsByMatchedIdentity,
+    accountlessClusters: {
+      groups: clusterPlan.groups,
+      foldedGroups: clusterPlan.foldedGroups,
+      folds: clusterPlan.foldTargetById.size,
+      refusedGroups: clusterPlan.refusedGroups,
+    },
     roleAssignmentsRepointed,
     roleAssignmentsArchivedRedundant,
     rosterChangedEntities: rosterChangedEntityIds.size,

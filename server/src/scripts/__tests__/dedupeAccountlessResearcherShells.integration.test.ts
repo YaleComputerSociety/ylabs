@@ -302,6 +302,69 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(Researcher.hydrate(shell!).validateSync()).toBeUndefined();
   });
 
+  it('folds an accountless-only group into the copy holding the live edge', async () => {
+    const survivor = new mongoose.Types.ObjectId();
+    const copyA = new mongoose.Types.ObjectId();
+    const copyB = new mongoose.Types.ObjectId();
+    const entity = new mongoose.Types.ObjectId();
+    const edge = new mongoose.Types.ObjectId();
+    const copyEdge = new mongoose.Types.ObjectId();
+    const verified = [
+      {
+        kind: 'YALE_OFFICIAL',
+        purpose: 'PRIMARY_IDENTITY',
+        url: 'https://dept.example.edu/p/2001',
+        verifiedAt: new Date(),
+        healthStatus: 'HEALTHY',
+      },
+    ];
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').deleteMany({});
+    await db.collection('role_assignments').deleteMany({});
+    await db.collection('researchers').insertMany(
+      [copyA, survivor, copyB].map((_id) => ({
+        _id,
+        displayName: 'Cara Copyset',
+        archived: false,
+        identifiers: {},
+        profileLinks: verified,
+      })),
+    );
+    await db.collection('role_assignments').insertMany([
+      {
+        _id: edge,
+        personId: survivor,
+        target: { kind: 'RESEARCH_ENTITY', id: entity },
+        role: 'PI',
+        archived: false,
+      },
+      {
+        _id: copyEdge,
+        personId: copyA,
+        target: { kind: 'RESEARCH_ENTITY', id: entity },
+        role: 'PI',
+        archived: false,
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.accountlessClusters).toMatchObject({ groups: 1, foldedGroups: 1, folds: 2 });
+
+    for (const copy of [copyA, copyB]) {
+      const row = await db.collection('researchers').findOne({ _id: copy });
+      expect(row!.archived).toBe(true);
+      expect(String(row!.dedupedIntoResearcherId)).toBe(String(survivor));
+    }
+    expect((await db.collection('researchers').findOne({ _id: survivor }))!.archived).toBe(false);
+    expect((await db.collection('role_assignments').findOne({ _id: copyEdge }))!.archived).toBe(
+      true,
+    );
+    expect((await db.collection('role_assignments').findOne({ _id: edge }))!.archived).toBe(false);
+
+    const again = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(again.accountlessClusters.folds).toBe(0);
+  });
+
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
     const netidCanonical = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
