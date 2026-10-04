@@ -5402,15 +5402,13 @@ test('client CAS return state is path-only before redirect query construction', 
   assert.match(returnPathSource, /path\.startsWith\('\/\/'\)/);
   assert.match(
     signInButtonSource,
-    /setRedirectParam\(returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''\)/,
+    /const redirectParam = returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''/,
   );
+  assert.match(signInButtonSource, /const returnPath = normalizeReturnPath\(/);
+  assert.match(signInButtonSource, /savedPath: sessionStorage\.getItem\('logoutReturnPath'\)/);
   assert.match(
     signInButtonSource,
-    /const savedPath = sessionStorage\.getItem\('logoutReturnPath'\)/,
-  );
-  assert.match(
-    signInButtonSource,
-    /if \(savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
+    /if \(mountReturn\.savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
   );
   assert.match(signInButtonSource, /localStorage\.removeItem\('logoutReturnPath'\)/);
   assert.doesNotMatch(signInButtonSource, /localStorage\.getItem\('logoutReturnPath'\)/);
