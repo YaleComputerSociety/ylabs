@@ -288,12 +288,53 @@ function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity
   );
 }
 
+const TITLED_PERSON_SUBJECT =
+  /(?:^|\s)(?:(?:Dr|Prof)\.?|Professor)\s+(?:(?:Dr|Prof)\.?\s+)?((?:[A-Z][\p{L}'’-]+\s+){0,2}[A-Z][\p{L}'’-]+)(?:['’]s)?\s+(?:directs|leads|heads|runs|founded|co-founded|is|was|has|studies|investigates|examines|explores|researches|research|works|focuses|conducts|oversees)\b/u;
+
+/**
+ * Whether the opening sentence's subject is a titled person ("Professor <Surname>
+ * directs ...", "Dr. <Surname>'s research ...") who is none of the record's own
+ * leads and not the person the record is named for. Such a body describes someone
+ * else's work, however well it reads, so it is withheld rather than served under this
+ * lead. Only a person-scoped record is judged, because an organization's page names
+ * its staff in subject position as a matter of course. Any token of the titled name matching a lead or the record's own name keeps
+ * the body, because compound surnames and familiar given names are common.
+ */
+// "abaluck's'", "heng'sarchaeological" (a glued source seam) and "smith-jones" each name
+// the same person as "abaluck", "heng" and "jones", while "o'connell" must stay whole.
+const nameTokenForms = (token: string): string[] => [
+  token,
+  token.replace(/'s'?$/, ''),
+  token.split("'")[0],
+  ...token.split('-'),
+];
+
+function opensOnAnotherTitledPerson(
+  value: string,
+  leadMemberNames: readonly string[],
+  entity?: FacultyResearchTextEntity | null,
+): boolean {
+  if (!entity || !isPersonScopedResearchEntity(entity)) return false;
+  const [opening = ''] = splitDescriptionSentences(value);
+  const subject = TITLED_PERSON_SUBJECT.exec(opening);
+  if (!subject) return false;
+  const subjectTokens = normalizePersonNameTokens(subject[1]);
+  if (subjectTokens.length === 0) return false;
+  const ownTokens = new Set(
+    [...leadMemberNames, entity ? facultyResearchLabelBase(entity) : '']
+      .flatMap((name) => normalizePersonNameTokens(name))
+      .flatMap(nameTokenForms),
+  );
+  return !subjectTokens.some((token) => nameTokenForms(token).some((form) => ownTokens.has(form)));
+}
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
   entity?: FacultyResearchTextEntity | null,
 ): string {
   if (!leadMemberNames.length) return value;
+  if (opensOnAnotherTitledPerson(value, leadMemberNames, entity)) return '';
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
