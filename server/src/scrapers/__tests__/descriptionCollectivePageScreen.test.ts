@@ -86,6 +86,41 @@ describe('a model-written description that names the row it describes', () => {
   });
 });
 
+describe('naming the row on a department page', () => {
+  const fromJobsBoard = (value: string) => ({
+    field: 'fullDescription',
+    sourceName: 'lab-microsite-undergrad-llm',
+    sourceUrl: jobsBoard,
+    value,
+  });
+
+  it('counts a two-letter surname as the row naming itself', () => {
+    expect(
+      isLlmDescriptionFromDepartmentCollectivePage(
+        fromJobsBoard('Dr. Zy studies labor markets and schooling.'),
+        'Alex Zy Faculty Research',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not count an institutional word in the row name as naming it', () => {
+    expect(
+      isLlmDescriptionFromDepartmentCollectivePage(
+        fromJobsBoard("Yale's department of economics researches labor markets as a group."),
+        'Yale Example Group',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a lab writing about its own openings on a shared school host', () => {
+    const labOwnPage = 'https://medicine.yale.edu/lab/example/research-opportunities/';
+    expect(
+      isLlmDescriptionFromDepartmentCollectivePage({ ...fromJobsBoard(''), sourceUrl: labOwnPage }),
+    ).toBe(false);
+    expect(isRejectedDescriptionSourceUrl(labOwnPage)).toBe(false);
+  });
+});
+
 describe('clearing a stored description narrated from a department page', () => {
   const provenance = { sourceName: 'lab-microsite-undergrad-llm', sourceUrl: jobsBoard };
 

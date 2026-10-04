@@ -8373,6 +8373,10 @@ export async function projectFromLog(
           shortDescriptionQuality(derivedCard, survivingBody).isUseful
         ) {
           set.shortDescription = derivedCard;
+          const bodyProvenance =
+            set['fieldProvenance.fullDescription'] ?? entityDoc?.fieldProvenance?.fullDescription;
+          if (bodyProvenance) set['fieldProvenance.shortDescription'] = bodyProvenance;
+          else unset['fieldProvenance.shortDescription'] = '';
         }
       }
     }

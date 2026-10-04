@@ -191,17 +191,39 @@ const OWN_NAME_FILLER = new Set([
   'the',
   'and',
   'for',
+  'of',
+  'at',
+  'in',
+  'on',
+  'an',
+  'to',
+  'by',
+  'dr',
+  'md',
   'jr',
   'sr',
+  'ii',
   'iii',
+  'iv',
   'professor',
+  'yale',
+  'center',
+  'centre',
+  'group',
+  'program',
+  'programme',
+  'project',
+  'department',
+  'school',
+  'institute',
+  'medicine',
 ]);
 
 const ownNameTokens = (ownName: unknown): string[] =>
   String(ownName ?? '')
     .toLowerCase()
     .split(/[^a-z]+/)
-    .filter((token) => token.length >= 3 && !OWN_NAME_FILLER.has(token));
+    .filter((token) => token.length >= 2 && !OWN_NAME_FILLER.has(token));
 
 const textNamesOwnSubject = (text: unknown, ownName: unknown): boolean => {
   const words = new Set(

@@ -911,8 +911,9 @@ export function isUmbrellaPageCitedByPerson(
 /**
  * A department's audience-recruitment, hiring or programme page, which describes what
  * the department offers rather than one lab or person, so it is never the source of a
- * row's description. A research group's own host or personal-site path is exempt: its
- * openings page is the group writing about itself.
+ * row's description. A research group's own host, its `/lab/` path on a shared school
+ * host, or a personal-site path is exempt: its openings page is the group writing about
+ * itself.
  */
 export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
@@ -920,6 +921,7 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   const host = hostnameWithoutWwwAlias(url);
   if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(host.split('.')[0])) return false;
   if (/(?:^|\.)campuspress\.yale\.edu$/i.test(host)) return false;
+  if (url.pathname.split('/').some((segment) => /^labs?$/i.test(segment))) return false;
   return (
     isDepartmentAudiencePageUrl(value) ||
     isDepartmentHiringPageUrl(value) ||
