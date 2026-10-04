@@ -111,6 +111,9 @@ describe('a school section page is never a research home', () => {
     'https://medicine.yale.edu/internal-medicine/livercenter/',
     'https://environment.yale.edu/research/centers/green-chemistry',
     'https://www.cs.yale.edu/homes/example/',
+    'https://www.examplecenter.yale.edu/about/',
+    'https://www.examplegroup.yale.edu/research/',
+    'https://www.examplelab.yale.edu/home/',
   ])('leaves a page specific to one lab, centre or person alone: %s', (url) => {
     expect(researchHomeWebsiteUrlDecision(url).refusal).not.toBe('school-section-page');
   });
@@ -118,9 +121,8 @@ describe('a school section page is never a research home', () => {
 
 describe('every website picker refuses a school section page', () => {
   it('is neither promotable nor servable', async () => {
-    const { isPromotableWebsiteUrl, isUnservableWebsiteUrl } = await import(
-      '../../scripts/backfillResearchEntityWebsiteUrlsCore'
-    );
+    const { isPromotableWebsiteUrl, isUnservableWebsiteUrl } =
+      await import('../../scripts/backfillResearchEntityWebsiteUrlsCore');
     const url = 'https://medicine.yale.edu/research/';
     expect(isPromotableWebsiteUrl(url)).toBe(false);
     expect(isUnservableWebsiteUrl(url)).toBe(true);

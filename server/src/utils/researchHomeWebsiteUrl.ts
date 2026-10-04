@@ -1381,6 +1381,14 @@ export function customYaleResearchHomeSubdomainRefusal(
 const SCHOOL_SECTION_SEGMENT =
   /^(?:research|our-research|opportunities(?:-[0-9]+)?|employment-opportunities|jobs|careers|about|about-us|who-we-are|programs?|departments?|centers?|faculty|education|academics|admissions|undergraduate|graduate|resources|initiatives|overview|home|contact|index\.html?)$/i;
 
+function isSchoolOrDepartmentHost(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase();
+  if (!hostname.endsWith('.yale.edu')) return false;
+  return genericYaleWebsiteSubdomains.has(
+    hostname.replace(/\.yale\.edu$/, '').replace(/^www\./, ''),
+  );
+}
+
 /**
  * A school or department host's own section page (`medicine.yale.edu/research/`,
  * `www.art.yale.edu/opportunities`): every path segment is a generic section word, so
@@ -1392,10 +1400,7 @@ const SCHOOL_SECTION_SEGMENT =
  * `department-opportunities-path` arm reads the bare subdomain and missed it.
  */
 function isSchoolSectionPage(url: URL): boolean {
-  const hostShape = customYaleResearchHomeSubdomainRefusal(url);
-  if (hostShape !== 'school-or-department-subdomain' && hostShape !== 'www-plus-school') {
-    return false;
-  }
+  if (!isSchoolOrDepartmentHost(url)) return false;
   const segments = url.pathname.split('/').filter(Boolean);
   return segments.length > 0 && segments.every((segment) => SCHOOL_SECTION_SEGMENT.test(segment));
 }
