@@ -22,6 +22,7 @@ export interface OfficialResearchDescription {
 export interface ExtractOfficialResearchDescriptionOptions {
   kind?: DescriptionEntityKind;
   minLength?: number;
+  pageUrl?: string;
 }
 
 const MAX_CANDIDATE_LENGTH = 2400;
@@ -83,13 +84,13 @@ function jsonLdDescriptions($: cheerio.CheerioAPI): string[] {
   return descriptions.filter(Boolean);
 }
 
-function removeNonDescriptionRegions($: cheerio.CheerioAPI): void {
+function removeNonDescriptionRegions($: cheerio.CheerioAPI, pageUrl?: string): void {
   $('script, style, noscript, svg, iframe, nav, header, footer, aside, form, button').remove();
   // `CONTENT_BLOCK_SELECTORS` includes `section`, so a profile page's news region is a
   // candidate block and each news item's own paragraph competes to become the served
   // description (#3184).
   removeProfilePublicityRegions($);
-  removeRelatedEntityTeaserCards($);
+  removeRelatedEntityTeaserCards($, pageUrl);
 }
 
 /**
@@ -103,10 +104,10 @@ export function visibleDescriptionTextWithLineBreaks(html: string): string {
   return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0]);
 }
 
-export function collectVisibleDescriptionCandidates(html: string): string[] {
+export function collectVisibleDescriptionCandidates(html: string, pageUrl?: string): string[] {
   const $ = cheerio.load(html);
   const structuredDescriptions = jsonLdDescriptions($);
-  removeNonDescriptionRegions($);
+  removeNonDescriptionRegions($, pageUrl);
 
   const candidates: string[] = [
     ...structuredDescriptions,
@@ -150,7 +151,7 @@ export function extractOfficialResearchDescription(
   html: string,
   options: ExtractOfficialResearchDescriptionOptions = {},
 ): OfficialResearchDescription | null {
-  const candidates = collectVisibleDescriptionCandidates(html);
+  const candidates = collectVisibleDescriptionCandidates(html, options.pageUrl);
   const fullDescription = selectResearchHomeDescription(candidates, {
     kind: options.kind ?? 'organization',
     minLength: options.minLength,

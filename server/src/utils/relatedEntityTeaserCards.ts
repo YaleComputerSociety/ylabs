@@ -12,6 +12,11 @@
  * teaser from the page's own content: measured on 668 Development org pages, a
  * linked-heading card alone also matched the page's own single content card on 26
  * of them and removed their real description.
+ *
+ * A heading link only names another entity when it leaves the page's own path
+ * subtree: a lab homepage's cards for its own /research and /people sections are the
+ * lab's content, while a core page's cards for sibling cores are not. Without the
+ * page's URL that cannot be told apart, so nothing is removed.
  */
 import type * as cheerio from 'cheerio';
 
@@ -22,9 +27,24 @@ const TEASER_CARD_CLASS_TOKEN = /^(?:[a-z0-9]+-)*(?:card|teaser|listing-item)(?:
 
 const LINKED_HEADING_SELECTOR = 'h2 > a[href], h3 > a[href], h4 > a[href]';
 
-const linksElsewhere = (href: string | undefined): boolean => {
+const parseUrl = (value: string, base?: URL): URL | null => {
+  try {
+    return new URL(value, base);
+  } catch {
+    return null;
+  }
+};
+
+const withoutTrailingSlash = (path: string): string => path.replace(/\/+$/, '');
+
+const linksOutsidePageSubtree = (href: string | undefined, page: URL): boolean => {
   const value = (href || '').trim();
-  return Boolean(value) && !value.startsWith('#') && !/^(?:mailto|tel):/i.test(value);
+  const target = value ? parseUrl(value, page) : null;
+  if (!target || !/^https?:$/.test(target.protocol)) return false;
+  if (target.host !== page.host) return true;
+  const pagePath = withoutTrailingSlash(page.pathname);
+  const targetPath = withoutTrailingSlash(target.pathname);
+  return targetPath !== pagePath && !targetPath.startsWith(`${pagePath}/`);
 };
 
 const isTeaserCardBlock = ($: cheerio.CheerioAPI, element: any): boolean =>
@@ -52,7 +72,9 @@ const isInListingOfCards = ($: cheerio.CheerioAPI, element: any): boolean => {
   );
 };
 
-export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI): void {
+export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI, pageUrl?: string): void {
+  const page = pageUrl ? parseUrl(pageUrl) : null;
+  if (!page) return;
   $('[class]')
     .toArray()
     .filter((element) => isTeaserCardBlock($, element))
@@ -61,7 +83,7 @@ export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI): void {
       $(element)
         .find(LINKED_HEADING_SELECTOR)
         .toArray()
-        .some((anchor) => linksElsewhere($(anchor).attr('href'))),
+        .some((anchor) => linksOutsidePageSubtree($(anchor).attr('href'), page)),
     )
     .forEach((element) => {
       $(element).remove();
