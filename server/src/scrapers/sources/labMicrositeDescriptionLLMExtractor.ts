@@ -13,6 +13,7 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
   isBibliographyCitationEntryText,
+  isCitationAuthorListDumpText,
   sanitizeResearchEntityShortDescription,
 } from '../../utils/descriptionHygiene';
 import {
@@ -1296,7 +1297,12 @@ const refusedBy = (refusal: DescriptionGuardRefusal): DescriptionExtractionOutco
 function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuardRefusal | null {
   if (isMultiPersonBioDirectoryDumpText(fullDescription)) return 'bio_directory_dump';
   if (hasMultipleCareerTimelineSentences(fullDescription)) return 'career_timeline';
-  if (isBibliographyCitationEntryText(fullDescription)) return 'bibliography_entry';
+  if (
+    isBibliographyCitationEntryText(fullDescription) ||
+    isCitationAuthorListDumpText(fullDescription)
+  ) {
+    return 'bibliography_entry';
+  }
   if (isInterestChipListText(fullDescription)) return 'interest_chip_list';
   if (opensOnNavigationChrome(fullDescription)) return 'navigation_chrome';
   if (isProfileTemplateChrome(fullDescription)) return 'profile_template_chrome';

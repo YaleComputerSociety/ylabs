@@ -759,6 +759,11 @@ export function repairMissingSpaceAfterSentence(text: string): string {
 const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},\s*){3,}/u;
 const citationSurnameCommaInitialsListPattern =
   /^\s*(?:\p{Lu}[\p{L}'’-]+,\s+\p{Lu}\.(?:[\s-]*\p{Lu}\.)*\s*,\s*){3,}/u;
+const CITATION_FULL_NAME = String.raw`(?:\p{Lu}[\p{L}'’-]+|\p{Lu}\.)(?:[\s-]+(?:\p{Lu}[\p{L}'’-]+|\p{Lu}\.)){1,3}`;
+const citationFullNameAuthorListPattern = new RegExp(
+  String.raw`^\s*(?:${CITATION_FULL_NAME},\s+){2,}(?:and\s+)?${CITATION_FULL_NAME}\.\s+\p{Lu}`,
+  'u',
+);
 
 /**
  * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
@@ -786,12 +791,22 @@ const citationSurnameCommaInitialsListPattern =
  * Every tag is stripped before that anchor is tested, because an earlier
  * cleaner can drop a closing tag and leave a bare leading `<p>` that
  * `stripHtmlTagMarkupForDetection` does not reach.
+ *
+ * A third arm reads full given names, "Given Surname, Given Surname, Given
+ * Surname. Paper title.", which a description lane emitted from a faculty
+ * publications page as a row's body (#4623). It is start-anchored like the APA
+ * arm, and only a single-letter initial may carry a period inside a name, so a
+ * staff title list ("Assistant Director, Financial Aid. Deputy, ...") does not
+ * read as authors. Over the 20,382 live description observations on
+ * Development it matched 2 values, both citations.
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
   const stripped = stripHtmlTagMarkupForDetection(text);
+  const untagged = String(text || '').replace(anyHtmlTagPattern, ' ');
   return (
     citationAuthorInitialsListPattern.test(stripped) ||
-    citationSurnameCommaInitialsListPattern.test(String(text || '').replace(anyHtmlTagPattern, ' '))
+    citationSurnameCommaInitialsListPattern.test(untagged) ||
+    citationFullNameAuthorListPattern.test(untagged)
   );
 }
 
