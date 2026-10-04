@@ -214,6 +214,9 @@ An index whose settings predate `browseTiebreakKey` degrades the tiebreak alone 
 `browseRankScore` is precomputed on the ResearchEntity document and mirrored to Meilisearch as a sortable attribute.
 The scorer lives in `researchEntityBrowseRank.ts`.
 The join, persist, and resync logic lives in `researchEntityBrowseRankService.ts`.
+Every write stamps `browseRankScorerVersion` with `BROWSE_RANK_SCORER_VERSION`, and the service refuses to overwrite a row stamped by a newer version, so a stale checkout cannot revert a newer formula (#4642).
+Bump the constant in the same change as any formula change, or the guard cannot tell the two formulas apart.
+A checkout that predates the stamp still writes unguarded, so `research-homes:backfill-browse-rank --fail-on-drift` (dry run) is the backstop: it counts rows whose stored score the current scorer does not compute as `scoreDrifted` and exits non-zero when any exist.
 
 The scorer rewards completeness (a source-backed description, an identified lead, an official source URL), then served enrichment, minus a duplicate-risk penalty and an umbrella demotion for a center, institute, or initiative that hosts other research.
 Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), and there is no entity-type bonus, so a faculty research row is never demoted for its type.

@@ -10,7 +10,9 @@
  * are written and re-synced.
  *
  * Dry-run-first. Apply mode requires `--confirm-browse-rank`, and is blocked
- * against production unless CONFIRM_PROD_SCRAPE=true.
+ * against production unless CONFIRM_PROD_SCRAPE=true. A dry run with
+ * `--fail-on-drift` exits non-zero when any row's stored score differs from the
+ * current scorer's, which is the drift check to run before a promotion (#4642).
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -32,6 +34,7 @@ export interface BrowseRankBackfillCliOptions {
   limit?: number;
   batchSize: number;
   confirmBrowseRank: boolean;
+  failOnDrift: boolean;
   output?: string;
 }
 
@@ -49,6 +52,7 @@ export function parseBrowseRankBackfillArgs(argv: string[]): BrowseRankBackfillC
     dryRun: true,
     batchSize: 200,
     confirmBrowseRank: false,
+    failOnDrift: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -58,6 +62,8 @@ export function parseBrowseRankBackfillArgs(argv: string[]): BrowseRankBackfillC
       options.dryRun = true;
     } else if (arg === '--confirm-browse-rank') {
       options.confirmBrowseRank = true;
+    } else if (arg === '--fail-on-drift') {
+      options.failOnDrift = true;
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
     } else if (arg === '--limit') {
@@ -84,6 +90,9 @@ export interface BrowseRankBackfillResult {
   mode: 'dry-run' | 'apply';
   considered: number;
   updated: number;
+  stamped: number;
+  scoreDrifted: number;
+  refusedNewerScorer: number;
   indexSyncFailures: number;
   sampleScores: Array<{ id: string; name?: string; score: number }>;
 }
@@ -104,6 +113,9 @@ export async function runBrowseRankBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     considered: 0,
     updated: 0,
+    stamped: 0,
+    scoreDrifted: 0,
+    refusedNewerScorer: 0,
     indexSyncFailures: 0,
     sampleScores: [],
   };
@@ -113,6 +125,9 @@ export async function runBrowseRankBackfill(options: {
     const batchResult = await recomputeBrowseRankForEntities(batch, { dryRun: options.dryRun });
     result.considered += batchResult.considered;
     result.updated += batchResult.updated;
+    result.stamped += batchResult.stamped;
+    result.scoreDrifted += batchResult.scoreDrifted;
+    result.refusedNewerScorer += batchResult.refusedNewerScorer;
     result.indexSyncFailures += batchResult.indexSyncFailures;
     for (const [id, score] of batchResult.scoresByEntityId) {
       if (result.sampleScores.length >= 25) break;
@@ -165,6 +180,12 @@ async function main(): Promise<void> {
     if (result.indexSyncFailures > 0) {
       console.error(
         `${result.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,
+      );
+      process.exitCode = 1;
+    }
+    if (options.failOnDrift && options.dryRun && result.scoreDrifted > 0) {
+      console.error(
+        `${result.scoreDrifted} row(s) store a browseRankScore the current scorer does not compute, written by an older checkout or left stale by a change that did not rescore; rerun with --apply --confirm-browse-rank from beta.`,
       );
       process.exitCode = 1;
     }
