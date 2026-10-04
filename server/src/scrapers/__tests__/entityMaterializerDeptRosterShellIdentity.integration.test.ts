@@ -29,7 +29,9 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
 import { Account } from '../../models/account';
+import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
+import { runPostMaterializationIntegrityGate } from '../integrityGate';
 
 describe('materializeEntity folds dept-roster shells into their canonical PI-linked home (#1364)', () => {
   let replSet: MongoMemoryReplSet;
@@ -58,6 +60,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
       'researchers',
       'users',
       'accounts',
+      'signals',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -266,6 +269,45 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
         'target.id': chemistry._id,
       }).lean();
       expect(foldedLead).toMatchObject({ state: 'HISTORICAL', archived: true });
+    });
+
+    it('leaves no live access signal on a folded row, across a second materialize (#4816)', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry');
+      const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
+      for (const row of [chemistry, physics]) await piEdge(researcher._id, row._id);
+      const accessSignal = (
+        researchEntityId: mongoose.Types.ObjectId,
+        type: 'CURRENT_UNDERGRADS' | 'APPLICATION_FORM_EXISTS',
+      ) =>
+        Signal.create({
+          researchEntityId,
+          type,
+          derivationKey: `signal:${type}`,
+          confidence: 'MEDIUM',
+          observedAt: new Date('2026-09-01T00:00:00Z'),
+          archived: false,
+        });
+      await accessSignal(physics._id, 'CURRENT_UNDERGRADS');
+      const duplicate = await accessSignal(chemistry._id, 'CURRENT_UNDERGRADS');
+      const joinPage = await accessSignal(chemistry._id, 'APPLICATION_FORM_EXISTS');
+
+      for (let pass = 0; pass < 2; pass += 1) {
+        await rematerialize('Chemistry');
+
+        expect((await ResearchEntity.findById(chemistry._id).lean())?.archived).toBe(true);
+        expect(
+          await Signal.countDocuments({ researchEntityId: chemistry._id, archived: { $ne: true } }),
+        ).toBe(0);
+        const counts = (await runPostMaterializationIntegrityGate({ includeSamples: false }))
+          .counts;
+        expect(counts.activeArtifactsOnArchivedEntities).toBe(0);
+        expect(counts.duplicateAccessSignals).toBe(0);
+      }
+      expect(await Signal.findById(duplicate._id).lean()).toMatchObject({ archived: true });
+      expect(String((await Signal.findById(joinPage._id).lean())?.researchEntityId)).toBe(
+        String(physics._id),
+      );
     });
 
     it('folds into the oldest row when none serves yet', async () => {

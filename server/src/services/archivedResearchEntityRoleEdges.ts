@@ -3,6 +3,11 @@ import { archivedEntityUpdate } from '../models/entityArchival';
 import { ResearchEntity } from '../models/researchEntity';
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS, RoleAssignment } from '../models/roleAssignment';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  emptyAccessSignalSettlementOutcome,
+  settleAccessSignalsOfArchivedResearchEntities,
+  type AccessSignalSettlementOutcome,
+} from './archivedResearchEntityAccessSignals';
 
 // Changing this also requires updating `currentMembersOnArchivedEntitiesPipeline`, which
 // counts exactly the edges this predicate selects (#4752).
@@ -259,7 +264,7 @@ export async function settleRoleEdgesOfArchivedResearchEntities({
 
 // `archiveCallSitesSettleRoleEdges.test.ts` fails on a new `archivedEntityUpdate` caller
 // that bypasses this (#4752). `endedAt` equals `archivedAt`, which ties an ended edge to
-// the archive that ended it.
+// the archive that ended it, and a retired signal carries the row's own archive reason.
 export async function archiveResearchEntities({
   ids,
   archivedReason,
@@ -272,10 +277,18 @@ export async function archiveResearchEntities({
   set?: Record<string, unknown>;
   survivorId?: unknown;
   now?: Date;
-}): Promise<{ archived: number; roleEdges: RoleEdgeSettlementOutcome }> {
+}): Promise<{
+  archived: number;
+  roleEdges: RoleEdgeSettlementOutcome;
+  accessSignals: AccessSignalSettlementOutcome;
+}> {
   const objectIds = objectIdsOf(ids);
   if (objectIds.length === 0) {
-    return { archived: 0, roleEdges: emptyRoleEdgeSettlementOutcome() };
+    return {
+      archived: 0,
+      roleEdges: emptyRoleEdgeSettlementOutcome(),
+      accessSignals: emptyAccessSignalSettlementOutcome(),
+    };
   }
   const result = await ResearchEntity.updateMany(
     { _id: { $in: objectIds }, archived: { $ne: true } },
@@ -286,5 +299,11 @@ export async function archiveResearchEntities({
     survivorId,
     endedAt: now,
   });
-  return { archived: result.modifiedCount ?? 0, roleEdges };
+  const accessSignals = await settleAccessSignalsOfArchivedResearchEntities({
+    archivedEntityIds: objectIds,
+    archivedReason,
+    survivorId,
+    now,
+  });
+  return { archived: result.modifiedCount ?? 0, roleEdges, accessSignals };
 }

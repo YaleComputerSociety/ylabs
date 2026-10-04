@@ -9,6 +9,10 @@ import {
   planRoleEdgeSettlements,
   type RoleEdgeSettlement,
 } from '../services/archivedResearchEntityRoleEdges';
+import {
+  planAccessSignalSettlements,
+  type AccessSignalSettlement,
+} from '../services/archivedResearchEntityAccessSignals';
 
 export const archivedEntityArtifactTypes = ['RoleAssignment', 'AccessSignal'] as const;
 export type ArchivedEntityArtifactType = (typeof archivedEntityArtifactTypes)[number];
@@ -159,19 +163,6 @@ export function dispositionMatchesScope(
   return true;
 }
 
-function artifactIdentityKey(artifact: ArchivedEntityArtifact): string {
-  if (artifact.artifactType === 'RoleAssignment') {
-    const personId = (artifact.personId || '').trim();
-    const role = (artifact.role || '').trim();
-    return personId && role ? `${artifact.artifactType}:${role}:${personId}` : '';
-  }
-  const signalType = (artifact.signalType || '').trim();
-  const derivationKey = (artifact.derivationKey || '').trim();
-  return signalType && derivationKey
-    ? `${artifact.artifactType}:${signalType}:${derivationKey}`
-    : '';
-}
-
 export function buildArchivedEntityArtifactRepairPlan({
   artifacts,
   dispositions,
@@ -181,12 +172,6 @@ export function buildArchivedEntityArtifactRepairPlan({
   dispositions: ReadonlyMap<string, ArchivedEntityDisposition>;
   canonicalArtifacts?: ArchivedEntityArtifact[];
 }): ArchivedEntityArtifactRepairPlan {
-  const survivorArtifactByIdentity = new Map<string, string>();
-  for (const artifact of canonicalArtifacts) {
-    const key = artifactIdentityKey(artifact);
-    if (key) survivorArtifactByIdentity.set(`${artifact.researchEntityId}:${key}`, artifact.id);
-  }
-
   const plan: ArchivedEntityArtifactRepairPlan = {
     relink: [],
     mergeAndArchive: [],
@@ -194,6 +179,7 @@ export function buildArchivedEntityArtifactRepairPlan({
     skipped: [],
   };
   const settleableRoleEdges: ArchivedEntityArtifact[] = [];
+  const settleableSignals: ArchivedEntityArtifact[] = [];
 
   for (const artifact of artifacts) {
     const disposition = dispositions.get(artifact.researchEntityId);
@@ -223,38 +209,81 @@ export function buildArchivedEntityArtifactRepairPlan({
       settleableRoleEdges.push(artifact);
       continue;
     }
-    if (
-      disposition.repairClass === 'no-canonical' ||
-      disposition.repairClass === 'merge-no-live-home'
-    ) {
-      plan.archiveWithoutCanonical.push({ ...base, id: artifact.id });
-      continue;
-    }
-    if (!disposition.survivorId) {
+    if (disposition.repairClass === 'merge-survivor' && !disposition.survivorId) {
       plan.skipped.push({ ...base, id: artifact.id, reason: 'merge-chain-dead-end' });
       continue;
     }
-
-    const survivorId = disposition.survivorId;
-    const identity = artifactIdentityKey(artifact);
-    const survivorKey = identity ? `${survivorId}:${identity}` : '';
-    const existing = survivorKey ? survivorArtifactByIdentity.get(survivorKey) : undefined;
-    if (existing) {
-      plan.mergeAndArchive.push({
-        ...base,
-        duplicateId: artifact.id,
-        canonicalId: existing,
-        canonicalResearchEntityId: survivorId,
-      });
-      continue;
-    }
-
-    plan.relink.push({ ...base, id: artifact.id, canonicalResearchEntityId: survivorId });
-    if (survivorKey) survivorArtifactByIdentity.set(survivorKey, artifact.id);
+    settleableSignals.push(artifact);
   }
 
+  addAccessSignalSettlementsToPlan(plan, settleableSignals, dispositions, canonicalArtifacts);
   addRoleEdgeSettlementsToPlan(plan, settleableRoleEdges, dispositions, canonicalArtifacts);
   return plan;
+}
+
+const survivorIdOf = (
+  dispositions: ReadonlyMap<string, ArchivedEntityDisposition>,
+  archivedEntityId: string,
+): string | undefined => {
+  const disposition = dispositions.get(archivedEntityId);
+  return disposition?.repairClass === 'merge-survivor' ? disposition.survivorId : undefined;
+};
+
+const planItemBase = (
+  artifactType: ArchivedEntityArtifactType,
+  disposition: ArchivedEntityDisposition,
+): PlanItemBase => ({
+  artifactType,
+  repairClass: disposition.repairClass,
+  archivedEntityId: disposition.archivedEntityId,
+  archivedReason: disposition.archivedReason,
+});
+
+// Signals are planned by the same function an archive runs inline (#4816).
+function addAccessSignalSettlementsToPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+  signals: ArchivedEntityArtifact[],
+  dispositions: ReadonlyMap<string, ArchivedEntityDisposition>,
+  canonicalArtifacts: ArchivedEntityArtifact[],
+): void {
+  const settlements = planAccessSignalSettlements({
+    signals: signals.map((signal) => ({
+      id: signal.id,
+      archivedEntityId: signal.researchEntityId,
+      signalType: signal.signalType || '',
+      derivationKey: signal.derivationKey || '',
+    })),
+    survivorIdFor: (archivedEntityId) => survivorIdOf(dispositions, archivedEntityId),
+    survivorSignals: canonicalArtifacts
+      .filter((artifact) => artifact.artifactType === 'AccessSignal')
+      .map((artifact) => ({
+        id: artifact.id,
+        survivorId: artifact.researchEntityId,
+        signalType: artifact.signalType || '',
+        derivationKey: artifact.derivationKey || '',
+      })),
+  });
+  for (const settlement of settlements) {
+    const disposition = dispositions.get(settlement.archivedEntityId);
+    if (!disposition) continue;
+    const base = planItemBase('AccessSignal', disposition);
+    if (settlement.action === 'relink') {
+      plan.relink.push({
+        ...base,
+        id: settlement.signalId,
+        canonicalResearchEntityId: settlement.survivorId,
+      });
+    } else if (settlement.action === 'merge-and-archive') {
+      plan.mergeAndArchive.push({
+        ...base,
+        duplicateId: settlement.signalId,
+        canonicalId: settlement.survivorSignalId,
+        canonicalResearchEntityId: settlement.survivorId,
+      });
+    } else {
+      plan.archiveWithoutCanonical.push({ ...base, id: settlement.signalId });
+    }
+  }
 }
 
 // Role edges are planned by the same function an archive runs inline, so the repair and
@@ -272,10 +301,7 @@ function addRoleEdgeSettlementsToPlan(
       personId: edge.personId || '',
       role: edge.role || '',
     })),
-    survivorIdFor: (archivedEntityId) => {
-      const disposition = dispositions.get(archivedEntityId);
-      return disposition?.repairClass === 'merge-survivor' ? disposition.survivorId : undefined;
-    },
+    survivorIdFor: (archivedEntityId) => survivorIdOf(dispositions, archivedEntityId),
     survivorHoldingEdges: canonicalArtifacts
       .filter((artifact) => artifact.artifactType === 'RoleAssignment')
       .map((artifact) => ({
@@ -288,12 +314,7 @@ function addRoleEdgeSettlementsToPlan(
   for (const settlement of settlements) {
     const disposition = dispositions.get(settlement.archivedEntityId);
     if (!disposition) continue;
-    const base: PlanItemBase = {
-      artifactType: 'RoleAssignment',
-      repairClass: disposition.repairClass,
-      archivedEntityId: disposition.archivedEntityId,
-      archivedReason: disposition.archivedReason,
-    };
+    const base = planItemBase('RoleAssignment', disposition);
     if (settlement.action === 'repoint') {
       plan.relink.push({
         ...base,
@@ -334,6 +355,32 @@ export function roleEdgeSettlementsFromRepairPlan(
     ...plan.archiveWithoutCanonical.filter(isRoleEdge).map((item): RoleEdgeSettlement => ({
       action: 'end',
       edgeId: item.id,
+      archivedEntityId: item.archivedEntityId,
+    })),
+  ];
+}
+
+export function accessSignalSettlementsFromRepairPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+): AccessSignalSettlement[] {
+  const isSignal = (item: PlanItemBase) => item.artifactType === 'AccessSignal';
+  return [
+    ...plan.relink.filter(isSignal).map((item): AccessSignalSettlement => ({
+      action: 'relink',
+      signalId: item.id,
+      archivedEntityId: item.archivedEntityId,
+      survivorId: item.canonicalResearchEntityId,
+    })),
+    ...plan.mergeAndArchive.filter(isSignal).map((item): AccessSignalSettlement => ({
+      action: 'merge-and-archive',
+      signalId: item.duplicateId,
+      archivedEntityId: item.archivedEntityId,
+      survivorId: item.canonicalResearchEntityId,
+      survivorSignalId: item.canonicalId,
+    })),
+    ...plan.archiveWithoutCanonical.filter(isSignal).map((item): AccessSignalSettlement => ({
+      action: 'archive',
+      signalId: item.id,
       archivedEntityId: item.archivedEntityId,
     })),
   ];

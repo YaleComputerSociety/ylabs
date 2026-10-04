@@ -265,7 +265,7 @@ Four things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
 `archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
-Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752).
+Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), and relinks, merges into the survivor, or archives the row's live access signals (#4816).
 `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
 Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
 `ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.

@@ -846,6 +846,22 @@ export async function materializeAccessForResearchGroup(
     };
   }
   const { researchEntityId, artifacts } = derivation;
+  // `archiveResearchEntities` settles an archived row's signals, so writing them again here
+  // would re-strand what the archive settled (#4816).
+  if (
+    await ResearchEntity.exists({
+      _id: toAccessMaterializerObjectId(researchEntityId),
+      archived: true,
+    })
+  ) {
+    return {
+      researchEntityId,
+      accessSignals: 0,
+      staleEvidenceSkipped: 0,
+      errors: 0,
+      skipped: 'archived-research-entity',
+    };
+  }
   const stored = await storedEvidenceGovernedSignals(researchEntityId);
   const planned = planEvidenceGovernedSignalChanges(
     new Set(artifacts.accessSignals.map((signal) => signal.derivationKey)),

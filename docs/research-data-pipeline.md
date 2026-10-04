@@ -2098,7 +2098,7 @@ The join is `researchers.profileLinks.url`, and a row whose identity page matche
 
 `--reason=<reason>` scopes a run to the planned rows with that reason, repeatable, so one issue's operation does not apply another's; the report records `reasonScope` and `plannedInReasonScope` beside the unscoped plan.
 It is dry-run by default; `--apply` additionally requires `--confirm-staff-minted-entity-retirement`, routes through `assertScriptApplyAllowed` so a production-looking target needs `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`, and is bounded by `--max-apply` (default 200).
-It archives with the `research-entity:retire-staff-minted-entities` attribution through `archiveResearchEntities`, so the stale visibility verdict is cleared and the row's live role edges are ended in the same step (reported as `roleEdges`), and it deletes the Meilisearch documents for what it archived.
+It archives with the `research-entity:retire-staff-minted-entities` attribution through `archiveResearchEntities`, so the stale visibility verdict is cleared, the row's live role edges are ended and its live access signals archived in the same step (reported as `roleEdges` and `accessSignals`), and it deletes the Meilisearch documents for what it archived.
 Before #4752 the edges were left current, and `integrity-gate` counted 72 of them on rows one run archived.
 It supersedes nothing and deletes nothing: the row and its observations stay as evidence of what the lane once asserted.
 The `--output` report is resolved and written **before** the archive, and it records the pre-apply tier of exactly the rows the run touches, because a peer session writes Development concurrently and a post-hoc corpus-wide tier delta cannot be attributed to this run without it.
