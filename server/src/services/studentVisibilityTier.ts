@@ -2,9 +2,9 @@ import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import {
-  LEAD_TITLE_PENDING_POLICY_REASON,
-  leadTitlesArePendingPolicy,
-} from '../utils/leadTitlePendingPolicy';
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
+  leadTitlesAreRuledNonHostingRanks,
+} from '../utils/leadTitleRuledNonHostingRank';
 import {
   isStudiesResearchAreaEchoDescription,
   sanitizeCatalogDescription,
@@ -879,7 +879,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'permanently_closed',
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
-  LEAD_TITLE_PENDING_POLICY_REASON,
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
@@ -1154,8 +1154,9 @@ export function computeResearchEntityStudentVisibility({
   if (unbackedLabName) reasons.push('unbacked_lab_name');
   const biographyWithoutResearch = servedBodyIsBiographyWithoutResearch(publicDescription);
   if (biographyWithoutResearch) reasons.push(BIOGRAPHY_WITHOUT_RESEARCH_REASON);
-  const leadTitlePendingPolicy = !missingLead && leadTitlesArePendingPolicy(leadMembers);
-  if (leadTitlePendingPolicy) reasons.push(LEAD_TITLE_PENDING_POLICY_REASON);
+  const leadTitleRuledNonHostingRank =
+    !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
+  if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
@@ -1181,7 +1182,7 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') &&
       !profileIdentityRisk &&
-      !leadTitlePendingPolicy,
+      !leadTitleRuledNonHostingRank,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
     // same correctness question: does a real source stand behind this card (#2635).
@@ -1215,7 +1216,7 @@ export function computeResearchEntityStudentVisibility({
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
     !biographyWithoutResearch &&
-    !leadTitlePendingPolicy &&
+    !leadTitleRuledNonHostingRank &&
     !duplicateRisk &&
     hasUsableName
   ) {
