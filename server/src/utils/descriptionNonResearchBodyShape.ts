@@ -54,13 +54,6 @@ const statesCreativePracticeOutsideTheArts = (text: string): boolean =>
 const MIN_ADMINISTRATIVE_ROLE_MENTIONS = 2;
 const MIN_TEACHING_ROLE_MENTIONS = 3;
 
-/**
- * A biography of a teaching or administrative appointment that states no research, no
- * creative practice and no clinical work: a career office director, a language lector, a
- * diversity office lead. A faculty rank, any research or care word, or a single kind of
- * practice evidence keeps the body, because the cost of refusing a real research biography
- * is the row.
- */
 const PAST_ROLE_SENTENCE =
   /\b(?:was|were)\s+(?:also\s+)?(?:(?:the|a|an)\s+)?(?:\w+\s+){0,3}(?:director|manager|officer|advisor|adviser|counsel|consultant|analyst|chief|head|president|fellow|staffer|associate|assistant|aide)\b|^(?:Prior\s+to|Before\s+(?:joining|coming))\b|\bserved\s+as\b/i;
 const DEGREE_HOLDING_SENTENCE =
@@ -82,6 +75,14 @@ const isPastRoleHistoryOnly = (text: string): boolean => {
   );
 };
 
+/**
+ * A biography of a teaching or administrative appointment that states no research, no
+ * creative practice and no clinical work: a career office director, a language lector, a
+ * diversity office lead. A faculty rank, any research or care word, or a single kind of
+ * practice evidence keeps the body, because the cost of refusing a real research biography
+ * is the row. The one exception is a career narrative made only of past posts and degrees,
+ * which is held even when a research or care word appears inside one of those posts.
+ */
 export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
   const text = textValue(value);
   if (!text) return false;
