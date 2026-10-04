@@ -47,6 +47,23 @@ describe('a body whose opening subject is another titled person', () => {
     ).not.toBe('');
   });
 
+  it('keeps a body whose lead is named before a titled collaborator', () => {
+    for (const body of [
+      "Robin Fixture's research with Professor Sample examines how coastal towns adapt to repeated flooding.",
+      'The lab of Robin Fixture and Professor Sample studies how coastal towns adapt to repeated flooding.',
+    ]) {
+      expect(served(body, ['Robin Fixture'])).not.toBe('');
+    }
+  });
+
+  it('does not let a one-letter surname prefix vouch for another titled person', () => {
+    expect(
+      served('Dr. O’Sample directs a survey of how coastal towns adapt to repeated flooding.', [
+        "Robin O'Fixture",
+      ]),
+    ).toBe('');
+  });
+
   it('does not judge an organization, whose page names its staff in subject position', () => {
     expect(
       served(

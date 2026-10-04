@@ -291,6 +291,13 @@ function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity
 const TITLED_PERSON_SUBJECT =
   /(?:^|\s)(?:(?:Dr|Prof)\.?|Professor)\s+(?:(?:Dr|Prof)\.?\s+)?((?:[A-Z][\p{L}'’-]+\s+){0,2}[A-Z][\p{L}'’-]+)(?:['’]s)?\s+(?:directs|leads|heads|runs|founded|co-founded|is|was|has|studies|investigates|examines|explores|researches|research|works|focuses|conducts|oversees)\b/u;
 
+// "fixture's'", "fixture'sarchival" and "sample-fixture" each name the same person as
+// "fixture", while "o'fixture" must stay whole: a one-letter prefix is no surname.
+const nameTokenForms = (token: string): string[] =>
+  [token, token.replace(/'s'?$/, ''), token.split("'")[0], ...token.split('-')].filter(
+    (form) => form.length >= 2,
+  );
+
 /**
  * Whether the opening sentence's subject is a titled person ("Professor <Surname>
  * directs ...", "Dr. <Surname>'s research ...") who is none of the record's own
@@ -298,17 +305,10 @@ const TITLED_PERSON_SUBJECT =
  * else's work, however well it reads, so it is withheld rather than served under this
  * lead. Only a person-scoped record is judged, because an organization's page names
  * its staff in subject position as a matter of course. Any token of the titled name matching a lead or the record's own name keeps
- * the body, because compound surnames and familiar given names are common.
+ * the body, because compound surnames and familiar given names are common. A lead
+ * named earlier in the sentence also keeps it, because the titled person is then a
+ * collaborator rather than the subject.
  */
-// "abaluck's'", "heng'sarchaeological" (a glued source seam) and "smith-jones" each name
-// the same person as "abaluck", "heng" and "jones", while "o'connell" must stay whole.
-const nameTokenForms = (token: string): string[] => [
-  token,
-  token.replace(/'s'?$/, ''),
-  token.split("'")[0],
-  ...token.split('-'),
-];
-
 function opensOnAnotherTitledPerson(
   value: string,
   leadMemberNames: readonly string[],
@@ -321,11 +321,14 @@ function opensOnAnotherTitledPerson(
   const subjectTokens = normalizePersonNameTokens(subject[1]);
   if (subjectTokens.length === 0) return false;
   const ownTokens = new Set(
-    [...leadMemberNames, entity ? facultyResearchLabelBase(entity) : '']
+    [...leadMemberNames, facultyResearchLabelBase(entity)]
       .flatMap((name) => normalizePersonNameTokens(name))
       .flatMap(nameTokenForms),
   );
-  return !subjectTokens.some((token) => nameTokenForms(token).some((form) => ownTokens.has(form)));
+  const namesOwnPerson = (tokens: string[]) =>
+    tokens.some((token) => nameTokenForms(token).some((form) => ownTokens.has(form)));
+  const precedingTokens = normalizePersonNameTokens(opening.slice(0, subject.index));
+  return !namesOwnPerson(subjectTokens) && !namesOwnPerson(precedingTokens);
 }
 
 function sanitizeLeadingMismatchedPersonNamePrefix(
