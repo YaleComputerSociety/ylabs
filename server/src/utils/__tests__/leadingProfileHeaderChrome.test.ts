@@ -29,7 +29,8 @@ describe('stripLeadingProfileHeaderChrome', () => {
   });
 
   it('does not treat a mid-body slash as a breadcrumb', () => {
-    const prose = 'The lab studies input / output models of the cell. Home visits are part of the work.';
+    const prose =
+      'The lab studies input / output models of the cell. Home visits are part of the work.';
     expect(stripLeadingProfileHeaderChrome(prose)).toBe(prose);
   });
 
