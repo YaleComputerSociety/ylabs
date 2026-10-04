@@ -84,8 +84,14 @@ describe('a press quote is not read as a citation', () => {
   });
 
   it.each([
-    ['a year in the attribution', '“A singer of rare power and grace.” - Pat Sample, Synthetic Opera Monthly, 2019'],
-    ['an unquoted outlet in the attribution', '“A singer of rare power and grace.” — The Synthetic Review'],
+    [
+      'a year in the attribution',
+      '“A singer of rare power and grace.” - Pat Sample, Synthetic Opera Monthly, 2019',
+    ],
+    [
+      'an unquoted outlet in the attribution',
+      '“A singer of rare power and grace.” — The Synthetic Review',
+    ],
   ])('does not read a quote with %s as a citation', (_label, sentence) => {
     expect(isBibliographicCitationSentence(sentence)).toBe(false);
   });
