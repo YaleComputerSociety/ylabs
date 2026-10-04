@@ -170,7 +170,7 @@ The refusal rates measured against `medicine.yale.edu` came from a residential a
 
 Measure the runner's own refusal rate before its first real sweep, because a rate measured from a residential address does not transfer to a hosted egress.
 `yarn --cwd server scrape:probe-hosts` (`server/src/scripts/hostThrottleProbe.ts`) is read-only: it reads page URLs from Development's `research_entities` and `researchers`, fetches them, and writes nothing to any database.
-It refuses unless `MONGODBURL` names `Development` and no Beta or Production database URL is set.
+It refuses unless `MONGODBURL` names `Development`, `SCRAPER_ENV` resolves to development, and none of the database URL variables the weekly sweep refuses is set.
 
 It always probes `medicine.yale.edu` and `ysph.yale.edu`, plus the four other Yale hosts that Development links to most, taking the first 40 distinct pages per host in `_id` order so two runs probe the same pages.
 Every page goes through `fetchPageWithPolicy`, with the shared per-host limiter and retry budget, two requests in flight per host, because a hand-rolled fetch measures the client rather than the host.
