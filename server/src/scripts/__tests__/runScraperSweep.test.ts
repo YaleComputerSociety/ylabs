@@ -605,6 +605,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'pi-attributed-researcher-mint',
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
@@ -773,6 +774,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'pi-attributed-researcher-mint',
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
@@ -827,6 +829,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'pi-attributed-researcher-mint',
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
@@ -1747,6 +1750,25 @@ describe('inferred-PI lead reclaim post-run stage', () => {
       'unresolvable-pi': 0,
     },
     ...overrides,
+  });
+
+  it('mints the researchers stored PI attributions name before the reclaim links them', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('pi-attributed-researcher-mint')).toBeGreaterThanOrEqual(0);
+    expect(names.indexOf('pi-attributed-researcher-mint')).toBeLessThan(
+      names.indexOf('inferred-pi-lead-reclaim'),
+    );
+    expect(stages.find((stage) => stage.name === 'pi-attributed-researcher-mint')?.args).toEqual([
+      '--cwd',
+      'server',
+      'observations:materialize-pi-attributed-users',
+      '--apply',
+      '--confirm-materialize-pi-attributed-users',
+      '--mint-only',
+      '--output',
+      '/tmp/development-sweep/development-pi-attributed-researcher-mint.json',
+    ]);
   });
 
   it('runs on every Development sweep, over every entity, before the visibility gate', () => {

@@ -278,11 +278,49 @@ export function surnameCoreKey(surname: string | undefined | null): string {
 
 export const SURNAME_FETCH_LIMIT = 200;
 
+const FOLDED_LETTER_VARIANTS: Readonly<Record<string, string>> = {
+  a: 'àáâãäåāăą',
+  c: 'çćĉċč',
+  d: 'ďđ',
+  e: 'èéêëēĕėęě',
+  g: 'ĝğġģ',
+  h: 'ĥħ',
+  i: 'ìíîïĩīĭįı',
+  j: 'ĵ',
+  k: 'ķ',
+  l: 'ĺļľŀł',
+  n: 'ñńņňŉ',
+  o: 'òóôõöøōŏő',
+  r: 'ŕŗř',
+  s: 'śŝşš',
+  t: 'ţťŧ',
+  u: 'ùúûüũūŭůűų',
+  w: 'ŵ',
+  y: 'ýÿŷ',
+  z: 'źżž',
+};
+
+function storedSpellingPattern(foldedKey: string): string {
+  return [...foldedKey]
+    .map((letter) => {
+      const variants = FOLDED_LETTER_VARIANTS[letter];
+      if (variants) return `[${letter}${variants}${variants.toUpperCase()}]`;
+      return letter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    })
+    .join('');
+}
+
+/**
+ * The key is folded (accents stripped, an apostrophe read as a token break) but the query
+ * runs against the stored `displayName`, which keeps both. Matching the folded key literally
+ * found nobody for `Crémer`, `D'Aquila` or `Yalçın`, so the resolver answered `absent` for a
+ * researcher it had just minted and the next pass minted the same person again: 9 accented
+ * or apostrophe surnames had accumulated 3 to 15 identical records each on Development.
+ */
 export function surnameFetchRegex(surname: string | undefined | null): RegExp | null {
   const key = surnameCoreKey(surname);
   if (!key) return null;
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[\\s-])${escaped}$`, 'i');
+  return new RegExp(`(?:^|[\\s\\-'\u2018\u2019])${storedSpellingPattern(key)}$`, 'i');
 }
 
 export function surnamesCompatible(

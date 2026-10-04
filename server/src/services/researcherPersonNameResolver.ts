@@ -96,6 +96,16 @@ export async function resolveResearcherIdForOrcid(
   return { status: 'matched', researcherId: asResearcherId(holder._id) };
 }
 
+// A lone token is read as a surname. A single-token query reads its candidates the same way,
+// because reading only the query that way made a single-token researcher unmatchable by its
+// own name, so every pass minted it again. A full-name query keeps the plain split, so a bare
+// surname record cannot turn a full name's lookup ambiguous.
+function personNameParts(name: string): { first: string; last: string } {
+  const { first, last } = splitName(name);
+  if (!last && first && !/\s/.test(first)) return { first: '', last: first };
+  return { first, last };
+}
+
 export async function resolveResearcherIdForPersonName(
   name: string,
   opts: { netid?: string; deps?: Partial<ResearcherPersonNameResolverDeps> } = {},
@@ -112,11 +122,7 @@ export async function resolveResearcherIdForPersonName(
   }
 
   if (!name) return { status: 'absent' };
-  let { first, last } = splitName(name);
-  if (!last && first && !/\s/.test(first)) {
-    last = first;
-    first = '';
-  }
+  const { first, last } = personNameParts(name);
   if (!last) return { status: 'absent' };
 
   const surnameRe = surnameFetchRegex(last);
@@ -126,7 +132,12 @@ export async function resolveResearcherIdForPersonName(
   if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
 
   const candidates = fetched
-    .map((candidate) => ({ candidate, parsed: splitName(candidate.displayName || '') }))
+    .map((candidate) => ({
+      candidate,
+      parsed: first
+        ? splitName(candidate.displayName || '')
+        : personNameParts(candidate.displayName || ''),
+    }))
     .filter(({ parsed }) => surnamesCompatible(last, parsed.last));
 
   if (!first) {

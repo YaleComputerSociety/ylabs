@@ -20,6 +20,45 @@ const depsFor = (
   resolveResearcherIdByNetid: async (netid: string) => netidResolution?.[netid],
 });
 
+const regexFilteringDepsFor = (candidates: ResearcherNameCandidate[]) => ({
+  findResearchersBySurname: async (surnameRegex: RegExp) =>
+    candidates.filter((stored) => surnameRegex.test(stored.displayName || '')),
+  resolveResearcherIdByNetid: async () => undefined,
+});
+
+describe('resolveResearcherIdForPersonName against the stored spelling', () => {
+  it('finds a researcher whose stored surname carries an accent or apostrophe', async () => {
+    for (const name of ['Lucía Varénkov', "Tomas D'Arvellin", 'Pelin Kıraçel']) {
+      const stored = candidate(name);
+      const result = await resolveResearcherIdForPersonName(name, {
+        deps: regexFilteringDepsFor([stored, candidate('Jane Adams')]),
+      });
+      expect(result).toEqual({ status: 'matched', researcherId: stored._id });
+    }
+  });
+
+  it('reports two stored copies of an accented name as ambiguous rather than absent', async () => {
+    const result = await resolveResearcherIdForPersonName('Lucía Varénkov', {
+      deps: regexFilteringDepsFor([candidate('Lucía Varénkov'), candidate('Lucía Varénkov')]),
+    });
+    expect(result.status).toBe('ambiguous');
+  });
+
+  it('sees a stored single-token researcher when looking up its own name', async () => {
+    const result = await resolveResearcherIdForPersonName('Quorvel', {
+      deps: regexFilteringDepsFor([candidate('Quorvel')]),
+    });
+    expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  it('does not let a bare-surname record make a full-name lookup ambiguous', async () => {
+    const result = await resolveResearcherIdForPersonName('Ana Quorvel', {
+      deps: regexFilteringDepsFor([candidate('Quorvel')]),
+    });
+    expect(result).toEqual({ status: 'absent' });
+  });
+});
+
 describe('resolveResearcherIdForPersonName', () => {
   it('resolves by netid before any name matching', async () => {
     const researcherId = new mongoose.Types.ObjectId();
