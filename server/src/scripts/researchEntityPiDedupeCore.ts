@@ -7,6 +7,7 @@ import {
 import {
   concreteLabWebsiteForEntity,
   entityCarriesConcreteWebsite,
+  entityNameWordsWithoutKindNouns,
   isCenterOrInstituteEntity,
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
@@ -904,75 +905,66 @@ function multiPersonEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
   return ids;
 }
 
+function sharedPersonEligibleEntities(
+  row: ResearchEntityPiDedupeRow,
+  sharedEntityIds: ReadonlySet<string>,
+): ResearchEntityPiDedupeRow['entities'] {
+  return row.entities.filter(
+    (entity) =>
+      entity.id &&
+      !sharedEntityIds.has(entity.id) &&
+      !isSharedOrganizationEntityType(entity.entityType),
+  );
+}
+
+function sharedPersonGroup(
+  row: ResearchEntityPiDedupeRow,
+  entities: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeGroup[] {
+  const group = buildGroupFromCluster(row, entities);
+  return group ? [{ ...group, dedupeCategory: 'shared_person_id' as const }] : [];
+}
+
 export function buildSharedPersonIdResearchEntityDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
   const sharedEntityIds = multiPersonEntityIds(rows);
-  return rows.flatMap((row) => {
-    const entities = row.entities.filter(
-      (entity) =>
-        entity.id &&
-        !sharedEntityIds.has(entity.id) &&
-        !isSharedOrganizationEntityType(entity.entityType),
-    );
-    if (entities.length <= 1) return [];
-    const group = buildGroupFromCluster(row, entities);
-    if (!group) return [];
-    return [{ ...group, dedupeCategory: 'shared_person_id' as const }];
-  });
+  return rows.flatMap((row) =>
+    sharedPersonGroup(row, sharedPersonEligibleEntities(row, sharedEntityIds)),
+  );
 }
 
-const NAME_AGREEMENT_KIND_WORDS = new Set([
-  'the',
-  'lab',
-  'laboratory',
-  'research',
-  'faculty',
-  'group',
-]);
-
 /**
- * The comparable form of a research row's name for the name-agreement filter. Diacritics
+ * The comparable form of a research row's name for the name-agreement lane. Diacritics
  * fold because one roster spells a name with them and another without, and the kind
- * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees
- * when the type already agrees.
+ * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees when the
+ * type already agrees.
  */
 export function nameAgreementKey(value: string | undefined): string {
-  return normalizedWords((value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
-    .filter((word) => !NAME_AGREEMENT_KIND_WORDS.has(word))
-    .join(' ');
+  return entityNameWordsWithoutKindNouns(value).join(' ');
 }
 
 /**
- * A shared-person group is safe to merge unattended only when its members are the same
- * kind of thing under the same name. One person can lead a lab and run an unrelated
- * project under another name, and #3279 measured that a shared lead alone does not make
- * two rows one entity, so a group whose names or types differ stays a review candidate.
+ * The unattended form of the shared-person lane: one group per lead, entity type and
+ * name. One person can lead a lab and run an unrelated project under another name, and
+ * #3279 measured that a shared lead alone does not make two rows one entity, so rows only
+ * group with the rows that are the same kind of thing under the same name.
  */
-export function sharedPersonGroupIsNameAgreed(
-  group: Pick<ResearchEntityPiDedupeGroup, 'canonicalEntityId' | 'duplicateEntityIds'>,
-  entitiesById: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
-): boolean {
-  const members = [group.canonicalEntityId, ...group.duplicateEntityIds].map((id) =>
-    entitiesById.get(id),
-  );
-  if (members.some((member) => !member)) return false;
-  const names = new Set(members.map((member) => nameAgreementKey(member!.name)));
-  const types = new Set(members.map((member) => (member!.entityType || '').toUpperCase()));
-  return names.size === 1 && !names.has('') && types.size === 1 && !types.has('');
-}
-
-export function filterNameAgreedSharedPersonGroups<T extends ResearchEntityPiDedupeGroup>(
-  groups: T[],
+export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
-): T[] {
-  const entitiesById = new Map<string, ResearchEntityPiDedupeRow['entities'][number]>();
-  for (const row of rows) {
-    for (const entity of row.entities) {
-      if (entity.id && !entitiesById.has(entity.id)) entitiesById.set(entity.id, entity);
+): ResearchEntityPiDedupeGroup[] {
+  const sharedEntityIds = multiPersonEntityIds(rows);
+  return rows.flatMap((row) => {
+    const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
+    for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
+      const name = nameAgreementKey(entity.name);
+      const entityType = (entity.entityType || '').toUpperCase();
+      if (!name || !entityType) continue;
+      const key = `${entityType}::${name}`;
+      clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-  }
-  return groups.filter((group) => sharedPersonGroupIsNameAgreed(group, entitiesById));
+    return [...clusters.values()].flatMap((entities) => sharedPersonGroup(row, entities));
+  });
 }
 
 export function buildMultiPersonEntityQuarantine(

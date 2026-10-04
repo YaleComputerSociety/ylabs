@@ -111,6 +111,39 @@ describe('selectEponymousFraLabMergeGroups', () => {
     expect(groups).toHaveLength(0);
   });
 
+  it('keeps a lead-named LAB whose site sits at a bare name path concrete', () => {
+    const groups = selectEponymousFraLabMergeGroups([
+      eponymousShellRow({
+        entities: [
+          {
+            id: 'topical-lab',
+            slug: 'analytical-engine-lab',
+            name: 'Analytical Engine Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://analyticalengine.yale.edu/',
+            sourceUrls: ['https://analyticalengine.yale.edu/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'name-path-lab',
+            slug: 'ada-lovelace-lab',
+            name: 'Ada Lovelace Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://campuspress.yale.edu/adalovelace',
+            sourceUrls: ['https://campuspress.yale.edu/adalovelace'],
+            departments: ['Computer Science'],
+          },
+          eponymousShellRow().entities[1],
+        ],
+      }),
+    ]);
+    for (const group of groups) {
+      expect(group.duplicateEntityIds).not.toContain('name-path-lab');
+    }
+  });
+
   it('never merges an FRA shell into a CENTER when the same PI leads a center but no lab', () => {
     const groups = selectEponymousFraLabMergeGroups([
       {
