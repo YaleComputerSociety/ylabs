@@ -254,6 +254,10 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
       leadMembers: [],
       relatedEntityAccessPathCount: 1,
     }),
+  lead_title_pending_policy: () =>
+    researchReasons({
+      leadMembers: [{ userId: 'user-example-lead', role: 'pi', title: 'Clinical Fellow' }],
+    }),
   unbacked_lab_name: () =>
     researchReasons({
       entity: {

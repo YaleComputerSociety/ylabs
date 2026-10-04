@@ -2,6 +2,10 @@ import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import {
+  LEAD_TITLE_PENDING_POLICY_REASON,
+  leadTitlesArePendingPolicy,
+} from '../utils/leadTitlePendingPolicy';
+import {
   isStudiesResearchAreaEchoDescription,
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
@@ -773,6 +777,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'permanently_closed',
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
+  LEAD_TITLE_PENDING_POLICY_REASON,
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
@@ -1034,7 +1039,8 @@ export function computeResearchEntityStudentVisibility({
   if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
   if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
-  if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
+  const missingLead = requiresLead && quality.leadState !== 'lead_attached';
+  if (missingLead) reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
@@ -1043,6 +1049,8 @@ export function computeResearchEntityStudentVisibility({
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (unbackedLabName) reasons.push('unbacked_lab_name');
+  const leadTitlePendingPolicy = !missingLead && leadTitlesArePendingPolicy(leadMembers);
+  if (leadTitlePendingPolicy) reasons.push(LEAD_TITLE_PENDING_POLICY_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
@@ -1065,7 +1073,9 @@ export function computeResearchEntityStudentVisibility({
     // does not match the content underneath it either.
     entityContentMatchesCard: !labNameOrgTypeMismatch && !unbackedLabName,
     rightLeadAttached:
-      (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
+      (!requiresLead || quality.leadState === 'lead_attached') &&
+      !profileIdentityRisk &&
+      !leadTitlePendingPolicy,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
     // same correctness question: does a real source stand behind this card (#2635).
@@ -1098,6 +1108,7 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
+    !leadTitlePendingPolicy &&
     !duplicateRisk &&
     hasUsableName
   ) {
