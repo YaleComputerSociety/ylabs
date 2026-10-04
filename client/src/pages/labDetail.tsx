@@ -33,6 +33,7 @@ import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
+import OperatorPreviewNotice from '../components/labs/OperatorPreviewNotice';
 import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
@@ -966,6 +967,7 @@ const LabDetail = () => {
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
     similarResearchEntities = [],
+    operatorPreview,
   } = payload;
   const group = legacyGroup ?? researchEntity;
   const dedupedRelatedResearchEntities = dedupeResearchEntitySummaries(relatedResearchEntities);
@@ -1133,6 +1135,7 @@ const LabDetail = () => {
     <div className={researchProfilePageClassName} onClickCapture={handleDetailLinkOpen}>
       <div className={researchProfileGridClassName}>
         <div className={researchProfileColumnClassName}>
+          {operatorPreview && <OperatorPreviewNotice preview={operatorPreview} />}
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
               kind="researchPlan"
