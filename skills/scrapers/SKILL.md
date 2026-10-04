@@ -776,6 +776,9 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   `buildOrchestrator()` is the authority for sweep dispatch, because the CLI and the sweep both resolve a source name through it; a `Source` row it does not name cannot be crawled whatever the row says.
   A row that is neither registered, nor declared script-driven, nor retired is `unowned`, and `scrapers:audit-freshness` fails on it rather than listing it as pending work.
   Retiring a lane means adding its name here and applying `scrape:seed-sources`, which stamps `enabled: false`, `cadence: 'retired'`, and a retirement note while leaving stored observations and scrape runs intact as evidence.
+- `grantLaneSourceNames.ts` - `GRANT_LANE_SOURCE_NAMES`, the one list of funding lanes that a script asking "is this evidence only a grant record?" reads.
+  Import it rather than typing a copy: three scripts once carried their own copies naming `neh-grants` and `federal-award-search`, neither ever registered, so they never recognised NEH evidence (#4567).
+  `__tests__/grantLaneSourceNames.test.ts` fails when the list names an unregistered scraper or differs from the sweep's `funding` phase, so adding or retiring a funding lane means updating it.
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities, and a `deadEndTombstoneChains` warning for malformed tombstone pointers), with recommended CLI repair commands
   Most checks collect at most `--limit` rows (1 without `--include-samples`), and duplicate people and same-PI duplicates also stop at an internal scan cap, so a count that reaches its cap is a lower bound and `countLabels` renders it as "at least N".
   Never size a repair from a capped count (#3578).

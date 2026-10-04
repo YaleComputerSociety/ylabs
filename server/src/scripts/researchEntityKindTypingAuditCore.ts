@@ -7,6 +7,7 @@
  * demotes, merges or suppresses a row, because a contradicting row may be mis-typed
  * or mis-named and the name is the field already in doubt.
  */
+import { GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
 import {
   researchEntityTypeNameContradiction,
   type ResearchEntityTypeNameContradiction,
@@ -53,12 +54,7 @@ export interface KindTypingLabAssertionInput {
  * Lanes that can fund a person but cannot assert that an organization exists, so a lab
  * claim resting only on one of them rests on nothing (#3145).
  */
-export const NON_ORGANIZATION_ASSERTING_LANES: readonly string[] = [
-  'nih-reporter',
-  'nsf-award-search',
-  'doe-osti',
-  'neh-grants',
-];
+export const NON_ORGANIZATION_ASSERTING_LANES: readonly string[] = GRANT_LANE_SOURCE_NAMES;
 
 export interface KindTypingWriterKeyedReport {
   /**

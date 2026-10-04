@@ -15,8 +15,8 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
 import {
-  GRANT_LANE_SOURCE_NAMES,
   entityKeysWhoseLabClaimOnlyAGrantLaneWrote,
   entityKeysWithNonGrantLabEvidence,
   planGrantMintedLabShellRetype,
