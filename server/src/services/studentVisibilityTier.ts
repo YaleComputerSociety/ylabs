@@ -1039,7 +1039,8 @@ export function computeResearchEntityStudentVisibility({
   if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
   if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
-  if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
+  const missingLead = requiresLead && quality.leadState !== 'lead_attached';
+  if (missingLead) reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
@@ -1048,7 +1049,7 @@ export function computeResearchEntityStudentVisibility({
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (unbackedLabName) reasons.push('unbacked_lab_name');
-  const leadTitlePendingPolicy = leadTitlesArePendingPolicy(leadMembers);
+  const leadTitlePendingPolicy = !missingLead && leadTitlesArePendingPolicy(leadMembers);
   if (leadTitlePendingPolicy) reasons.push(LEAD_TITLE_PENDING_POLICY_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');

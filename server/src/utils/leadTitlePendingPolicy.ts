@@ -6,7 +6,7 @@ export const LEAD_TITLE_PENDING_POLICY_REASON = 'lead_title_pending_policy';
 // (2026-10-04). A ruling moves a rank out of this list: to the retirement stage's
 // non-hosting ranks, or off the list entirely so the row serves again.
 const RANKS_PENDING_POLICY =
-  /\bstaff affiliate\b|\bclinical fellow\b|\b(?:hospital )?resident\b|\bpostgraduate associate\b/i;
+  /\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bpostgraduate associate\b/i;
 
 const titleOf = (member: Record<string, any>): string => {
   const title = member?.title ?? member?.user?.title;

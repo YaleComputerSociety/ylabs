@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeResearchEntityStudentVisibility } from '../../services/studentVisibilityTier';
+import { leadWouldUnblock } from '../../scripts/attachFraNamedLeadsCore';
 import { leadTitlesArePendingPolicy } from '../leadTitlePendingPolicy';
 
 const lead = (title?: string) => ({
@@ -32,6 +33,7 @@ describe('leadTitlesArePendingPolicy', () => {
     ).toBe(false);
     expect(leadTitlesArePendingPolicy([lead('Associate Research Scholar')])).toBe(false);
     expect(leadTitlesArePendingPolicy([lead('President of the Fixture Society')])).toBe(false);
+    expect(leadTitlesArePendingPolicy([lead('Chief Resident')])).toBe(false);
   });
 });
 
@@ -62,5 +64,13 @@ describe('the gate holds a pending-policy lead at operator review', () => {
     expect(held.tier).toBe('operator_review');
     expect(held.reasons).toContain('lead_title_pending_policy');
     expect(tierFor([lead('Associate Professor of Astronomy')]).tier).toBe('student_ready');
+  });
+
+  it('leaves a lead that already reads as missing to the lead-attachment lanes', () => {
+    const missing = tierFor([lead('Postgraduate Associate')]);
+    expect(missing.tier).toBe('operator_review');
+    expect(missing.reasons).toContain('missing_lead');
+    expect(missing.reasons).not.toContain('lead_title_pending_policy');
+    expect(leadWouldUnblock({ studentVisibilityReasons: missing.reasons } as any)).toBe(true);
   });
 });
