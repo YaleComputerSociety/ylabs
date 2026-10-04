@@ -2226,11 +2226,6 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
   return pool.sort((a, b) => b.length - a.length)[0] || '';
 }
 
-/**
- * Mirrors the plan builders' `trustedAreaShellEntities` guard: an area or funding
- * shell's generated blurb must never be promoted onto a real research home. Falls
- * back to the full set when every twin is a shell, matching the plan's own fallback.
- */
 const MERGE_SURVIVOR_PROSE_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
 
 // Mirrors the materializer's merged-survivor prose rule (#3584, #4742): a merged-in
@@ -2241,6 +2236,11 @@ export function mergeSurvivorHoldsOwnProse(doc: Record<string, any> | null | und
   return MERGE_SURVIVOR_PROSE_FIELDS.some((field) => String(doc?.[field] ?? '').trim().length > 0);
 }
 
+/**
+ * Mirrors the plan builders' `trustedAreaShellEntities` guard: an area or funding
+ * shell's generated blurb must never be promoted onto a real research home. Falls
+ * back to the full set when every twin is a shell, matching the plan's own fallback.
+ */
 function describableMergeTwins(docs: Array<Record<string, any>>): Array<Record<string, any>> {
   const trusted = docs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
   return trusted.length > 0 ? trusted : docs;

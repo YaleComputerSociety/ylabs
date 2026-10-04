@@ -112,11 +112,11 @@ describe('dedupe merge description hydration (#2208)', () => {
       .collection('research_entities')
       .insertMany([
         {
-          ...entityDoc(survivorId, 'ysm-faculty-valerie-horsley', THIN_FULL),
+          ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', THIN_FULL),
           studentVisibilityTier: 'suppressed',
         },
         {
-          ...entityDoc(twinId, 'dept-mcdb-valerie-horsley', RICH_FULL),
+          ...entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
           shortDescription: '',
           studentVisibilityTier: 'suppressed',
         },
@@ -147,8 +147,8 @@ describe('dedupe merge description hydration (#2208)', () => {
     await db
       .collection('research_entities')
       .insertMany([
-        { ...entityDoc(survivorId, 'ysm-faculty-valerie-horsley', ''), shortDescription: '' },
-        entityDoc(twinId, 'dept-mcdb-valerie-horsley', RICH_FULL),
+        { ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', ''), shortDescription: '' },
+        entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
       ]);
 
     await applyResearchEntityDedupeMergeGroup(
