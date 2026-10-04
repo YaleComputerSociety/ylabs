@@ -57,7 +57,8 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     () => ReturnType<typeof refusalFor>
   > = {
     rejected_source_url: () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' }),
-    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, {
+    shared_evidence_url: () =>
+      refusalFor(RESEARCH_PROSE, {
         descriptionSourceForeignCiterNames: ['Marrowind Center', 'Peltasker Institute'],
       }),
     institution_landing_url: () => refusalFor(RESEARCH_PROSE, { institutionLandingUrl: true }),
