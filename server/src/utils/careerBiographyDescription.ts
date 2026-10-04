@@ -222,8 +222,8 @@ export function isCareerBiographyDescription(value: unknown): boolean {
 const RESEARCH_STATEMENT_SUBJECT = [
   "(?:[Hh]is|[Hh]er|[Tt]heir|[Mm]y|[Oo]ur|(?:[A-Z][A-Za-z.'’-]+\\s+){0,3}[A-Z][A-Za-z.'’-]*?(?:['’]s|s['’]))\\s+(?:(?:current|primary|main|principal|recent|ongoing|academic|other)\\s+)?" +
     '(?:(?:areas?|fields?)\\s+of\\s+(?:academic\\s+)?(?:research|study|expertise)' +
-    '|(?:teaching\\s+and\\s+)?research(?:\\s+and\\s+teaching)?(?:\\s+(?:interests?|program|agenda))?' +
-    '|scholarship)',
+    '|(?:teaching\\s+and\\s+)?research(?:\\s+and\\s+teaching)?(?:\\s+(?:interests?|program|agenda|areas?))?' +
+    '|scholarly\\s+work|scholarship)',
   'The\\s+(?:(?:primary|main|central|principal)\\s+)?focus\\s+of\\s+(?:his|her|their|my|our)\\s+' +
     '(?:(?:current|recent)\\s+)?(?:research|scholarship)',
 ].join('|');
@@ -291,7 +291,7 @@ const CV_RECORD_SENTENCE =
 const CV_CITATION_SENTENCE =
   /\b(?:de\s+Gruyter|Brill|Routledge|OUP|CUP|(?!The\b)[A-Z][\p{L}&]+\s+Press)\b[^.]{0,40}\b(?:19|20)\d{2}\b|\([Ee]dd?s?\.\)|\b[Ee]dd?s?\.\s+(?:by\s+)?[A-Z]|\b(?:[Ff]ull|[Cc]omplete|[Dd]ownload|[Ss]ee|[Vv]iew)\s+(?:the\s+)?CV\b|\b[Ss]earch\s+for\s+(?:a|the)\s+new\s+(?:[\p{L}-]+\s+)?(?:chair|dean|director|faculty|professor|head)\b|^(?:[A-Z]\.\s?){1,3}[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+)?\s+and\s+(?:[A-Z]\.\s?){1,3}/u;
 
-const isCurriculumVitaeRecordSentence = (sentence: string): boolean =>
+export const isCurriculumVitaeRecordSentence = (sentence: string): boolean =>
   CV_RECORD_SENTENCE.test(sentence) || CV_CITATION_SENTENCE.test(sentence);
 
 /**

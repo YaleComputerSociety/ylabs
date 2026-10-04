@@ -726,3 +726,47 @@ describe('a biography that states no research', () => {
     expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
   });
 });
+
+describe('a biography that states no research beside a card that does', () => {
+  const served = (fullDescription: string, shortDescription: string) =>
+    buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        fullDescription,
+        shortDescription,
+      },
+    });
+
+  const CAREER_ONLY =
+    'Robin Fixture has been a consultant to several documentary films, including an example series (2012). Robin Fixture has a Ph.D. from Example University and did an undergraduate degree at Another University. Robin Fixture has also taught at Third University and was a senior Fulbright Professor in 1992-93.';
+
+  it('serves the card as the body', () => {
+    const representation = served(
+      CAREER_ONLY,
+      "Robin Fixture's research focuses on how coastal towns adapt to repeated flooding, using archival records and household surveys.",
+    );
+    expect(representation.entity.fullDescription).toMatch(/adapt to repeated flooding/);
+    expect(representation.entity.fullDescription).not.toMatch(/consultant|Fulbright|Ph\.D\./);
+  });
+
+  it('holds the row when the card is a citation rather than a research statement', () => {
+    const representation = served(
+      CAREER_ONLY,
+      'Example Studies 78 Coastal Towns and the Politics of Flooding. 2020.',
+    );
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(true);
+  });
+
+  it('reads "<name> primary research area focuses on" as a research statement', () => {
+    const representation = served(
+      "Robin Fixture joined the faculty in 2012 after teaching at Example College. Robin Fixture's primary research area focuses on household finance and labor markets. Robin Fixture has published in Example Journal and Another Journal.",
+      'Studies household finance and labor markets.',
+    );
+    expect(representation.entity.fullDescription).toContain('household finance and labor markets');
+    expect(representation.entity.fullDescription).not.toMatch(
+      /joined the faculty|has published in/,
+    );
+  });
+});

@@ -22,6 +22,7 @@ import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLe
 import {
   careerBiographyOpening,
   isCareerFactSentence,
+  isCurriculumVitaeRecordSentence,
   isCurriculumVitaeShapedBody,
   opensOnResearchHomeSubject,
   researchStatementSentences,
@@ -169,7 +170,16 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
       input.entity,
       input.leadMemberNames || publicDescriptionLeadMemberNames(input.leadMembers),
     );
-    if (!narrowedBody) return derivePublicDescriptionRepresentation(input);
+    if (!narrowedBody) {
+      const whole = derivePublicDescriptionRepresentation(input);
+      const cardBody = cardServedInPlaceOfAResearchlessBiography(whole);
+      if (!cardBody) return whole;
+      const cardOnly = derivePublicDescriptionRepresentation({
+        ...input,
+        entity: { ...input.entity, fullDescription: cardBody },
+      });
+      return cardOnly.invariant.pass && cardOnly.quality.full.isUseful ? cardOnly : whole;
+    }
     const narrowed = derivePublicDescriptionRepresentation({
       ...input,
       entity: { ...input.entity, fullDescription: narrowedBody },
@@ -526,12 +536,38 @@ function withThinButAccurateBodyUsable(
  * page tells a student nothing about the work, so it is held for review unless the
  * served card states the research itself.
  */
-export function servedBodyIsBiographyWithoutResearch(
-  representation: ResearchEntityPublicDescriptionRepresentation,
-): boolean {
-  const entity = representation.entity;
+const CITATION_LIKE_CARD =
+  /\((?:19|20)\d{2}\)|\b(?:19|20)\d{2}\b[^.]{0,80}\b(?:Review|Journal|Studies|Quarterly|Press|Proceedings)\b|\b(?:Review|Journal|Studies|Quarterly)(?:\s+of\s+[A-Z][\p{L}]+(?:\s+[A-Z][\p{L}]+)*)?,?\s+\d{1,3}\b|\bet al\b/u;
+const DEGREE_FRAGMENT_CARD =
+  /^(?:[A-Z]\.\s?){1,3}(?:[A-Z][a-z]|in\b)|\b(?:B\.?A|B\.?S|M\.?A|M\.?S|Ph\.?\s?D)\b[^.]{0,60}\b(?:University|College)\b/;
+const SITE_TAGLINE_CARD =
+  /^(?:Official\s+(?:site|website|homepage|page)|Welcome\s+to|Home\s*page)\b/i;
+
+// A card speaks for the research only when it states the research itself. A citation,
+// a degree line, a site tagline or a career record in the card slot reads as research
+// to the focus test because it names topics, but it tells a student nothing the
+// biography beside it does not.
+function cardStatesResearchItself(card: unknown): boolean {
+  const text = textValue(card);
+  return (
+    Boolean(text) &&
+    describesResearchFocus(text) &&
+    !isCurriculumVitaeRecordSentence(text) &&
+    !CITATION_LIKE_CARD.test(text) &&
+    !DEGREE_FRAGMENT_CARD.test(text) &&
+    !SITE_TAGLINE_CARD.test(text)
+  );
+}
+
+// A body sentence that names research topics counts as research unless it is itself a
+// career record or a citation, which name topics as titles rather than state work.
+const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
+  describesResearchFocus(sentence) &&
+  !isCurriculumVitaeRecordSentence(sentence) &&
+  !CITATION_LIKE_CARD.test(sentence);
+
+function isResearchlessBiographyBody(entity: Record<string, any>, body: string): boolean {
   if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return false;
-  const body = textValue(entity.fullDescription);
   if (!body) return false;
   const biography =
     isCurriculumVitaeShapedBody(body) ||
@@ -543,10 +579,29 @@ export function servedBodyIsBiographyWithoutResearch(
   // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
   // served and labelled creative practice, never withheld for stating no research.
   if (decideCreativePractice({ ...entity, fullDescription: body }).creativePractice) return false;
+  return researchStatementSentences(body, { activityAnchors: true }).length === 0;
+}
+
+// A biography that states no research beside a card that does: the card is the only
+// research text the row has, so it is served as the body rather than the career it
+// would otherwise sit above.
+function cardServedInPlaceOfAResearchlessBiography(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): string {
+  const body = textValue(representation.entity.fullDescription);
+  if (!isResearchlessBiographyBody(representation.entity, body)) return '';
+  if (splitDescriptionSentences(body).some(isResearchFocusSentenceOutsideTheRecord)) return '';
+  const card = textValue(representation.servedCard);
+  return cardStatesResearchItself(card) ? card : '';
+}
+
+export function servedBodyIsBiographyWithoutResearch(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const body = textValue(representation.entity.fullDescription);
+  if (!isResearchlessBiographyBody(representation.entity, body)) return false;
   if (splitDescriptionSentences(body).some((sentence) => describesResearchFocus(sentence))) {
     return false;
   }
-  if (researchStatementSentences(body, { activityAnchors: true }).length > 0) return false;
-  const card = textValue(representation.servedCard);
-  return !describesResearchFocus(card);
+  return !cardStatesResearchItself(representation.servedCard);
 }
