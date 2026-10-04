@@ -226,8 +226,8 @@ function opensOnCareerFact(body: string): boolean {
   return !opensOnResearchHomeSubject(opening.join(' ')) && opening.some(isCareerFactSentence);
 }
 
-// A CV body narrowed to its research sentences is served only when the narrowed
-// body and its card still serve. Narrowing can leave a body too thin for a card the
+// A CV body narrowed to its research sentences is served when the narrowed body and
+// its card still serve, or when the whole body serves no card either. Narrowing can leave a body too thin for a card the
 // whole biography supported, and an accurate row should not leave the directory
 // because its biography was trimmed.
 function representationServesCard(
