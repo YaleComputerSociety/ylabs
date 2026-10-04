@@ -1463,6 +1463,16 @@ function pressFeatureShapeFlag(text: string): DescriptionQualityFlag | null {
   return shape === 'publication-list' ? 'paper-fragment' : 'source-news-fragment';
 }
 
+// A lab homepage's news column copied into the body: talks given, preprints posted,
+// papers accepted. Two such items mean the body is the page, not a description.
+const ANNOUNCEMENT_ITEM =
+  /\b(?:lightning\s+talk|invited\s+talk|keynote\s+(?:talk|address)|(?:is|are)\s+(?:now\s+)?(?:available|out)\s+on\s+(?:arxiv|biorxiv|medrxiv)|preprint\s+(?:is\s+)?(?:available|posted|out)|(?:paper|work|article)\s+(?:was\s+|has\s+been\s+)?accepted\s+(?:at|to|in))\b/i;
+const MIN_ANNOUNCEMENT_ITEMS = 2;
+const countsAnnouncementItems = (text: string): number =>
+  text.split(/(?<=[.!?])\s+/).filter((sentence) => ANNOUNCEMENT_ITEM.test(sentence)).length;
+const isAnnouncementColumn = (text: string): boolean =>
+  countsAnnouncementItems(text) >= MIN_ANNOUNCEMENT_ITEMS;
+
 function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
@@ -1529,6 +1539,14 @@ function computeFullDescriptionQuality(
   }
   const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
   if (pressFeatureFlag) flags.push(pressFeatureFlag);
+  if (
+    text &&
+    isAnnouncementColumn(text) &&
+    !isConciseSpecificResearchDescription(text) &&
+    !hasExplicitProfileResearchFocus(text)
+  ) {
+    flags.push('source-news-fragment');
+  }
   const nonResearchShape = text ? nonResearchBodyShape(text, entityType) : null;
   if (nonResearchShape) flags.push(nonResearchShape);
   if (!nonResearchShape && text && isPracticeBiographyWithoutResearch(text)) {

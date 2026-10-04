@@ -1555,9 +1555,9 @@ const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
  * style and, unlike a pronoun, infers nothing about the person: this corpus stores no
  * pronoun and a name does not imply one.
  *
- * A lab keeps its own name throughout ("the Pollard Lab"), never the stripped
- * surname. `stripFacultyResearchAreaNameTemplateSuffix` reduces "Pollard Lab" to
- * "Pollard", so the surname form is only ever right for a person.
+ * A lab is introduced by its own name ("the Pollard Lab") and then referred to as
+ * "the lab", never the stripped surname. `stripFacultyResearchAreaNameTemplateSuffix`
+ * reduces "Pollard Lab" to "Pollard", so the surname form is only ever right for a person.
  */
 interface LeadSubjectForms {
   first: string;
@@ -1565,6 +1565,7 @@ interface LeadSubjectForms {
   lowerFirst: string;
   lowerLater: string;
   namesTheRow: boolean;
+  alreadyNamedBy?: string;
 }
 
 const LEAD_DEFINITE_ARTICLE_PREFIX = /^the\s+/i;
@@ -1577,12 +1578,15 @@ function leadSubjectForms(entity?: FacultyResearchTextEntity | null): LeadSubjec
     const entityName = textValue(entity?.displayName || entity?.name).trim();
     if (!entityName) return undefined;
     const bare = entityName.replace(LEAD_DEFINITE_ARTICLE_PREFIX, '');
+    // Repeating a long formal name on every revoiced "our" reads as a copied
+    // fragment and fails the duplicated-fragment check, so later mentions are "the lab".
     return {
       first: `The ${bare}`,
-      later: `The ${bare}`,
+      later: 'The lab',
       lowerFirst: `the ${bare}`,
-      lowerLater: `the ${bare}`,
+      lowerLater: 'the lab',
       namesTheRow: true,
+      alreadyNamedBy: bare,
     };
   }
   if (!isFacultyResearchTextEntity(entity)) return undefined;
@@ -1617,7 +1621,9 @@ const LEAD_MARKER_PATTERN = /\uE000[AaBb]\uE001/g;
 export const LEAD_SUBJECT_MARKER_PATTERN = LEAD_MARKER_PATTERN;
 
 function resolveLeadSubjectMarkers(text: string, forms: LeadSubjectForms): string {
-  let seen = false;
+  const firstMarker = text.search(LEAD_MARKER_PATTERN);
+  const prefix = firstMarker < 0 ? '' : text.slice(0, firstMarker).toLowerCase();
+  let seen = Boolean(forms.alreadyNamedBy) && prefix.includes(forms.alreadyNamedBy!.toLowerCase());
   return text.replace(LEAD_MARKER_PATTERN, (marker) => {
     const code = marker[1];
     const possessive = code === 'B' || code === 'b';
