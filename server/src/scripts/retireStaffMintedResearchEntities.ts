@@ -17,11 +17,13 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   STAFF_MINTED_ENTITY_ARCHIVE_REASON,
+  STAFF_MINTED_ENTITY_REASON_PRECEDENCE,
   isPersonProfileIdentityUrl,
   planStaffMintedEntityRetirement,
   summarizeStaffMintedEntityReasons,
   summarizeStaffMintedEntityRefusals,
   type StaffMintedEntityCandidate,
+  type StaffMintedEntityReason,
 } from './retireStaffMintedResearchEntitiesCore';
 
 dotenv.config({ quiet: true });
@@ -35,7 +37,11 @@ export interface RetireStaffMintedEntitiesCliOptions {
   maxApply: number;
   output?: string;
   outputRequested?: boolean;
+  reasons?: StaffMintedEntityReason[];
 }
+
+const isStaffMintedEntityReason = (value: string): value is StaffMintedEntityReason =>
+  (STAFF_MINTED_ENTITY_REASON_PRECEDENCE as readonly string[]).includes(value);
 
 export function parseRetireStaffMintedEntitiesArgs(
   argv: string[],
@@ -67,6 +73,16 @@ export function parseRetireStaffMintedEntitiesArgs(
         throw new Error('--max-apply must be a safe positive integer');
       }
       options.maxApply = parsed;
+      continue;
+    }
+    if (arg.startsWith('--reason=')) {
+      const reason = arg.slice('--reason='.length).trim();
+      if (!isStaffMintedEntityReason(reason)) {
+        throw new Error(
+          `--reason must be one of ${STAFF_MINTED_ENTITY_REASON_PRECEDENCE.join(', ')}; received ${JSON.stringify(reason)}`,
+        );
+      }
+      options.reasons = [...new Set([...(options.reasons || []), reason])];
       continue;
     }
     if (arg.startsWith('--output=')) {
@@ -183,6 +199,14 @@ async function deleteSearchDocuments(
   } catch (error) {
     return { requested: ids.length, deleted: false, error: String(sanitizeLogValue(error)) };
   }
+}
+
+export function entriesInReasonScope<T extends { reason: StaffMintedEntityReason }>(
+  entries: readonly T[],
+  reasons: readonly StaffMintedEntityReason[] | undefined,
+): T[] {
+  if (!reasons || reasons.length === 0) return [...entries];
+  return entries.filter((entry) => reasons.includes(entry.reason));
 }
 
 async function main(): Promise<void> {
@@ -315,7 +339,7 @@ async function main(): Promise<void> {
   });
 
   const plan = planStaffMintedEntityRetirement(candidates);
-  const toApply = plan.toArchive.slice(0, args.maxApply);
+  const toApply = entriesInReasonScope(plan.toArchive, args.reasons).slice(0, args.maxApply);
 
   const report: Record<string, unknown> = {
     script: SCRIPT_NAME,
@@ -333,6 +357,8 @@ async function main(): Promise<void> {
     }, {}),
     refusedByReason: summarizeStaffMintedEntityRefusals(plan.refused),
     appliedLimit: args.maxApply,
+    reasonScope: args.reasons || 'all',
+    plannedInReasonScope: entriesInReasonScope(plan.toArchive, args.reasons).length,
     // The pre-apply state of exactly the rows this run touches. A peer session
     // writes Development concurrently, so a post-hoc tier delta over the corpus
     // cannot be attributed to this run without it.

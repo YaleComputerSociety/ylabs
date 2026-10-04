@@ -33,7 +33,7 @@ import {
   updateWatchedProgramPlan,
 } from '../researchPlanService';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
-import { researchPlanSchema } from '../../models/researchPlan';
+import { RESEARCH_PLAN_RESTORE_WINDOW_MS, researchPlanSchema } from '../../models/researchPlan';
 import { RoleAssignment } from '../../models/roleAssignment';
 
 const NETID = 'teststud1';
@@ -144,6 +144,26 @@ describe('researchPlanService saved plans', () => {
     expect(resavedPlans[entityId].deadlines).toEqual([]);
     expect(resavedPlans[entityId].stage).toBe('SAVED');
     expect((await findPlan(ENTITY_ID))?.restorableUntil).toBeUndefined();
+  });
+
+  it('stamps the restore window on the plan an unsave or an unwatch archives (#4163)', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    const programId = PROGRAM_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await addWatchedPrograms(NETID, [programId]);
+
+    const before = Date.now();
+    await removeSavedResearchEntities(NETID, [entityId]);
+    await removeWatchedPrograms(NETID, [programId]);
+    const after = Date.now();
+
+    for (const targetId of [ENTITY_ID, PROGRAM_ID]) {
+      const archived = await findPlan(targetId);
+      expect(archived?.archived).toBe(true);
+      const until = (archived?.restorableUntil as Date).getTime();
+      expect(until).toBeGreaterThanOrEqual(before + RESEARCH_PLAN_RESTORE_WINDOW_MS);
+      expect(until).toBeLessThanOrEqual(after + RESEARCH_PLAN_RESTORE_WINDOW_MS);
+    }
   });
 
   it('declares a TTL index that deletes an archived plan when its restore window passes', () => {

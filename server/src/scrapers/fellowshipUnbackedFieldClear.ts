@@ -29,7 +29,11 @@
 import { CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS } from './fellowshipClassificationDerivation';
 import { FUND_AUTHORITY_FIELDS } from './fellowshipSourcePrecedence';
 
-export const FELLOWSHIP_EVIDENCE_ONLY_FIELDS: readonly string[] = ['summary'];
+export const FELLOWSHIP_EVIDENCE_ONLY_FIELDS: readonly string[] = [
+  'summary',
+  'contactEmail',
+  'contactName',
+];
 
 export function assertFellowshipEvidenceOnlyFieldsAreClearable(
   fields: readonly string[] = FELLOWSHIP_EVIDENCE_ONLY_FIELDS,

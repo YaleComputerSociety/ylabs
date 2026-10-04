@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  entriesInReasonScope,
   hasForeignWebsite,
   identityProfileUrlOf,
   parseRetireStaffMintedEntitiesArgs,
@@ -106,5 +107,31 @@ describe('parseRetireStaffMintedEntitiesArgs', () => {
     const args = parseRetireStaffMintedEntitiesArgs(['--output=']);
     expect(args.outputRequested).toBe(true);
     expect(args.output).toBe('');
+  });
+});
+
+describe('reason scope', () => {
+  it('reads each --reason as a scope and refuses a reason the stage does not plan', () => {
+    expect(parseRetireStaffMintedEntitiesArgs([]).reasons).toBeUndefined();
+    expect(
+      parseRetireStaffMintedEntitiesArgs(['--reason=student_title', '--reason=student_title'])
+        .reasons,
+    ).toEqual(['student_title']);
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--reason=postdoc'])).toThrow(/--reason/);
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--reason='])).toThrow(/--reason/);
+  });
+
+  it('archives only the planned rows whose reason is in scope', () => {
+    const planned = [
+      { id: 'a', reason: 'student_title' as const },
+      { id: 'b', reason: 'non_hosting_trainee_title' as const },
+      { id: 'c', reason: 'student_title' as const },
+    ];
+    expect(entriesInReasonScope(planned, ['student_title']).map((entry) => entry.id)).toEqual([
+      'a',
+      'c',
+    ]);
+    expect(entriesInReasonScope(planned, undefined)).toHaveLength(3);
+    expect(entriesInReasonScope(planned, [])).toHaveLength(3);
   });
 });

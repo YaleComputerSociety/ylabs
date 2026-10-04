@@ -1827,6 +1827,14 @@ describe('buildResearchEntityPiDedupePlan', () => {
     });
   });
 
+  it('keeps an archived duplicate research plan out of the restore-window TTL, so its private notes survive (#4163)', () => {
+    const now = new Date('2026-05-31T12:00:00Z');
+
+    expect(
+      buildArchivedDocumentArchiveUpdate({ now, includeRelink: false }).$set,
+    ).not.toHaveProperty('restorableUntil');
+  });
+
   it('names the dedupe lane on an archived artifact, so the write is attributable', () => {
     const now = new Date('2026-05-31T12:00:00Z');
 
