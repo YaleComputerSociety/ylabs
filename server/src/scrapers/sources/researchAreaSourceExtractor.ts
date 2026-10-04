@@ -1,8 +1,6 @@
-import axios from 'axios';
-import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
 import {
   evidenceUrlCiterCounts,
@@ -478,21 +476,12 @@ export function researchAreaObservationsFromExtraction(
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
-  // SSRF guard: url is a DB-sourced research-entity website - block private/metadata
-  // hosts and validate redirect hops at connect time.
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
-  const agents = ssrfSafeAgents();
-  const res = await retryOnRetryableStatus(() =>
-    axios.get(safeUrlText, {
-      timeout: 10_000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-      maxRedirects: 5,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-    }),
-  );
-  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
+  const page = await fetchPageWithPolicy(url, {
+    timeoutMs: 10_000,
+    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    maxRedirects: 5,
+  });
+  return { url: page.url, html: page.html };
 }
 
 // Only a scoped run reaches a row whose stored areas no live evidence backs: an unscoped

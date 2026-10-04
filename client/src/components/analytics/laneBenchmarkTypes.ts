@@ -33,8 +33,40 @@ export interface LaneBenchmarkTrend {
   change: LaneBenchmarkChange;
 }
 
+export interface EngineBenchmarkRun {
+  measuredAt: string | null;
+  codeSha: string | null;
+  rowsReplayed: number;
+  rowsWithIncompleteInput: number;
+  invalidatedRunSetChanged: boolean;
+  resolved: number;
+  cleared: number;
+  knownWrong: number;
+  labelsMatched: number;
+  labelCount: number;
+  outputFingerprint: string;
+}
+
+export type EngineBenchmarkChange = LaneBenchmarkChange | 'input-incomplete';
+
+export interface EngineBenchmarkTrend {
+  benchmarkId: string;
+  stage: string;
+  runs: number;
+  latest: EngineBenchmarkRun;
+  previous: EngineBenchmarkRun | null;
+  change: EngineBenchmarkChange;
+}
+
+export interface EngineBenchmarkResponse {
+  benchmarks: EngineBenchmarkTrend[];
+  measurementCollection: string;
+  refreshCommand: string;
+}
+
 export interface LaneBenchmarkResponse {
   benchmarks: LaneBenchmarkTrend[];
   measurementCollection: string;
   refreshCommand: string;
+  engine?: EngineBenchmarkResponse;
 }

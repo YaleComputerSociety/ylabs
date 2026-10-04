@@ -466,7 +466,8 @@ export class NehGrantScraper implements IScraper {
     const researchHomeResolver =
       this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
     const lookbackYears = this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS;
-    const currentYear = this.deps.currentYear ?? new Date().getFullYear();
+    const currentYear =
+      this.deps.currentYear ?? (ctx.options.referenceDate ?? new Date()).getFullYear();
     const cutoffYear = currentYear - lookbackYears;
 
     const limitOption = ctx.options.limit;

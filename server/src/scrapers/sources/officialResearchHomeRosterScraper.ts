@@ -397,7 +397,7 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
     let withheld = 0;
 
     for (const config of selected) {
-      const observedAt = new Date();
+      const observedAt = context.options.referenceDate ?? new Date();
       try {
         const html = await this.fetchPage(config.url, context.options.useCache);
         const roster = extractOfficialResearchHomeRoster(html, config, observedAt);

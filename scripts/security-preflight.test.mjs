@@ -4195,26 +4195,30 @@ test('undergraduate fellowship recipient scraper fetches configured recipient pa
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
 
-test('LLM and profile fetchers use the normalized SSRF-safe URL for axios requests', () => {
+test('LLM center fetchers fetch pages through the SSRF-guarded policy fetch', () => {
   const fetcherFiles = [
     '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
     '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
+    '../server/src/scrapers/sources/researchAreaSourceExtractor.ts',
   ];
 
   for (const file of fetcherFiles) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
 
-    assert.match(source, /assertPublicHttpUrl/);
-    assert.match(source, /ssrfSafeAgents/);
-    assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-    assert.match(source, /const safeUrlText = safeUrl\.toString\(\)/);
-    assert.match(source, /axios\.get\(safeUrlText, \{/);
+    assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
+    assert.match(source, /await fetchPageWithPolicy\(url, \{/);
     assert.match(source, /maxRedirects: 5/);
-    assert.match(source, /httpAgent: agents\.httpAgent/);
-    assert.match(source, /httpsAgent: agents\.httpsAgent/);
-    assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+    assert.doesNotMatch(source, /axios\.get\(/);
     assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
   }
+
+  const policyFetch = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(policyFetch, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
+  assert.match(policyFetch, /httpAgent: agents\.httpAgent/);
+  assert.match(policyFetch, /httpsAgent: agents\.httpsAgent/);
 });
 
 test('shared microsite fetch policy enforces the SSRF guard before requesting untrusted URLs', () => {

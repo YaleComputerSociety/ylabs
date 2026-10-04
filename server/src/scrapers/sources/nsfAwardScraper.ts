@@ -400,8 +400,8 @@ export interface NsfAwardScraperDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
-function defaultDateStart(): string {
-  const d = new Date();
+export function defaultDateStart(referenceDate: Date = new Date()): string {
+  const d = new Date(referenceDate);
   d.setFullYear(d.getFullYear() - DEFAULT_LOOKBACK_YEARS);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -415,7 +415,7 @@ export class NsfAwardScraper implements IScraper {
   constructor(private readonly deps: NsfAwardScraperDeps = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const dateStart = this.deps.dateStart ?? defaultDateStart();
+    const dateStart = this.deps.dateStart ?? defaultDateStart(ctx.options.referenceDate);
     const resolverDeps: FederalPiResolverDeps = {
       resolveResearcherId: this.deps.resolveResearcherId,
     };

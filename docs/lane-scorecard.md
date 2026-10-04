@@ -27,7 +27,8 @@ A benchmark is frozen once captured: the command refuses an id that already exis
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
-The two center LLM lanes stay out, because they fetch with a raw `axios.get` that none of those freeze.
+`center-affiliation-llm`, `center-director-llm` and `research-area-source-extractor` joined once their page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4606), which keeps the same SSRF guard, redirect cap and retry on a throttled status.
+Their model calls already went over the default axios instance, so the model freeze covered them before the move.
 
 A rendered page is frozen at `createScraplingRenderedFetcher`, the one place every rendered lane gets its renderer (#3590).
 Capture records whether a renderer existed at all, because a lane with no renderer takes a different path from one whose render returns nothing, and it records every render, including a null or blocked result.
@@ -41,6 +42,31 @@ Its static grid enumeration (#4214) never runs under `--only` or during any capt
 `yale-college-fellowships-office` joined once its page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4132), and a dry-run explain of the whole lane before and after that move planned the same 4,009 values.
 That lane reads no `--only`, so its capture freezes the whole crawl and the scope only bounds which programs may carry labels.
 It also reads the live corpus once a page is refused as not a program, to find the row that page minted and plan its `archived: true` retraction (#4110), so those retraction values move with the corpus rather than with the lane.
+
+### Lanes that read the corpus as well as the pages
+
+A dry-run explain of `research-area-source-extractor` on one fixed scope planned the same values before and after its fetch move, and one of `center-affiliation-llm` did once the roster health record's read clock was masked.
+`center-director-llm` fetched the same pages before and after, but its model answered differently on two live reads of the same pages, which is why the lane already holds a changed director until a second read agrees.
+That hold reads the lane's own previous observation from the live log, so a director held or confirmed on replay depends on what the lane last observed rather than only on the frozen pages.
+`center-affiliation-llm` and `research-area-source-extractor` choose their targets from the live corpus, so a row archived or re-sited after capture shows as `pagesMissed` rather than as a changed score.
+
+The four funding lanes, `nih-reporter`, `nsf-award-search`, `doe-osti` and `neh-funded-projects`, fetch through `getCached`, and joined once their query window followed the run's reference date rather than the wall clock (#4607).
+Each one asked for a date window computed from today, so a replay on a later day asked for a different query, missed every frozen page, and measured nothing; replay now passes the capture date as the reference date, as it already did for page-stated deadlines.
+Their grant records are frozen, but which person a grant is attributed to is not: each lane resolves a principal investigator's name against the live `Researcher` and `Account` rows, and resolves that person's lab through the live role edges.
+A new or merged researcher, or a moved lead edge, therefore changes which row a grant lands on without any change to the lane, and two replays on the same head only prove the code is deterministic over the corpus as it stood.
+Read a fingerprint change on a funding benchmark across a sweep that rematerialized researchers as possibly the corpus, and confirm it with two replays on the same head before calling it a lane change.
+
+### The remaining fetch-frozen lanes
+
+Eleven more lanes that fetch through `getCached` joined on 2026-10-03 (#4608), each with a `--limit=3` benchmark on Development whose two replays on one head gave one fingerprint: `bbs-research-track`, `department-research-areas`, `department-undergrad-research`, `lab-site-lead-verification`, `official-research-home-roster`, `yale-directory`, `yale-health-sciences-summer-programs`, `yale-research-official`, `yale-reu-programs`, `yse-centers-index` and `yse-faculty-directory`.
+`official-research-home-roster` and `lab-site-lead-verification` first replayed to a new fingerprint every time, because each stamped its observation time, and the roster's `freshnessExpiresAt` derived from it, from the wall clock.
+Both now take that time from the run's reference date when one is set, which only a capture or replay sets, so a live run still stamps the moment it read the page.
+`department-undergrad-research` reads a rendered page where its plain fetch is thin, and this benchmark was captured on a host with no renderer, so it measures only the plain-fetch path until it is recaptured where a renderer runs.
+Three lanes stay out, each for a reason a capture cannot remove:
+
+- `directory-alias-resolution` loads the whole Yale directory and takes its alias keys and the set of already-resolvable aliases from the live observation log and corpus, so its output is a function of the corpus rather than of a page scope, and a capture of it would freeze the whole directory.
+- `ysm-mesh-keyword` planned nothing on a `--limit` scope of 3 or 12, because `--limit` bounds the keyword index it walks rather than the faculty it attributes, so no small scope reaches a planned value; it needs an `--only` scope keyed by faculty before it can be benchmarked.
+- `undergrad-research-posting` is manual-only with an empty page list (`manualOnlySweepSources.ts`), so it has no pages to freeze until #3551 gives it some.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
@@ -99,7 +125,9 @@ The panel reads the output fingerprint and the code version together, because a 
 - New fingerprint with no recorded code version on either side: the change cannot be attributed.
 
 A live-model band is never stored, so it never appears here; read it from `--live-model`.
-Engine benchmark snapshots are stored in `engine_benchmark_snapshots` by `engineBenchmark.ts`, keyed by `benchmarkId` and `stage`, but no panel reads them yet.
+The same route also serves the engine benchmarks under `engine`, read from `engine_benchmark_snapshots`, which `engineBenchmark.ts` stores keyed by `benchmarkId` and `stage` (#4605).
+The panel shows each benchmark and stage's latest stored replay and its change from the replay stored before it, with the same fingerprint and code-version reading as the lane rows.
+An engine replay also records whether it read a row the capture did not freeze, or found the quarantined run set moved, and a fingerprint change where either replay did so is shown as unattributable rather than as a code change.
 
 ## Reading a row
 

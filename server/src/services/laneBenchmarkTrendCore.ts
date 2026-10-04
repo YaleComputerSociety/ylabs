@@ -80,9 +80,11 @@ export function toLaneBenchmarkRunDto(row: Record<string, unknown>): LaneBenchma
   };
 }
 
+type ComparableRun = Pick<LaneBenchmarkRunDto, 'outputFingerprint' | 'codeSha'>;
+
 export function classifyLaneBenchmarkChange(
-  latest: LaneBenchmarkRunDto,
-  previous: LaneBenchmarkRunDto | null,
+  latest: ComparableRun,
+  previous: ComparableRun | null,
 ): LaneBenchmarkChange {
   if (!previous) return 'first-run';
   if (latest.outputFingerprint === previous.outputFingerprint) return 'unchanged';

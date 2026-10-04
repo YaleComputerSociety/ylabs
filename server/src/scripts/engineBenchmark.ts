@@ -22,6 +22,7 @@ import {
   ENGINE_BENCHMARK_STAGE,
   replayEngineBenchmark,
 } from './engineBenchmarkRun';
+import { fingerprintChangeIsAttributable } from '../services/engineBenchmarkTrendCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,21 +82,7 @@ export function parseEngineBenchmarkArgs(argv: string[]): EngineBenchmarkArgs {
   return options;
 }
 
-/**
- * Whether a fingerprint change can be read as a code change at all.
- *
- * A row whose input the capture did not fully freeze, or a quarantine set that moved
- * between capture and replay, means the input moved too, so the change is unattributable.
- * Reported as a frozen-input leak rather than as a regression (#3591), because a
- * measurement that calls an input change a regression is worse than none: it trains the
- * reader to ignore it.
- */
-export function fingerprintChangeIsAttributable(snapshot: {
-  rowsWithIncompleteInput: number;
-  invalidatedRunSetChanged: boolean;
-}): boolean {
-  return snapshot.rowsWithIncompleteInput === 0 && !snapshot.invalidatedRunSetChanged;
-}
+export { fingerprintChangeIsAttributable };
 
 async function main(): Promise<void> {
   const options = parseEngineBenchmarkArgs(process.argv.slice(2));

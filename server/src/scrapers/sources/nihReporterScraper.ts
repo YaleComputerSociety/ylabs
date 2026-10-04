@@ -54,10 +54,10 @@ const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
-const DEFAULT_FISCAL_YEARS = [
-  new Date().getFullYear() - 2,
-  new Date().getFullYear() - 1,
-  new Date().getFullYear(),
+export const fiscalYearsEndingAt = (date: Date): number[] => [
+  date.getFullYear() - 2,
+  date.getFullYear() - 1,
+  date.getFullYear(),
 ];
 const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // Cap how many pages we'll ever request defensively. 30 pages * 500 = 15k records,
@@ -801,7 +801,8 @@ export class NihReporterScraper implements IScraper {
   constructor(private readonly opts: NihReporterScraperOptions = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
+    const fiscalYears =
+      this.opts.fiscalYears || fiscalYearsEndingAt(ctx.options.referenceDate ?? new Date());
     const researchHomeResolver =
       this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;
