@@ -9,6 +9,7 @@ import {
   beginBenchmarkCapture,
   finishBenchmarkCaptureWithCoverage,
 } from '../scrapers/snapshotBenchmarkMode';
+import { POLICY_FETCH_BENCHMARK_NAMESPACE } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { liveFieldValueRefusals } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -18,7 +19,7 @@ import {
   runLaneDry,
   slugsForPlannedEntities,
 } from './laneBenchmarkRun';
-import type { BenchmarkLabel } from './laneScorecardCore';
+import type { BenchmarkLabel, GoldLabel } from './laneScorecardCore';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,7 +47,8 @@ export interface StoredBenchmarkScope {
   sourceName: string;
   only?: string[];
   limit?: number | null;
-  goldLabels?: unknown[];
+  goldLabels?: GoldLabel[];
+  goldLabeledAt?: Date;
   plannedObservationCount?: number;
 }
 
@@ -78,7 +80,7 @@ export function scopeOfStoredBenchmark(
 export function supersedeRefusal(
   superseded: StoredBenchmarkScope,
   existingSuccessorId: string | undefined,
-  options: { withoutGold: boolean; successor?: StoredBenchmarkScope },
+  options: { successor?: StoredBenchmarkScope } = {},
 ): string | undefined {
   if (existingSuccessorId) {
     return `Benchmark ${superseded.benchmarkId} is already superseded by ${existingSuccessorId}`;
@@ -92,10 +94,59 @@ export function supersedeRefusal(
     }
     return undefined;
   }
-  if ((superseded.goldLabels?.length ?? 0) > 0 && !options.withoutGold) {
-    return `Benchmark ${superseded.benchmarkId} carries hand-judged gold labels; recapture it with --without-gold and label the new benchmark with lane:benchmark-label against its own pages`;
-  }
   return undefined;
+}
+
+export interface FrozenPage {
+  sourceName: string;
+  requestKey: string;
+  payload: unknown;
+}
+
+const judgedPageText = (pages: readonly FrozenPage[], judgedPageUrl: string) => {
+  const page = pages.find(
+    (candidate) =>
+      candidate.sourceName === POLICY_FETCH_BENCHMARK_NAMESPACE &&
+      candidate.requestKey === `page:v1:${judgedPageUrl}`,
+  );
+  if (!page) return undefined;
+  const payload = page.payload as { html?: unknown; status?: unknown; failedStatus?: unknown };
+  return JSON.stringify([
+    payload.html ?? null,
+    payload.status ?? null,
+    payload.failedStatus ?? null,
+  ]);
+};
+
+/**
+ * The gold labels a recapture may keep. A label judged one frozen page, so it carries only
+ * when the recapture froze that same page with the same text and status; any other label is
+ * dropped and must be judged again against the new pages.
+ */
+export function carryUnchangedGoldLabels(
+  labels: readonly GoldLabel[],
+  supersededPages: readonly FrozenPage[],
+  recapturedPages: readonly FrozenPage[],
+): { carried: GoldLabel[]; dropped: number } {
+  const carried: GoldLabel[] = [];
+  for (const label of labels) {
+    if (!label.judgedPageUrl) continue;
+    const before = judgedPageText(supersededPages, label.judgedPageUrl);
+    if (before !== undefined && before === judgedPageText(recapturedPages, label.judgedPageUrl)) {
+      carried.push(label);
+    }
+  }
+  return { carried, dropped: labels.length - carried.length };
+}
+
+export function goldCarryRefusal(
+  superseded: Pick<StoredBenchmarkScope, 'benchmarkId' | 'goldLabels'>,
+  carriedCount: number,
+  withoutGold: boolean,
+): string | undefined {
+  const labelCount = superseded.goldLabels?.length ?? 0;
+  if (labelCount === 0 || carriedCount > 0 || withoutGold) return undefined;
+  return `None of the ${labelCount} gold labels on ${superseded.benchmarkId} judged a page the recapture froze unchanged; pass --without-gold to store an unlabelled successor and label it with lane:benchmark-label`;
 }
 
 export function parseCaptureArgs(argv: string[]): CaptureArgs {
@@ -193,7 +244,7 @@ async function freezeLabels(slugs: readonly string[]): Promise<BenchmarkLabel[]>
 
 async function loadSupersededBenchmark(benchmarkId: string): Promise<StoredBenchmarkScope> {
   const stored = (await LaneBenchmark.findOne({ benchmarkId })
-    .select('benchmarkId sourceName only limit goldLabels plannedObservationCount')
+    .select('benchmarkId sourceName only limit goldLabels goldLabeledAt plannedObservationCount')
     .lean()) as unknown as StoredBenchmarkScope | null;
   if (!stored) throw new Error(`No benchmark ${benchmarkId} to supersede`);
   return stored;
@@ -218,7 +269,6 @@ async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<v
     );
   }
   const refusal = supersedeRefusal(superseded, await existingSuccessorId(supersededId), {
-    withoutGold: false,
     successor,
   });
   if (refusal) throw new Error(refusal);
@@ -245,6 +295,7 @@ async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<v
 async function main(): Promise<void> {
   let args = parseCaptureArgs(process.argv.slice(2));
   let supersededPlannedObservationCount: number | undefined;
+  let supersededBenchmark: StoredBenchmarkScope | undefined;
   const guard = assertScriptApplyAllowed({
     apply: !args.dryRun,
     scriptName: SCRIPT_NAME,
@@ -264,12 +315,11 @@ async function main(): Promise<void> {
   }
   if (args.recapture) {
     const superseded = await loadSupersededBenchmark(args.recapture);
-    const refusal = supersedeRefusal(superseded, await existingSuccessorId(args.recapture), {
-      withoutGold: args.withoutGold,
-    });
+    const refusal = supersedeRefusal(superseded, await existingSuccessorId(args.recapture));
     if (refusal) throw new Error(refusal);
     args = scopeOfStoredBenchmark(args, superseded);
     supersededPlannedObservationCount = superseded.plannedObservationCount;
+    supersededBenchmark = superseded;
     assertBenchmarkableLane(args.sourceName);
     if (args.sourceConcurrency !== undefined) assertLaneHonorsSourceConcurrency(args.sourceName);
   }
@@ -302,6 +352,26 @@ async function main(): Promise<void> {
     if (slug) slugs.add(slug);
   }
   const labels = await freezeLabels([...slugs]);
+  let goldCarry: { carried: GoldLabel[]; dropped: number } | undefined;
+  if (supersededBenchmark && (supersededBenchmark.goldLabels?.length ?? 0) > 0) {
+    const supersededPages = (await LaneBenchmarkPage.find({
+      benchmarkId: supersededBenchmark.benchmarkId,
+      sourceName: POLICY_FETCH_BENCHMARK_NAMESPACE,
+    })
+      .select('sourceName requestKey payload')
+      .lean()) as unknown as FrozenPage[];
+    goldCarry = carryUnchangedGoldLabels(
+      supersededBenchmark.goldLabels ?? [],
+      supersededPages,
+      pages,
+    );
+    const carryRefusal = goldCarryRefusal(
+      supersededBenchmark,
+      goldCarry.carried.length,
+      args.withoutGold,
+    );
+    if (carryRefusal) throw new Error(carryRefusal);
+  }
 
   const report = {
     script: SCRIPT_NAME,
@@ -309,6 +379,9 @@ async function main(): Promise<void> {
     benchmarkId: args.benchmarkId,
     sourceName: args.sourceName,
     ...(args.recapture ? { supersedes: args.recapture, supersededPlannedObservationCount } : {}),
+    ...(goldCarry
+      ? { goldLabelsCarried: goldCarry.carried.length, goldLabelsDropped: goldCarry.dropped }
+      : {}),
     pageCount: pages.length,
     unfrozenRequestCount,
     plannedObservationCount: run.observations.length,
@@ -338,6 +411,12 @@ async function main(): Promise<void> {
         plannedObservationCount: run.observations.length,
         labels,
         ...(args.recapture ? { supersedes: args.recapture } : {}),
+        ...(goldCarry && goldCarry.carried.length > 0
+          ? {
+              goldLabels: goldCarry.carried,
+              goldLabeledAt: supersededBenchmark?.goldLabeledAt ?? capturedAt,
+            }
+          : {}),
       });
     } catch (error) {
       await LaneBenchmarkPage.deleteMany({ benchmarkId: args.benchmarkId });

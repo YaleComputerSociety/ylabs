@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  carryUnchangedGoldLabels,
+  goldCarryRefusal,
   parseCaptureArgs,
   scopeOfStoredBenchmark,
   supersedeRefusal,
@@ -78,35 +80,82 @@ describe('recapturing a stored benchmark', () => {
   });
 
   it('refuses to replace a benchmark that already has a successor', () => {
-    expect(supersedeRefusal(stored, 'example-other', { withoutGold: false })).toMatch(
+    expect(supersedeRefusal(stored, 'example-other')).toMatch(
       /already superseded by example-other/,
     );
-  });
-
-  it('refuses to replace a hand-labelled benchmark unless the operator drops gold explicitly', () => {
-    const gold = { ...stored, goldLabels: [{ entityKey: 'row-a' }] };
-    expect(supersedeRefusal(gold, undefined, { withoutGold: false })).toMatch(/gold labels/);
-    expect(supersedeRefusal(gold, undefined, { withoutGold: true })).toBeUndefined();
-    expect(supersedeRefusal(stored, undefined, { withoutGold: false })).toBeUndefined();
+    expect(supersedeRefusal(stored, undefined)).toBeUndefined();
   });
 
   it('marks an existing successor only when it has the same lane and scope', () => {
     const successor = { ...stored, benchmarkId: 'example-new', only: ['row-a', 'row-b'] };
-    expect(supersedeRefusal(stored, undefined, { withoutGold: false, successor })).toBeUndefined();
+    expect(supersedeRefusal(stored, undefined, { successor })).toBeUndefined();
     expect(
-      supersedeRefusal(stored, undefined, {
-        withoutGold: false,
-        successor: { ...successor, only: ['row-a'] },
-      }),
+      supersedeRefusal(stored, undefined, { successor: { ...successor, only: ['row-a'] } }),
     ).toMatch(/different lane or scope/);
     expect(
       supersedeRefusal(stored, undefined, {
-        withoutGold: false,
         successor: { ...successor, sourceName: 'dept-faculty-roster' },
       }),
     ).toMatch(/different lane or scope/);
-    expect(supersedeRefusal(stored, undefined, { withoutGold: false, successor: stored })).toMatch(
+    expect(supersedeRefusal(stored, undefined, { successor: stored })).toMatch(
       /cannot supersede itself/,
     );
+  });
+});
+
+describe('carrying gold labels into a recapture', () => {
+  const judged = 'https://example.org/lab-a';
+  const other = 'https://example.org/lab-b';
+  const page = (url: string, html: string, status = 200) => ({
+    sourceName: 'policy-fetch',
+    requestKey: `page:v1:${url}`,
+    payload: { url, html, status },
+  });
+  const label = (url: string | undefined) => ({
+    entityKey: 'row-a',
+    field: 'undergradEvidenceQuote',
+    expected: 'absent' as const,
+    ...(url ? { judgedPageUrl: url } : {}),
+  });
+
+  it('keeps a label whose judged page the recapture froze with the same text and status', () => {
+    const result = carryUnchangedGoldLabels(
+      [label(judged)],
+      [page(judged, '<p>same</p>')],
+      [page(judged, '<p>same</p>')],
+    );
+    expect(result.carried).toHaveLength(1);
+    expect(result.dropped).toBe(0);
+  });
+
+  it('drops a label whose judged page changed, changed status, or was not frozen again', () => {
+    const before = [page(judged, '<p>same</p>'), page(other, '<p>b</p>')];
+    expect(
+      carryUnchangedGoldLabels([label(judged)], before, [page(judged, '<p>new</p>')]).carried,
+    ).toHaveLength(0);
+    expect(
+      carryUnchangedGoldLabels([label(judged)], before, [page(judged, '<p>same</p>', 404)]).carried,
+    ).toHaveLength(0);
+    expect(
+      carryUnchangedGoldLabels([label(judged)], before, [page(other, '<p>b</p>')]).carried,
+    ).toHaveLength(0);
+  });
+
+  it('drops a label that names no judged page, and never reads a page from another namespace', () => {
+    const modelAnswer = { ...page(judged, '<p>same</p>'), sourceName: 'model-chat-completion' };
+    expect(
+      carryUnchangedGoldLabels([label(undefined)], [page(judged, 'x')], [page(judged, 'x')]),
+    ).toEqual({ carried: [], dropped: 1 });
+    expect(carryUnchangedGoldLabels([label(judged)], [modelAnswer], [modelAnswer]).dropped).toBe(1);
+  });
+
+  it('refuses a gold recapture that keeps no label unless the operator drops gold explicitly', () => {
+    const gold = { benchmarkId: 'example-old', goldLabels: [label(judged)] };
+    expect(goldCarryRefusal(gold, 0, false)).toMatch(/--without-gold/);
+    expect(goldCarryRefusal(gold, 0, true)).toBeUndefined();
+    expect(goldCarryRefusal(gold, 1, false)).toBeUndefined();
+    expect(
+      goldCarryRefusal({ benchmarkId: 'example-old', goldLabels: [] }, 0, false),
+    ).toBeUndefined();
   });
 });
