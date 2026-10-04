@@ -1,5 +1,6 @@
 import { Researcher } from '../models/researcher';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
+import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { serializedDocumentId } from './idSerialization';
 import { personSurnamesFromDisplayNames } from './researchHomeNameIdentityAuthority';
@@ -54,27 +55,30 @@ export async function loadResearchEntityLeadPersonName(
   researchEntityId: unknown,
   prefetchedLeadPersonId?: string,
 ): Promise<string> {
-  const entityId = serializedDocumentId(researchEntityId);
-  if (!entityId) return '';
-  const personId =
-    prefetchedLeadPersonId !== undefined
-      ? prefetchedLeadPersonId
-      : serializedDocumentId(
-          (
-            (await RoleAssignment.findOne({
-              'target.kind': 'RESEARCH_ENTITY',
-              'target.id': entityId,
-              role: { $in: RESEARCH_HOME_LEAD_ROLES },
-              archived: { $ne: true },
-              state: { $ne: 'HISTORICAL' },
-            })
-              .select('personId')
-              .lean()) as { personId?: unknown } | null
-          )?.personId,
-        );
+  const personId = await loadResearchEntityLeadPersonId(researchEntityId, prefetchedLeadPersonId);
   if (!personId) return '';
   const person = await Researcher.findById(personId).select('displayName').lean();
   return String((person as { displayName?: unknown } | null)?.displayName || '');
+}
+
+/** The id of the person a research entity's own lead role assignment names, or empty. */
+export async function loadResearchEntityLeadPersonId(
+  researchEntityId: unknown,
+  prefetchedLeadPersonId?: string,
+): Promise<string> {
+  const entityId = serializedDocumentId(researchEntityId);
+  if (!entityId) return '';
+  if (prefetchedLeadPersonId !== undefined) return prefetchedLeadPersonId;
+  const assignment = (await RoleAssignment.findOne({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityId,
+    role: { $in: RESEARCH_HOME_LEAD_ROLES },
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .select('personId')
+    .lean()) as { personId?: unknown } | null;
+  return serializedDocumentId(assignment?.personId) || '';
 }
 
 /**
@@ -153,4 +157,85 @@ export async function loadResearchEntityLeadPersonNames(): Promise<Map<string, s
     if (displayName) leadNameByEntityId.set(entityId, displayName);
   }
   return leadNameByEntityId;
+}
+
+/**
+ * Every live `LAB` row's leads, name and lab-named URL segments, for the derivation
+ * that retypes a faculty research row as its lead's lab: it must know whether the lead
+ * already has a lab row, whether "<surname> Lab" is another person's name, and whether
+ * the lab site it cites is another person's. Cached on the same terms as the surname
+ * roster: a read cache, never a stored judgement.
+ */
+export interface LabRowRoster {
+  labIdsByLeadPersonId: ReadonlyMap<string, ReadonlySet<string>>;
+  leadPersonIdsByLabName: ReadonlyMap<string, ReadonlySet<string>>;
+  leadPersonIdsByLabUrlToken: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+let cachedLabRowRoster: { roster: LabRowRoster; loadedAt: number } | undefined;
+
+export function resetLabRowRosterCache(): void {
+  cachedLabRowRoster = undefined;
+}
+
+export function normalizedLabRowName(name: unknown): string {
+  return String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/^the\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function labRowUrlTokens(value: unknown): string[] {
+  try {
+    const url = new URL(String(value || ''));
+    return [...url.hostname.split('.'), ...url.pathname.split('/')]
+      .map((part) => part.toLowerCase().replace(/[^\p{L}]/gu, ''))
+      .filter((part) => /lab(?:oratory|s)?/.test(part) && part.length > 4);
+  } catch {
+    return [];
+  }
+}
+
+const addTo = (map: Map<string, Set<string>>, key: string, value: string) => {
+  if (!key) return;
+  const bucket = map.get(key) ?? new Set<string>();
+  bucket.add(value);
+  map.set(key, bucket);
+};
+
+export async function loadLabRowRoster(): Promise<LabRowRoster> {
+  const now = Date.now();
+  if (cachedLabRowRoster && now - cachedLabRowRoster.loadedAt < ROSTER_CACHE_TTL_MS) {
+    return cachedLabRowRoster.roster;
+  }
+  const labs = (await ResearchEntity.find({ entityType: 'LAB', archived: { $ne: true } })
+    .select('_id name websiteUrl website sourceUrls')
+    .lean()) as Array<Record<string, any>>;
+  const leadsByLabId = await loadResearchEntityLeadPersonIds(
+    labs.map((lab) => serializedDocumentId(lab._id)).filter(Boolean) as string[],
+  );
+  const labIdsByLeadPersonId = new Map<string, Set<string>>();
+  const leadPersonIdsByLabName = new Map<string, Set<string>>();
+  const leadPersonIdsByLabUrlToken = new Map<string, Set<string>>();
+  for (const lab of labs) {
+    const labId = serializedDocumentId(lab._id) || '';
+    const leads = leadsByLabId.get(labId)?.filter(Boolean) ?? [];
+    const owners = leads.length ? leads : [''];
+    const tokens = [
+      lab.websiteUrl,
+      lab.website,
+      ...(Array.isArray(lab.sourceUrls) ? lab.sourceUrls : []),
+    ].flatMap(labRowUrlTokens);
+    for (const owner of owners) {
+      if (owner) addTo(labIdsByLeadPersonId, owner, labId);
+      addTo(leadPersonIdsByLabName, normalizedLabRowName(lab.name), owner);
+      for (const token of tokens) addTo(leadPersonIdsByLabUrlToken, token, owner);
+    }
+  }
+  const roster = { labIdsByLeadPersonId, leadPersonIdsByLabName, leadPersonIdsByLabUrlToken };
+  cachedLabRowRoster = { roster, loadedAt: now };
+  return roster;
 }

@@ -88,9 +88,14 @@ import {
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
+  type LabRowRoster,
   loadKnownPersonSurnameRoster,
+  loadLabRowRoster,
+  loadResearchEntityLeadPersonId,
   loadResearchEntityLeadPersonName,
+  normalizedLabRowName,
 } from '../utils/researchHomeNameIdentityRoster';
+import { ownLabEvidence } from '../utils/unbackedLabSelfDescription';
 import {
   resolveAllFields,
   resolveField,
@@ -6291,6 +6296,10 @@ async function materializeUserIdentityToResearcher(
 export interface ResearchEntityNameIdentityAuthority {
   knownPersonSurnames: ReadonlySet<string>;
   leadPersonName: string;
+  /** The lead's person id; absent where a caller cannot know it, which disables the lab retype. */
+  leadPersonId?: string;
+  /** Every live lab row, read for the lab retype; absent disables it. */
+  labRowRoster?: LabRowRoster;
 }
 
 /** An explicit declaration that neither corpus fact is available. */
@@ -6304,12 +6313,15 @@ export async function loadResearchEntityNameIdentityAuthority(
   prefetch?: MaterializationReadSource,
 ): Promise<ResearchEntityNameIdentityAuthority> {
   const prefetchedLead = prefetch?.soleLeadPersonId(researchEntityId);
+  const prefetchedLeadPersonId = prefetchedLead?.hit ? prefetchedLead.value : undefined;
   return {
     knownPersonSurnames: await loadKnownPersonSurnameRoster(),
     leadPersonName: await loadResearchEntityLeadPersonName(
       researchEntityId,
-      prefetchedLead?.hit ? prefetchedLead.value : undefined,
+      prefetchedLeadPersonId,
     ),
+    leadPersonId: await loadResearchEntityLeadPersonId(researchEntityId, prefetchedLeadPersonId),
+    labRowRoster: await loadLabRowRoster(),
   };
 }
 
@@ -7042,7 +7054,89 @@ function enforceResearchEntityNameAuthority(input: {
     labAssertedByLiveObservation,
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
+  fieldsWritten += reclassifyEvidencedFacultyResearchAsLab({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    authority: input.nameIdentityAuthority,
+  });
   return fieldsWritten;
+}
+
+const othersThan = (ids: ReadonlySet<string> | undefined, self: string): boolean =>
+  [...(ids ?? [])].some((id) => id !== self);
+
+/**
+ * A `FACULTY_RESEARCH_AREA` row whose own evidence says its lead runs a lab is that lab,
+ * so it is re-derived as `LAB` under the lab's name on every resolve, with no lock.
+ *
+ * The evidence is a cited site with "lab" beside the lead's surname, or a recorded,
+ * non-LLM description naming "<surname> Lab" (`ownLabEvidence`). It is withheld when the
+ * lead already has a lab row, which is a merge rather than a retype (2026-08-25
+ * precedence), when the cited lab site also belongs to another person's lab row, and
+ * when the row has no lead. "<surname> Lab" yields to "<full name> Lab" when another
+ * person's lab row already carries it, and a row with no unclaimed name stays as it is.
+ */
+function reclassifyEvidencedFacultyResearchAsLab(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  authority: ResearchEntityNameIdentityAuthority;
+}): number {
+  const { set, unset, confidenceByField, entityDoc, authority } = input;
+  const roster = authority.labRowRoster;
+  const leadPersonId = textValue(authority.leadPersonId);
+  const person = textValue(authority.leadPersonName);
+  if (!roster || !leadPersonId || !person) return 0;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return 0;
+  }
+  const projected = documentAsProjected(set, unset, entityDoc);
+  if (textValue(projected.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return 0;
+  const evidence = ownLabEvidence(projected, person);
+  if (!evidence) return 0;
+  const selfId = serializedDocumentId(entityDoc?._id) || '';
+  if (othersThan(roster.labIdsByLeadPersonId.get(leadPersonId), selfId)) return 0;
+  if (
+    evidence.labUrlTokens.some((token) =>
+      othersThan(roster.leadPersonIdsByLabUrlToken.get(token), leadPersonId),
+    )
+  ) {
+    return 0;
+  }
+
+  const labIdentity = { entityType: 'LAB', kind: mapEntityTypeToResearchGroupKind('LAB') };
+  const nameIsFree = (name: string): boolean =>
+    Boolean(name) &&
+    !othersThan(roster.leadPersonIdsByLabName.get(normalizedLabRowName(name)), leadPersonId);
+  const fullName = personScopedResearchEntityNameFromLeadPersonName({
+    ...labIdentity,
+    slug: projected.slug,
+    leadPersonName: person,
+  });
+  const labName = nameIsFree(evidence.surnameLabName)
+    ? evidence.surnameLabName
+    : nameIsFree(fullName)
+      ? fullName
+      : '';
+  if (!labName) return 0;
+
+  set.entityType = labIdentity.entityType;
+  set.kind = labIdentity.kind;
+  for (const field of ['entityType', 'kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  set.name = labName;
+  if (textValue(projected.displayName) && !input.manuallyLockedFields.includes('displayName')) {
+    set.displayName = labName;
+  }
+  return 1;
 }
 
 function documentAsProjected(
