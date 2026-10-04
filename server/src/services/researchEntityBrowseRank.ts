@@ -6,10 +6,10 @@
  * act on first. It ranks on profile completeness (source-backed description, an
  * attached identified lead, an official source URL) reusing the existing
  * quality-state classification so there is one source of truth for those
- * states, then on served enrichment (a research website, methods, a current
- * grant), plus a small umbrella-type demotion. The gate already requires the
- * completeness terms of every served row, so on their own they tie nearly the
- * whole served corpus (#4547). Access-plausibility signals do not contribute to
+ * states, then on served enrichment (a live research website, methods, a
+ * description of substance, a current grant), plus a small umbrella-type
+ * demotion. The gate already requires the completeness terms of every served
+ * row, so on their own they tie nearly the whole served corpus (#4547). Access-plausibility signals do not contribute to
  * rank (see the 2026-08-25 "Simple Directory First" decision): reaching out is
  * the universal action, so ordering is by data quality and relevance, not by a
  * computed access grade.
@@ -26,6 +26,7 @@ import {
   publicDescriptionLeadMemberNames,
 } from './researchEntityPublicDescription';
 import { toPublicResearchEntityDto } from './researchEntityDto';
+import { isKnownDeadSourceUrl } from './sourceLinkHealth';
 import {
   mapResearchGroupKindToEntityType,
   ResearchEntityType,
@@ -101,11 +102,12 @@ const entityTypeRankAdjustment = (
 // Bump on any change to what computeResearchEntityBrowseRank returns for the same input.
 // The service refuses to overwrite a score stamped by a newer version, so a checkout that
 // predates a formula change cannot revert rows a newer checkout already scored (#4642).
-export const BROWSE_RANK_SCORER_VERSION = 2;
+export const BROWSE_RANK_SCORER_VERSION = 3;
 
 const ENRICHMENT_POINTS = {
   website: 8,
   methods: 5,
+  substantialDescription: 3,
   // Zero until grant coverage is even across schools: served grant evidence is mostly
   // NIH, so any positive weight orders browse by our coverage gaps (#4622, #4546).
   currentGrant: 0,
@@ -119,12 +121,28 @@ const servedEnrichmentPoints = (
     leadMemberNames: publicDescriptionLeadMemberNames(leadMembers),
   });
   let points = 0;
-  if (served.websiteUrl || served.website) points += ENRICHMENT_POINTS.website;
+  if (servesALiveWebsite(entity, served)) points += ENRICHMENT_POINTS.website;
+  if (servesASubstantialDescription(served)) points += ENRICHMENT_POINTS.substantialDescription;
   if (Array.isArray(served.methods) && served.methods.length > 0) {
     points += ENRICHMENT_POINTS.methods;
   }
   if (servesACurrentGrant(served)) points += ENRICHMENT_POINTS.currentGrant;
   return points;
+};
+
+// A floor, not a length reward: longer text earns nothing past it, so padding a description
+// cannot buy rank. Measured near even by type on served rows (#4772).
+const SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS = 200;
+
+const servedDescriptionText = (served: Record<string, any>): string =>
+  String(served.fullDescription || served.shortDescription || '').trim();
+
+const servesASubstantialDescription = (served: Record<string, any>): boolean =>
+  servedDescriptionText(served).length >= SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS;
+
+const servesALiveWebsite = (entity: Record<string, any>, served: Record<string, any>): boolean => {
+  const website = served.websiteUrl || served.website;
+  return Boolean(website) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, website);
 };
 
 const servesACurrentGrant = (served: Record<string, any>): boolean =>
@@ -173,6 +191,9 @@ export const __testing = {
   ENTITY_TYPE_RANK_ADJUSTMENT,
   ENRICHMENT_POINTS,
   servesACurrentGrant,
+  servesALiveWebsite,
+  servesASubstantialDescription,
+  SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS,
   UMBRELLA_GATED_TYPES,
   descriptionPoints,
   leadPoints,

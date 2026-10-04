@@ -216,6 +216,78 @@ describe('computeResearchEntityBrowseRank', () => {
       expect(pressPage).toBe(noWebsite);
     });
 
+    it('earns no website points for a website stored link health says is gone', () => {
+      const deadWebsite = rank({
+        ...completeEntity(),
+        sourceLinkHealth: [
+          {
+            url: 'https://example.yale.edu/smith-lab',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+            checkedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const noWebsite = rank({ ...completeEntity(), websiteUrl: undefined });
+      expect(deadWebsite).toBe(noWebsite);
+    });
+
+    it('keeps website points when link health is only inconclusive', () => {
+      const throttled = rank({
+        ...completeEntity(),
+        sourceLinkHealth: [
+          {
+            url: 'https://example.yale.edu/smith-lab',
+            healthStatus: 'UNKNOWN',
+            httpStatusCode: 429,
+            checkedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      expect(throttled).toBe(rank(completeEntity()));
+    });
+
+    const substantialDescription = () =>
+      completeEntity().fullDescription +
+      ' Projects span human tissue studies and animal models of disease progression.';
+
+    it('rewards a served description of substance as a floor, not by length', () => {
+      expect(completeEntity().fullDescription.length).toBeLessThan(
+        __testing.SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS,
+      );
+      expect(substantialDescription().length).toBeGreaterThanOrEqual(
+        __testing.SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS,
+      );
+      const short = rank(completeEntity());
+      const substantial = rank({ ...completeEntity(), fullDescription: substantialDescription() });
+      const longer = rank({
+        ...completeEntity(),
+        fullDescription:
+          substantialDescription() +
+          ' The group also maintains shared microscopy resources and trains collaborators in quantitative image analysis.',
+      });
+      expect(substantial - short).toBe(__testing.ENRICHMENT_POINTS.substantialDescription);
+      expect(longer).toBe(substantial);
+    });
+
+    it('reads the description floor from the served copy whatever the entity type', () => {
+      const served = (entityType: string, fullDescription: string) =>
+        toPublicResearchEntityDto(
+          { ...completeEntity(), entityType, fullDescription },
+          { leadMemberNames: [] },
+        );
+      for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA']) {
+        expect(
+          __testing.servesASubstantialDescription(served(entityType, substantialDescription())),
+        ).toBe(true);
+        expect(
+          __testing.servesASubstantialDescription(
+            served(entityType, completeEntity().fullDescription),
+          ),
+        ).toBe(false);
+      }
+    });
+
     it('rewards served methods and ignores a methods list the sanitizer empties', () => {
       const base = rank(completeEntity());
       expect(rank({ ...completeEntity(), methods: ['Electrophysiology'] }) - base).toBe(
