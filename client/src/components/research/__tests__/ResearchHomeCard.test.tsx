@@ -233,7 +233,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('this lab');
   });
 
-  it('puts department and topic badges before the coverage warning and the summary', () => {
+  it('puts status badges before the summary and topics after it on compact cards', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
@@ -250,10 +250,12 @@ describe('ResearchHomeCard', () => {
 
     const text = container.textContent || '';
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
-    expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
-    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Summary limited'));
+    expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Summary limited'));
     expect(text.indexOf('Summary limited')).toBeLessThan(
       text.indexOf('Studies systems neuroscience'),
+    );
+    expect(text.indexOf('Studies systems neuroscience')).toBeLessThan(
+      text.indexOf('Social Cognition'),
     );
   });
 
@@ -372,7 +374,7 @@ describe('ResearchHomeCard', () => {
   it('keeps a spacing floor between the description and the action divider', () => {
     render(
       <MemoryRouter>
-        <ResearchHomeCard variant="compact" home={researchHome()} />
+        <ResearchHomeCard home={researchHome()} />
       </MemoryRouter>,
     );
 
@@ -494,9 +496,12 @@ describe('ResearchHomeCard', () => {
     const description = screen.getByText(
       /Studies how synthetic signals move through fixture workflows/,
     );
-    expect(description.className).toContain('line-clamp-4');
-    expect(description.className).not.toContain('line-clamp-2');
-    expect(screen.getByRole('link', { name: 'View profile' })).toBeTruthy();
+    expect(description.className).not.toContain('line-clamp');
+    expect(description.textContent).toMatch(/\.$/);
+    expect(screen.queryByRole('link', { name: 'View profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: researchHome().label }).getAttribute('href')).toContain(
+      '/research/',
+    );
   });
 
   it('keeps the profile list for grouped homes with more than one linked profile', () => {
@@ -698,5 +703,85 @@ describe('ResearchHomeCard', () => {
 
     expect(screen.getByLabelText('Appended pages').textContent).toBe('2');
     expect(renderSpy.mock.calls.length).toBe(rendersAfterMount);
+  });
+});
+
+describe('ResearchHomeCard compact browse card', () => {
+  it('names the kind when the title does not already say it', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Synthetic Faculty Profile',
+            entities: [
+              {
+                ...researchHome().entities[0],
+                name: 'Synthetic Faculty Profile',
+                kind: 'individual',
+                entityType: 'FACULTY_RESEARCH_AREA',
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Faculty research · Neuroscience · School of Medicine');
+  });
+
+  it('does not repeat a kind the title already names', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Example Imaging Lab',
+            entities: [{ ...researchHome().entities[0], name: 'Example Imaging Lab' }],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Neuroscience · School of Medicine');
+    expect(container.textContent).not.toContain('Lab · Neuroscience');
+  });
+
+  it('names the kind when the title only contains it inside another word', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Collaborative Imaging Group',
+            entities: [{ ...researchHome().entities[0], name: 'Collaborative Imaging Group' }],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Lab · Neuroscience · School of Medicine');
+  });
+
+  it('ends a long description at a whole sentence', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            description:
+              'The group studies how synthetic fixture circuits learn precise movements across development. ' +
+              'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems. ' +
+              'A third sentence pushes the description past the card length.',
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const description = screen.getByText(/The group studies how synthetic fixture circuits/);
+    expect(description.textContent).toBe(
+      'The group studies how synthetic fixture circuits learn precise movements across development. ' +
+        'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems.',
+    );
   });
 });

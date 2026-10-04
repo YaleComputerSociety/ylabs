@@ -46,6 +46,11 @@ Prefer a label naming the destination.
 A card that promises undergraduate access and leads to a page with no such evidence costs the next click too.
 This is the interaction-design reason the visibility gate exists, not just a data-quality reason.
 
+The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics.
+The kind is omitted when the title already names it, so "Wu Lab" never reads "Lab · ...", while a faculty row titled with a person's name reads "Faculty research · ...".
+The description ends at the last whole sentence that fits about 200 characters (`client/src/utils/cardSummary.ts`) rather than at a line clamp, so a card never stops mid-sentence unless no sentence fits.
+The card has no separate "View profile" action, because the title already names the destination and the whole card opens it.
+
 ## 3. Match the student's vocabulary, not the corpus's
 
 Nielsen's second heuristic is the match between the system and the real world: use the audience's words and order information the way they expect.
@@ -120,7 +125,7 @@ These are open, and they are open because only a student can close them.
 Do not invent an answer and encode it.
 
 - **Does search lead, or does browse?**
-`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box that is disabled until you type ("Enter a topic or name to enable Search"), above a grid that is already populated.
+`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
 The page tells the student to search and simultaneously demonstrates that browsing works.
 One of those should lead.
 - **What does a student scan first on a card?**

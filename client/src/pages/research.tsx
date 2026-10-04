@@ -262,6 +262,11 @@ export const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) 
   (page.researchEntities.length < page.pageSize &&
     page.page * page.pageSize >= page.estimatedTotalHits);
 
+const researchProfileCountFormatter = new Intl.NumberFormat('en-US');
+
+const researchProfileCountLabel = (count: number): string =>
+  `${researchProfileCountFormatter.format(count)} research ${count === 1 ? 'profile' : 'profiles'}`;
+
 const SectionHeading = ({ children }: { children: string }) => (
   <div className="mb-3 flex w-full items-center justify-between gap-3">
     <h2 className="yr-kicker min-w-0 flex-1">{children}</h2>
@@ -402,6 +407,7 @@ const Research = () => {
     snapshotForThisPage?.resultsSettled ? snapshotForThisPage : null,
   );
   const [query, setQuery] = useState(() => restoredSnapshot?.query ?? searchParams.get('q') ?? '');
+  const [showEmptySearchHint, setShowEmptySearchHint] = useState(false);
   const [submittedQuery, setSubmittedQuery] = useState(
     () => restoredSnapshot?.submittedQuery ?? '',
   );
@@ -964,6 +970,11 @@ const Research = () => {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!query.trim() && !selectedEntityType && !selectedSchool && !selectedDepartment) {
+      setShowEmptySearchHint(true);
+      searchInputRef.current?.focus();
+      return;
+    }
     scrollViewportToTop();
     const filters = studentSearchFilters();
     void runSearch(query.trim(), {
@@ -1391,14 +1402,14 @@ const Research = () => {
     Number(Boolean(selectedDepartment));
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
-  const searchDisabled =
-    (query.trim().length === 0 && !hasStudentFacetSelection) ||
-    (searchLoading && !hasSubmittableChange);
+  const searchDisabled = searchLoading && !hasSubmittableChange;
   const searchHelpText = query.trim()
-    ? 'Press Enter or Search to see matching research.'
+    ? ''
     : hasStudentFacetSelection
       ? 'Search with the selected filters.'
-      : 'Enter a topic or name to enable Search.';
+      : showEmptySearchHint
+        ? 'Type a topic, professor, or lab to search.'
+        : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const applyStudentFilters = (next: {
@@ -1572,8 +1583,10 @@ const Research = () => {
   const isWideFilterLayout = useMediaQuery('(min-width: 1280px)');
   const isCompactViewport = useMediaQuery('(max-width: 639px)');
   const searchPlaceholder = isCompactViewport
-    ? 'Type a topic, professor, lab, or technique'
-    : 'Type a topic, professor, lab, technique, or research question';
+    ? 'Topic, professor, or lab'
+    : isWideFilterLayout
+      ? 'Topic, professor, lab, or method'
+      : 'Type a topic, professor, lab, technique, or research question';
 
   const researchFilterProps = {
     facetDistribution,
@@ -1711,16 +1724,14 @@ const Research = () => {
       <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
+            <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base sm:leading-6 xl:hidden"
+              className="mt-2 hidden max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:block sm:text-base sm:leading-6 xl:hidden"
             >
-              Search by interest, professor, course topic, method, or question. We&apos;ll help you
-              find relevant research profiles and how to get involved when the source evidence is
-              strong enough.
+              Search by interest, professor, course topic, method, or question.
             </p>
 
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
@@ -1744,14 +1755,14 @@ const Research = () => {
               </div>
             )}
 
-            <form onSubmit={onSubmit} className="mt-4 sm:mt-7 xl:mt-4">
+            <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
               >
                 Search y/labs
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+              <div className="flex flex-row gap-2 xl:flex-col">
                 <input
                   id="research-search"
                   ref={searchInputRef}
@@ -1760,6 +1771,7 @@ const Research = () => {
                   onChange={(event) => {
                     const nextQuery = event.target.value;
                     setQuery(nextQuery);
+                    setShowEmptySearchHint(false);
                     if (!nextQuery.trim() && hasSubmittedSearch) {
                       clearSearchText();
                     }
@@ -1770,13 +1782,17 @@ const Research = () => {
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 xl:min-h-11"
+                  className="yr-focus-ring yr-pressable min-h-12 shrink-0 rounded-control bg-[var(--yr-blue)] px-5 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 sm:px-6 xl:min-h-11"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching…' : 'Search'}
                 </button>
               </div>
-              <p id="research-search-help" className="mt-2 text-sm text-muted xl:text-xs">
+              <p
+                id="research-search-help"
+                aria-live="polite"
+                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpText ? '' : 'hidden'}`}
+              >
                 {searchHelpText}
               </p>
             </form>
@@ -1809,7 +1825,7 @@ const Research = () => {
             )}
             <div
               aria-hidden={isAuthLoading || undefined}
-              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
+              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
             >
               <p
                 aria-hidden={isAuthenticated || undefined}
@@ -1846,17 +1862,21 @@ const Research = () => {
           <div className="min-w-0">
             {!hasSubmittedSearch && (
               <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="w-full">
+                <div className="mb-3 flex flex-row flex-wrap items-end justify-between gap-3 sm:mb-4">
+                  <div className="min-w-0">
                     <SectionHeading>Research to explore</SectionHeading>
-                    <p className="text-sm text-muted">
-                      Open a profile to review people, evidence, sources, and planning context.
+                    <p
+                      className={`yr-num text-sm text-muted ${defaultSearchTotal > 0 ? '' : 'invisible'}`}
+                      aria-hidden={defaultSearchTotal > 0 ? undefined : true}
+                    >
+                      {researchProfileCountLabel(defaultSearchTotal)}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
+                      hasQuery={false}
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
@@ -1962,6 +1982,7 @@ const Research = () => {
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
+                      hasQuery={Boolean(submittedQuery)}
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />

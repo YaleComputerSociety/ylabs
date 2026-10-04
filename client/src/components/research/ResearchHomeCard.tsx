@@ -10,8 +10,10 @@ import {
 import ArrowRightIcon from '../shared/ArrowRightIcon';
 import SlashBreakableText from '../shared/SlashBreakableText';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
+import { cardSummary } from '../../utils/cardSummary';
 import {
   CREATIVE_PRACTICE_KIND_LABEL,
+  entityKindLabel,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -54,6 +56,17 @@ const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence'
 const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
+
+const sentenceCaseLabel = (label: string): string =>
+  label
+    .split(' ')
+    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
+    .join(' ');
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
+  new RegExp(`\\b${escapeRegExp(kind)}\\b`, 'i').test(title);
 
 const accessSignalRank = (label: string): number => {
   const index = ACCESS_SIGNAL_PRIORITY.indexOf(label);
@@ -139,7 +152,8 @@ const ResearchHomeCard = ({
   const mobileMoreCount = Math.max(0, topicBadges.length - mobileTopicCap);
   const desktopMoreCount = Math.max(0, topicBadges.length - desktopTopicCap);
   const moreCountIsResponsive = mobileMoreCount !== desktopMoreCount;
-  const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
+  const sanitizedDescription = sanitizeResearchEntityCopy(home.description, home.entities[0]);
+  const description = isCompact ? cardSummary(sanitizedDescription) : sanitizedDescription;
   const primaryProfileUrl = primaryLinkedEntity
     ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}`
     : '';
@@ -154,6 +168,16 @@ const ResearchHomeCard = ({
     leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
+  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const showsKindLabel =
+    isCompact &&
+    home.entities.length === 1 &&
+    !isCreativePractice &&
+    !titleAlreadyNamesKind(home.label, kindLabel);
+  const cardContextLine = showsKindLabel
+    ? [kindLabel, contextLine].filter(Boolean).join(' · ')
+    : contextLine;
+  const showsProfileFooter = !(isCompact && singleLinkedEntity);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
@@ -168,6 +192,64 @@ const ResearchHomeCard = ({
     if (!isCardClickable || isInteractiveElement(event.target)) return;
     activateCard();
   };
+
+  const statusPills = [
+    isCreativePractice && (
+      <span
+        key="creative-practice"
+        className="yr-pill yr-pill-compact border-line-warm bg-parchment px-2 py-0.5 text-ink-soft"
+      >
+        {CREATIVE_PRACTICE_KIND_LABEL}
+      </span>
+    ),
+    isEmeritusLed && (
+      <span key="emeritus" className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
+        Led by emeritus faculty
+      </span>
+    ),
+    ...metadataBadges.map((label) => (
+      <span key={`metadata-${label}`} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
+        {formatTitleCaseLabel(label)}
+      </span>
+    )),
+  ].filter(Boolean);
+  const sparseContextPill = home.contextState === 'sparse' && home.contextLabel && (
+    <span key="sparse-context" className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
+      {home.contextLabel}
+    </span>
+  );
+  const compactStatusPills = sparseContextPill ? [...statusPills, sparseContextPill] : statusPills;
+  const topicPills = [
+    ...alwaysVisibleTopicBadges.map((label) => (
+      <span key={`topic-${label}`} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
+        {formatTopicChipLabel(label)}
+      </span>
+    )),
+    ...desktopOnlyTopicBadges.map((label) => (
+      <span
+        key={`topic-${label}`}
+        className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+      >
+        {formatTopicChipLabel(label)}
+      </span>
+    )),
+    mobileMoreCount > 0 && (
+      <span
+        key="more-mobile"
+        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+      >
+        +{mobileMoreCount} more
+      </span>
+    ),
+    moreCountIsResponsive && desktopMoreCount > 0 && (
+      <span
+        key="more-desktop"
+        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+      >
+        +{desktopMoreCount} more
+      </span>
+    ),
+  ].filter(Boolean);
 
   return (
     <article
@@ -201,8 +283,8 @@ const ResearchHomeCard = ({
           </h3>
         </div>
 
-        {contextLine && (
-          <p className="text-xs font-medium leading-relaxed text-muted">{contextLine}</p>
+        {cardContextLine && (
+          <p className="text-xs font-medium leading-relaxed text-muted">{cardContextLine}</p>
         )}
 
         {leadName && (
@@ -245,57 +327,28 @@ const ResearchHomeCard = ({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-1.5">
-          {isCreativePractice && (
-            <span className="yr-pill yr-pill-compact border-line-warm bg-parchment px-2 py-0.5 text-ink-soft">
-              {CREATIVE_PRACTICE_KIND_LABEL}
-            </span>
-          )}
-          {isEmeritusLed && (
-            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
-              Led by emeritus faculty
-            </span>
-          )}
-          {metadataBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
-              {formatTitleCaseLabel(label)}
-            </span>
-          ))}
-          {alwaysVisibleTopicBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
-              {formatTopicChipLabel(label)}
-            </span>
-          ))}
-          {desktopOnlyTopicBadges.map((label) => (
-            <span
-              key={label}
-              className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
-            >
-              {formatTopicChipLabel(label)}
-            </span>
-          ))}
-          {mobileMoreCount > 0 && (
-            <span
-              className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
-            >
-              +{mobileMoreCount} more
-            </span>
-          )}
-          {moreCountIsResponsive && desktopMoreCount > 0 && (
-            <span className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex">
-              +{desktopMoreCount} more
-            </span>
-          )}
-          {home.contextState === 'sparse' && home.contextLabel && (
-            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
-              {home.contextLabel}
-            </span>
-          )}
-        </div>
-
-        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-muted`}>
-          {description}
-        </p>
+        {isCompact ? (
+          <>
+            {compactStatusPills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">{compactStatusPills}</div>
+            )}
+            {description && <p className="text-sm leading-relaxed text-muted">{description}</p>}
+            {topicPills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5" aria-label="Topics">
+                {topicPills}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {statusPills}
+              {topicPills}
+              {sparseContextPill}
+            </div>
+            <p className="text-sm leading-relaxed text-muted">{description}</p>
+          </>
+        )}
       </div>
 
       {!isCompact && (
@@ -389,7 +442,7 @@ const ResearchHomeCard = ({
         </div>
       )}
 
-      {primaryLinkedEntity ? (
+      {primaryLinkedEntity && showsProfileFooter ? (
         <div className="mt-auto pt-4">
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             <Link

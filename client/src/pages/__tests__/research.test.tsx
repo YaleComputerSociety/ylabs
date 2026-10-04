@@ -368,9 +368,7 @@ describe('Research page', () => {
     expect(container.textContent).toContain(
       'Search by interest, professor, course topic, method, or question.',
     );
-    expect(container.textContent).toContain(
-      'find relevant research profiles and how to get involved when the source evidence is',
-    );
+    expect(container.textContent).not.toContain('when the source evidence is strong enough');
     expect(container.textContent).not.toMatch(/\bways? in\b/i);
     expect(container.textContent).not.toContain('How to use this');
     expect(container.textContent).not.toContain('Trust constraint');
@@ -383,9 +381,9 @@ describe('Research page', () => {
       screen.getByPlaceholderText('Type a topic, professor, lab, technique, or research question'),
     ).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
-    expect(container.textContent).toContain('Enter a topic or name to enable Search.');
+    expect(container.textContent).not.toContain('Enter a topic or name to enable Search.');
     expect(screen.queryByRole('button', { name: 'Explore research' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Explore by department' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Look up a professor' })).toBeNull();
@@ -397,15 +395,16 @@ describe('Research page', () => {
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(container.textContent).not.toContain('Top profile preview');
     expect(container.textContent).toContain('Research to explore');
-    expect(container.textContent).toContain(
-      'Open a profile to review people, evidence, sources, and planning context.',
-    );
+    expect(container.textContent).not.toContain('planning context');
+    expect(
+      await within(screen.getByLabelText('Research to explore')).findByText('1 research profile'),
+    ).toBeTruthy();
     expect(container.textContent).not.toContain('possible ways in');
     expect(container.textContent).not.toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
     const browseSection = screen.getByLabelText('Research to explore');
     const browseHeadingRow = within(browseSection).getByText('Research to explore').parentElement;
-    expect(browseHeadingRow?.parentElement?.className).toContain('w-full');
+    expect(browseHeadingRow?.parentElement?.className).toContain('min-w-0');
     expect(browseHeadingRow?.className).toContain('justify-between');
     expect(within(browseSection).queryByText('1 profile')).toBeNull();
     expect(container.textContent).not.toContain('profile loaded');
@@ -448,13 +447,14 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('Explore topic clusters');
     expect(container.textContent).not.toContain('Search results');
     expect(container.textContent).not.toContain('Query: all of y/labs');
-    expect(screen.getAllByRole('link', { name: 'View profile' })).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: 'View profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(container.textContent).not.toContain('Research Cluster Rows');
     expect(container.textContent).not.toContain('Grouped Search Results');
     expect(container.textContent).not.toContain('V1 fallback');
     expect(container.textContent).not.toContain('0 profiles');
     expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
   });
 
@@ -473,9 +473,7 @@ describe('Research page', () => {
     try {
       renderResearch();
 
-      expect(
-        screen.getByPlaceholderText('Type a topic, professor, lab, or technique'),
-      ).toBeTruthy();
+      expect(screen.getByPlaceholderText('Topic, professor, or lab')).toBeTruthy();
       expect(
         screen.queryByPlaceholderText(
           'Type a topic, professor, lab, technique, or research question',
@@ -703,7 +701,7 @@ describe('Research page', () => {
     });
     expect(screen.getByLabelText('Search y/labs')).toHaveValue('quantum materials');
 
-    fireEvent.click(screen.getByRole('link', { name: 'View profile' }));
+    fireEvent.click(screen.getByRole('link', { name: 'AI Safety Lab' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
@@ -2904,7 +2902,7 @@ describe('Research page', () => {
     ).length;
     expect(initialSearchCalls).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('link', { name: 'View profile' }));
+    fireEvent.click(screen.getByRole('link', { name: 'AI Safety Lab' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
@@ -2983,7 +2981,7 @@ describe('Research page', () => {
       ([url]) => url === '/research/search',
     ).length;
 
-    fireEvent.click(screen.getAllByRole('link', { name: 'View profile' })[0]);
+    fireEvent.click(screen.getByRole('link', { name: 'AI Safety Lab' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
