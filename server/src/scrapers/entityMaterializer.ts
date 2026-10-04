@@ -2579,8 +2579,9 @@ async function endMisattributedProfileUrlHolderEdges(
  * has written its edge, another person's live edge under the same source and key is an
  * earlier resolution of the same listing: a name-only holder whose stored name drifted, so
  * the next read minted a second row and left the first one's edge CURRENT (#4758). It is
- * ended on the read, which is derivation rather than repair. A listing whose identity the
- * lane proved leaves the twin to the accountless-shell dedupe, which folds that shell into
+ * ended on the read, which is derivation rather than repair. Only a name-only twin is ended:
+ * a twin whose edge records an identity basis, or a listing whose identity the lane proved,
+ * is left to the accountless-shell dedupe, which folds that shell into
  * the proven holder through this very edge (#3802), and a profile URL that two listings on
  * the entity share is left alone, because there the key does not name one person (#4500).
  */
@@ -2604,6 +2605,7 @@ async function endSupersededListingHolderEdges(
       'target.id': entityObjectId,
       'rosterProvenance.sourceName': sourceName,
       'rosterProvenance.membershipKey': membershipKey,
+      'rosterProvenance.identityBasis': { $exists: false },
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     },

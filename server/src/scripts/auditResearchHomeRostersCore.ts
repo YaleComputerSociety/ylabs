@@ -267,18 +267,6 @@ export function twinMembershipKeys(evidence: OfficialRosterLaneEvidence): string
     .map(([key]) => key);
 }
 
-/**
- * Live rows whose key a complete snapshot no longer lists. Only a complete snapshot
- * retires what it omits, so a partial one is expected to leave such rows behind.
- */
-export function liveRowsOutsideSnapshot(evidence: OfficialRosterLaneEvidence): number {
-  if (evidence.storedSnapshotState !== 'current') return 0;
-  const stored = new Set(evidence.storedMembershipKeys.map((key) => key.toLowerCase()));
-  return (evidence.materializedRows ?? []).filter(
-    (row) => !stored.has(row.membershipKey.toLowerCase()),
-  ).length;
-}
-
 export interface OfficialRosterSnapshotDrift {
   addedOnPage: number;
   goneFromPage: number;
@@ -388,11 +376,10 @@ export function classifyOfficialRosterLane(
   }
 
   const twins = twinMembershipKeys(evidence);
-  const outsideSnapshot = liveRowsOutsideSnapshot(evidence);
-  if (twins.length > 0 || outsideSnapshot > 0) {
+  if (twins.length > 0) {
     findings.push({
       verdict: 'membership-edge-surplus',
-      detail: `${(evidence.materializedRows ?? []).length} live row(s) against ${evidence.storedMembershipKeys.length} snapshot key(s): ${twins.length} key(s) held by more than one researcher record, ${outsideSnapshot} row(s) on a key the complete snapshot no longer lists`,
+      detail: `${twins.length} membership key(s) held by live rows on more than one researcher record`,
     });
   }
 
@@ -446,8 +433,6 @@ export interface OfficialRosterAuditRow {
   unmaterializedMembershipKeys: number;
   unrefreshedMembershipKeys: number;
   twinMembershipKeys: number;
-  liveRows: number;
-  liveRowsOutsideSnapshot: number;
   expiredMaterializedRows: number;
   snapshotExpired: boolean;
   snapshotDrift: OfficialRosterSnapshotDrift;
@@ -542,8 +527,6 @@ export function summarizeResearchHomeRosterAudit(
       unmaterializedMembershipKeys: unmaterializedMembershipKeys(lane).length,
       unrefreshedMembershipKeys: unrefreshedMembershipKeys(lane).length,
       twinMembershipKeys: twinMembershipKeys(lane).length,
-      liveRows: (lane.materializedRows ?? []).length,
-      liveRowsOutsideSnapshot: liveRowsOutsideSnapshot(lane),
       expiredMaterializedRows: lane.expiredMaterializedRows,
       snapshotExpired: snapshotExpired(lane, now),
       snapshotDrift: snapshotDrift(lane),

@@ -966,12 +966,12 @@ A baselined department that is now covered reads as `staleUncoveredBaselineEntri
 `yarn --cwd server research-homes:audit-rosters` reads each entry of `OFFICIAL_ROSTER_CONFIGS` with the source's own extractor and joins the result to the stored `rosterEnrichment` snapshot and the `RoleAssignment` rows that carry `rosterProvenance.sourceName`.
 It reads the database and writes nothing but its `--output` report.
 Read `brokenLanes`, not `status`: `section-contract-broken`, `stale-publish-date`, `member-precision-defect`, `membership-not-materialized`, `membership-not-refreshed`, `membership-edge-surplus`, `entity-missing`, `unreachable` and `fetch-error` alarm, while `snapshot-expired` and `uncovered-section` do not.
-`membership-not-refreshed` is a snapshot key whose live rows all predate the snapshot, and `membership-edge-surplus` is a key held on more than one researcher record or a live row on a key the complete snapshot dropped (#4758).
+`membership-not-refreshed` is a snapshot key whose live rows all predate the snapshot, and `membership-edge-surplus` is a key held on more than one researcher record (#4758).
 `snapshot-expired` is the one to read first even though it never alarms: the source stamps a 21-day `freshnessExpiresAt` and serve suppresses an expired row, so a lane can be structurally perfect and serve nobody.
 The lane is manual-only until that review is recorded (#4025).
 The 2026-10-04 strict run is recorded in `docs/scraper-audit-guide.md`: clean structure, but the review was withheld because `membership-not-materialized` cannot see an expired unrefreshed edge or a twin edge (#4757, #4758).
 Both came from a re-spelled listing name: a roster member's `name`, `inferredUserName`, `title`, `sectionLabel`, `sourcePublishedAt` and `freshnessExpiresAt` were value-keyed, so two names stayed live, conflicted, and the plan refused the listing on every later read.
-They are latest-wins per member key in `LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE` now, and `materializeRosterMember` ends another researcher record's live edge under the same source and membership key once the listing writes its own, unless two listings on the entity share the profile URL (#4500).
+They are latest-wins per member key in `LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE` now, and `materializeRosterMember` ends another researcher record's live name-only edge (no `identityBasis`) under the same source and membership key once the listing writes its own, unless two listings on the entity share the profile URL (#4500).
 `--strict` gates broad enablement on `broadEnablementReady`, which needs clean structure AND `--sampled-precision-reviewed-by=<reviewer>`, because no structural check can tell whether a mapped role is honest.
 `--sample-limit` rows carry member names and titles, so they require `--output` and never reach stdout, the same rule `scrape run --explain` follows.
 

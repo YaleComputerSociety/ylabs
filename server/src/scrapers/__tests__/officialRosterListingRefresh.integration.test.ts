@@ -198,5 +198,23 @@ describe(
       expect(ended.state).toBe('HISTORICAL');
       expect(await servedMemberNames()).toEqual(['Fixture Manager']);
     });
+
+    it('keeps an earlier holder edge whose identity the lane proved', async () => {
+      await readRoster('Fixture Manager', new Date(Date.now() - 30 * DAY_MS));
+      const [firstEdge] = await currentListingEdges();
+      await Researcher.updateOne(
+        { _id: firstEdge.personId },
+        { $set: { displayName: 'Fixture R. Manager' } },
+      );
+      await RoleAssignment.updateOne(
+        { _id: firstEdge._id },
+        { $set: { 'rosterProvenance.identityBasis': 'profile-url' } },
+      );
+
+      await readRoster('Fixture Manager', new Date());
+
+      const kept = (await RoleAssignment.findById(firstEdge._id).lean()) as any;
+      expect(kept.state).toBe('CURRENT');
+    });
   },
 );

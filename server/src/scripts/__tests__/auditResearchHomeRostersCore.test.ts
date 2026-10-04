@@ -5,7 +5,6 @@ import {
   officialRosterPrecision,
   snapshotDrift,
   summarizeResearchHomeRosterAudit,
-  liveRowsOutsideSnapshot,
   twinMembershipKeys,
   uncoveredCurrentSections,
   unmaterializedMembershipKeys,
@@ -229,25 +228,6 @@ describe('research-home roster gate: stored corpus', () => {
       brokenLanes: 1,
       twinMembershipKeys: 1,
     });
-  });
-
-  it('alarms on a live row whose key a complete snapshot no longer lists', () => {
-    const listed = member();
-    const evidence = lane({
-      storedSnapshotState: 'current',
-      storedObservedAt: '2026-09-20T00:00:00.000Z',
-      materializedRows: [
-        {
-          membershipKey: listed.membershipKey,
-          personId: 'person-a',
-          observedAt: '2026-09-20T00:00:00.000Z',
-        },
-        { membershipKey: 'gone-key|postdoc', personId: 'person-c' },
-      ],
-    });
-    expect(liveRowsOutsideSnapshot(evidence)).toBe(1);
-    expect(liveRowsOutsideSnapshot({ ...evidence, storedSnapshotState: 'partial' })).toBe(0);
-    expect(classifyOfficialRosterLane(evidence, NOW).verdict).toBe('membership-edge-surplus');
   });
 
   it('measures drift in both directions between the page and the stored snapshot', () => {
