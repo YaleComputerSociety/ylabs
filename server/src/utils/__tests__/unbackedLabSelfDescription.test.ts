@@ -200,6 +200,17 @@ describe('served description of a faculty research row', () => {
     expect(representation.cardDescription).not.toBe('');
   });
 
+  it('keeps a body whose recast would fall under the served length floor', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: facultyResearch({
+        shortDescription: 'The Okonkwo-Vale Lab explores how marsh edges erode under rising seas.',
+        fullDescription: 'The Okonkwo-Vale Lab explores how marsh edges erode under rising seas.',
+        researchAreas: ['coastal geomorphology'],
+      }),
+    });
+    expect(representation.invariant.pass).toBe(true);
+  });
+
   it('no longer claims an unbacked lab on the public representation', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: facultyResearch({
