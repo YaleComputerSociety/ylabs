@@ -787,4 +787,20 @@ describe('a past visiting post is a career record, not research', () => {
     expect(representation.entity.fullDescription).toMatch(/adapt to repeated flooding/);
     expect(representation.entity.fullDescription).not.toMatch(/Fulbright|consultant/);
   });
+
+  it('still serves a research card that only mentions a Fulbright year in passing', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        fullDescription:
+          'Robin Fixture has been a consultant to several documentary films (2012). Robin Fixture has a Ph.D. from Example University. Robin Fixture has also taught at Another University.',
+        shortDescription:
+          "Robin Fixture's research, begun as a Fulbright scholar abroad, focuses on how coastal towns adapt to repeated flooding.",
+      },
+    });
+    expect(representation.entity.fullDescription).toMatch(/adapt to repeated flooding/);
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
+  });
 });
