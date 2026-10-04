@@ -135,6 +135,20 @@ describe('withoutUnbackedLabSelfDescription', () => {
   it("leaves the row alone when a cited URL is this person's lab site", () => {
     const text = 'The Okonkwo-Vale Lab studies estuaries.';
     expect(recast(text, { websiteUrl: 'https://okonkwovalelab.example.edu/' })).toBe(text);
+    expect(recast(text, { sourceUrls: ['https://example.edu/lab/okonkwo-vale/'] })).toBe(text);
+  });
+
+  it('still recasts when a cited URL carries the surname but is not their lab site', () => {
+    for (const url of [
+      'https://medicine.example.edu/lab/marchetti/profile/okonkwo-vale',
+      'https://econ.example.edu/people/okonkwo-vale/labor-economics',
+      'https://example.edu/okonkwo-vale/collaborators',
+      'https://example.edu/okonkwo-vale/syllabus',
+    ]) {
+      expect(recast('The Okonkwo-Vale Lab studies estuaries.', { sourceUrls: [url] })).toBe(
+        'Wren Okonkwo-Vale studies estuaries.',
+      );
+    }
   });
 
   it('leaves a mention alone when the lab name continues past the word', () => {

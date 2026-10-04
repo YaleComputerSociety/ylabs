@@ -84,17 +84,28 @@ function letters(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}]/gu, '');
 }
 
-// A lab-named URL counts only when it also carries this person's surname
-// ("<surname>lab.example.edu"): a shared lab host ("/labs/" on a department site, an
-// institute's lab) proves a lab exists somewhere, not that this person runs one.
+const LAB_TOKEN = 'lab(?:oratory|s)?';
+
+// A lab-named URL counts only when the lab token sits beside this person's surname in
+// one host label or path segment ("<surname>lab.example.edu", "/lab/<surname>/"): a
+// shared lab host, or a member profile under another PI's lab, proves a lab exists
+// somewhere, not that this person runs one.
 function urlNamesThisPersonsLab(value: unknown, person: string): boolean {
   try {
     const url = new URL(textValue(value));
-    const path = `${url.hostname}${url.pathname}`;
-    if (!/lab(?:oratory|s)?/i.test(path)) return false;
     const tokens = personTokens(person);
     const surname = letters(tokens[tokens.length - 1]);
-    return surname.length >= 3 && letters(path).includes(surname);
+    if (surname.length < 3) return false;
+    const parts = [...url.hostname.split('.'), ...url.pathname.split('/')]
+      .map(letters)
+      .filter(Boolean);
+    const labBesideSurname = new RegExp(`${surname}${LAB_TOKEN}$|^${LAB_TOKEN}${surname}`);
+    const bareLab = new RegExp(`^${LAB_TOKEN}$`);
+    return parts.some(
+      (part, index) =>
+        labBesideSurname.test(part) ||
+        (bareLab.test(part) && (parts[index + 1] ?? '').includes(surname)),
+    );
   } catch {
     return false;
   }
