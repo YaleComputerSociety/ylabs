@@ -523,6 +523,9 @@ export class NsfAwardScraper implements IScraper {
 
     // 1. Page through all Yale awards.
     const awards: NsfAward[] = [];
+    // NSF pagination is unstable: a page can repeat an award and drop another, so
+    // only distinct awards count toward the reported total.
+    const seenAwardIds = new Set<string>();
     let offset = 0;
     let totalCount: number | undefined;
     let pagesRead = 0;
@@ -549,6 +552,10 @@ export class NsfAwardScraper implements IScraper {
       }
       for (const a of payload.awards) {
         if (awards.length >= limit) break;
+        if (a.id !== undefined) {
+          if (seenAwardIds.has(a.id)) continue;
+          seenAwardIds.add(a.id);
+        }
         awards.push(a);
       }
       if (awards.length >= limit) break;

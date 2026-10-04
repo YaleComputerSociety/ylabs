@@ -533,4 +533,27 @@ describe('NsfAwardScraper.run', () => {
     expect(result.notes).toMatch(/fewer awards served than NSF reports/);
     expect(result.notes).toMatch(/fetched 1 of 40 reported/);
   });
+
+  it('fails closed when a repeated award stands in for one NSF dropped across pages', async () => {
+    const page1 = fullPage('a');
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce({ awards: page1, totalCount: 26 })
+      .mockResolvedValueOnce({ awards: [page1[0]], totalCount: 26 });
+
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
+      dateStart: '01/01/2020',
+      sleep: noSleep,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.failedClosed).toBe(true);
+    expect(result.notes).toMatch(/fewer awards served than NSF reports/);
+    expect(result.notes).toMatch(/fetched 25 of 26 reported/);
+  });
 });
