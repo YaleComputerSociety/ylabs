@@ -153,6 +153,94 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(false);
   });
 
+  it('does not flag a lead who goes by another given name that their own verified profile carries', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://math.example.yale.edu/people/Robin-Fixture'],
+        },
+        leadMembers: [
+          {
+            user: {
+              fname: 'Rowan',
+              lname: 'Fixture',
+              profileUrls: {
+                official: 'https://stats.example.yale.edu/profile/robin-rowan-fixture',
+              },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a given name the lead own profile only abbreviates', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-fixture/'],
+        },
+        leadMembers: [
+          {
+            user: {
+              fname: 'Robin',
+              lname: 'Fixture',
+              profileUrls: { official: 'https://ysph.yale.edu/people/jo-fixture' },
+            },
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('still flags a same-surname profile whose given name appears nowhere on the lead', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://medicine.yale.edu/profile/sam-lee-fixture/'],
+        },
+        leadMembers: [
+          {
+            user: {
+              fname: 'Robin',
+              lname: 'Fixture',
+              profileUrls: { official: 'https://ysph.yale.edu/people/robin-fixture' },
+            },
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['a compound surname', 'robin-fixture-sample', 'sam-fixture-sample'],
+    ['a name suffix', 'robin-fixture-jr', 'sam-fixture-jr'],
+  ])(
+    'still flags a different given name that shares only %s with the lead own profile',
+    (_case, ownSlug, citedSlug) => {
+      expect(
+        detectProfileIdentityRisk({
+          entity: {
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: [`https://medicine.yale.edu/profile/${citedSlug}/`],
+          },
+          leadMembers: [
+            {
+              user: {
+                fname: 'Robin',
+                lname: 'Fixture',
+                profileUrls: { official: `https://ysph.yale.edu/people/${ownSlug}` },
+              },
+            },
+          ],
+        }),
+      ).toBe(true);
+    },
+  );
+
   it('does not flag when the lead directory name corroborates the profile home', () => {
     expect(
       detectProfileIdentityRisk({

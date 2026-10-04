@@ -196,6 +196,7 @@ interface LeadDirectoryIdentity {
   nameTokens: Set<string>;
   nameTokenList: string[];
   profileSlugs: Set<string>;
+  profileSlugNameTokens: string[][];
 }
 
 const GROUP_LIKE_SLUG_TOKENS = new Set([
@@ -265,8 +266,7 @@ const leadOfficialProfileSlugs = (lead: LeadProfileIdentityLead): string[] => {
     .map((url) =>
       personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))),
     )
-    .filter(Boolean)
-    .map((slug) => normalizeIdentityToken(slug));
+    .filter(Boolean);
 };
 
 const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirectoryIdentity => {
@@ -280,11 +280,13 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     lead.name ||
     row.name ||
     '';
+  const ownProfileSlugs = leadOfficialProfileSlugs(lead);
   return {
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
-    profileSlugs: new Set(leadOfficialProfileSlugs(lead)),
+    profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
+    profileSlugNameTokens: ownProfileSlugs.map((slug) => nameTokensFrom(slug)),
   };
 };
 
@@ -320,6 +322,18 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
     if (nameTokens.has(token)) shared += 1;
   }
   return shared;
+};
+
+// Shared surname or suffix tokens alone (a compound surname, `jr`) are also
+// carried by a different person, so the slug's given name must be exactly the
+// given name on the lead's own profile.
+const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[]): boolean => {
+  const [slugGiven] = nameTokensFrom(slug);
+  const [leadGiven] = orderedNameTokens;
+  if (!slugGiven || slugGiven !== leadGiven) return false;
+  return (
+    sharedNameTokenCount(slug, new Set(orderedNameTokens)) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+  );
 };
 
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
@@ -372,6 +386,15 @@ const profileSlugCorroboratesLead = (
   // asymmetric behavior that held same-person slug variants when the lead had
   // its own profile URL, yet cleared surname-only collisions when it did not.
   if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
+    return true;
+  }
+  // A lead can go by a given name their account does not carry; their own
+  // verified profile is evidence of the names they use.
+  if (
+    identity.profileSlugNameTokens.some((ownProfileTokens) =>
+      sharesGivenNameAndAnotherToken(slug, ownProfileTokens),
+    )
+  ) {
     return true;
   }
 
