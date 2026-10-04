@@ -41,6 +41,15 @@ export interface SourceLinkHealth {
    * stays `UNKNOWN` and the link is never retired on this alone.
    */
   tlsVerificationFailed?: boolean;
+  /**
+   * A plain-HTTP request that the host itself redirected to the same page over
+   * `https:`, recorded so serve time can send a student to the spelling the server
+   * answers on. Set only on a `HEALTHY` verdict, and only when the landing keeps the
+   * host and path apart from scheme, `www.`, letter case and a trailing slash: the
+   * landing negotiated TLS to answer at all, so it carries its own certificate check
+   * (#4649).
+   */
+  httpsLandingUrl?: string;
 }
 
 export interface SourceLinkProbeResult {
@@ -241,8 +250,27 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   return { healthStatus: 'UNKNOWN' };
 }
 
+export function httpsLandingOf(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): string | undefined {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return undefined;
+  if (requested.protocol !== 'http:' || final.protocol !== 'https:') return undefined;
+  if (comparableHost(requested) !== comparableHost(final)) return undefined;
+  if (comparablePath(requested) !== comparablePath(final)) return undefined;
+  if (requested.search !== final.search) return undefined;
+  return final.toString();
+}
+
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const classified = classifyProbeOutcome(probe);
+  const verdict = classifyProbeOutcome(probe);
+  const httpsLandingUrl =
+    verdict.healthStatus === 'HEALTHY'
+      ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
+      : undefined;
+  const classified = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
   const outcome =
     probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
       ? { ...classified, tlsVerificationFailed: true }

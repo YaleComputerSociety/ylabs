@@ -185,6 +185,7 @@ export interface StoredSourceLinkHealthEntry {
   httpStatusCode?: number;
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
 }
@@ -267,6 +268,7 @@ export function resolveSourceLinkHealthEntry(
     privateAddressHost?: boolean;
     publicAddressHost?: boolean;
     tlsVerificationFailed?: boolean;
+    httpsLandingUrl?: string;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
@@ -281,6 +283,7 @@ export function resolveSourceLinkHealthEntry(
     healthStatus: fresh.healthStatus,
     ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
     ...routing,
+    ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     checkedAt: now,
   };
 
@@ -301,6 +304,7 @@ export function resolveSourceLinkHealthEntry(
       healthStatus: kept.healthStatus,
       ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
       ...routing,
+      ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -379,6 +383,7 @@ export function carryForwardSourceLinkHealthEntry(
     ...(typeof stored.httpStatusCode === 'number' ? { httpStatusCode: stored.httpStatusCode } : {}),
     ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
+    ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };

@@ -42,6 +42,7 @@ export interface SourceLinkHealthBackfillOptions {
   explicitLimit: boolean;
   confirm: boolean;
   staleOnly: boolean;
+  httpWebsitesOnly: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   output?: string;
@@ -54,6 +55,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     explicitLimit: false,
     confirm: false,
     staleOnly: false,
+    httpWebsitesOnly: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -62,6 +64,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-source-link-health') options.confirm = true;
     else if (arg === '--stale-only') options.staleOnly = true;
+    else if (arg === '--http-websites-only') options.httpWebsitesOnly = true;
     else if (arg.startsWith('--reprobe-healthy-after-days=')) {
       options.reprobeHealthyAfterDays = parsePositiveInt(
         arg.slice('--reprobe-healthy-after-days='.length),
@@ -132,6 +135,7 @@ export interface SourceLinkHealthRunOptions {
   dryRun: boolean;
   limit?: number;
   staleOnly: boolean;
+  httpWebsitesOnly?: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
 }
@@ -147,6 +151,7 @@ export function sourceLinkHealthRunOptions(
     dryRun: options.dryRun,
     ...(options.explicitLimit ? { limit: options.limit } : {}),
     staleOnly: options.staleOnly,
+    ...(options.httpWebsitesOnly ? { httpWebsitesOnly: true } : {}),
     ...(options.reprobeHealthyAfterDays !== undefined
       ? { reprobeHealthyAfterDays: options.reprobeHealthyAfterDays }
       : {}),
@@ -317,10 +322,15 @@ export async function probeUncachedUrlsByHost(
   );
 }
 
+const HTTP_WEBSITE_FILTER = {
+  $or: [{ websiteUrl: /^http:\/\//i }, { website: /^http:\/\//i }],
+};
+
 export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
   staleOnly?: boolean;
+  httpWebsitesOnly?: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
@@ -395,6 +405,7 @@ export async function runSourceLinkHealthBackfill(options: {
     const page = (await ResearchEntity.find(
       {
         archived: { $ne: true },
+        ...(options.httpWebsitesOnly ? HTTP_WEBSITE_FILTER : {}),
         ...(lastSeenId ? { _id: { $gt: lastSeenId } } : {}),
       },
       {
