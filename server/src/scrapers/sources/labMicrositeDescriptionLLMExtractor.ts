@@ -10,6 +10,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
   isBibliographyCitationEntryText,
@@ -1674,7 +1675,7 @@ function classifyExtractedPageAttribution(
     : 'THIS_ENTITY';
 }
 
-async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
+async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy.
   // It throws after retries are exhausted so the caller advances to the next candidate URL.
   const page = await fetchPageWithPolicy(url, {
@@ -1682,6 +1683,29 @@ async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | n
     timeoutMs: 10_000,
   });
   return { url: page.url, html: page.html };
+}
+
+/**
+ * Read the page over plain HTTP when its HTTPS certificate fails verification. A
+ * certificate describes how the host presents itself on port 443, never whether the
+ * page exists (#2751), and a legacy faculty host can serve the research statement
+ * over HTTP for years after its certificate lapsed (#4639). The returned page keeps
+ * the HTTP URL it was read from, so the observation cites the page actually read.
+ */
+export async function fetchDescriptionPageWithTlsFallback(
+  url: string,
+  fetchPage: FetchDescriptionPageFn,
+): Promise<FetchedDescriptionPage | null> {
+  try {
+    return await fetchPage(url);
+  } catch (error) {
+    if (!isTlsVerificationError(error) || !/^https:\/\//i.test(url)) throw error;
+    return fetchPage(url.replace(/^https:/i, 'http:'));
+  }
+}
+
+function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
+  return fetchDescriptionPageWithTlsFallback(url, fetchPageOnce);
 }
 
 async function defaultCallLLM(input: {

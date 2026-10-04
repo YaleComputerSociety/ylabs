@@ -12,6 +12,7 @@ import {
   sourceLinkHealthStatuses,
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
+import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -70,20 +71,6 @@ export interface SourceLinkProbeResult {
  * the same confirm-before-recording rule #2725 established for DNS.
  */
 const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
-
-/** Node's codes for a certificate the client refused to trust. */
-const TLS_VERIFICATION_ERROR_CODES = new Set([
-  'CERT_HAS_EXPIRED',
-  'CERT_NOT_YET_VALID',
-  'CERT_REVOKED',
-  'CERT_UNTRUSTED',
-  'DEPTH_ZERO_SELF_SIGNED_CERT',
-  'ERR_TLS_CERT_ALTNAME_INVALID',
-  'SELF_SIGNED_CERT_IN_CHAIN',
-  'UNABLE_TO_GET_ISSUER_CERT',
-  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
-  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
-]);
 
 /**
  * Only a status that asserts the resource is gone retires a link. Every other
