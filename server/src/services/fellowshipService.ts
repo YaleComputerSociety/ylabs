@@ -32,8 +32,12 @@ import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
-import { newYorkCalendarDate, newYorkInstant, newYorkWallClock } from '../utils/newYorkTime';
-import { programDeadlineClosesAt } from '../utils/programDeadlineInstant';
+import { newYorkCalendarDate } from '../utils/newYorkTime';
+import {
+  deadlineIsStale,
+  programDeadlineClosesAt,
+  sameProgramDeadlineNextCycle,
+} from '../utils/programDeadlineInstant';
 import {
   servedUpcomingDuplicateWindow,
   type UpcomingDuplicateWindow,
@@ -369,24 +373,10 @@ export const isLikelyRecurringProgram = (fellowship: any): boolean =>
   hasFellowshipSourceUrl(fellowship) &&
   RECURRING_PROGRAM_TEXT_RE.test(textForRecurrenceDetection(fellowship));
 
-const sameDeadlineNextCycle = (deadline: Date): Date => {
-  const stated = newYorkWallClock(deadline);
-  const sameDayNextCycle = new Date(Date.UTC(stated.year + 1, stated.monthIndex, stated.day));
-  return newYorkInstant({
-    ...stated,
-    year: sameDayNextCycle.getUTCFullYear(),
-    monthIndex: sameDayNextCycle.getUTCMonth(),
-    day: sameDayNextCycle.getUTCDate(),
-  });
-};
-
-// A deadline that closed more than one cycle ago means the source page skipped at least a
-// whole cycle, so neither the stated date nor an estimate from it is served (#4363).
-export const deadlineIsStale = (closesAt: Date, now: Date): boolean =>
-  sameDeadlineNextCycle(closesAt).getTime() < now.getTime();
+export { deadlineIsStale };
 
 export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
-  const projected = sameDeadlineNextCycle(deadline);
+  const projected = sameProgramDeadlineNextCycle(deadline);
   return projected.getTime() < now.getTime() ? undefined : projected;
 };
 

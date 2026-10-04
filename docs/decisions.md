@@ -17,6 +17,46 @@ Measured on Development on 2026-10-04, the reasons sat on 2,940 and 1,468 non-ar
 `hasActionEvidence` still feeds the shell-suppression predicates, so suppression is unchanged.
 An extra signal remains welcome as a badge or a citation.
 
+## 2026-10-03: A Program That Is Not A Current Program Is Not Served (#4587)
+
+A hand-read sample of served programs on Development found 12 rows that are not a current program a student can apply to, and the gate had no input for any of their shapes.
+Each class is now a predicate in `server/src/services/programApplicability.ts` that the gate reads on every run, so it writes no field and needs no lock, and a row returns on its own once its evidence changes.
+All four suppress, recorded with their own reason.
+
+- **An outside program whose office record skipped its only stated cycle: `external_award_cycle_stale`.**
+  The fellowships office lists outside programs under `funding.yale.edu/external-award/`, a section it no longer keeps current, and outside programs are out of scope except as Yale points students to them (2026-08-23).
+  A record there whose deadline is stale by #4363's rule, closed more than a cycle ago with no upcoming window from another copy, no longer shows Yale pointing students to a current cycle.
+  Measured on Development on 2026-10-03: 115 live programs carry a stale deadline, 113 of them external-award records; 9 were served, every one an outside program (a federal summer research fellowship, a federal undergraduate scholarship, the federal REU listing, a federal postbaccalaureate training award, three terms of a federal laboratory internship, a children's hospital summer program, an overseas PhD scholarship), and their last stated cycles closed 2.7 to 6.7 years ago.
+  No second threshold is needed: every number from one cycle to 2.7 years drops the same 9 rows, so the existing one-cycle rule is the threshold.
+  A Yale-administered fund whose own page skipped a cycle is not held, because its stale date is already withheld at serve time and the fund itself still recurs; the only 2 such rows (two Yale College fellowships last stated 1.6 years ago) were already suppressed for other reasons.
+  Several of the 9 programs still run on their own sites; they leave because the office record is the only reason they were on `/programs`, not because the program ended.
+- **A record stating that its award is suspended: `award_suspended`.**
+  A sentence naming the award and saying it is suspended, discontinued or no longer offered, read conservatively: a conditional clause in the award's terms ("payments will be suspended if") and a statement that the award resumed do not count.
+  Calibrated over the prose of all 597 program rows and 2,520 live program observations on Development, it matches exactly 1 row, a global scholarship for Oxford study whose page says its trustees suspended the award with immediate effect, which was served with a projected next-cycle deadline; a looser phrase list's only other hits were rules inside award terms and "endorsement is no longer required".
+- **A prize for completed work: `prize_for_completed_work`.**
+  A record titled a prize whose prose states no support for work still to be done (no support, funding, travel, stipend, expenses or project), because a prize for an essay or a book is recognition rather than something a student joins.
+  A record with no prose is not read either way.
+  Over the 12 live rows titled a prize it matches 5: the served one, an essay prize competition for graduating Yale College students, and 4 already suppressed (its graduate twin, two essay prizes and a leadership prize).
+  The three travel prize rows and the three prize rows with no prose do not match, and neither does a faculty book prize whose prose names what it funds, which is already suppressed as non-research.
+- **A catalog page listing programs: `program_listing_page`.**
+  A title made only of generic funding words ("Grants to Students") that routes to two or more pages on its own site.
+  Either half alone is not enough: 5 live rows have an all-generic title, 2 of them real programs with generic names, and 28 non-suppressed rows route to two pages, nearly all a fund page beside an application form.
+  Together they match 1 row, a council's grants page whose two listed programs are each served as their own row and stay served.
+
+Program duplicates (#3988) gain two narrow joins.
+
+- **A narrower title over the same description.** One lane titles a fund "<name> Travel Fellowship" and another "<name> Fellowship" over the same paragraph and the same catalog page, which the one-lane guard of #4279 rightly refuses to join on.
+  Two rows now join when their descriptions are one fund's by the existing test and every word of one title is in the other, unless the narrower title sits inside two titles that do not name one fund, so a generic title never chains residential college copies together.
+- **The terms of one program.** A trailing term qualifier ("- Fall Term", "(Summer Term)") is set aside when titles are compared, so sibling records for one program's terms join, and a hidden copy for another term never supplies the kept copy's upcoming window, because the kept copy's title names its own term.
+  Over all 532 live programs the two joins add exactly 4 redundant copies and remove none: the travel fellowship served once from each lane, two of the laboratory internship's three terms, and an unserved postgraduate fellowships page joined to its unserved common application.
+
+Measured through the gate and the reader payload on Development on 2026-10-03, served programs go from 181 to 168: the 9 stale external records, the suspended scholarship, the essay prize, the listing page and the second copy of the travel fellowship, each hand-read from its stored text, and no row is added.
+The two programs the listing page names, the kept copy of the travel fellowship and the two served external-award records with a current cycle stay served.
+Six unserved external-award rows move to `suppressed`, and 102 already-suppressed rows gain a reason only.
+Both program lane benchmarks are unchanged, because no lane output changed.
+
+This is a stored-data change: rows move only when the program gate is applied on Development.
+
 ## 2026-10-03: A Survivor's Complete Read Re-Reads Evidence Filed Under Its Merged-In Keys (#4568)
 
 This reverses one bullet of the 2026-09-28 #3609 entry below, which held that a survivor-key read never retires loser-keyed evidence.

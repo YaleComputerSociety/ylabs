@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { programFundTitleKey, selectDuplicateProgramCopies } from '../programDuplicateIdentity';
+import {
+  programFundTitleKey,
+  programTermQualifier,
+  selectDuplicateProgramCopies,
+} from '../programDuplicateIdentity';
 
 const DESCRIPTION =
   'The fixture fund supports undergraduates who plan summer research projects in the humanities and social sciences, with awards for travel, living costs, and materials.';
@@ -338,5 +342,68 @@ describe('selectDuplicateProgramCopies on one program page two lanes cite (#4175
         }),
       ),
     ).toEqual([]);
+  });
+
+  it('joins a narrower title to a wider one over one description across lanes (#4587)', () => {
+    const CATALOG = 'https://funding.example.edu/find-funding/offered-through';
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Foundation Fellowship', sourceUrl: CATALOG }),
+        copy('b', {
+          title: 'Fixture Foundation Travel Fellowship',
+          sourceName: 'student-grants-database',
+          sourceUrl: CATALOG,
+        }),
+        copy('c', {
+          title: 'Another Fixture Award',
+          description: OTHER_DESCRIPTION,
+          sourceUrl: CATALOG,
+        }),
+      ),
+    ).toEqual([['a', 'b']]);
+  });
+
+  it('joins neither wider title when two distinct funds both contain the narrower one (#4587)', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Summer Fellowship' }),
+        copy('b', { title: 'North College Fixture Summer Fellowship' }),
+        copy('c', { title: 'South College Fixture Summer Fellowship' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('joins the terms of one program listed as sibling records (#4587)', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Laboratory Internship - Fall Term' }),
+        copy('b', { title: 'Fixture Laboratory Internship - Spring Term' }),
+        copy('c', { title: 'Fixture Laboratory Internship (Summer Term)' }),
+      ),
+    ).toEqual([
+      ['b', 'a'],
+      ['c', 'a'],
+    ]);
+  });
+
+  it('keeps a term-named program apart from another program with the same remainder', () => {
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Laboratory Internship - Fall Term' }),
+        copy('b', {
+          title: 'Fixture Laboratory Internship - Fall Term',
+          description: OTHER_DESCRIPTION,
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('programTermQualifier', () => {
+  it('reads only a trailing term qualifier', () => {
+    expect(programTermQualifier('Fixture Internship - Spring Term')).toBe('spring');
+    expect(programTermQualifier('Fixture Internship (Summer Session)')).toBe('summer');
+    expect(programTermQualifier('Fixture Summer Fellowship')).toBe('');
+    expect(programTermQualifier('Fixture Fellowships: Class of 2004 Summer')).toBe('');
   });
 });

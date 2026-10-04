@@ -37,6 +37,17 @@ import {
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 import { programAudience, programAudienceAdmitsUndergraduates } from './programAudience';
 import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+  hasStaleExternalAwardCycle,
+  isPrizeForCompletedWork,
+  isProgramListingPage,
+  statesAwardSuspension,
+} from './programApplicability';
+import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
+import {
   DEPARTMENT_RESEARCH_GUIDANCE_REASON,
   isDepartmentResearchGuidance,
   statesApplicationCycle,
@@ -709,6 +720,10 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'non_research_program',
   'duplicate_program',
   'common_application_container',
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  AWARD_SUSPENDED_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
   'research_infrastructure_only',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
@@ -1144,6 +1159,8 @@ function isInfoPageWithoutApplicationCycle(
 
 export interface ProgramStudentVisibilityContext {
   duplicateOfServedCopy?: boolean;
+  now?: Date;
+  upcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
 }
 
 const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
@@ -1179,6 +1196,17 @@ export function computeProgramStudentVisibility(
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
     );
+  const now = context.now ?? new Date();
+  const staleExternalAwardCycle = hasStaleExternalAwardCycle(
+    program,
+    now,
+    context.upcomingDuplicateWindow === undefined
+      ? program.upcomingDuplicateWindow
+      : context.upcomingDuplicateWindow,
+  );
+  const awardSuspended = statesAwardSuspension(program);
+  const prizeForCompletedWork = isPrizeForCompletedWork(program);
+  const listingPage = isProgramListingPage(program);
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
@@ -1200,9 +1228,21 @@ export function computeProgramStudentVisibility(
   // a student chooses.
   const applicationContainer = COMMON_APPLICATION_TITLE.test(title);
   if (applicationContainer) reasons.push('common_application_container');
+  if (staleExternalAwardCycle) reasons.push(EXTERNAL_AWARD_CYCLE_STALE_REASON);
+  if (awardSuspended) reasons.push(AWARD_SUSPENDED_REASON);
+  if (prizeForCompletedWork) reasons.push(PRIZE_FOR_COMPLETED_WORK_REASON);
+  if (listingPage) reasons.push(PROGRAM_LISTING_PAGE_REASON);
+  const notACurrentProgram =
+    staleExternalAwardCycle || awardSuspended || prizeForCompletedWork || listingPage;
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy || applicationContainer) {
+  if (
+    catalogOrAdmin ||
+    !researchRelated ||
+    context.duplicateOfServedCopy ||
+    applicationContainer ||
+    notACurrentProgram
+  ) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&

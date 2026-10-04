@@ -22,6 +22,21 @@ const derive = (copies: ProgramWindowCopy[], keptCopyById: Array<[string, string
   deriveUpcomingDuplicateWindows(copies, new Map(keptCopyById), NOW);
 
 describe('deriveUpcomingDuplicateWindows (#4382)', () => {
+  it("supplies no window from another term's copy of the program (#4587)", () => {
+    const windows = derive(
+      [
+        copy('kept', { title: 'Fixture Internship - Fall Term', deadline: PASSED_FALL }),
+        copy('spring', { title: 'Fixture Internship - Spring Term', deadline: SPRING_DATE_ONLY }),
+        copy('fall', { title: 'Fixture Internship - Fall Term', deadline: LATER_SPRING }),
+      ],
+      [
+        ['spring', 'kept'],
+        ['fall', 'kept'],
+      ],
+    );
+    expect(windows.get('kept')?.sourceProgramId).toBe('fall');
+  });
+
   it("serves a hidden copy's upcoming deadline when the kept copy's has passed", () => {
     const windows = derive(
       [
