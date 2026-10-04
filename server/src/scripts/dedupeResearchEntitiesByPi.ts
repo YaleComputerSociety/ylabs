@@ -23,6 +23,7 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  filterNameAgreedSharedPersonGroups,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
@@ -126,6 +127,7 @@ export interface ResearchEntityPiDedupeArgs {
   websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
+  requireNameAgreement: boolean;
   rematerializeCanonical: boolean;
   confirmDemotingMerge: boolean;
   limit: number;
@@ -206,6 +208,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
+    requireNameAgreement: false,
     rematerializeCanonical: false,
     confirmDemotingMerge: false,
     limit: 10000,
@@ -266,6 +269,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === '--require-name-agreement') {
+      args.requireNameAgreement = true;
       continue;
     }
     if (arg === DEMOTING_MERGE_CONFIRM_FLAG) {
@@ -362,6 +369,9 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     throw new Error(`Unknown research-entity:dedupe-by-pi argument: ${arg}`);
   }
 
+  if (args.requireNameAgreement && !args.sharedPersonId) {
+    throw new Error('--require-name-agreement only narrows --shared-person-id');
+  }
   return args;
 }
 
@@ -2755,6 +2765,7 @@ async function main() {
     slug,
     reviewedProfileAreaOnly,
     sharedPersonId,
+    requireNameAgreement,
     rematerializeCanonical,
     confirmDemotingMerge,
     acceptedDecisions,
@@ -2776,7 +2787,8 @@ async function main() {
   await connectScriptMongo(process.env.MONGODBURL);
 
   const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
-  const unattendedUrlIdentityLane = profileLabUrlOnly || websiteUrlOnly;
+  const unattendedUrlIdentityLane =
+    profileLabUrlOnly || websiteUrlOnly || (sharedPersonId && requireNameAgreement);
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
@@ -2824,7 +2836,12 @@ async function main() {
               : websiteUrlOnly
                 ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
                 : sharedPersonId
-                  ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+                  ? requireNameAgreement
+                    ? filterNameAgreedSharedPersonGroups(
+                        buildSharedPersonIdResearchEntityDedupePlan(piRows),
+                        piRows,
+                      )
+                    : buildSharedPersonIdResearchEntityDedupePlan(piRows)
                   : fundingOnly
                     ? buildFundingResearchEntityDedupePlan(piRows)
                     : buildResearchEntityPiDedupePlan(piRows),

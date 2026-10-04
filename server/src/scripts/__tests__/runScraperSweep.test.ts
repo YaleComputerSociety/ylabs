@@ -1248,6 +1248,34 @@ describe('runScraperSweep', () => {
     expect(stage?.args).not.toContain('--profile-lab-url-only');
   });
 
+  it('merges same-lead rows that agree on name and type under the URL-identity flag', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('shared-person-name-agreed-dedupe');
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('shared-person-name-agreed-dedupe'),
+    );
+    expect(names.indexOf('shared-person-name-agreed-dedupe')).toBeLessThan(
+      names.indexOf('visibility-gate'),
+    );
+    const stage = stages.find((entry) => entry.name === 'shared-person-name-agreed-dedupe');
+    expect(stage?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:dedupe-by-pi',
+        '--shared-person-id',
+        '--require-name-agreement',
+        '--apply',
+        '--confirm-research-entity-pi-dedupe',
+        '--max-apply=300',
+      ]),
+    );
+  });
+
   it('extracts the eponymous merge delta and fails loud when it is absent', () => {
     expect(parseEponymousFraMergeResult({ mergeDelta: { merged: 3 } })).toEqual({
       mergeDelta: { merged: 3 },
@@ -1360,6 +1388,7 @@ describe('runScraperSweep', () => {
       'eponymous-fra-merge',
       'url-identity-dedupe',
       'website-url-identity-dedupe',
+      'shared-person-name-agreed-dedupe',
     ]);
     expect(
       mergeApplying
