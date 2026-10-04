@@ -1979,12 +1979,13 @@ Unanimity, not recency, because several lanes write a `user` `title` against the
 On Development 1,343 identity pages carry more than one live title and 20 disagree about whether the person owns research, in both directions: a roster subheading that appends a second appointment to a professorship can read as refused, and `official-profile-pi-backfill` stores award names as titles, which read as owning research.
 One title saying the person owns research is `title-evidence-disagrees` and keeps the row, because a kept defect is re-readable and an archived professor is not.
 
-**The pass retires three classes only**: a research-support or technical title, a non-research staff role, and a student title.
-A trainee rank is deliberately not in the population, even though every mint lane still refuses one.
-With a faculty-keyword yield, whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, so `'Postdoctoral Fellow'` would have been spared while `'Post-Doctoral Fellow'` was archived.
-No irreversible archive should turn on a hyphen.
-That residue is pre-#2304 trainee data rather than the research-support class this pass exists for, and retiring it needs its own issue and its own predicate.
-`subordinate_research_rank` is therefore not a reason this pass can report.
+**The pass retires four classes**: a research-support or technical title, a non-research staff role, a student title, and a trainee rank the owner ruled cannot host a student's research (2026-10-04: a person belongs if students can do research with them).
+The trainee class is the one #2304 left out, because with a faculty-keyword yield its fate would turn on whether `FACULTY_KEYWORDS` spells the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, and no irreversible archive should turn on a hyphen.
+So it is decided BEFORE that yield, on two witnesses that must agree: `titleResearchOwnership` finds no span that owns research anywhere in the title, which is the lattice where both spellings of a rank live in one pattern, and `isSubordinateResearchRank` names a rank held in someone else's group.
+On top of both, the rank must be one the owner ruled on (postdoctoral, research associate or assistant, visiting fellow, scholar or researcher); a research scientist is spared because research scientists can host; and a title naming an administrative head noun, or naming a rank as the population it serves, is spared.
+A postdoc who also holds a lecturer or professor appointment keeps the row, because the lattice reads that appointment as owning research.
+Clinical fellows, residents, staff affiliates and postgraduate associates await a ruling and stay out of the population.
+The pass reports the class as `non_hosting_trainee_title`.
 
 Student titles are the exception, because they have that predicate (#4654).
 `isStudentTitle` matches a stated enrollment in, or graduation from, a degree programme (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `Master's Student`, a bare `IDE Alumni`), and no `FACULTY_KEYWORDS` entry spells any of them, so the hyphen problem cannot arise.
