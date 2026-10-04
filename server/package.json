@@ -28,6 +28,7 @@
     "retire:undergraduate-logistics-fields": "tsx src/scripts/retireUndergraduateLogisticsFields.ts",
     "retire:research-entity-residue-fields": "tsx src/scripts/retireResearchEntityResidueFields.ts",
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
+    "research-entity:tombstone-same-person-archives": "tsx src/scripts/tombstoneSamePersonArchives.ts",
     "research-entity:union-stranded-merge-funding": "tsx src/scripts/unionStrandedMergeFunding.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
     "research-entity:merge-same-lead-duplicate-groups": "tsx src/scripts/mergeSameLeadDuplicateGroups.ts",
