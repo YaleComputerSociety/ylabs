@@ -3159,6 +3159,8 @@ describe('possessive and next-source narration is not a research description (#4
       'Her research profile spans genetics and chronic disease.',
       "A patient's profile indicates risk of early-onset cardiomyopathy.",
       "The receptor's site presents a pocket for allosteric modulators.",
+      "A tumor's profile links mutation burden to immunotherapy response.",
+      "The enzyme's site highlights a conserved pocket.",
     ]) {
       expect(isSourcePageNarrationDescription(value)).toBe(false);
     }

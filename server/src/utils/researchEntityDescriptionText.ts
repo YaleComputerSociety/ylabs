@@ -387,7 +387,8 @@ const SOURCE_DOCUMENT_QUALIFIER =
 const SOURCE_DOCUMENT_NOUN = '(?:profile|page|web\\s?site|site|listing|entry|bio|biography)';
 const SOURCE_NARRATION_VERB =
   '(?:lists|describes|links|identifies|presents|names|highlights|summarizes|summarises|notes|mentions|indicates)';
-const SOURCE_LISTING_VERB = '(?:lists|describes|links|highlights|summarizes|summarises|mentions)';
+const SOURCE_LISTING_VERB = '(?:lists|describes|mentions|summarizes|summarises)';
+const SOURCE_LISTING_NOUN = '(?:profile|page|web\\s?site|listing|bio|biography|entry)';
 const SOURCE_QUALIFIER_RUN_MAX = 6;
 const sourceQualifierRun = (min: number) =>
   `(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){${min},${SOURCE_QUALIFIER_RUN_MAX}}`;
@@ -414,7 +415,7 @@ const SOURCE_PAGE_NARRATION_PATTERNS = [
     'i',
   ),
   new RegExp(
-    `\\b[\\w.-]+['’]s\\s+${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`,
+    `\\b[\\w.-]+['’]s\\s+${SOURCE_LISTING_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`,
     'i',
   ),
   new RegExp(
