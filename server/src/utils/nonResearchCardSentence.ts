@@ -19,6 +19,11 @@ const siteTaglinePattern =
 const presentationRemarkPattern =
   /^(?:(?:Dr|Prof)\.\s+)?[^.;:]{0,80}?\bha(?:s|ve)\s+(?:(?:presented|lectured|spoken)(?:\s+(?:his|her|their|its)\s+(?:work|research))?\s+(?:at|to|widely|internationally|nationally|extensively)\b|given\s+(?:invited\s+)?(?:talks|lectures|presentations|keynotes?)\b)/i;
 
+const strayLeadingPunctuationPattern = /^[)\]}>,;:.!?%/|\\*&+=-]/;
+
+const websiteNewsNotePattern =
+  /^(?:new|update[sd]?|news|announcement|coming\s+soon|now\s+available|just\s+(?:published|released|posted))\s*[:!—–-]|^(?:i|we)\s+(?:have\s+)?(?:just\s+)?(?:added|updated|posted|uploaded|launched|released)\b|^coming\s+soon\b/i;
+
 const programRenameNotePattern = /\s*\(now\s+[A-Z][A-Z0-9&-]{2,}\)/g;
 
 function namesResearchActivity(value: string): boolean {
@@ -28,6 +33,8 @@ function namesResearchActivity(value: string): boolean {
 export function isNonResearchCardSentence(text: unknown): boolean {
   const value = String(text || '').trim();
   if (!value) return false;
+  if (strayLeadingPunctuationPattern.test(value)) return true;
+  if (websiteNewsNotePattern.test(value)) return true;
   if (siteTaglinePattern.test(value)) return true;
   if (presentationRemarkPattern.test(value)) return true;
   if (studiesHonorTemplatePattern.test(value)) return true;

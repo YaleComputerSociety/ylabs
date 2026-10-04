@@ -93,3 +93,27 @@ describe('sanitizeResearchEntityShortDescription with non-research cards', () =>
     ).toBe('Studies Antiquity and the Premodern world.');
   });
 });
+
+describe('isNonResearchCardSentence on fragments and news notes', () => {
+  it.each([
+    [
+      'a fragment opening on a close bracket',
+      ') and expansion microscopy techniques, using our new techniques.',
+    ],
+    [
+      'a fragment opening on a hyphen',
+      '-E. A. Example Professor of Public Health, whose research focused on outcomes.',
+    ],
+    ['a website news note', 'New: I added a chapter on diffusion generative models.'],
+    ['a first-person update note', 'I added two new datasets to the archive page.'],
+    ['a coming-soon banner', 'Coming soon: a new edition of the course notes.'],
+  ])('refuses %s', (_label, text) => {
+    expect(isNonResearchCardSentence(text)).toBe(true);
+  });
+
+  it('keeps a research sentence that mentions news', () => {
+    expect(
+      isNonResearchCardSentence('Studies how local news coverage shapes civic participation.'),
+    ).toBe(false);
+  });
+});

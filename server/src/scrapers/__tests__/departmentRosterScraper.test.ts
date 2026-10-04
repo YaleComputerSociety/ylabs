@@ -1147,6 +1147,29 @@ describe('nodePersonCardExtractor', () => {
   });
 });
 
+describe('nodePersonCardExtractor never takes a photo scene description as a name', () => {
+  const sceneCard = (heading: string) => `
+    <article about="/people/sam-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/sam-fixture.jpg" alt="man in a grey suit holding a cello"></div></div>
+      <div class="card-content"><h2><span>${heading}</span></h2></div>
+    </article>`;
+
+  it('falls back to the profile slug when the heading is empty and the alt text is a scene', () => {
+    const [entry] = nodePersonCardExtractor(sceneCard(''), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Sam Fixture');
+  });
+
+  it('still prefers the heading over a scene alt text', () => {
+    const [entry] = nodePersonCardExtractor(sceneCard('Sam Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Sam Fixture');
+  });
+});
+
 describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {
   const captionedCard = `
     <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">

@@ -57,6 +57,7 @@ import type {
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
+  isPhotoSceneDescription,
   normalizeName,
   normalizeNameKeepingCaption,
   slugify,
@@ -1448,7 +1449,8 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
     const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
-    const name = headingName || normalizeName(altText) || nameFromPeopleSlug(about);
+    const altName = isPhotoSceneDescription(altText) ? '' : normalizeName(altText);
+    const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
     const firstKeyedName = normalizeNameKeepingCaption(altText) || nameFromPeopleSlug(about);
     const identityName =

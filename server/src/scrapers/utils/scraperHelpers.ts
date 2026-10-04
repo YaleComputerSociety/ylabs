@@ -152,6 +152,22 @@ export function normalizeName(name: string | undefined | null): string {
   return normalizeNameKeepingCaption(stripPersonNameCaptionWrapper(collapseNameWhitespace(name)));
 }
 
+const photoSceneOpenerPattern =
+  /^(?:an?\s+|the\s+)?(?:man|woman|person|people|group\s+of)\s+(?:in|with|wearing|holding|standing|sitting|seated|smiling|posing|playing|leaning|looking|on|at)\b/iu;
+const photoSceneWordPattern =
+  /(?<![\p{L}\p{N}])(?:wearing|holding|standing|sitting|seated|smiling|posing|playing|leaning|suit|shirt|jacket|glasses|background|in\s+front\s+of)(?![\p{L}\p{N}])/iu;
+
+/**
+ * Image alt text that describes the photo ("man in green suit holding guitar")
+ * rather than naming the person in it. A roster that falls back to the headshot's
+ * alt text for a name must refuse it, or the scene becomes the person's name.
+ */
+export function isPhotoSceneDescription(text: string | undefined | null): boolean {
+  const value = collapseNameWhitespace(String(text || ''));
+  if (!value) return false;
+  return photoSceneOpenerPattern.test(value) || photoSceneWordPattern.test(value);
+}
+
 function collapseNameWhitespace(name: string): string {
   return stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
 }

@@ -45,6 +45,7 @@ They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one fiel
   The refused shapes are a site tagline or welcome banner, a "has presented at conferences" remark, a "Studies <X> Prize." topic, an honours list with no research verb, and a citation shaped as title words around a volume number.
   A trailing "(now <PROGRAM>)" rename note is stripped rather than refused.
   Calibrated on Development on 2026-10-04: 8 of 3,543 served cards changed, and all 8 were non-research on a read.
+  A card that opens on stray punctuation (a fragment beginning with ")" or "-") or on a website news note ("New:", "Update:", "I added", "Coming soon") is refused the same way; calibrated the same day, 5 of 4,060 cards changed, and all 5 improved.
 `missing_card_description` is exempt for an organizational or program-like home, which is described by what it is and does rather than by a lab-style research focus (#1872).
 That exemption has to reach the TIER as well as the recorded reason: `quality.cardState` applies it only to program-like rows, so reading it raw as a tier input held 7 organizational rows at `operator_review` with no blocker recorded anywhere (#2818).
 `studentVisibilityTier`'s `hasRequiredResearchFocusCard`, its `missing_card_description` push, and `researchEntityPublicDescription`'s `cardIsOptional` must answer this question the same way.
