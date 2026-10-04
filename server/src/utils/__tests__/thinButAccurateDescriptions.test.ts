@@ -134,6 +134,20 @@ describe('page-fragment cards are replaced from the body', () => {
       'Studies a variety of coastal policy issues including flood insurance, ports, and fisheries.',
     );
   });
+
+  it.each([
+    "Robin Fixture's area of academic research is the history of imagined harbor towns. She studies how port communities organized trade guilds.",
+    'Her area of research is the history of imagined harbor towns. She studies how port communities organized trade guilds.',
+  ])('serves a card that keeps the discipline of an area-of-research statement: %s', (body) => {
+    expect(
+      resolveServedShortDescription({
+        shortDescription: '',
+        fullDescription: body,
+        researchAreas: [],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Studies the history of imagined harbor towns.');
+  });
 });
 
 describe('sentence tiling keeps dotted initialisms and titles whole', () => {

@@ -3467,10 +3467,15 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
 const POSSESSIVE_RESEARCH_STATEMENT =
   /^(?:(?:[\p{Lu}][\p{L}.'’-]*\s+){0,4}[\p{Lu}][\p{L}.'’-]*?(?:['’]s|s['’])|This)\s+(?:(?:current|primary|main|academic)\s+)?(?:research(?:\s+and\s+teaching)?|teaching\s+and\s+research|work|scholarship)(?:\s+interests?)?\s+(?:spans?|includes?|covers?|concerns?|focus(?:es)?\s+on|cent(?:er|re)s?\s+on)\s+(.+?)[.!?]?$/u;
 
+const POSSESSIVE_AREA_OF_RESEARCH_STATEMENT =
+  /^(?:(?:[\p{Lu}][\p{L}.'’-]*\s+){0,4}[\p{Lu}][\p{L}.'’-]*?(?:['’]s|s['’])|Her|His|Their)\s+area\s+of\s+(?:academic\s+)?research\s+is\s+(.+?)[.!?]?$/u;
+
 // "<Name>'s research and teaching interests span domestic policy issues including
 // ..." is the body a biography narrows to, and its object is the card.
 function possessiveResearchStatementSummary(sentences: string[], full: string): string {
-  const match = textValue(sentences[0]).match(POSSESSIVE_RESEARCH_STATEMENT);
+  const lead = textValue(sentences[0]);
+  const match =
+    lead.match(POSSESSIVE_RESEARCH_STATEMENT) ?? lead.match(POSSESSIVE_AREA_OF_RESEARCH_STATEMENT);
   if (!match?.[1]) return '';
   const candidate = `Studies ${match[1].trim()}.`;
   return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';
