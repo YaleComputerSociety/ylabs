@@ -153,6 +153,18 @@ describe('recastUnbackedLabSelfDescription', () => {
     expect(recast(text)).toBe(text);
   });
 
+  it('still recasts a sentence whose predicate is not a lab', () => {
+    expect(recast('The Okonkwo-Vale Lab is a leader in estuary research. The lab uses drones.')).toBe(
+      'Wren Okonkwo-Vale is a leader in estuary research. This research uses drones.',
+    );
+  });
+
+  it('still recasts a sentence that places something in the lab', () => {
+    expect(recast('The Okonkwo-Vale Lab is a member of the lab consortium.')).toBe(
+      'Wren Okonkwo-Vale is a member of the lab consortium.',
+    );
+  });
+
   it('recasts the full-name form on a row with no provenance at all', () => {
     expect(recast('The Wren Okonkwo-Vale Lab studies estuaries.', { fieldProvenance: {} })).toBe(
       'Wren Okonkwo-Vale studies estuaries.',

@@ -32,7 +32,8 @@ const ANOTHER_NAMED_LAB = /\b(?!The\b)[A-Z][\p{L}'’-]*\s+Lab(?:oratory)?\b/u;
 
 // "<Lab> is a hematology lab ..." defines the lab itself, so recasting its subject onto
 // the person would make the sentence say the person is a lab. Left for the serve chain.
-const IDENTITY_SENTENCE_CONTINUATION = /^\s+(?:is|was)\s+(?:an?|the)\b/;
+const IDENTITY_SENTENCE_CONTINUATION =
+  /^\s+(?:is|was)\s+(?:an?|the)\s+(?:(?!(?:an?|the|of|in|for|at|on|with|from|by|to|and)\s)[\p{L}'’-]+\s+){0,3}lab(?:oratory)?(?![\p{L}'’-])/iu;
 
 const LEADER_APPOSITIVE = /,\s*(?:led|directed|headed|run)\s+by\s+[^,]+,/;
 

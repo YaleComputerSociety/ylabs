@@ -1184,6 +1184,7 @@ Only the surname form ("The <Surname> Lab") counts as that evidence: the full-na
 It is a read-time derivation and writes nothing.
 It runs on both the chain's main path and the biography-repair branch, so stripping a biography opener cannot leave the lab claim heading the body.
 A mention whose lab name continues past the word ("Lab for ...", "Lab members") is left unchanged rather than recast into an ungrammatical phrase.
+A sentence that defines the lab itself ("<Lab> is a <kind> lab") is also left unchanged, because recasting its subject would say the person is a lab; any other "is a ..." continuation is still recast.
 A body whose recast would fall under the `too-short` floor of `fullDescriptionQuality` keeps its original text, because a body under that floor withholds the whole row.
 
 #### A sanitizer that empties a candidate has rejected it, not learned the field is empty (#2958)
