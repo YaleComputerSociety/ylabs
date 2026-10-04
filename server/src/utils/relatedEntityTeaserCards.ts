@@ -98,7 +98,10 @@ export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI, pageUrl?: 
 }
 
 const comparableText = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 const OPENING_WORDS = 12;
 
