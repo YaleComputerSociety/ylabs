@@ -61,6 +61,7 @@ export interface RecomputeBrowseRankOptions {
 export interface RecomputeBrowseRankResult {
   considered: number;
   updated: number;
+  stamped: number;
   scoreDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
@@ -93,6 +94,7 @@ export async function recomputeBrowseRankForEntities(
     return {
       considered: 0,
       updated: 0,
+      stamped: 0,
       scoreDrifted: 0,
       refusedNewerScorer: 0,
       indexSyncFailures: 0,
@@ -108,6 +110,7 @@ export async function recomputeBrowseRankForEntities(
   ]);
 
   let updated = 0;
+  let stamped = 0;
   let scoreDrifted = 0;
   let refusedNewerScorer = 0;
   let indexSyncFailures = 0;
@@ -129,11 +132,13 @@ export async function recomputeBrowseRankForEntities(
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
+    const servedFieldsUnchanged = scoreUnchanged && hostingUnchanged;
     const stampUnchanged = storedScorerVersion(entity) === scorerVersion;
     if (!scoreUnchanged) scoreDrifted += 1;
-    if (scoreUnchanged && hostingUnchanged && stampUnchanged) continue;
+    if (servedFieldsUnchanged && stampUnchanged) continue;
     if (options.dryRun) {
-      updated += 1;
+      if (servedFieldsUnchanged) stamped += 1;
+      else updated += 1;
       continue;
     }
 
@@ -152,8 +157,12 @@ export async function recomputeBrowseRankForEntities(
       refusedNewerScorer += 1;
       continue;
     }
+    if (servedFieldsUnchanged) {
+      stamped += 1;
+      continue;
+    }
     updated += 1;
-    if (sync && !(scoreUnchanged && hostingUnchanged)) {
+    if (sync) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
       if (!fresh || !(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
@@ -162,6 +171,7 @@ export async function recomputeBrowseRankForEntities(
   return {
     considered: entities.length,
     updated,
+    stamped,
     scoreDrifted,
     refusedNewerScorer,
     indexSyncFailures,

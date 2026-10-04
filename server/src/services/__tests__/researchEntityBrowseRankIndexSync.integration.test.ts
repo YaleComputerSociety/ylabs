@@ -73,4 +73,23 @@ describe('recomputeBrowseRankForEntities reports index-sync failures apart from 
     expect(unsyncedRun.updated).toBe(1);
     expect(unsyncedRun.indexSyncFailures).toBe(0);
   });
+  it('counts a stamp-only write as stamped, not updated, so it cannot mask an earlier sync failure', async () => {
+    const entity = await createStaleEntity('rank-stamp-only');
+    await recomputeBrowseRankForEntities([entity._id]);
+    await ResearchEntity.updateOne(
+      { _id: entity._id },
+      { $unset: { browseRankScorerVersion: '' } },
+    );
+    meiliMocks.syncEntity.mockClear();
+
+    const dryRun = await recomputeBrowseRankForEntities([entity._id], { dryRun: true });
+    expect(dryRun.updated).toBe(0);
+    expect(dryRun.stamped).toBe(1);
+
+    const stampRun = await recomputeBrowseRankForEntities([entity._id]);
+    expect(stampRun.updated).toBe(0);
+    expect(stampRun.stamped).toBe(1);
+    expect(stampRun.indexSyncFailures).toBe(0);
+    expect(meiliMocks.syncEntity).not.toHaveBeenCalled();
+  });
 });

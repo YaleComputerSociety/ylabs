@@ -90,6 +90,7 @@ export interface BrowseRankBackfillResult {
   mode: 'dry-run' | 'apply';
   considered: number;
   updated: number;
+  stamped: number;
   scoreDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
@@ -112,6 +113,7 @@ export async function runBrowseRankBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     considered: 0,
     updated: 0,
+    stamped: 0,
     scoreDrifted: 0,
     refusedNewerScorer: 0,
     indexSyncFailures: 0,
@@ -123,6 +125,7 @@ export async function runBrowseRankBackfill(options: {
     const batchResult = await recomputeBrowseRankForEntities(batch, { dryRun: options.dryRun });
     result.considered += batchResult.considered;
     result.updated += batchResult.updated;
+    result.stamped += batchResult.stamped;
     result.scoreDrifted += batchResult.scoreDrifted;
     result.refusedNewerScorer += batchResult.refusedNewerScorer;
     result.indexSyncFailures += batchResult.indexSyncFailures;
