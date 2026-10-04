@@ -50,6 +50,7 @@ They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one fiel
   A body that opens on a teaching appointment ("<name> is Senior Lecturer ..., where he teaches ...") is narrowed like a career biography, so the research-interests sentence behind it is what serves.
   Narrowing stops at the first bibliography entry after the research statement, so untitled paper titles after it are never kept as research prose, while prose after a leading run of citations is.
   Calibrated on Development on 2026-10-04 against one stored snapshot of 4,056 held and served rows: 9 rows changed, all served, all improved on a read, and 0 of a random 100 served rows changed.
+That count was measured before review narrowed the citation-only body to one that also closes on a citation, the citation cutoff to entries after the statement, and the student-development card refusal to a named craft, so it may differ from the shipped predicates until re-measured.
   A card line that is not about research is refused at the card sanitizer, so every card surface and the gate fall back to the next derived line (`isNonResearchCardSentence`).
   The refused shapes are a site tagline or welcome banner, a "has presented at conferences" remark, a "Studies <X> Prize." topic, an honours list with no research verb, and a citation shaped as title words around a volume number.
   A trailing "(now <PROGRAM>)" rename note is stripped rather than refused.
