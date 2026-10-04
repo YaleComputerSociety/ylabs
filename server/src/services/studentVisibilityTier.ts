@@ -354,9 +354,9 @@ function citedUrls(entity: Record<string, any>): string[] {
  * Kept out of `student_ready` rather than suppressed, on the same terms as
  * `lab_name_org_type_mismatch`: the person is usually real and the row becomes
  * legitimate again the moment the name is reconciled with the evidence. The
- * durable remedy is #3350's substitution - swap the lead-derived person-scoped
- * name for the unbacked lab name at the observation - which this guard does not
- * perform and does not wait for.
+ * materializer performs that reconciliation with this same predicate
+ * (`reclassifyUnbackedLabAsFacultyResearch`), so a row reaches the gate held here
+ * only when no lead or person name lets it derive the faculty research name.
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
@@ -366,7 +366,7 @@ function citedUrls(entity: Record<string, any>): string[] {
  * `name` observation after all, so the row-local reading agrees with the
  * observation log on 57 of 58.
  */
-function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
+export function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
   if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;

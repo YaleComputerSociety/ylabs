@@ -27,6 +27,8 @@ const FACULTY_RESEARCH_NAME = 'Rafferty Duchamp Faculty Research';
 
 type PersistedEntity = {
   name?: string;
+  kind?: string;
+  entityType?: string;
   fieldProvenance?: Record<string, unknown>;
 };
 
@@ -143,13 +145,86 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((await persisted()).name).toBe(LAB_NAME);
   });
 
-  it('leaves a row typed LAB alone', async () => {
+  it('leaves a LAB row alone when it links its own website', async () => {
+    await seedEntity({
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://www.example.com/rafferty-duchamp/',
+    });
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const entity = await persisted();
+    expect(entity.name).toBe(LAB_NAME);
+    expect(entity.entityType).toBe('LAB');
+  });
+
+  it('reclassifies a LAB row nothing backs as faculty research under the person-scoped name', async () => {
     await seedEntity({ kind: 'lab', entityType: 'LAB' });
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
-    expect((await persisted()).name).toBe(LAB_NAME);
+    const entity = await persisted();
+    expect(entity.name).toBe(FACULTY_RESEARCH_NAME);
+    expect(entity.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(entity.kind).toBe('individual');
+    expect((entity.fieldProvenance || {}).name).toBeUndefined();
+  });
+
+  it('re-derives the same reclassification on a second pass', async () => {
+    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const entity = await persisted();
+    expect(entity.name).toBe(FACULTY_RESEARCH_NAME);
+    expect(entity.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('reclassifies again when a live observation keeps asserting the LAB type alone', async () => {
+    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedObservation({ field: 'entityType', value: 'LAB' });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps a LAB row whose live name observation asserts the lab', async () => {
+    await seedEntity({ kind: 'lab', entityType: 'LAB' });
+    await seedObservation({ field: 'name', value: LAB_NAME });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const entity = await persisted();
+    expect(entity.name).toBe(LAB_NAME);
+    expect(entity.entityType).toBe('LAB');
+  });
+
+  it('keeps a LAB row whose citations name a laboratory', async () => {
+    await seedEntity({
+      kind: 'lab',
+      entityType: 'LAB',
+      sourceUrls: ['https://duchamplab.example.edu/people/'],
+    });
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).entityType).toBe('LAB');
+  });
+
+  it('leaves a LAB row with a locked type alone', async () => {
+    await seedEntity({ kind: 'lab', entityType: 'LAB', manuallyLockedFields: ['entityType'] });
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).entityType).toBe('LAB');
   });
 
   it('leaves a locked name alone', async () => {

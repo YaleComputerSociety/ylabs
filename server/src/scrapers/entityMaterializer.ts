@@ -219,6 +219,7 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
+import { isUnbackedLabNameShell } from '../services/studentVisibilityTier';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
@@ -6695,7 +6696,92 @@ function enforceResearchEntityNameAuthority(input: {
     }
     fieldsWritten++;
   }
+  fieldsWritten += reclassifyUnbackedLabAsFacultyResearch({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    labAssertedByLiveObservation,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
+  });
   return fieldsWritten;
+}
+
+function documentAsProjected(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  entityDoc: any,
+): Record<string, any> {
+  const view: Record<string, any> = { ...(entityDoc ?? {}) };
+  const fieldProvenance: Record<string, unknown> = { ...(entityDoc?.fieldProvenance ?? {}) };
+  for (const [key, value] of Object.entries(set)) {
+    if (key.startsWith('fieldProvenance.')) fieldProvenance[key.slice('fieldProvenance.'.length)] = value;
+    else view[key] = value;
+  }
+  for (const key of Object.keys(unset)) {
+    if (key.startsWith('fieldProvenance.')) delete fieldProvenance[key.slice('fieldProvenance.'.length)];
+    else delete view[key];
+  }
+  view.fieldProvenance = fieldProvenance;
+  return view;
+}
+
+/**
+ * A `LAB` row whose lab name nothing backs is one person's faculty research, so it is
+ * re-derived as `FACULTY_RESEARCH_AREA` under the person-scoped name on every resolve.
+ *
+ * The backing test is the gate's own `unbacked_lab_name` predicate, so the two cannot
+ * disagree: before this, the gate held such a row and no lane could ever clear it.
+ * A live observation asserting a lab keeps the row as it is, matching #4641 for rows
+ * already typed `FACULTY_RESEARCH_AREA`. No field is locked; the type and name are a
+ * derivation from the absence of lab evidence and come back if that evidence appears.
+ */
+function reclassifyUnbackedLabAsFacultyResearch(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  labAssertedByLiveObservation: boolean;
+  leadPersonName: unknown;
+}): number {
+  const { set, unset, confidenceByField, entityDoc } = input;
+  if (input.labAssertedByLiveObservation) return 0;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return 0;
+  }
+  const projected = documentAsProjected(set, unset, entityDoc);
+  if (!isUnbackedLabNameShell(projected)) return 0;
+
+  const facultyResearchIdentity = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA'),
+  };
+  const derivedName =
+    personScopedResearchEntityNameFromLeadPersonName({
+      ...facultyResearchIdentity,
+      slug: projected.slug,
+      leadPersonName: input.leadPersonName,
+    }) ||
+    personScopedResearchEntityNameFromPersonName({
+      ...facultyResearchIdentity,
+      candidateName: textValue(projected.name).replace(/\s+lab(?:oratory)?$/i, ''),
+    });
+  if (!derivedName) return 0;
+
+  set.entityType = facultyResearchIdentity.entityType;
+  set.kind = facultyResearchIdentity.kind;
+  for (const field of ['entityType', 'kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  set.name = derivedName;
+  if (textValue(projected.displayName) && !input.manuallyLockedFields.includes('displayName')) {
+    set.displayName = derivedName;
+  }
+  return 1;
 }
 
 /**
