@@ -318,7 +318,9 @@ function decideVerifiedProfileFold(
     return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'verified-profile' };
   }
   const [target] = holders.values();
-  const shellSurname = splitName(typeof shell.displayName === 'string' ? shell.displayName : '').last;
+  const shellSurname = splitName(
+    typeof shell.displayName === 'string' ? shell.displayName : '',
+  ).last;
   const targetSurname = splitName(
     typeof target.displayName === 'string' ? target.displayName : '',
   ).last;
@@ -332,7 +334,12 @@ function decideVerifiedProfileFold(
   if (shellNetid && target.netid && shellNetid !== target.netid) {
     return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'verified-profile' };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'verified-profile' };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn: 'verified-profile',
+  };
 }
 
 // A healthy link can still point at the wrong person, and the one measured case was a
