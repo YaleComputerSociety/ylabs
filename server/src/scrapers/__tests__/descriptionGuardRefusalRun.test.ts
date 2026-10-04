@@ -105,6 +105,24 @@ describe('the description lane records a shared-page refusal as refused (#3739)'
     expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
   });
 
+  it('judges duplicate citers by their display name, as the ingest bar does (#3740)', async () => {
+    const rows = [
+      OWN_ROW,
+      ...['other-0', 'other-1', 'other-2'].map((_id, index) => ({
+        _id,
+        name: ['Research Center', 'Core Facility', 'Research Program'][index],
+        displayName: 'The Fixture Lab',
+        sourceUrls: [PAGE_URL],
+      })),
+    ];
+    const { emitted } = await runLane({
+      sharedUrls: sharedEvidenceUrls(rows),
+      evidenceCiters: evidenceUrlCiters(rows),
+    });
+
+    expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
+  });
+
   it('declines a shared page without attesting that the page carries no prose', async () => {
     const { emitted, result } = await runLane(corpusCitedBy(2));
 

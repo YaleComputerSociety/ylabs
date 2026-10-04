@@ -97,6 +97,7 @@ export interface EvidenceCiter {
 export interface NamedEvidenceCitingRow extends EvidenceCitingRow {
   _id?: unknown;
   name?: unknown;
+  displayName?: unknown;
 }
 
 export function evidenceUrlCiters(
@@ -104,7 +105,7 @@ export function evidenceUrlCiters(
 ): Map<string, EvidenceCiter[]> {
   const citers = new Map<string, EvidenceCiter[]>();
   for (const row of rows) {
-    const citer = { id: String(row._id ?? ''), name: row.name };
+    const citer = { id: String(row._id ?? ''), name: row.displayName || row.name };
     for (const url of evidenceUrlsOf(row)) {
       const list = citers.get(url);
       if (list) list.push(citer);

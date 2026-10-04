@@ -271,7 +271,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     loadResearchEntityLeadPersonNames(),
     ResearchEntity.find(
       { archived: { $ne: true } },
-      { name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+      { name: 1, displayName: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
     ).lean() as Promise<Array<Record<string, unknown>>>,
   ]);
   return {
