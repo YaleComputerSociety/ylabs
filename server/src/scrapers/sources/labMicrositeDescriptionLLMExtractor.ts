@@ -116,8 +116,11 @@ import {
   contentUnchanged,
   descriptionHashObservations,
   loadStoredLaneDescription,
+  loadStoredLaneDescriptionObservation,
   loadStoredContentHash,
+  type ContentHashEntityRef,
 } from '../contentHashGate';
+import { isRelatedEntityTeaserTextOnPage } from '../../utils/relatedEntityTeaserCards';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -923,6 +926,26 @@ export function recordDescriptionSlotAttestation(
   if (attestation === 'refused' && guardRefusal) {
     metrics.refusedByGuard[guardRefusal] = (metrics.refusedByGuard[guardRefusal] ?? 0) + 1;
   }
+}
+
+const comparableUrl = (value: string): string => value.trim().replace(/\/+$/, '').toLowerCase();
+
+/**
+ * Whether this lane's own stored description for the row came from this page and is
+ * one of the page's related-unit teaser blurbs rather than its own text. Before #4823
+ * such a blurb was a candidate, so a core facility page stored another core's services;
+ * re-reading now finds no description, and a refusal alone retracts nothing, so the
+ * stored blurb would keep serving. Asserting the slot empty is the page as read today:
+ * the text the lane asserted was never this page's own.
+ */
+async function storedDescriptionIsRelatedUnitTeaser(
+  sourceName: string,
+  entityRef: ContentHashEntityRef,
+  page: FetchedDescriptionPage,
+): Promise<boolean> {
+  const stored = await loadStoredLaneDescriptionObservation(sourceName, entityRef);
+  if (!stored || comparableUrl(stored.sourceUrl) !== comparableUrl(page.url)) return false;
+  return isRelatedEntityTeaserTextOnPage(page.html, page.url, stored.value);
 }
 
 export function withDescriptionSlotAttestation(
@@ -2475,7 +2498,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
           const attestedHashObservations = withDescriptionSlotAttestation(
             hashObservations,
-            slotAttestation,
+            (await storedDescriptionIsRelatedUnitTeaser(this.name, entityRef, primaryPage))
+              ? 'empty'
+              : slotAttestation,
           );
           const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
           const methodsObservation: ObservationInput | null =

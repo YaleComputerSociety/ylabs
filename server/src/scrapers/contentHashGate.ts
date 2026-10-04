@@ -136,6 +136,43 @@ export async function loadStoredLaneDescription(
   }
 }
 
+/**
+ * This lane's own live description for the row and the page it was read from.
+ * Matches either identity form, because an observation can be keyed by
+ * `entityId` or by `entityKey` alone.
+ */
+export async function loadStoredLaneDescriptionObservation(
+  sourceName: string,
+  entity: ContentHashEntityRef,
+): Promise<{ value: string; sourceUrl: string } | undefined> {
+  if (!entity.entityId && !entity.entityKey) return undefined;
+  if (isBenchmarkModeActive()) return undefined;
+  if (mongoose.connection.readyState !== 1) return undefined;
+  const identity = [
+    ...(entity.entityId ? [{ entityId: entity.entityId }] : []),
+    ...(entity.entityKey ? [{ entityKey: entity.entityKey }] : []),
+  ];
+  try {
+    const row = await Observation.findOne({
+      entityType: entity.entityType,
+      sourceName,
+      field: 'fullDescription',
+      superseded: false,
+      $or: identity,
+    })
+      .sort({ observedAt: -1 })
+      .select('value sourceUrl')
+      .lean();
+    const value = (row as { value?: unknown } | null)?.value;
+    const sourceUrl = (row as { sourceUrl?: unknown } | null)?.sourceUrl;
+    return typeof value === 'string' && typeof sourceUrl === 'string'
+      ? { value, sourceUrl }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function contentHashObservation(
   entity: ContentHashEntityRef,
   sourceUrl: string,
