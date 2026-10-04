@@ -34,7 +34,7 @@ export const useWatchedDeadlineSummary = (enabled: boolean): WatchedDeadlineSumm
   const [stateEnabled, setStateEnabled] = useState(enabled);
   if (stateEnabled !== enabled) {
     setStateEnabled(enabled);
-    setState(enabled ? (current) => ({ ...current, isLoading: true }) : IDLE_STATE);
+    setState(enabled ? LOADING_STATE : IDLE_STATE);
   }
   const summaryRequest = useLatestRequest();
 
@@ -66,7 +66,7 @@ export const useWatchedDeadlineSummary = (enabled: boolean): WatchedDeadlineSumm
 
   useLoadEffect(load);
 
-  return state;
+  return enabled ? state : IDLE_STATE;
 };
 
 export default useWatchedDeadlineSummary;
