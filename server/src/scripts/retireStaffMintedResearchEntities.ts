@@ -115,11 +115,11 @@ const provenanceOf = (
   return provenance[field];
 };
 
-// The verbs that state what a person researches. The card-lead verb list behind
+// The verbs that state what a person researches, in any inflection. The card-lead verb list behind
 // `describesResearchFocus` also counts "supports" and "uses", which open an office's card
 // as readily as a lab's, so it cannot be the witness that a row states no research.
 const CARD_STATES_RESEARCH =
-  /\b(?:studies|investigates|examines|explores|develops|researches|analy[sz]es)\b|\bresearch\b/i;
+  /\b(?:stud(?:y|ies|ying)|investigat(?:e|es|ing)|examin(?:e|es|ing)|explor(?:e|es|ing)|develop(?:s|ing)?|analy[sz](?:e|es|ing)|research(?:es|ers?|ing)?)\b/i;
 
 /**
  * Whether the row's own description states research, the second witness an
@@ -137,6 +137,17 @@ export function descriptionStatesResearch(entity: {
   );
 }
 
+/**
+ * The citation that gave the row its identity, which is the only one whose person's
+ * title may speak for the row.
+ *
+ * `slug` provenance only. Both mint gates write `slug` and `name` from the same
+ * base, so for this population a `name` fallback adds nothing, and where it does
+ * fire the row's `name` is by definition a value some other lane wrote - the
+ * name-graft class this repo already tracks separately. It fired for 255 live rows
+ * on Development, so dropping it is a real narrowing of what may be archived, in
+ * the conservative direction.
+ */
 export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): string | undefined {
   const url = provenanceOf(entity, 'slug')?.sourceUrl;
   return isPersonProfileIdentityUrl(url) ? String(url) : undefined;

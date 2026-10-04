@@ -144,6 +144,9 @@ describe('descriptionStatesResearch', () => {
       'Investigates fixture mechanisms in clinical trials.',
       'Research focuses on fixture design.',
       'Develops and applies a fixture index to scale up programs.',
+      'We study how fixtures shape outcomes.',
+      'Studying fixture mechanisms in clinical trials.',
+      'Researchers in the group examine fixture design.',
     ]) {
       expect(descriptionStatesResearch({ shortDescription })).toBe(true);
     }
