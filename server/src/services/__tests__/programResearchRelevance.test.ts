@@ -381,5 +381,94 @@ describe('classifyProgramResearchRelevance', () => {
         }),
       ).toBe(true);
     });
+    describe('a multi-purpose fund whose own page names research as an eligible use (#4675)', () => {
+      const related = (input: Parameters<typeof classifyProgramResearchRelevance>[0]) =>
+        classifyProgramResearchRelevance(input).researchRelated;
+      const languageAndResearchGrant = {
+        title: 'Fixture Summer Language Study Grant',
+        programKind: 'FELLOWSHIP_FUNDING',
+        purpose: ['Language Study', 'Research'],
+        description:
+          'Awards are available to undergraduate and graduate students for language study and research. The award may be used for travel, tuition and other legitimate research expenses.',
+      };
+
+      it('serves a language-study titled grant whose description names research as a use', () => {
+        expect(classifyProgramResearchRelevance(languageAndResearchGrant)).toMatchObject({
+          researchRelated: true,
+          reasons: expect.arrayContaining(['non_research_title', 'research_use_stated']),
+        });
+      });
+
+      it('serves a fund whose facet names only language study when its text names a research use', () => {
+        expect(
+          related({
+            title: 'Fixture Regional Fund',
+            purpose: ['Language Study'],
+            eligibility: 'Students may use the grant for language study, travel, or research.',
+          }),
+        ).toBe(true);
+      });
+
+      it('withholds a multi-purpose fund whose only research evidence is the purpose tag', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Supports intensive language study abroad over the summer.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            title: 'Fixture Regional Fund',
+            purpose: ['Language Study'],
+            description: 'Supports intensive language study abroad over the summer.',
+          }),
+        ).toBe(false);
+      });
+
+      it('does not count research named as an outcome or an applicant interest as a use', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Advanced language study that can support research.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Open to students whose work or research involves the region.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Priority for students with prior research experience in the language.',
+          }),
+        ).toBe(false);
+      });
+
+      it('keeps a fund withheld when its text negates or disclaims the research use', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Supports language study abroad. The award may not be used for research expenses.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            title: 'Fixture Awards for Internships or Non-Research Projects',
+            purpose: ['Internship/Work', 'Research'],
+            description: 'Funds internships and project travel, including research travel.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Funds language study and non-research projects. It may be used for travel or research.',
+          }),
+        ).toBe(false);
+      });
+    });
   });
 });

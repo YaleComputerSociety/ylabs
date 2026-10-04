@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Multi-Purpose Fund Is Served When Its Own Page Names Research As An Eligible Use (#4675)
+
+A fund that pays for research among other uses, such as study, language, internships or travel, is research-relevant when its own page text (description, eligibility or summary) names research as an eligible use (owner decision).
+It stays withheld when research appears only in the purpose tags, when its text disclaims research ("non-research projects", "may not be used for research"), or when another hold applies: a duplicate copy, a prize for completed work, a stale cycle, a suspension or a listing page.
+The statement has to name research as a use, such as funding for research, research expenses or travel, or conducting research.
+Research named as an outcome ("language study that can support research"), as an applicant interest ("students whose work or research involves") or as prior experience does not count, which keeps the #4291 language-study rule intact.
+The rule lifts the non-research title and language-study facet holds and the purpose-facet hold of #3904, and nothing else.
+Measured on Development on 2026-10-04 over all 534 live programs: 238 were held as non-research, 9 of them with a research value in `purpose`.
+The rule changes the tier of 2 programs, each read on its live page: a summer research and language study grant open to undergraduates with an upcoming deadline becomes `student_ready`, and a travel fund whose text names research among its uses rises to `limited_but_safe`, which is not served because it has no application route.
+The other 7 stay withheld: their text names no research use, it disclaims research, they are a duplicate or a prize for completed work, or, in one case, the stored blurb was copied from a sibling grant and names research only as an applicant interest.
+
 ## 2026-10-04: The Site Stays Out Of Search Engines, And Link-Preview Fetchers May Read It (#4241)
 
 Search engines stay out of y/labs for now, so `client/public/robots.txt` keeps `User-agent: *` / `Disallow: /` and `client/index.html` keeps `<meta name="robots" content="noindex, nofollow">`.
