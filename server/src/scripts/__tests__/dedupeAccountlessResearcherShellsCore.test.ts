@@ -385,7 +385,7 @@ describe('decideShellMerge netid arm (#3166)', () => {
 });
 
 describe('decideShellMerge verified-profile arm', () => {
-  const page = 'https://medicine.example.edu/profile/alex-rivera/';
+  const page = 'https://dept.example.edu/p/1001/';
   const verified = (url: string) => [
     {
       kind: 'YALE_OFFICIAL',
@@ -398,14 +398,14 @@ describe('decideShellMerge verified-profile arm', () => {
   const account = (over: Record<string, unknown> = {}) => ({
     id: 'c'.repeat(24),
     accountId: 'd'.repeat(24),
-    displayName: 'Alexander Rivera',
+    displayName: 'Sample Fixture',
     title: 'Associate Professor of Medicine',
-    profileLinks: verified('https://www.medicine.example.edu/profile/alex-rivera'),
+    profileLinks: verified('https://www.dept.example.edu/p/1001'),
     ...over,
   });
   const shell = (over: Record<string, unknown> = {}) => ({
     id: 's'.repeat(24),
-    displayName: 'Alex Rivera',
+    displayName: 'Sam Fixture',
     title: 'Associate Professor',
     profileLinks: verified(page),
     ...over,
@@ -445,7 +445,7 @@ describe('decideShellMerge verified-profile arm', () => {
   });
 
   it('lets the surname veto the page', () => {
-    expect(decide(shell({ displayName: 'Alex Moreno' }), [account()]).merge).toBe(false);
+    expect(decide(shell({ displayName: 'Sam Otherfamily' }), [account()]).merge).toBe(false);
   });
 
   it('never folds a trainee rank into a faculty appointment on a page alone', () => {
