@@ -276,6 +276,10 @@ The validator does not run on raw bulk writes, so two writers enforce the pairin
 `researchers:dedupe-accountless-shells` moves a shell's ORCID link with the ORCID it transfers, pulls it off the archived shell, and never appends a shell ORCID link the canonical record's resulting ORCID does not back.
 The directory materializer plans the ORCID link from the final `identifiers.orcid`, after any ORCID collision is forgiven, so a stored row that already holds a contradicting link gets the link its identifier backs, or none, and the contradiction is counted as a materialization conflict and logged instead of failing the key.
 Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link held it without `identifiers.orcid`, all of them archived dedupe shells, and none held a link naming a different ORCID from a present identifier.
+`researchers:dedupe-accountless-shells` folds a shell into another record on four identities, in order: netid, roster identity, a shared verified official primary profile, then exact name.
+The verified-profile arm exists because a programme roster mints under a go-by name and the directory account under the legal one, so the two records never share a name; a profile page the link-health lane verified as primary identity for both is the evidence that joins them.
+It folds only into an account-backed record, resolves to nobody when two accounts hold the page, lets the surname veto, and refuses when one title owns research and the other states a trainee rank, because the one measured counterexample was a trainee whose verified link pointed at a professor's page.
+Measured on Development on 2026-10-04, the arm folds 9 shells and refuses that one pair.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.

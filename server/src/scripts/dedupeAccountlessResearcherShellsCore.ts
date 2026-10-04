@@ -1,5 +1,8 @@
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
+import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
+import { splitName } from '../scrapers/utils/scraperHelpers';
+import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -125,7 +128,12 @@ export type ShellMergeReason =
   | 'ORCID_CONFLICT'
   | 'NETID_CONFLICT';
 
-export const SHELL_FOLD_IDENTITIES = ['netid', 'roster-identity', 'name'] as const;
+export const SHELL_FOLD_IDENTITIES = [
+  'netid',
+  'roster-identity',
+  'verified-profile',
+  'name',
+] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
 
 export interface ShellMergeDecision {
@@ -140,6 +148,71 @@ export interface ShellIdentity extends ResearcherIdentityLike {
   id?: string;
   displayName?: unknown;
   orcid?: unknown;
+  profileLinks?: unknown;
+  title?: unknown;
+}
+
+export interface VerifiedProfileCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+  title?: unknown;
+}
+
+export interface VerifiedProfileEntry extends CanonicalNetidEntry {
+  displayName?: unknown;
+  profileLinks?: unknown;
+  title?: unknown;
+}
+
+/**
+ * The page key of every verified official primary-identity link a researcher holds.
+ * A verified primary identity is a profile page the link-health lane fetched and found
+ * to be about this person, so two records holding the same one are claiming the same
+ * human, whatever given name each was minted under.
+ */
+export function verifiedPrimaryProfileKeys(profileLinks: unknown): string[] {
+  if (!Array.isArray(profileLinks)) return [];
+  const keys = new Set<string>();
+  for (const link of profileLinks) {
+    if (!link || typeof link !== 'object') continue;
+    const { kind, purpose, verifiedAt, url } = link as Record<string, unknown>;
+    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || !verifiedAt) continue;
+    const key = profilePageKey(url);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+function profilePageKey(url: unknown): string | undefined {
+  if (typeof url !== 'string' || !url.trim()) return undefined;
+  try {
+    const parsed = new URL(url.trim());
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    return path ? `${host}${path}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildVerifiedPrimaryProfileIndex(
+  entries: ReadonlyArray<VerifiedProfileEntry>,
+): Map<string, VerifiedProfileCandidate[]> {
+  const index = new Map<string, VerifiedProfileCandidate[]>();
+  for (const entry of entries) {
+    for (const key of verifiedPrimaryProfileKeys(entry.profileLinks)) {
+      const list = index.get(key) ?? [];
+      list.push({
+        id: entry.id,
+        orcid: cleanOrcid(entry.orcid),
+        netid: bareNetid(entry.netid),
+        tier: researcherIdentityTier(entry),
+        displayName: entry.displayName,
+        title: entry.title,
+      });
+      index.set(key, list);
+    }
+  }
+  return index;
 }
 
 /**
@@ -214,16 +287,73 @@ function decideRosterIdentityFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'roster-identity' };
 }
 
+/**
+ * A shell and an account-backed record that hold the same verified official primary
+ * profile are one person even when their given names differ, because a programme
+ * roster mints under a nickname and the directory account under the legal name. The
+ * page decides; the surname only vetoes. More than one account-backed holder of the
+ * page resolves to nobody, because two accounts are two humans the page cannot split.
+ */
+function decideVerifiedProfileFold(
+  shell: ShellIdentity,
+  verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]>,
+): ShellMergeDecision | undefined {
+  const keys = verifiedPrimaryProfileKeys(shell.profileLinks);
+  if (keys.length === 0) return undefined;
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const holders = new Map<string, VerifiedProfileCandidate>();
+  for (const key of keys) {
+    for (const candidate of verifiedProfileIndex.get(key) ?? []) {
+      if (candidate.id === shell.id) continue;
+      if (candidate.tier !== 'ACCOUNT') continue;
+      if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+      holders.set(candidate.id, candidate);
+    }
+  }
+  if (holders.size === 0) return undefined;
+  if (holders.size > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'verified-profile' };
+  }
+  const [target] = holders.values();
+  const shellSurname = splitName(typeof shell.displayName === 'string' ? shell.displayName : '').last;
+  const targetSurname = splitName(
+    typeof target.displayName === 'string' ? target.displayName : '',
+  ).last;
+  if (!surnamesCompatible(shellSurname, targetSurname)) return undefined;
+  if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'verified-profile' };
+  }
+  const shellNetid = bareNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'verified-profile' };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'verified-profile' };
+}
+
+// A verified link can itself be wrong, and the one measured case was a postdoc holding a
+// professor's page, so a professor and a trainee rank are never folded on a page alone.
+function titlesStateConflictingRanks(left: unknown, right: unknown): boolean {
+  const verdicts = new Set(
+    [left, right].map((value) => titleResearchOwnership(typeof value === 'string' ? value : '')),
+  );
+  return verdicts.has('owns_research') && verdicts.has('works_in_another_group');
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
   canonicalNetidIndex: Map<string, CanonicalCandidate[]> = new Map(),
   rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate> = [],
+  verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]> = new Map(),
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
   const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
   if (byRosterIdentity) return byRosterIdentity;
+  const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
+  if (byVerifiedProfile) return byVerifiedProfile;
 
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };

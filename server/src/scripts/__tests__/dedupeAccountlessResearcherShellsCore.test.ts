@@ -11,6 +11,7 @@ import {
   researcherIdentityTier,
   roleAssignmentEdgeKey,
   shellProfileLinkKindsReleasedWith,
+  buildVerifiedPrimaryProfileIndex,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -380,5 +381,60 @@ describe('decideShellMerge netid arm (#3166)', () => {
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
     ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+  });
+});
+
+describe('decideShellMerge verified-profile arm', () => {
+  const page = 'https://medicine.example.edu/profile/alex-rivera/';
+  const verified = (url: string) => [
+    { kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url, verifiedAt: new Date() },
+  ];
+  const account = (over: Record<string, unknown> = {}) => ({
+    id: 'c'.repeat(24),
+    accountId: 'd'.repeat(24),
+    displayName: 'Alexander Rivera',
+    title: 'Associate Professor of Medicine',
+    profileLinks: verified('https://www.medicine.example.edu/profile/alex-rivera'),
+    ...over,
+  });
+  const shell = (over: Record<string, unknown> = {}) => ({
+    id: 's'.repeat(24),
+    displayName: 'Alex Rivera',
+    title: 'Associate Professor',
+    profileLinks: verified(page),
+    ...over,
+  });
+  const decide = (s: Record<string, unknown>, accounts: Record<string, unknown>[]) =>
+    decideShellMerge(s, new Map(), new Map(), [], buildVerifiedPrimaryProfileIndex(accounts as any));
+
+  it('folds a shell into the one account that holds the same verified profile', () => {
+    expect(decide(shell(), [account()])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it('ignores an unverified or non-primary link', () => {
+    const unverified = [{ kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url: page }];
+    expect(decide(shell({ profileLinks: unverified }), [account()]).reason).toBe('NO_CANONICAL');
+    const secondary = [
+      { kind: 'YALE_OFFICIAL', purpose: 'SECONDARY', url: page, verifiedAt: new Date() },
+    ];
+    expect(decide(shell(), [account({ profileLinks: secondary })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('resolves to nobody when two accounts hold the page', () => {
+    const second = account({ id: 'e'.repeat(24), accountId: 'f'.repeat(24) });
+    expect(decide(shell(), [account(), second]).reason).toBe('AMBIGUOUS_MULTIPLE_CANONICAL');
+  });
+
+  it('lets the surname veto the page', () => {
+    expect(decide(shell({ displayName: 'Alex Moreno' }), [account()]).merge).toBe(false);
+  });
+
+  it('never folds a trainee rank into a faculty appointment on a page alone', () => {
+    expect(decide(shell({ title: 'Postdoctoral Associate' }), [account()]).merge).toBe(false);
   });
 });
