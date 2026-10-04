@@ -80,7 +80,7 @@ export function scopeOfStoredBenchmark(
 export function supersedeRefusal(
   superseded: StoredBenchmarkScope,
   existingSuccessorId: string | undefined,
-  options: { successor?: StoredBenchmarkScope } = {},
+  options: { successor?: StoredBenchmarkScope; supersededAncestorIds?: readonly string[] } = {},
 ): string | undefined {
   if (existingSuccessorId) {
     return `Benchmark ${superseded.benchmarkId} is already superseded by ${existingSuccessorId}`;
@@ -88,6 +88,9 @@ export function supersedeRefusal(
   if (options.successor) {
     if (options.successor.benchmarkId === superseded.benchmarkId) {
       return 'A benchmark cannot supersede itself';
+    }
+    if (options.supersededAncestorIds?.includes(options.successor.benchmarkId)) {
+      return `Benchmark ${superseded.benchmarkId} already descends from ${options.successor.benchmarkId}, so marking it as the successor would close a cycle`;
     }
     if (scopeKey(options.successor) !== scopeKey(superseded)) {
       return `Benchmark ${options.successor.benchmarkId} has a different lane or scope from ${superseded.benchmarkId}, so it is not a recapture of it`;
@@ -271,6 +274,20 @@ async function existingSuccessorId(benchmarkId: string): Promise<string | undefi
   return successor?.benchmarkId;
 }
 
+async function supersededAncestorIds(benchmarkId: string): Promise<string[]> {
+  const ancestors: string[] = [];
+  let current = benchmarkId;
+  for (;;) {
+    const stored = (await LaneBenchmark.findOne({ benchmarkId: current })
+      .select('supersedes')
+      .lean()) as unknown as { supersedes?: string } | null;
+    const next = stored?.supersedes;
+    if (!next || next === benchmarkId || ancestors.includes(next)) return ancestors;
+    ancestors.push(next);
+    current = next;
+  }
+}
+
 async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<void> {
   const superseded = await loadSupersededBenchmark(supersededId);
   const successor = (await LaneBenchmark.findOne({ benchmarkId: args.benchmarkId })
@@ -284,6 +301,7 @@ async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<v
   }
   const refusal = supersedeRefusal(superseded, await existingSuccessorId(supersededId), {
     successor,
+    supersededAncestorIds: await supersededAncestorIds(supersededId),
   });
   if (refusal) throw new Error(refusal);
   if (!args.dryRun) {

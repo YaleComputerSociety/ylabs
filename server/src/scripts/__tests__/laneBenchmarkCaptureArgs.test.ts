@@ -102,6 +102,19 @@ describe('recapturing a stored benchmark', () => {
       /cannot supersede itself/,
     );
   });
+
+  it('refuses a successor that the superseded benchmark already descends from', () => {
+    const successor = { ...stored, benchmarkId: 'example-root' };
+    expect(
+      supersedeRefusal(stored, undefined, {
+        successor,
+        supersededAncestorIds: ['example-middle', 'example-root'],
+      }),
+    ).toMatch(/would close a cycle/);
+    expect(
+      supersedeRefusal(stored, undefined, { successor, supersededAncestorIds: ['example-middle'] }),
+    ).toBeUndefined();
+  });
 });
 
 describe('carrying gold labels into a recapture', () => {
