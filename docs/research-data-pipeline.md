@@ -1224,6 +1224,12 @@ Until one of those happens, treat their unit tests as pinning a capability the m
 It has never executed a decision in any environment, and three independent gates each stop it, in the order the code hits them (#2410).
 
 Read the lane rather than inferring it: `yarn --cwd server research-entity:audit-departure-lane` names the first gate in the way, plans the next run's decisions from the reconciler itself, and states in prose whether the lane has ever evaluated a row (#2428).
+With no `--run` it plans against the newest successful `dept-faculty-roster` run that was not scoped by `--only` or `--limit`, and prints that choice as `plannedRunSelection`, because a newer one-department run reads as a lane that governs nothing (#4613).
+The lane itself is unaffected: a materialize pass reconciles the run it materialized, never the newest one.
+A roster snapshot whose department no `OrgUnit` names governs nothing and is reported in `unresolvedDepartments`.
+The roster keys that are deliberately not departments the lane may govern are declared with their reason in `server/src/scrapers/rosterDepartmentsOutsideDepartureLane.ts`: the five school-wide directories, the nine affiliates rosters, and three centre, programme and campus rosters, measured as the 17 unresolved on 2026-10-03.
+None of them is a spelling difference for a department rows carry, so none gained an alias, because an alias would let an affiliates or school roster's absence govern rows it never claimed.
+`undeclaredUnresolvedDepartments` counts the rest, and only those log a warning, so a nonzero value is a roster config that needs an alias or a declaration (#4612).
 It writes nothing, needs no flag, and has no `--apply`, because a suppression removes a research home from the directory and belongs to a materialize pass an operator turned on deliberately.
 The plan's `suppress_departed` count is taken before the Yale-profile probe, so it is an upper bound rather than a prediction.
 

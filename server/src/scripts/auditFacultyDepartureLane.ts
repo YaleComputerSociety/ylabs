@@ -13,6 +13,7 @@
  *
  *   yarn --cwd server research-entity:audit-departure-lane
  *   yarn --cwd server research-entity:audit-departure-lane --run <scrapeRunId>
+
  *   yarn --cwd server research-entity:audit-departure-lane --output "$TMPDIR/departure.json"
  *
  * There is deliberately no `--apply`. Suppression removes a research home from the
@@ -26,6 +27,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
+import { ScrapeRun } from '../models/scrapeRun';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
@@ -44,8 +46,10 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   summarizeFacultyDepartureLaneAudit,
+  selectDepartureAuditRun,
   summarizeStandingRosterFreezes,
   type DepartmentRosterHealthHistoryEntry,
+  type DepartureAuditRunSelection,
   type FacultyDepartureLaneFacts,
 } from './auditFacultyDepartureLaneCore';
 
@@ -83,18 +87,30 @@ export function parseFacultyDepartureLaneAuditArgs(
   return options;
 }
 
-/** The most recent run carrying live roster-health snapshots, the lane's input. */
-export async function latestRosterHealthRunId(): Promise<string | undefined> {
-  const latest = await Observation.findOne({
+export async function selectRosterHealthRun(): Promise<DepartureAuditRunSelection | undefined> {
+  const runIds = (await Observation.distinct('scrapeRunId', {
     entityType: 'departmentRosterHealth',
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-    superseded: { $ne: true },
-  })
-    .sort({ observedAt: -1 })
-    .select('scrapeRunId')
-    .lean();
-  const runId = (latest as { scrapeRunId?: unknown } | null)?.scrapeRunId;
-  return runId ? String(runId) : undefined;
+  })) as unknown[];
+  if (runIds.length === 0) return undefined;
+  const runs = (await ScrapeRun.find({ _id: { $in: runIds } })
+    .select('startedAt status invalidated options')
+    .lean()) as Array<{
+    _id: unknown;
+    startedAt?: unknown;
+    status?: string;
+    invalidated?: boolean;
+    options?: Record<string, unknown> | null;
+  }>;
+  return selectDepartureAuditRun(
+    runs.map((run) => ({
+      runId: String(run._id),
+      startedAt: run.startedAt instanceof Date ? run.startedAt : null,
+      status: run.status,
+      invalidated: run.invalidated,
+      options: run.options,
+    })),
+  );
 }
 
 /**
@@ -210,7 +226,15 @@ async function main(): Promise<void> {
         superseded: { $ne: true },
       }),
     ]);
-    const runId = options.runId ?? (await latestRosterHealthRunId());
+    const runSelection = options.runId ? undefined : await selectRosterHealthRun();
+    const runId = options.runId ?? runSelection?.runId;
+    if (runSelection) {
+      console.warn(
+        `[faculty-departure] planning against run ${runSelection.runId} (${runSelection.reason}` +
+          `${runSelection.scope.length ? `, scoped by ${runSelection.scope.join(', ')}` : ''}; ` +
+          `${runSelection.newerRunsSkipped} newer run(s) skipped)`,
+      );
+    }
     const plan = runId
       ? await reconcileFacultyRosterDeparturesFromRun(runId, { dryRun: true })
       : undefined;
@@ -237,6 +261,7 @@ async function main(): Promise<void> {
       ...(plan ? { planOutcome: plan.outcome, plan: plan.planned } : {}),
       governedDepartments: plan?.governedDepartments.length ?? 0,
       unresolvedDepartments: plan?.unresolvedDepartments.length ?? 0,
+      undeclaredUnresolvedDepartments: plan?.undeclaredUnresolvedDepartments.length ?? 0,
       frozenDepartments: plan?.frozenDepartments ?? 0,
       ...(plan?.admissibilityCounts ? { admissibilityCounts: plan.admissibilityCounts } : {}),
       regressedDepartments: plan?.regressedDepartments ?? 0,
@@ -256,6 +281,7 @@ async function main(): Promise<void> {
     const evidenceFreshness = plan?.evidenceFreshness;
     const output = {
       mode: 'plan',
+      plannedRunSelection: runSelection ?? { runId, reason: 'operator-named-run' },
       ...report,
       standingFreezes,
       ...(evidenceFreshness ? { evidenceFreshness } : {}),
