@@ -1744,7 +1744,12 @@ describe('isCredentialOrAwardLeadBiography (#1745)', () => {
 });
 
 describe('revoiceFirstPersonResearchLead', () => {
-  const namedLab = { entityType: 'LAB', kind: 'lab', name: 'Fixture Lab', displayName: 'Fixture Lab' };
+  const namedLab = {
+    entityType: 'LAB',
+    kind: 'lab',
+    name: 'Fixture Lab',
+    displayName: 'Fixture Lab',
+  };
   const namedPerson = {
     entityType: 'FACULTY_RESEARCH_AREA',
     kind: 'individual',
@@ -1769,7 +1774,32 @@ describe('revoiceFirstPersonResearchLead', () => {
         'We study how cells divide. Our lab uses imaging in Type I diabetes models.',
         namedLab,
       ),
-    ).toBe('The Fixture Lab studies how cells divide. The lab uses imaging in Type I diabetes models.');
+    ).toBe(
+      'The Fixture Lab studies how cells divide. The lab uses imaging in Type I diabetes models.',
+    );
+  });
+
+  it("names the lab for 'we' beside a numbered category in lowercase prose (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We study type I interferon signaling, class I molecules, phase I trials and complex I.',
+        namedLab,
+      ),
+    ).toBe(
+      'The Fixture Lab studies type I interferon signaling, class I molecules, phase I trials and complex I.',
+    );
+  });
+
+  it("treats 'where I' and ', I' as the lead speaking on a lab row (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We moved to the coast, where I went to study tides.',
+        namedLab,
+      ),
+    ).toBe('We moved to the coast, where I went to study tides.');
+    expect(revoiceFirstPersonResearchLead('In the lab, I study tides.', namedLab)).toBe(
+      'In the lab, this researcher studies tides.',
+    );
   });
 
   it('serves a life-story body as written rather than half converted (#4809)', () => {

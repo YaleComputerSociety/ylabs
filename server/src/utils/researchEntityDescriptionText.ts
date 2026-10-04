@@ -1818,10 +1818,45 @@ const revoicePassOutsideQuotations = (
   });
 };
 
-// A numbered category ("Type I diabetes", "Phase I trial") reads as a capital I
-// before a lowercase word too, so those labels are not a speaker.
-const SINGULAR_FIRST_PERSON_SUBJECT_PATTERN =
-  /(?<!\b(?:Type|Phase|Class|Grade|Stage|Part|Chapter|War|Level|Tier|Wave|Group|Act|Volume|Book|Section)\s)\bI(?:['’](?:m|ve|d|ll))?\s+(?=[a-z])/g;
+const WORDS_A_SUBJECT_PRONOUN_FOLLOWS = [
+  'and',
+  'but',
+  'or',
+  'so',
+  'then',
+  'where',
+  'when',
+  'while',
+  'which',
+  'that',
+  'who',
+  'because',
+  'as',
+  'if',
+  'since',
+  'after',
+  'before',
+  'until',
+  'how',
+  'what',
+  'why',
+  'here',
+  'now',
+  'also',
+  'currently',
+  'recently',
+  'first',
+  'today',
+];
+
+// A capital I counts as a speaker only where a pronoun can stand, because a
+// numbered category ("type I interferon", "complex I") has an open-ended label
+// list that no exclusion list keeps up with.
+const SINGULAR_FIRST_PERSON_SUBJECT_PATTERN = new RegExp(
+  `(?<=(?:^\\s*|[.!?;:,]\\s+|["“‘(]\\s*|\\b(?:${WORDS_A_SUBJECT_PRONOUN_FOLLOWS.join('|')})\\s+))` +
+    `I(?:['’](?:m|ve|d|ll))?\\s+(?=[a-z])`,
+  'g',
+);
 
 /**
  * Whether a person speaks in the body in the singular. On a lab row that voice
