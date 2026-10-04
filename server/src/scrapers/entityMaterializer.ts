@@ -644,6 +644,21 @@ export function isRefusedWrittenBodyCard(
   );
 }
 
+export function isAcceptableWrittenBodyCard(input: {
+  card: string;
+  body: string;
+  researchAreas: unknown;
+  servingBarAccepts: (card: string) => boolean;
+  requireGrounding: boolean;
+}): boolean {
+  return (
+    !isRefusedWrittenBodyCard(input.card, input.body, input.researchAreas) &&
+    (!input.requireGrounding ||
+      cardGroundingScore(input.card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
+    input.servingBarAccepts(input.card)
+  );
+}
+
 export type WrittenBodyCardChoice =
   | { kind: 'stored'; card: string }
   | { kind: 'observed'; card: string; index: number }
@@ -668,10 +683,14 @@ export async function resolveWrittenBodyCard(input: {
   servingBarAccepts: (card: string) => boolean;
   synthesize?: (fullDescription: string) => Promise<string>;
 }): Promise<WrittenBodyCardChoice> {
-  const acceptable = (card: string, grounding: boolean): boolean =>
-    !isRefusedWrittenBodyCard(card, input.body, input.researchAreas) &&
-    (!grounding || cardGroundingScore(card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
-    input.servingBarAccepts(card);
+  const acceptable = (card: string, requireGrounding: boolean): boolean =>
+    isAcceptableWrittenBodyCard({
+      card,
+      body: input.body,
+      researchAreas: input.researchAreas,
+      servingBarAccepts: input.servingBarAccepts,
+      requireGrounding,
+    });
   const stored = textValue(input.storedCard);
   if (stored && acceptable(stored, true)) return { kind: 'stored', card: stored };
   for (const [index, value] of input.observedCards.entries()) {
@@ -7959,9 +7978,23 @@ export async function projectFromLog(
       });
       const storedCard = textValue(entityDoc?.shortDescription);
       const writtenBodyResearchAreas = set.researchAreas ?? entityDoc?.researchAreas;
-      const storedCardRefused =
+      const servingBarAccepts = (card: string) =>
+        servingBarAcceptsWrittenBodyCard(
+          entityDoc,
+          set,
+          fullDescription,
+          card,
+          input.nameIdentityAuthority.leadPersonName,
+        );
+      const storedCardUnacceptable =
         !!storedCard &&
-        isRefusedWrittenBodyCard(storedCard, fullDescription, writtenBodyResearchAreas);
+        !isAcceptableWrittenBodyCard({
+          card: storedCard,
+          body: fullDescription,
+          researchAreas: writtenBodyResearchAreas,
+          servingBarAccepts,
+          requireGrounding: true,
+        });
       const writtenBodyChanged =
         fullDescription !==
         sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
@@ -7970,15 +8003,8 @@ export async function projectFromLog(
         storedCard,
         observedCards: observedCards.map((candidate) => candidate.value),
         researchAreas: writtenBodyResearchAreas,
-        servingBarAccepts: (card) =>
-          servingBarAcceptsWrittenBodyCard(
-            entityDoc,
-            set,
-            fullDescription,
-            card,
-            input.nameIdentityAuthority.leadPersonName,
-          ),
-        synthesize: writtenBodyChanged || storedCardRefused ? cardSynthesizer : undefined,
+        servingBarAccepts,
+        synthesize: writtenBodyChanged || storedCardUnacceptable ? cardSynthesizer : undefined,
       });
       if (choice.kind === 'observed') {
         const candidate = observedCards[choice.index];
@@ -7993,7 +8019,7 @@ export async function projectFromLog(
         fieldsWritten++;
       } else if (choice.kind === 'derived' || choice.kind === 'synthesized') {
         groundedShortDescription = choice.card;
-      } else if (choice.kind === 'none' && storedCardRefused) {
+      } else if (choice.kind === 'none' && storedCardUnacceptable) {
         unset.shortDescription = '';
         unset['fieldProvenance.shortDescription'] = '';
         fieldsWritten++;

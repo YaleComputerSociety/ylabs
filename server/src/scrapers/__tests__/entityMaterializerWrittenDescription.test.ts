@@ -295,6 +295,28 @@ describe('a written body never serves a chip echo or itself as its card (#4788 f
     expect(second.set.shortDescription).toBeUndefined();
   });
 
+  it('clears an ungrounded stored card after one synthesis pass and then settles', async () => {
+    expect(isRefusedWrittenBodyCard(COPIED_CARD, LONG_ONE_SENTENCE_BODY, TOPICS)).toBe(false);
+    let calls = 0;
+    const synthesize = async () => {
+      calls += 1;
+      return '';
+    };
+    const first = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: COPIED_CARD, synthesize }),
+    );
+    expect(calls).toBe(2);
+    expect(first.set.shortDescription).toBeUndefined();
+    expect(first.unset.shortDescription).toBe('');
+    calls = 0;
+    await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: '', synthesize }),
+    );
+    expect(calls).toBe(0);
+  });
+
   it('synthesizes when the written body changed since the last pass', async () => {
     let calls = 0;
     const row = rowWith({
