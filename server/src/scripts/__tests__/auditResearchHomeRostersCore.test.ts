@@ -5,8 +5,10 @@ import {
   officialRosterPrecision,
   snapshotDrift,
   summarizeResearchHomeRosterAudit,
+  twinMembershipKeys,
   uncoveredCurrentSections,
   unmaterializedMembershipKeys,
+  unrefreshedMembershipKeys,
   type OfficialRosterLaneEvidence,
 } from '../auditResearchHomeRostersCore';
 import { parseResearchHomeRosterAuditArgs, selectRosterConfigs } from '../auditResearchHomeRosters';
@@ -159,6 +161,72 @@ describe('research-home roster gate: stored corpus', () => {
       status: 'ok',
       brokenLanes: 0,
       expiredSnapshots: 1,
+    });
+  });
+
+  it('alarms when a snapshot key is served only by a row older than the snapshot', () => {
+    const listed = member();
+    const evidence = lane({
+      storedSnapshotState: 'current',
+      storedObservedAt: '2026-09-20T00:00:00.000Z',
+      materializedRows: [
+        {
+          membershipKey: listed.membershipKey,
+          personId: 'person-a',
+          observedAt: '2026-08-28T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(unrefreshedMembershipKeys(evidence)).toEqual([listed.membershipKey]);
+    expect(classifyOfficialRosterLane(evidence, NOW).verdict).toBe('membership-not-refreshed');
+    expect(summarizeResearchHomeRosterAudit([evidence], { now: NOW })).toMatchObject({
+      status: 'findings',
+      brokenLanes: 1,
+      unrefreshedMembershipKeys: 1,
+    });
+  });
+
+  it('passes a snapshot key whose row the snapshot run refreshed', () => {
+    const listed = member();
+    const evidence = lane({
+      storedSnapshotState: 'current',
+      storedObservedAt: '2026-09-20T00:00:00.000Z',
+      materializedRows: [
+        {
+          membershipKey: listed.membershipKey,
+          personId: 'person-a',
+          observedAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(unrefreshedMembershipKeys(evidence)).toEqual([]);
+    expect(classifyOfficialRosterLane(evidence, NOW).verdict).toBe('ok');
+  });
+
+  it('alarms when one snapshot key is held by live rows on two researcher records', () => {
+    const listed = member();
+    const evidence = lane({
+      storedSnapshotState: 'current',
+      storedObservedAt: '2026-09-20T00:00:00.000Z',
+      materializedRows: [
+        {
+          membershipKey: listed.membershipKey,
+          personId: 'person-a',
+          observedAt: '2026-08-28T00:00:00.000Z',
+        },
+        {
+          membershipKey: listed.membershipKey,
+          personId: 'person-b',
+          observedAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(twinMembershipKeys(evidence)).toEqual([listed.membershipKey]);
+    expect(unrefreshedMembershipKeys(evidence)).toEqual([]);
+    expect(classifyOfficialRosterLane(evidence, NOW).verdict).toBe('membership-edge-surplus');
+    expect(summarizeResearchHomeRosterAudit([evidence], { now: NOW })).toMatchObject({
+      brokenLanes: 1,
+      twinMembershipKeys: 1,
     });
   });
 

@@ -941,11 +941,26 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
  * under a different program path on each read, so with `value` in the fingerprint every read
  * left another live link, two live links conflict, and the member's edge is never re-stated or
  * given provenance (#3799). Elsewhere `profileUrl` is not held to that rule.
+ *
+ * A listing's displayed name, title, section and dates are the same kind of statement: every
+ * roster lane emits one of each per member key per read, and a page that re-spells a name or
+ * re-dates itself is restating the listing rather than adding a second one. Kept value-keyed,
+ * a changed name left the old name live beside the new, the two conflicted, the plan refused
+ * the listing, and the member's edge was never refreshed again (#4758). `role` is deliberately
+ * absent: a role change is a different claim that a lane's retirement has to govern.
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
-  researchGroupMember: new Set(['profileUrl']),
+  researchGroupMember: new Set([
+    'profileUrl',
+    'name',
+    'inferredUserName',
+    'title',
+    'sectionLabel',
+    'sourcePublishedAt',
+    'freshnessExpiresAt',
+  ]),
 };
 
 /**
