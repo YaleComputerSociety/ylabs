@@ -354,6 +354,24 @@ export interface ServedShortDescriptionOutcome {
   topicCardWithheld: boolean;
 }
 
+// A card lifted out of a body can open on a clause that leans on the sentence before
+// it ("And, using these ...", "When direct computation is not feasible, ...", "Before
+// joining ..."), which reads as a fragment on its own. Only a card derived from the
+// body is checked: a stored card is the source's own headline. "As <role>, ..." is
+// not listed because it is a complete opener on its own.
+const DEPENDENT_CLAUSE_OPENER =
+  /^(?:And|But|Or|Nor|So|Yet|Also|Then|Thus|Hence|Therefore|However|Moreover|Furthermore|Additionally|When|Whenever|While|Whereas|Although|Though|Because|Since|If|Unless|Before|After|Until|Once|Which|That|Who|Whose|Whom|Including|Such\s+as|Especially|Particularly)\b/;
+
+export const opensOnDependentClause = (card: string): boolean =>
+  DEPENDENT_CLAUSE_OPENER.test(card.trim());
+
+export function cardDerivedFromBody(fullDescription: unknown): string {
+  const derived = sanitizeResearchEntityShortDescription(
+    deriveShortDescriptionFromFullDescription(fullDescription),
+  );
+  return opensOnDependentClause(derived) ? '' : derived;
+}
+
 /**
  * The resolved card, collapsing withholding onto the empty string. Callers that
  * own a fallback chain must read `resolveServedShortDescriptionOutcome` instead,
@@ -431,9 +449,7 @@ export function resolveServedShortDescriptionOutcome(
       : sanitized;
   if (cleaned) {
     if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
-      const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
-        deriveShortDescriptionFromFullDescription(full),
-      );
+      const derivedFromChipEcho = cardDerivedFromBody(full);
       if (
         derivedFromChipEcho &&
         shortDescriptionQuality(derivedFromChipEcho, full, researchAreas, {
@@ -470,9 +486,7 @@ export function resolveServedShortDescriptionOutcome(
     }
   }
 
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(full),
-  );
+  const derived = cardDerivedFromBody(full);
   if (
     derived &&
     shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
@@ -581,10 +595,7 @@ export function gateAcceptedDerivedCardSubstitute(input: ServedCardBarInput): st
   const cleaned = textValue(input.shortDescription);
   if (!cleaned) return '';
   if (servedCardClearsGateBar(input)) return '';
-  const full = textValue(input.fullDescription);
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(full),
-  );
+  const derived = cardDerivedFromBody(input.fullDescription);
   if (!derived || derived === cleaned) return '';
   return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
 }
@@ -593,9 +604,7 @@ export function researchCardOverBiographyCard(input: ServedCardBarInput): string
   const cleaned = textValue(input.shortDescription);
   if (!cleaned || !isBiographyRatherThanResearch(cleaned)) return '';
   if (isProgramLikeResearchEntity({ kind: input.kind })) return '';
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(textValue(input.fullDescription)),
-  );
+  const derived = cardDerivedFromBody(input.fullDescription);
   if (!derived || derived === cleaned || isBiographyRatherThanResearch(derived)) return '';
   return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
 }

@@ -30,11 +30,10 @@
  */
 import { asResearchEntityType } from '../models/researchAccessTypes';
 import {
+  cardDerivedFromBody,
   gateAcceptedDerivedCardSubstitute,
   servedCardClearsGateBar,
 } from '../utils/groundedCardSynthesis';
-import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
-import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 
@@ -83,9 +82,7 @@ export function classifyDerivedCardSubstitute(row: ServedBiographyCardRow): {
     entityType: asResearchEntityType(row.entityType),
     kind: row.kind || undefined,
   };
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(row.fullDescription),
-  );
+  const derived = cardDerivedFromBody(row.fullDescription);
   if (!derived) return { outcome: 'body_yields_nothing', derived: '' };
   if (derived === row.shortDescription) return { outcome: 'derived_equals_card', derived };
   if (!servedCardClearsGateBar({ ...barInput, shortDescription: derived })) {
