@@ -1,6 +1,13 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  readSearchState,
+  SEARCH_INPUT_LABEL,
+  SEARCH_RESULTS_SELECTOR,
+  stuckSearchProblems,
+  waitForSearchResultsToSettle,
+} from './e2e-smoke-search-state.mjs';
 
 const LOCAL_SMOKE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const DEPLOYED_SMOKE_HOSTS = new Set([
@@ -214,13 +221,9 @@ const settleResearchPage = async (targetPage = page) => {
 };
 
 const submitSearch = async (query) => {
-  await page.getByLabel('Search y/labs').fill(query);
+  await page.getByLabel(SEARCH_INPUT_LABEL).fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page
-    .waitForFunction(() => !document.body.innerText.includes('Searching for '), undefined, {
-      timeout: 20000,
-    })
-    .catch(() => undefined);
+  await waitForSearchResultsToSettle(page, 20000).catch(() => undefined);
   await settleResearchPage();
 };
 
@@ -292,11 +295,11 @@ await step(
           await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
         }
         await assertSidebarFits('while browsing');
-        await sidebar.getByLabel('Search y/labs').fill(SMOKE_SEARCH_TOKEN);
+        await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
         await assertSidebarFits('with a query typed');
         await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
         await laptopPage
-          .locator('section[aria-label="Search results"]')
+          .locator(SEARCH_RESULTS_SELECTOR)
           .getByRole('status')
           .filter({ hasText: /results? for '.+'/i })
           .first()
@@ -312,18 +315,10 @@ await step(
 
 await step('search returns a result and the header settles out of loading', async () => {
   await submitSearch(SMOKE_SEARCH_TOKEN);
-  const searchButton = page.getByRole('button', { name: 'Search', exact: true });
-  await searchButton.waitFor({ timeout: 20000 });
-  assert(
-    (await page.getByRole('button', { name: 'Searching…', exact: true }).count()) === 0,
-    'Search button is stuck in the "Searching…" loading state.',
-  );
-  assert(
-    !(await searchButton.isDisabled()),
-    'Search button remained disabled after results loaded.',
-  );
+  const searchProblems = stuckSearchProblems(await readSearchState(page));
+  assert(searchProblems.length === 0, searchProblems.join(' '));
   const status = await page
-    .locator('section[aria-label="Search results"]')
+    .locator(SEARCH_RESULTS_SELECTOR)
     .getByRole('status')
     .first()
     .innerText();
