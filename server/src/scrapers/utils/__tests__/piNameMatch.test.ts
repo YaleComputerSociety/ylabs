@@ -111,6 +111,15 @@ describe('surnameFetchRegex', () => {
     expect(surnameFetchRegex('Kıraçel')!.test('Pelin Kıraçel')).toBe(true);
   });
 
+  it('matches every letter the surname fold strips, including extended blocks', () => {
+    for (const stored of ['Quoc Ngưyễnov', 'Mara Ștelțar', 'Lin Zhǎngrǔ', 'Ada Ḩalẓorn']) {
+      const surname = stored.split(' ')[1];
+      expect(surnameFetchRegex(surname)!.test(stored)).toBe(true);
+      expect(surnameFetchRegex(surname)!.test(stored.normalize('NFD'))).toBe(true);
+      expect(surnameFetchRegex(surname.normalize('NFKD'))!.test(stored)).toBe(true);
+    }
+  });
+
   it('reads an apostrophe as a surname boundary on the stored name', () => {
     const re = surnameFetchRegex("D'Arvellin")!;
     expect(re.test("Tomas D'Arvellin")).toBe(true);

@@ -278,34 +278,32 @@ export function surnameCoreKey(surname: string | undefined | null): string {
 
 export const SURNAME_FETCH_LIMIT = 200;
 
-const FOLDED_LETTER_VARIANTS: Readonly<Record<string, string>> = {
-  a: 'àáâãäåāăą',
-  c: 'çćĉċč',
-  d: 'ďđ',
-  e: 'èéêëēĕėęě',
-  g: 'ĝğġģ',
-  h: 'ĥħ',
-  i: 'ìíîïĩīĭįı',
-  j: 'ĵ',
-  k: 'ķ',
-  l: 'ĺļľŀł',
-  n: 'ñńņňŉ',
-  o: 'òóôõöøōŏő',
-  r: 'ŕŗř',
-  s: 'śŝşš',
-  t: 'ţťŧ',
-  u: 'ùúûüũūŭůűų',
-  w: 'ŵ',
-  y: 'ýÿŷ',
-  z: 'źżž',
-};
+const COMBINING_MARKS = '[\u0300-\u036f]*';
+
+const FOLDED_LETTER_VARIANTS: ReadonlyMap<string, string> = buildFoldedLetterVariants([
+  [0x00c0, 0x024f],
+  [0x1e00, 0x1eff],
+]);
+
+function buildFoldedLetterVariants(ranges: Array<[number, number]>): Map<string, string> {
+  const variants = new Map<string, string>();
+  for (const [from, to] of ranges) {
+    for (let code = from; code <= to; code += 1) {
+      const letter = String.fromCodePoint(code);
+      const [base] = surnameTokens(letter);
+      if (!base || base.length !== 1 || base === letter) continue;
+      variants.set(base, (variants.get(base) ?? '') + letter);
+    }
+  }
+  return variants;
+}
 
 function storedSpellingPattern(foldedKey: string): string {
   return [...foldedKey]
     .map((letter) => {
-      const variants = FOLDED_LETTER_VARIANTS[letter];
-      if (variants) return `[${letter}${variants}${variants.toUpperCase()}]`;
-      return letter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escaped = letter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const variants = FOLDED_LETTER_VARIANTS.get(letter);
+      return `${variants ? `[${letter}${variants}]` : escaped}${COMBINING_MARKS}`;
     })
     .join('');
 }
