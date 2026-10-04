@@ -121,9 +121,6 @@ export function nextRepairActionForReasons(reasons: string[]): string {
     return 'Repair the public description so the served body and card survive serve-time hygiene.';
   }
   if (reasons.includes('missing_source_url')) return 'Attach an official source URL.';
-  if (reasons.includes('missing_action_evidence')) {
-    return 'Add source-backed access or pathway evidence only if it exists.';
-  }
   return 'Operator review.';
 }
 

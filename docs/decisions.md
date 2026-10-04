@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: The Absence Of A Signal No Lane Collects Is Never A Reason (#4574)
+
+A gate reason, a repair task, or an operator-board blocker may record only the absence of something a lane collects.
+`missing_action_evidence` and its inverse `concrete_next_step` failed that test: no lane collects a way in as a fact, so the pair measured only whether some access signal happened to exist.
+Both are removed, which carries out the access-plausibility retirement in the 2026-08-25 "Simple Directory First" decision.
+The harm was not on the served surface, because the reason was soft, but in the work it generated: the repair queue's `action_evidence` stage minted boilerplate `REACH_OUT_PLAUSIBLE` signals to clear it, and the operator board listed it as a blocker.
+That stage is removed, and the queue no longer writes access signals; stored queue items keep the `action_evidence` stage value as history.
+Measured on Development on 2026-10-04, the reasons sat on 2,940 and 1,468 non-archived research rows, and every `action_evidence` queue item was already resolved or suppressed, with none open.
+`missing_alternate_access_path`, `missing_facet_signal`, `missing_application_route` and `missing_source_route` stay, because each measures something a lane collects.
+`hasActionEvidence` still feeds the shell-suppression predicates, so suppression is unchanged.
+An extra signal remains welcome as a badge or a citation.
+
 ## 2026-10-03: A Survivor's Complete Read Re-Reads Evidence Filed Under Its Merged-In Keys (#4568)
 
 This reverses one bullet of the 2026-09-28 #3609 entry below, which held that a survivor-key read never retires loser-keyed evidence.
@@ -779,8 +791,8 @@ No issue records a type-based hold for either kind.
 The two issues that do discuss cores point the other way: #1401 records `CORE_FACILITY` being dead-ended out of organizational ways-in, and #1925 records the research-scope gate over-suppressing instrumentation cores.
 The tracker's recorded direction is that cores are wrongly suppressed rather than legitimately held, which is where reachability lands too.
 
-The route-in test reads the gate's own `concrete_next_step` reason, which `studentVisibilityTier` pushes when the row has a posted opportunity, an access signal, or an actionable pathway.
-It is read positively, never as the absence of `missing_action_evidence`, so a row whose reasons were never computed keeps its override instead of being released on a silent array.
+The route-in test is the row's official, non-grant source URL that is not known to be dead, the same proof the gate uses that a student can reach the research.
+It replaced a read of the gate's `concrete_next_step` reason when #4574 removed that reason.
 
 A row held this way is not a backlog item waiting on taste.
 It is a row with nothing for a student to act on, and the thing that releases it is evidence of a way in, which is scraper and pathway work rather than a policy call.

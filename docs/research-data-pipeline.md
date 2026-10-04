@@ -1642,11 +1642,11 @@ Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode
 Source-description repair fails closed when an exact `https://medicine.yale.edu/lab/<slug>` URL, with an optional trailing slash, belongs to another active research entity: it reports `official_source_url_collision`, applies no patch, and does not use that URL as description evidence until ownership is resolved.
 The same reviewed-artifact workflow supports Development repairs when the dry-run artifact and guarded database target are both Development.
 Development artifacts cannot be applied to Beta, Beta artifacts cannot be applied to Development, and production repair-queue apply remains unsupported.
-The repair runner plans ordered lanes from blocker reasons: source/description first, PI identity second, and action evidence third.
+The repair runner plans ordered lanes from blocker reasons: source/description first, then PI identity.
 Only deterministic source-backed patches are applied automatically.
 Repair code must block archived research entities before PI member or access-signal upserts; archived duplicates should be repaired through the guarded member/artifact cleanup scripts instead.
 Same-PI duplicate research homes are consolidated through the guarded dry-run, review, and apply workflow in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
-PI identity conflicts, same-name risks, suppression decisions, and unsupported action-evidence gaps remain queued as exceptions instead of being guessed into student-visible data.
+PI identity conflicts, same-name risks, and suppression decisions remain queued as exceptions instead of being guessed into student-visible data.
 
 Repair-queue yield alone cannot say whether a withheld row has anything to repair with, so read it against `yarn --cwd server visibility:recoverability`.
 It is read-only against Mongo and writes only its report, taking no apply flag at all.

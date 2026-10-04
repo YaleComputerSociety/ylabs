@@ -63,7 +63,7 @@ describe('buildLaunchTrustContractReport', () => {
     expect(result.repairLanes).toEqual([]);
   });
 
-  it('fails strict launch mode for limited-but-safe rows and explains action repair', () => {
+  it('fails strict launch mode for limited-but-safe rows without routing them to action repair', () => {
     const result = report([
       plan(),
       plan({
@@ -83,19 +83,11 @@ describe('buildLaunchTrustContractReport', () => {
       limitedButSafe: 1,
       publicVisibilityViolations: 0,
     });
-    expect(result.repairLanes[0]).toMatchObject({
-      stage: 'action_evidence',
-      count: 1,
-      command: expect.stringContaining('beta:repair-queue'),
-    });
-    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=development /);
-    expect(result.repairLanes[0].command).toContain('--stage=action_evidence');
-    expect(result.repairLanes[0].command).toContain('--mode=dry-run');
-    expect(result.repairLanes[0].command).toContain('--retry-blocked');
-    expect(result.repairLanes[0].command).toContain(
-      '--output /tmp/ylabs-beta-repair-action-evidence.json',
-    );
-    expect(result.repairLanes[0].command).not.toContain('--mode=apply');
+    expect(result.repairLanes.map((lane) => lane.stage)).not.toContain('action_evidence');
+    for (const lane of result.repairLanes) {
+      expect(lane.command).not.toContain('--stage=action_evidence');
+      expect(lane.command).not.toContain('--mode=apply');
+    }
     expect(result.violations[0]).toMatchObject({
       recordId: 'entity-2',
       publicVisibilityViolation: false,

@@ -193,5 +193,5 @@ It should help a student discuss options with an advisor, not create mass-email 
 ## Student-Ready Visibility
 
 An entity is shown to students (`student_ready`) if, and only if, what we show is CORRECT and COHERENT.
-Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, next step, action evidence, facet signals) make a card more specific but NEVER hide it.
+Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, facet signals) make a card more specific but NEVER hide it.
 The correctness conditions, the hard-vs-soft split, and the canonical definition live in [student-ready-definition.md](student-ready-definition.md).

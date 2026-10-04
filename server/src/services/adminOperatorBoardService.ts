@@ -383,7 +383,6 @@ export type PromotionCopyDryRunArtifact =
 
 const evidenceReasons = new Set([
   'application_route',
-  'concrete_next_step',
   'graduate_relevant',
   'official_source',
   'source_backed_description',
@@ -1904,8 +1903,6 @@ async function reasonCounts(model: any, match: Record<string, unknown>, limit = 
 }
 
 const researchReasonActions: Record<string, string> = {
-  missing_action_evidence:
-    'Add source-backed access signals, entry pathways, contact routes, or posted opportunities before promotion.',
   missing_description: 'Repair with official source-backed description text.',
   missing_card_description:
     'Derive or backfill a student-facing short description from the source-backed full description.',

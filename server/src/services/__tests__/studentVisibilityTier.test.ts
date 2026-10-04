@@ -44,8 +44,6 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
       [
         'biography_description_fallback',
-        'concrete_next_step',
-        'missing_action_evidence',
         'missing_alternate_access_path',
         'missing_application_route',
         'missing_facet_signal',
@@ -58,8 +56,6 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     for (const soft of [
       'source_backed_description',
       'biography_description_fallback',
-      'concrete_next_step',
-      'missing_action_evidence',
       'missing_facet_signal',
       'missing_alternate_access_path',
       'missing_application_route',
@@ -685,9 +681,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['source_backed_description', 'concrete_next_step']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['source_backed_description']));
   });
 
   it.each([
@@ -969,7 +963,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).not.toContain('missing_alternate_access_path');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
     expect(result.tier).toBe('student_ready');
   });
 
@@ -1149,12 +1143,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'generic_directory_shell',
-        'missing_description',
-        'missing_lead',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['generic_directory_shell', 'missing_description', 'missing_lead']),
     );
   });
 
@@ -1189,9 +1178,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['non_owner_grant_shell', 'missing_action_evidence']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['non_owner_grant_shell']));
   });
 
   it('holds a "<Person> Lab"-named entity typed as an org (CENTER/INSTITUTE/PROGRAM) out of student_ready', () => {
@@ -1484,12 +1471,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'profile_biography_shell',
-        'thin_description',
-        'missing_lead',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['profile_biography_shell', 'thin_description', 'missing_lead']),
     );
   });
 
@@ -1569,7 +1551,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('source_backed_description');
-    expect(result.reasons).toContain('concrete_next_step');
+    expect(result.reasons).not.toContain('concrete_next_step');
   });
 
   it('publishes a faculty-research-area entity with no department or research area, since missing_facet_signal is a soft signal only (issue #1802)', () => {
@@ -1707,7 +1689,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('student_ready');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
     expect(result.reasons).toContain('source_backed_description');
   });
 
@@ -1780,7 +1762,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toContain('profile_fallback_only');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
   });
 
   it('keeps profile fallback rows in operator review even when concrete action evidence exists', () => {
@@ -1799,7 +1781,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toContain('profile_fallback_only');
-    expect(result.reasons).toContain('concrete_next_step');
+    expect(result.reasons).not.toContain('concrete_next_step');
   });
 
   it('routes missing source or lead records to operator review', () => {
