@@ -826,7 +826,12 @@ export class YsmAtoZScraper implements IScraper {
       );
     }
 
-    const pageHealth = await emitLanePageHealthForCitedPages(ctx, pageReads, this.probePage);
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length ? { entityKeys: work.map(({ lab }) => lab.slug) } : undefined,
+    );
     totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);

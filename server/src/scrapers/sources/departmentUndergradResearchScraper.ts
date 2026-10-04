@@ -86,7 +86,7 @@ export interface DepartmentUndergradResearchRecord {
   pageTitle?: string;
 }
 
-type FetchHtml = (url: string, useCache: boolean) => Promise<string>;
+type FetchHtml = (url: string, useCache: boolean, pageReads?: LanePageReads) => Promise<string>;
 
 interface DepartmentCourseCreditRead {
   sourceUrl: string;
@@ -880,7 +880,11 @@ export function departmentUndergradResearchRecordsToObservations(
   });
 }
 
-async function defaultFetchHtml(url: string, useCache: boolean): Promise<string> {
+async function defaultFetchHtml(
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -898,6 +902,7 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
       httpsAgent: agents.httpsAgent,
     }),
   );
+  pageReads?.recordRead(url, response.request?.res?.responseUrl || url);
   const html = response.data as string;
   if (useCache) await setCached(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE, cacheKey, html);
   return html;
@@ -1048,8 +1053,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       const startedAt = performance.now();
       let html: string;
       try {
-        html = await this.fetchHtml(page.url, ctx.options.useCache);
-        pageReads.recordRead(page.url);
+        html = await this.fetchHtml(page.url, ctx.options.useCache, pageReads);
       } catch (err: unknown) {
         pageReads.recordFailure(page.url, err);
         failedPages += 1;
@@ -1121,7 +1125,12 @@ export class DepartmentUndergradResearchScraper implements IScraper {
 
     const courseCreditRoutes = await this.emitCourseCreditRoutes(ctx, courseCreditReads);
     totalObs += courseCreditRoutes.stated + courseCreditRoutes.withdrawn;
-    const pageHealth = await emitLanePageHealthForCitedPages(ctx, pageReads, this.probePage);
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only ? { sourceUrls: pages.map((page) => page.url) } : undefined,
+    );
     totalObs += pageHealth.gone + pageHealth.restored;
 
     const failureNote =

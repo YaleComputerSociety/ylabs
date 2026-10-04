@@ -343,13 +343,14 @@ function citingRowsOf(observations: readonly CitedLaneObservation[]): Map<string
   return rows;
 }
 
-function scopeFilter(only: readonly string[] | undefined): Record<string, unknown> {
-  const values = (only ?? []).map((value) => value.trim()).filter(Boolean);
-  if (values.length === 0) return {};
-  const ids = values.filter((value) => mongoose.isValidObjectId(value));
-  return {
-    $or: [{ entityKey: { $in: values } }, ...(ids.length > 0 ? [{ entityId: { $in: ids } }] : [])],
-  };
+export type CitedLanePageScope =
+  { entityKeys: readonly string[] } | { sourceUrls: readonly string[] };
+
+function scopeFilter(scope: CitedLanePageScope | undefined): Record<string, unknown> {
+  if (!scope) return {};
+  return 'entityKeys' in scope
+    ? { entityKey: { $in: [...scope.entityKeys] } }
+    : { sourceUrl: { $in: [...scope.sourceUrls] } };
 }
 
 async function storedHealthByIdentity(rows: Iterable<CitingRow>) {
@@ -388,9 +389,10 @@ function memoizedProbe(probe: LanePageProbe): LanePageProbe {
 }
 
 export async function emitLanePageHealthForCitedPages(
-  ctx: Pick<ScraperContext, 'sourceName' | 'scrapeRunId' | 'emit' | 'log' | 'options'>,
+  ctx: Pick<ScraperContext, 'sourceName' | 'scrapeRunId' | 'emit' | 'log'>,
   pageReads: LanePageReads = new LanePageReads(),
   probe: LanePageProbe = checkSourceLinkHealth,
+  scope?: CitedLanePageScope,
 ): Promise<CitedLanePageHealthResult> {
   const result: CitedLanePageHealthResult = { gone: 0, restored: 0 };
   if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return result;
@@ -399,7 +401,7 @@ export async function emitLanePageHealthForCitedPages(
     entityType: 'researchEntity',
     superseded: false,
     sourceUrl: { $type: 'string', $ne: '' },
-    ...scopeFilter(ctx.options.only),
+    ...scopeFilter(scope),
   })
     .select('sourceName field value sourceUrl observedAt entityKey entityId scrapeRunId')
     .lean<CitedLaneObservation[]>();
