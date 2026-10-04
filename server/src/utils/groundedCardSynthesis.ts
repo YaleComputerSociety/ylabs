@@ -652,15 +652,20 @@ export function cardLineFitsBrowseCard(card: unknown): boolean {
 }
 
 // Under the 200-character render, so a line that runs a little long still fits.
-export const CARD_SYNTHESIS_MAX_CHARACTERS = 190;
+export const CARD_SYNTHESIS_MAX_CHARACTERS = 170;
+
+// A character limit alone loses to the system prompt's "under 30 words": the model
+// returned the same 206-character line on both attempts. A word budget plus what to
+// leave out fit 12 of 12 cut Development cards on 2026-10-04 (#4834).
+const CARD_SYNTHESIS_MAX_WORDS = 20;
 
 const cardLengthInstruction = (input: CardSynthesisLLMInput): string[] => {
   if (!input.maxCharacters) return [];
-  const limit = `The sentence must be at most ${input.maxCharacters} characters, so it shows whole on a browse card.`;
+  const limit = `This card has room for at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, so name only the main subject and the main method; leave out parenthetical lists and secondary examples.`;
   if (!input.previousAttempt) return [limit];
   return [
     limit,
-    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Shorten it to at most ${input.maxCharacters} characters, keeping what is studied and how.`,
+    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Shorten it to at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, keeping what is studied and how.`,
   ];
 };
 
