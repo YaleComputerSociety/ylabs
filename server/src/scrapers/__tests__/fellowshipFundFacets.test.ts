@@ -97,7 +97,7 @@ describe('preferFundFacetObservations', () => {
     expect(
       preferFundFacetObservations(
         [lane('a', 'purpose')],
-        [fund('f1', 'description'), lane('x', 'purpose')],
+        [fund('f1', 'eligibility'), lane('x', 'purpose')],
       ).map((observation) => observation._id),
     ).toEqual(['a']);
   });

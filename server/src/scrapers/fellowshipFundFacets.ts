@@ -72,17 +72,21 @@ export function isRecordSpecificFundDetailUrl(url: string | undefined): boolean 
   }
 }
 
-export function fundKeyCitedByFellowship(
-  row: Record<string, any> | null | undefined,
-): string | null {
-  if (!row) return null;
+export function fundKeysCitedByFellowship(row: Record<string, any> | null | undefined): string[] {
+  if (!row) return [];
   const urls = [
     row.sourceUrl,
     row.applicationLink,
     ...(Array.isArray(row.links) ? row.links.map((link: any) => link?.url) : []),
   ].filter((url): url is string => typeof url === 'string' && isRecordSpecificFundDetailUrl(url));
-  const keys = new Set(urls.map(sourceKeyForFund));
-  return keys.size === 1 ? [...keys][0] : null;
+  return [...new Set(urls.map(sourceKeyForFund))];
+}
+
+export function fundKeyCitedByFellowship(
+  row: Record<string, any> | null | undefined,
+): string | null {
+  const keys = fundKeysCitedByFellowship(row);
+  return keys.length === 1 ? keys[0] : null;
 }
 
 const FUND_CITATION_FIELDS = ['title', 'sourceUrl', 'applicationLink', 'links'] as const;

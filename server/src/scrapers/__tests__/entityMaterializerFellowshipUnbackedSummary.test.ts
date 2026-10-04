@@ -8,6 +8,7 @@ import {
   assertFellowshipEvidenceOnlyFieldsAreClearable,
   planFellowshipUnbackedFieldClears,
 } from '../fellowshipUnbackedFieldClear';
+import { sourceKeyForFund } from '../fellowshipFundFacets';
 import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 
 const DATABASE = 'student-grants-database';
@@ -149,6 +150,7 @@ describe('planFellowshipUnbackedFieldClears', () => {
     staged: {},
     unset: {},
     liveObservedFields: new Set<string>(),
+    fieldsStatedByCitedFunds: new Set<string>(),
     readRowUnderOwnIdentity: true,
   };
 
@@ -167,11 +169,19 @@ describe('planFellowshipUnbackedFieldClears', () => {
     ).toEqual([]);
   });
 
-  it('refuses a field the classifier derives or a fund page can state', () => {
+  it('refuses a field the classifier derives', () => {
     expect(() => assertFellowshipEvidenceOnlyFieldsAreClearable(['programKind'])).toThrow(
       /derives it/,
     );
-    expect(() => assertFellowshipEvidenceOnlyFieldsAreClearable(['deadline'])).toThrow(/fund key/);
+  });
+
+  it('keeps a field a fund the row cites states', () => {
+    expect(
+      planFellowshipUnbackedFieldClears({
+        ...base,
+        fieldsStatedByCitedFunds: new Set(['summary']),
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -237,5 +247,209 @@ describe('a fellowship contact no observation backs (#4600)', () => {
     );
 
     expect(result.plannedUnset ?? {}).not.toHaveProperty('contactEmail');
+  });
+});
+
+describe('a fellowship description no observation backs (#4602)', () => {
+  const FUND_KEY = sourceKeyForFund(FUND_PAGE);
+  const OFFICE_KEY = `${OFFICE}:fixture-research-fellowship`;
+  const IMPORTED_DESCRIPTION = 'Imported catalog text that no page states.';
+  const OFFICE_DESCRIPTION = 'The office page describes a summer of independent research abroad.';
+
+  const keyMatches = (condition: unknown, key: string): boolean => {
+    if (condition === undefined) return true;
+    if (typeof condition === 'string') return condition === key;
+    const inList = (condition as { $in?: unknown[] })?.$in;
+    return Array.isArray(inList) ? inList.includes(key) : false;
+  };
+
+  const queryMatches = (query: any, observation: any): boolean => {
+    if (!query || typeof query !== 'object') return true;
+    if (Array.isArray(query.$or) && query.$or.length > 0) {
+      const anyBranch = query.$or.some((branch: any) =>
+        branch?.entityKey !== undefined
+          ? keyMatches(branch.entityKey, observation.entityKey)
+          : true,
+      );
+      if (!anyBranch) return false;
+    }
+    if (!keyMatches(query.entityKey, observation.entityKey)) return false;
+    if (query.sourceName !== undefined && query.sourceName !== observation.sourceName) return false;
+    const fields = query.field?.$in;
+    if (Array.isArray(fields) && !fields.includes(observation.field)) return false;
+    return true;
+  };
+
+  function projectKeyed(
+    stored: Record<string, unknown>,
+    observations: Array<Observed & { entityKey: string }>,
+    passKey: string,
+  ) {
+    const rows = observations.map((observation) => ({
+      _id: `${observation.entityKey}:${observation.field}:${observation.sourceName}`,
+      entityType: 'fellowship',
+      confidence: 0.9,
+      observedAt: READ_AT,
+      ...observation,
+    }));
+    vi.spyOn(Observation, 'find').mockImplementation(
+      (query: any) =>
+        ({
+          lean: vi.fn().mockResolvedValue(rows.filter((row) => queryMatches(query, row))),
+        }) as any,
+    );
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(stored),
+      select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue(stored) }),
+    } as any);
+    return materializeEntity('fellowship', { entityKey: passKey }, { dryRun: true });
+  }
+
+  const officeRow = (overrides: Record<string, unknown> = {}) => ({
+    _id: 'fixture-id',
+    sourceKey: OFFICE_KEY,
+    sourceName: OFFICE,
+    title: 'Fixture Research Fellowship',
+    sourceUrl: OFFICIAL_PAGE,
+    applicationLink: FUND_PAGE,
+    ...overrides,
+  });
+
+  const officeRead = [
+    { entityKey: OFFICE_KEY, field: 'sourceKey', value: OFFICE_KEY, sourceName: OFFICE },
+    {
+      entityKey: OFFICE_KEY,
+      field: 'title',
+      value: 'Fixture Research Fellowship',
+      sourceName: OFFICE,
+    },
+  ];
+
+  it('clears a stored description that neither the row nor a fund it cites states', async () => {
+    const stored = grantsRow({ summary: '', description: IMPORTED_DESCRIPTION });
+
+    const result = await projectFellowship(stored, [
+      { field: 'sourceKey', value: stored.sourceKey, sourceName: DATABASE },
+      { field: 'title', value: stored.title, sourceName: DATABASE },
+    ]);
+
+    expect(result.fellowshipUnbackedClears).toEqual(['description']);
+    expect(result.plannedUnset).toMatchObject({ description: '' });
+  });
+
+  it('keeps a description the cited fund states on the owning lane’s own pass', async () => {
+    const stored = officeRow({ description: OBSERVED_DESCRIPTION });
+
+    const result = await projectKeyed(
+      stored,
+      [
+        ...officeRead,
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
+      ],
+      OFFICE_KEY,
+    );
+
+    expect(result.fellowshipUnbackedClears ?? []).not.toContain('description');
+    expect(result.plannedUnset ?? {}).not.toHaveProperty('description');
+  });
+
+  it('keeps a description a fund the row cites states even when the fund does not speak for the row', async () => {
+    const stored = officeRow({
+      title: 'Fixture Undergraduate Research Fellowship',
+      description: OBSERVED_DESCRIPTION,
+    });
+
+    const result = await projectKeyed(
+      stored,
+      [
+        ...officeRead,
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Graduate Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
+      ],
+      OFFICE_KEY,
+    );
+
+    expect(result.fellowshipUnbackedClears ?? []).not.toContain('description');
+    expect(result.plannedUnset ?? {}).not.toHaveProperty('description');
+  });
+
+  it('serves the fund’s description over the owning lane’s on the owning lane’s pass', async () => {
+    const stored = officeRow({ description: OFFICE_DESCRIPTION });
+
+    const result = await projectKeyed(
+      stored,
+      [
+        ...officeRead,
+        {
+          entityKey: OFFICE_KEY,
+          field: 'description',
+          value: OFFICE_DESCRIPTION,
+          sourceName: OFFICE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
+      ],
+      OFFICE_KEY,
+    );
+
+    expect(result.plannedSet).toMatchObject({ description: OBSERVED_DESCRIPTION });
+  });
+
+  it('writes the same fund description on the fund’s own pass, so the two passes agree', async () => {
+    const stored = officeRow({ description: OFFICE_DESCRIPTION });
+
+    const result = await projectKeyed(
+      stored,
+      [
+        { entityKey: FUND_KEY, field: 'sourceKey', value: FUND_KEY, sourceName: DATABASE },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
+      ],
+      FUND_KEY,
+    );
+
+    expect(result.plannedSet).toMatchObject({ description: OBSERVED_DESCRIPTION });
+    expect(result.plannedUnset ?? {}).not.toHaveProperty('description');
   });
 });

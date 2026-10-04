@@ -12,6 +12,7 @@ const ownedRow = {
   sourceKey: 'yale-college-fellowships-office:fixture-fellowship',
   sourceUrl: OFFICIAL_PAGE,
   description: 'Stored description from the official page.',
+  eligibility: 'Stored eligibility from the official page.',
   deadline: new Date('2026-02-01T00:00:00Z'),
 };
 
@@ -44,14 +45,32 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
           sourceName: 'student-grants-database',
           sourceKey: 'student-grants-database:funds-funddetails-aspx-funda',
           sourceFingerprint: 'fingerprint',
-          description: 'Description from the fund page.',
+          eligibility: 'Eligibility from the fund page.',
           awardAmount: '$4,000',
           deadline: new Date('2027-02-01T00:00:00Z'),
           isAcceptingApplications: true,
         },
         'student-grants-database',
       ),
-    ).toEqual(['description', 'sourceFingerprint', 'sourceKey', 'sourceName']);
+    ).toEqual(['eligibility', 'sourceFingerprint', 'sourceKey', 'sourceName']);
+  });
+
+  it('lets the fund description replace another lane’s where the fund speaks for the row (#4602)', () => {
+    expect(
+      withheld(
+        ownedRow,
+        { description: 'Description from the fund page.' },
+        'student-grants-database',
+      ),
+    ).toEqual([]);
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: ownedRow,
+        staged: { description: 'Description from the fund page.' },
+        resolved: { description: { contributingSources: ['student-grants-database'] } },
+        fundSpeaksForRow: false,
+      }),
+    ).toEqual(['description']);
   });
 
   it('decides per field from the source each value came from, not from the row-level sourceName winner', () => {
@@ -60,13 +79,13 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
         ownedRow,
         {
           sourceName: 'yale-college-fellowships-office',
-          description: 'Description from the fund page.',
+          eligibility: 'Eligibility from the fund page.',
           title: 'Title from the official page',
         },
         'yale-college-fellowships-office',
-        { description: 'student-grants-database' },
+        { eligibility: 'student-grants-database' },
       ),
-    ).toEqual(['description']);
+    ).toEqual(['eligibility']);
     expect(
       withheld(
         ownedRow,
