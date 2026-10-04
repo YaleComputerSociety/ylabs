@@ -34,15 +34,81 @@ export interface CaptureArgs {
   only: string[];
   limit?: number;
   sourceConcurrency?: number;
+  recapture?: string;
+  markSuccessorOf?: string;
+  withoutGold: boolean;
   dryRun: boolean;
   confirmed: boolean;
 }
 
+export interface StoredBenchmarkScope {
+  benchmarkId: string;
+  sourceName: string;
+  only?: string[];
+  limit?: number | null;
+  goldLabels?: unknown[];
+  plannedObservationCount?: number;
+}
+
+const scopeKey = (benchmark: Pick<StoredBenchmarkScope, 'sourceName' | 'only' | 'limit'>) =>
+  JSON.stringify([
+    benchmark.sourceName,
+    [...(benchmark.only ?? [])].sort(),
+    benchmark.limit ?? null,
+  ]);
+
+export function scopeOfStoredBenchmark(
+  args: CaptureArgs,
+  stored: StoredBenchmarkScope,
+): CaptureArgs {
+  return {
+    ...args,
+    sourceName: stored.sourceName,
+    only: [...(stored.only ?? [])],
+    limit: stored.limit ?? undefined,
+  };
+}
+
+/**
+ * Why a stored benchmark may not be replaced, or undefined when it may. A benchmark is
+ * replaced at most once, so the scorecard has one successor to replay, and a hand-labelled
+ * benchmark is never replaced by an unlabelled one unless the operator says so, because the
+ * successor's pages are new and the labels judged the old ones.
+ */
+export function supersedeRefusal(
+  superseded: StoredBenchmarkScope,
+  existingSuccessorId: string | undefined,
+  options: { withoutGold: boolean; successor?: StoredBenchmarkScope },
+): string | undefined {
+  if (existingSuccessorId) {
+    return `Benchmark ${superseded.benchmarkId} is already superseded by ${existingSuccessorId}`;
+  }
+  if (options.successor) {
+    if (options.successor.benchmarkId === superseded.benchmarkId) {
+      return 'A benchmark cannot supersede itself';
+    }
+    if (scopeKey(options.successor) !== scopeKey(superseded)) {
+      return `Benchmark ${options.successor.benchmarkId} has a different lane or scope from ${superseded.benchmarkId}, so it is not a recapture of it`;
+    }
+    return undefined;
+  }
+  if ((superseded.goldLabels?.length ?? 0) > 0 && !options.withoutGold) {
+    return `Benchmark ${superseded.benchmarkId} carries hand-judged gold labels; recapture it with --without-gold and label the new benchmark with lane:benchmark-label against its own pages`;
+  }
+  return undefined;
+}
+
 export function parseCaptureArgs(argv: string[]): CaptureArgs {
-  const args: Partial<CaptureArgs> & { only: string[]; dryRun: boolean; confirmed: boolean } = {
+  const args: Partial<CaptureArgs> & {
+    only: string[];
+    dryRun: boolean;
+    confirmed: boolean;
+    withoutGold: boolean;
+  } = {
     only: [],
     dryRun: true,
     confirmed: false,
+    withoutGold: false,
   };
   for (const arg of argv) {
     if (arg === '--apply') args.dryRun = false;
@@ -50,6 +116,11 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
     else if (arg === CONFIRM_FLAG) args.confirmed = true;
     else if (arg.startsWith('--source=')) args.sourceName = arg.slice('--source='.length).trim();
     else if (arg.startsWith('--id=')) args.benchmarkId = arg.slice('--id='.length).trim();
+    else if (arg.startsWith('--recapture='))
+      args.recapture = arg.slice('--recapture='.length).trim();
+    else if (arg.startsWith('--mark-successor-of='))
+      args.markSuccessorOf = arg.slice('--mark-successor-of='.length).trim();
+    else if (arg === '--without-gold') args.withoutGold = true;
     else if (arg.startsWith('--only='))
       args.only = arg
         .slice('--only='.length)
@@ -68,12 +139,34 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
       args.limit = limit;
     } else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
   }
-  if (!args.sourceName) throw new Error(`${SCRIPT_NAME} requires --source=<lane>`);
   if (!args.benchmarkId || !BENCHMARK_ID.test(args.benchmarkId)) {
     throw new Error(
       `${SCRIPT_NAME} requires --id=<benchmark-id> of lowercase letters, digits and hyphens`,
     );
   }
+  const supersededId = args.recapture ?? args.markSuccessorOf;
+  if (args.recapture !== undefined && args.markSuccessorOf !== undefined) {
+    throw new Error('--recapture and --mark-successor-of cannot be combined');
+  }
+  if (supersededId !== undefined) {
+    if (!BENCHMARK_ID.test(supersededId)) {
+      throw new Error(`${SCRIPT_NAME} requires a benchmark id to supersede`);
+    }
+    if (args.sourceName || args.only.length > 0 || args.limit !== undefined) {
+      throw new Error(
+        '--recapture and --mark-successor-of read the lane and scope from the stored benchmark, so --source, --only and --limit are refused',
+      );
+    }
+    if (args.markSuccessorOf !== undefined && args.sourceConcurrency !== undefined) {
+      throw new Error('--mark-successor-of captures nothing, so --source-concurrency is refused');
+    }
+    if (args.markSuccessorOf !== undefined && args.withoutGold) {
+      throw new Error('--mark-successor-of captures nothing, so --without-gold is refused');
+    }
+    return { ...args, sourceName: '' } as CaptureArgs;
+  }
+  if (args.withoutGold) throw new Error('--without-gold applies only to --recapture');
+  if (!args.sourceName) throw new Error(`${SCRIPT_NAME} requires --source=<lane>`);
   if (args.only.length === 0 && args.limit === undefined) {
     throw new Error(`${SCRIPT_NAME} requires --only or --limit, so the benchmark is a fixed scope`);
   }
@@ -98,8 +191,60 @@ async function freezeLabels(slugs: readonly string[]): Promise<BenchmarkLabel[]>
   return labels;
 }
 
+async function loadSupersededBenchmark(benchmarkId: string): Promise<StoredBenchmarkScope> {
+  const stored = (await LaneBenchmark.findOne({ benchmarkId })
+    .select('benchmarkId sourceName only limit goldLabels plannedObservationCount')
+    .lean()) as unknown as StoredBenchmarkScope | null;
+  if (!stored) throw new Error(`No benchmark ${benchmarkId} to supersede`);
+  return stored;
+}
+
+async function existingSuccessorId(benchmarkId: string): Promise<string | undefined> {
+  const successor = (await LaneBenchmark.findOne({ supersedes: benchmarkId })
+    .select('benchmarkId')
+    .lean()) as unknown as { benchmarkId: string } | null;
+  return successor?.benchmarkId;
+}
+
+async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<void> {
+  const superseded = await loadSupersededBenchmark(supersededId);
+  const successor = (await LaneBenchmark.findOne({ benchmarkId: args.benchmarkId })
+    .select('benchmarkId sourceName only limit supersedes')
+    .lean()) as unknown as (StoredBenchmarkScope & { supersedes?: string }) | null;
+  if (!successor) throw new Error(`No benchmark ${args.benchmarkId} to mark as the successor`);
+  if (successor.supersedes) {
+    throw new Error(
+      `Benchmark ${args.benchmarkId} already supersedes ${successor.supersedes}; a benchmark supersedes one other`,
+    );
+  }
+  const refusal = supersedeRefusal(superseded, await existingSuccessorId(supersededId), {
+    withoutGold: false,
+    successor,
+  });
+  if (refusal) throw new Error(refusal);
+  if (!args.dryRun) {
+    await LaneBenchmark.updateOne(
+      { benchmarkId: args.benchmarkId, supersedes: { $exists: false } },
+      { $set: { supersedes: supersededId } },
+    );
+  }
+  console.log(
+    JSON.stringify(
+      {
+        script: SCRIPT_NAME,
+        mode: args.dryRun ? 'dry-run' : 'apply',
+        benchmarkId: args.benchmarkId,
+        supersedes: supersededId,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main(): Promise<void> {
-  const args = parseCaptureArgs(process.argv.slice(2));
+  let args = parseCaptureArgs(process.argv.slice(2));
+  let supersededPlannedObservationCount: number | undefined;
   const guard = assertScriptApplyAllowed({
     apply: !args.dryRun,
     scriptName: SCRIPT_NAME,
@@ -111,6 +256,23 @@ async function main(): Promise<void> {
     `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${args.dryRun ? 'dry-run' : 'apply'}`,
   );
   await initializeConnections();
+
+  if (args.markSuccessorOf) {
+    await markSuccessor(args, args.markSuccessorOf);
+    await mongoose.disconnect();
+    return;
+  }
+  if (args.recapture) {
+    const superseded = await loadSupersededBenchmark(args.recapture);
+    const refusal = supersedeRefusal(superseded, await existingSuccessorId(args.recapture), {
+      withoutGold: args.withoutGold,
+    });
+    if (refusal) throw new Error(refusal);
+    args = scopeOfStoredBenchmark(args, superseded);
+    supersededPlannedObservationCount = superseded.plannedObservationCount;
+    assertBenchmarkableLane(args.sourceName);
+    if (args.sourceConcurrency !== undefined) assertLaneHonorsSourceConcurrency(args.sourceName);
+  }
 
   if (await LaneBenchmark.exists({ benchmarkId: args.benchmarkId })) {
     throw new Error(
@@ -146,6 +308,7 @@ async function main(): Promise<void> {
     mode: args.dryRun ? 'dry-run' : 'apply',
     benchmarkId: args.benchmarkId,
     sourceName: args.sourceName,
+    ...(args.recapture ? { supersedes: args.recapture, supersededPlannedObservationCount } : {}),
     pageCount: pages.length,
     unfrozenRequestCount,
     plannedObservationCount: run.observations.length,
@@ -174,6 +337,7 @@ async function main(): Promise<void> {
         unfrozenRequestCount,
         plannedObservationCount: run.observations.length,
         labels,
+        ...(args.recapture ? { supersedes: args.recapture } : {}),
       });
     } catch (error) {
       await LaneBenchmarkPage.deleteMany({ benchmarkId: args.benchmarkId });

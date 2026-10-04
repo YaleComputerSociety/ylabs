@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CONFIRM_FLAG, parseLaneScorecardArgs, emptyReplayReason } from '../laneScorecard';
+import {
+  CONFIRM_FLAG,
+  benchmarksToReplay,
+  parseLaneScorecardArgs,
+  emptyReplayReason,
+} from '../laneScorecard';
 
 describe('parseLaneScorecardArgs', () => {
   it('defaults a live-model run to three runs and stays a dry run', () => {
@@ -48,5 +53,29 @@ describe('emptyReplayReason', () => {
     expect(
       emptyReplayReason({ plannedObservationCount: 0 }, { emitted: 0, refusedAtIngest: 0 }),
     ).toBeUndefined();
+  });
+});
+
+describe('benchmarksToReplay', () => {
+  const benchmarks = [
+    { benchmarkId: 'lane-a-v1' },
+    { benchmarkId: 'lane-a-v2', supersedes: 'lane-a-v1' },
+    { benchmarkId: 'lane-a-v3', supersedes: 'lane-a-v2' },
+    { benchmarkId: 'lane-b-v1' },
+  ];
+
+  it('replays only the newest benchmark of each recapture chain and lists the rest', () => {
+    const { replay, superseded } = benchmarksToReplay(benchmarks);
+    expect(replay.map((b) => b.benchmarkId)).toEqual(['lane-a-v3', 'lane-b-v1']);
+    expect(superseded).toEqual([
+      { benchmarkId: 'lane-a-v1', supersededBy: 'lane-a-v2' },
+      { benchmarkId: 'lane-a-v2', supersededBy: 'lane-a-v3' },
+    ]);
+  });
+
+  it('still replays a superseded benchmark that is named explicitly', () => {
+    const { replay, superseded } = benchmarksToReplay(benchmarks, 'lane-a-v1');
+    expect(replay.map((b) => b.benchmarkId)).toEqual(['lane-a-v1']);
+    expect(superseded).toEqual([]);
   });
 });

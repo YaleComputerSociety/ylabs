@@ -96,6 +96,32 @@ interface StoredBenchmark {
   unfrozenRequestCount?: number;
   codeSha?: string;
   capturedAt?: Date;
+  supersedes?: string;
+}
+
+/**
+ * The benchmarks a scorecard replays. A recaptured benchmark replaces the one it supersedes,
+ * so an unnamed run replays only the successor; naming a superseded benchmark still replays it.
+ */
+export function benchmarksToReplay<T extends Pick<StoredBenchmark, 'benchmarkId' | 'supersedes'>>(
+  benchmarks: readonly T[],
+  requestedId?: string,
+): { replay: T[]; superseded: Array<{ benchmarkId: string; supersededBy: string }> } {
+  if (requestedId) {
+    return { replay: benchmarks.filter((b) => b.benchmarkId === requestedId), superseded: [] };
+  }
+  const successorOf = new Map<string, string>();
+  for (const benchmark of benchmarks) {
+    if (benchmark.supersedes) successorOf.set(benchmark.supersedes, benchmark.benchmarkId);
+  }
+  const replay: T[] = [];
+  const superseded: Array<{ benchmarkId: string; supersededBy: string }> = [];
+  for (const benchmark of benchmarks) {
+    const supersededBy = successorOf.get(benchmark.benchmarkId);
+    if (supersededBy) superseded.push({ benchmarkId: benchmark.benchmarkId, supersededBy });
+    else replay.push(benchmark);
+  }
+  return { replay, superseded };
 }
 
 /**
@@ -192,14 +218,15 @@ async function main(): Promise<void> {
   );
   await initializeConnections();
 
-  const benchmarks = (await LaneBenchmark.find(
+  const stored = (await LaneBenchmark.find(
     options.benchmarkId ? { benchmarkId: options.benchmarkId } : {},
   )
     .sort({ benchmarkId: 1 })
     .lean()) as unknown as StoredBenchmark[];
-  if (options.benchmarkId && benchmarks.length === 0) {
+  if (options.benchmarkId && stored.length === 0) {
     throw new Error(`No benchmark ${options.benchmarkId}`);
   }
+  const { replay: benchmarks, superseded } = benchmarksToReplay(stored, options.benchmarkId);
 
   const codeSha = currentCodeSha();
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';
@@ -277,6 +304,7 @@ async function main(): Promise<void> {
     mode: options.liveModelRuns ? 'live-model' : options.dryRun ? 'dry-run' : 'apply',
     benchmarks: results.length,
     stored: options.dryRun ? 0 : results.length,
+    superseded,
     unscored,
     results,
   };
