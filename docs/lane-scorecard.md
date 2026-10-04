@@ -42,7 +42,7 @@ A dropped label must be judged again against the new pages with `lane:benchmark-
 A gold recapture that would carry no label is refused unless `--without-gold` is passed.
 A recapture that plans no values where the superseded capture planned some is refused, because the lane no longer reaches that scope and the successor would measure nothing; that benchmark needs a new scope instead.
 The report prints the old capture's `supersededPlannedObservationCount` beside the new `plannedObservationCount`, so a replay that planned nothing can be compared with what the lane plans today before the old benchmark stops being replayed.
-A benchmark already recaptured under a new id before this existed is linked with `--mark-successor-of=<old-id> --id=<existing-id>`, which captures nothing and refuses a successor with a different lane or scope.
+A benchmark already recaptured under a new id before this existed is linked with `--mark-successor-of=<old-id> --id=<existing-id>`, which captures nothing and refuses a successor with a different lane or scope, a successor that already supersedes another benchmark, and a successor the old benchmark already descends from, because that would close a cycle and neither would replay.
 Capture fetches live pages and makes live model calls, so recapture only when no Development sweep is running.
 
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
