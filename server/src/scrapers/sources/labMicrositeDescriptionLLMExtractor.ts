@@ -33,6 +33,7 @@ import {
   stripTrailingResearchHomeDescription,
 } from '../../utils/researchEntityNameNormalization';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { isDepartmentCollectivePageUrl } from '../../utils/researchHomeWebsiteUrl';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -457,6 +458,7 @@ export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   const urlText = textValue(value);
   if (!/^https?:\/\//i.test(urlText)) return true;
   if (isCrawlSeedListingUrl(urlText)) return true;
+  if (isDepartmentCollectivePageUrl(urlText)) return true;
   try {
     const url = new URL(urlText);
     const hostPath = `${url.hostname}${url.pathname}`.replace(/\/+$/, '');

@@ -37,6 +37,7 @@ import { Fellowship } from '../models/fellowship';
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 import {
   buildResearchAreasCardSummary,
+  deriveShortDescriptionFromFullDescription,
   entityDocShortDescriptionForRestatementGuard,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
@@ -223,7 +224,10 @@ import {
   planNeverBackedFieldProvenanceRetirement,
   planUnrecordedProvenanceObservationRelink,
 } from './neverBackedFieldProvenance';
-import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
+import {
+  planCollectivePageStoredDescriptionClears,
+  planRefusedStoredDescriptionClears,
+} from './refusedStoredDescription';
 import {
   evidenceMemberOf,
   mergedInEntityKeysAndIds,
@@ -370,7 +374,10 @@ import {
   loadDescriptionSourceCiters,
   screenDescriptionsOnSharedPages,
 } from './descriptionOwnershipResolverScreen';
-import { ownershipGuardedCitedUrls } from './descriptionSourceOwnership';
+import {
+  isLlmDescriptionFromDepartmentCollectivePage,
+  ownershipGuardedCitedUrls,
+} from './descriptionSourceOwnership';
 import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
@@ -8341,6 +8348,34 @@ export async function projectFromLog(
       set[clear.field] = '';
       fieldsWritten++;
     }
+    for (const clear of planCollectivePageStoredDescriptionClears({
+      stored: entityDoc,
+      staged: set,
+      lockedFields: manuallyLockedFields,
+    })) {
+      if (clear.skipped) {
+        console.log(`[collective-page-description] kept ${clear.field}: ${clear.skipped}`);
+        continue;
+      }
+      console.log(
+        `[collective-page-description] cleared ${clear.field} narrated from a department page`,
+      );
+      set[clear.field] = '';
+      fieldsWritten++;
+      if (clear.field === 'shortDescription') {
+        const survivingBody = textValue(set.fullDescription ?? entityDoc?.fullDescription);
+        const derivedCard = survivingBody
+          ? deriveShortDescriptionFromFullDescription(survivingBody)
+          : '';
+        if (
+          derivedCard &&
+          !isFullDescriptionRestatementOfShortDescription(survivingBody, derivedCard) &&
+          shortDescriptionQuality(derivedCard, survivingBody).isUseful
+        ) {
+          set.shortDescription = derivedCard;
+        }
+      }
+    }
     const storedQuoteClear = planStoredUndergradEvidenceQuoteClear({
       stored: entityDoc,
       staged: set,
@@ -9285,7 +9320,18 @@ export async function materializeEntity(
     );
   }
 
-  const resolverObs: ResolverObservation[] = ownershipScreen.kept.map((o: any) => ({
+  const collectivePageScreened = ownershipScreen.kept.filter(
+    (o: any) => !isLlmDescriptionFromDepartmentCollectivePage(o, entityDoc?.name),
+  );
+  if (collectivePageScreened.length < ownershipScreen.kept.length) {
+    console.log(
+      `[description-collective-page] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        ownershipScreen.kept.length - collectivePageScreened.length
+      } model-written description candidate(s) citing a department page`,
+    );
+  }
+
+  const resolverObs: ResolverObservation[] = collectivePageScreened.map((o: any) => ({
     field: o.field,
     value: o.value,
     sourceName: o.sourceName,

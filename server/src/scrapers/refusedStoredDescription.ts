@@ -42,6 +42,7 @@
  * script has that a derivation does not.
  */
 import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
+import { isLlmDescriptionFromDepartmentCollectivePage } from './descriptionSourceOwnership';
 
 export const REFUSABLE_STORED_DESCRIPTION_FIELDS = ['fullDescription', 'shortDescription'] as const;
 
@@ -89,4 +90,67 @@ export function planRefusedStoredDescriptionClears(input: {
     });
   }
   return clears;
+}
+
+/**
+ * Plan clears for a stored description whose own provenance is a model-written lane
+ * citing a department page (`isLlmDescriptionFromDepartmentCollectivePage`). The resolver
+ * screen already drops such candidates, but a description that loses every candidate is
+ * kept rather than unset, so without this stage the department's prose stays served. A
+ * field this pass staged anew is left to its new value.
+ */
+export function planCollectivePageStoredDescriptionClears(input: {
+  stored: Record<string, unknown> | null | undefined;
+  staged?: Record<string, unknown>;
+  lockedFields: readonly string[];
+}): RefusedStoredDescriptionClear[] {
+  const staged = input.staged ?? {};
+  const provenance = (input.stored?.fieldProvenance ?? {}) as Record<
+    string,
+    { sourceName?: unknown; sourceUrl?: unknown } | undefined
+  >;
+  const clears: RefusedStoredDescriptionClear[] = [];
+  for (const field of REFUSABLE_STORED_DESCRIPTION_FIELDS) {
+    const stored = input.stored?.[field];
+    if (typeof stored !== 'string' || stored.trim().length === 0) continue;
+    if (field in staged && staged[field] !== stored) continue;
+    const credited = provenance[field];
+    if (
+      !credited ||
+      !isLlmDescriptionFromDepartmentCollectivePage(
+        { field, sourceName: credited.sourceName, sourceUrl: credited.sourceUrl, value: stored },
+        input.stored?.name,
+      )
+    ) {
+      continue;
+    }
+    if (field === 'shortDescription' && bodyFromSamePageIsKept(input.stored, credited.sourceUrl)) {
+      continue;
+    }
+    clears.push({
+      field,
+      skipped: input.lockedFields.includes(field) ? 'field-is-locked' : null,
+    });
+  }
+  return clears;
+}
+
+function bodyFromSamePageIsKept(
+  stored: Record<string, unknown> | null | undefined,
+  cardSourceUrl: unknown,
+): boolean {
+  const body = stored?.fullDescription;
+  if (typeof body !== 'string' || body.trim().length === 0) return false;
+  const bodyProvenance = (stored?.fieldProvenance as Record<string, any> | undefined)
+    ?.fullDescription;
+  if (!bodyProvenance || bodyProvenance.sourceUrl !== cardSourceUrl) return false;
+  return !isLlmDescriptionFromDepartmentCollectivePage(
+    {
+      field: 'fullDescription',
+      sourceName: bodyProvenance.sourceName,
+      sourceUrl: bodyProvenance.sourceUrl,
+      value: body,
+    },
+    stored?.name,
+  );
 }

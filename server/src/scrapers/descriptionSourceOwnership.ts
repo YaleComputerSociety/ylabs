@@ -1,5 +1,9 @@
 import type { ObservedEntityType } from '../models/observation';
-import { isPersonProfileOrDirectoryUrl } from '../utils/researchHomeWebsiteUrl';
+import {
+  isDepartmentCollectivePageUrl,
+  isPersonProfileOrDirectoryUrl,
+} from '../utils/researchHomeWebsiteUrl';
+import { LLM_AUTHORED_SOURCE_NAMES } from './seedSources';
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 
 /**
@@ -171,4 +175,61 @@ export function ownershipGuardedCitedUrls(
     urls.add(normalizeEvidenceUrl(candidate.sourceUrl));
   }
   return [...urls];
+}
+
+let llmAuthoredSources: ReadonlySet<string> | undefined;
+// Built on first use because `seedSources` reaches this module through an import cycle.
+const isLlmAuthoredSource = (sourceName: unknown): boolean =>
+  (llmAuthoredSources ??= new Set(LLM_AUTHORED_SOURCE_NAMES)).has(String(sourceName ?? ''));
+
+const OWN_NAME_FILLER = new Set([
+  'faculty',
+  'research',
+  'lab',
+  'labs',
+  'laboratory',
+  'the',
+  'and',
+  'for',
+  'jr',
+  'sr',
+  'iii',
+  'professor',
+]);
+
+const ownNameTokens = (ownName: unknown): string[] =>
+  String(ownName ?? '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 3 && !OWN_NAME_FILLER.has(token));
+
+const textNamesOwnSubject = (text: unknown, ownName: unknown): boolean => {
+  const words = new Set(
+    String(text ?? '')
+      .toLowerCase()
+      .split(/[^a-z]+/),
+  );
+  return ownNameTokens(ownName).some((token) => words.has(token));
+};
+
+/**
+ * A language-model description that cites a department's audience, hiring or programme
+ * page and does not name the row's own subject narrates the department, a programme or a
+ * generic lab onto the row ("The department researches ..."), so it is dropped. Such a
+ * page can list each professor's research, which is why text naming the row's own person
+ * is kept: measured on Development, every kept case was accurate and every dropped one
+ * described the department, a programme or no one. The lanes refuse the page at emit;
+ * this reaches what was stored before they did. Scoped to model-written text because a
+ * roster lane's own description of a person can legitimately be read off a department page.
+ */
+export function isLlmDescriptionFromDepartmentCollectivePage(
+  observation: { field: string; sourceName?: unknown; sourceUrl?: unknown; value?: unknown },
+  ownName?: unknown,
+): boolean {
+  return (
+    OWNERSHIP_GUARDED_DESCRIPTION_FIELDS.has(observation.field) &&
+    isLlmAuthoredSource(observation.sourceName) &&
+    isDepartmentCollectivePageUrl(observation.sourceUrl) &&
+    !textNamesOwnSubject(observation.value, ownName)
+  );
 }
