@@ -36,6 +36,7 @@ const runLane = async (args: {
   extraction: DescriptionExtraction;
   url?: string;
   knownPersonSurnames?: ReadonlySet<string>;
+  row?: { slug: string; name: string; entityType: string; kind: string };
 }) => {
   const url = args.url ?? SITE_URL;
   const emitted: ObservationInput[] = [];
@@ -64,6 +65,7 @@ const runLane = async (args: {
         name: 'Ada Quill Faculty Research',
         entityType: 'FACULTY_RESEARCH_AREA',
         kind: 'individual',
+        ...args.row,
         websiteUrl: url,
       },
     ],
@@ -128,6 +130,20 @@ describe('the microsite lane emits the page-stated lab name on every description
 
     expect(valueOf('name')).toBeUndefined();
     expect(valueOf('displayName')).toBeUndefined();
+  });
+
+  it("re-types a LAB row whose personal homepage names only its lead when the page's own prose is adopted", async () => {
+    const personName = 'Ada Quill';
+    const { valueOf } = await runLane({
+      html: proseHtml(personName).replace(`<h1>${LAB_NAME}</h1>`, `<h1>${personName}</h1>`),
+      extraction: extraction({ name: personName, fullDescription: 'Prose the page never states.' }),
+      row: { slug: 'nsf-pi-fixture', name: 'Ada Quill Lab', entityType: 'LAB', kind: 'lab' },
+    });
+
+    expect(String(valueOf('fullDescription'))).toContain('cortical circuits');
+    expect(valueOf('name')).toBe('Ada Quill Faculty Research');
+    expect(valueOf('displayName')).toBe('Ada Quill Faculty Research');
+    expect(valueOf('entityType')).toBe('FACULTY_RESEARCH_AREA');
   });
 
   it('withholds an umbrella organization title', async () => {

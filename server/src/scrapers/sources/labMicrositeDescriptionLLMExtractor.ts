@@ -1527,7 +1527,8 @@ export function labNameIsStatedInPageHeadings(labName: string, html: string): bo
  * description screens cannot run without a description, so the name has to be
  * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead, and it
  * has to name a laboratory or group: on a personal homepage the model returns the
- * person's own name, which the title states too.
+ * person's own name, which the title states too. The one exception is a LAB row's
+ * personal homepage naming only its lead, which re-types the row instead (#4786).
  */
 export function pageStatedLabNameObservations(
   extraction: Pick<DescriptionExtraction, 'name' | 'subject' | 'fullDescription'>,
@@ -1542,7 +1543,9 @@ export function pageStatedLabNameObservations(
   if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
   const labName = usefulLabName(extraction.name);
   if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
-  if (!namesASelfDeclaredLaboratory(labName)) return [];
+  if (!namesASelfDeclaredLaboratory(labName) && !isLabTypedRowsPersonalPage(labName, context)) {
+    return [];
+  }
   if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
   if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
