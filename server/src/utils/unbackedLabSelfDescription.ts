@@ -261,7 +261,10 @@ export function withoutUnbackedLabSelfDescription(
 }
 
 const COLLECTIVE_NOUN = '(?:lab|laboratory|research group|group|team|research program|program)';
-const PREDICATE_WORD = "(?!(?:an?|the|of|in|for|at|on|with|from|by|to|and)\\s)[\\p{L}'’-]+";
+const PREDICATE_WORD =
+  "(?!(?:an?|the|of|in|for|at|on|with|from|by|to|and|who|whom|whose|that|which|where)\\s)[\\p{L}'’-]+";
+const ROLE_NOUN =
+  '(?:director|manager|leader|lead|member|coordinator|head|chief|chair|founder|administrator|officer|scientist|fellow)s?';
 
 /**
  * "<person> is a <kind> lab/group/team/program" says a person is a collective. It comes
@@ -279,7 +282,7 @@ function personLeadsTheirCollective(
   if (!person) return text;
   return text.replace(
     new RegExp(
-      `(^|[.!?]\\s+)(${escapeRegExp(person)}) is (an?) ((?:${PREDICATE_WORD}\\s+){0,4})(${COLLECTIVE_NOUN})(?![\\p{L}'’-])`,
+      `(^|[.!?]\\s+)(${escapeRegExp(person)}) is (an?) ((?:${PREDICATE_WORD}\\s+){0,4})(${COLLECTIVE_NOUN})(?![\\p{L}'’-])(?!\\s+${ROLE_NOUN}(?![\\p{L}'’-]))`,
       'gu',
     ),
     '$1$2 leads $3 $4$5',

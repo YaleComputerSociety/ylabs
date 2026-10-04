@@ -289,6 +289,20 @@ describe('served description of a faculty research row', () => {
     ).toBe('Wren Okonkwo-Vale is a professor of geology who studies estuaries.');
   });
 
+  it('leaves a sentence alone when the collective noun is not what the person is', () => {
+    const entity = facultyResearch();
+    for (const text of [
+      'Wren Okonkwo-Vale is a principal investigator whose lab studies estuaries.',
+      'Wren Okonkwo-Vale is a geologist who founded a coastal research group.',
+      'Wren Okonkwo-Vale is a residency program director at the medical school.',
+      'Wren Okonkwo-Vale is a lab director and studies estuaries.',
+      'Wren Okonkwo-Vale is a field team leader on coastal surveys.',
+      'Wren Okonkwo-Vale is a research group member studying estuaries.',
+    ]) {
+      expect(withoutUnbackedLabSelfDescription(text, entity, 'shortDescription')).toBe(text);
+    }
+  });
+
   it('keeps a body whose recast would fall under the served length floor', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: facultyResearch({
