@@ -414,10 +414,7 @@ const SOURCE_PAGE_NARRATION_PATTERNS = [
     `\\b(?:(?:her|his|their)\\s+${sourceQualifierRun(0)}|[\\w.-]+['’]s\\s+${sourceQualifierRun(1)})${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
     'i',
   ),
-  new RegExp(
-    `\\b[\\w.-]+['’]s\\s+${SOURCE_LISTING_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`,
-    'i',
-  ),
+  new RegExp(`\\b[\\w.-]+['’]s\\s+${SOURCE_LISTING_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`, 'i'),
   new RegExp(
     `(?:^|[.!?]\\s+)(?:the|this|that)\\s+${sourceQualifierRun(0)}${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
     'i',

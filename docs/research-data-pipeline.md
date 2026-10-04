@@ -1173,6 +1173,7 @@ Evidence is input to the description, not the description (owner decision, 2026-
 The writer never reads its own output, and it reads a `manual-admin-edit` description as ordinary evidence unless that description narrates its sources (`isWriterEvidenceObservation`).
 Each run is keyed on a hash of the ordered snippet set, the prompt hash and `WRITER_CONTRACT_VERSION`, stored as the lane's `sourceContentHash`, so a re-run calls the model only for a row whose evidence or prompt changed.
 A failed call records no hash, so the next run retries that row.
+A body the store refuses (`appendObservations` drops it) records no hash either and retires the lane's earlier body, so the row falls back to copied text and is judged again next run (`writerWritesAfterBodyAttempt`).
 On a content refusal, and on a row with no evidence left, the lane retires its own earlier body, because a body the current evidence no longer supports must not keep outranking the fallback.
 Every refusal names its arm, including the three deterministic arms the writer added: `past-career-clause`, `source-narration` and `over-length`.
 In apply mode each changed row is materialized, the touched rows are regated through `regateRematerializedEntities`, which also re-syncs their search documents, and the report counts `written`, `observationDropped`, `retired` and `adopted`.
