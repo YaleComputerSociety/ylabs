@@ -47,7 +47,6 @@ export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number]
 
 export const accessSignalTypes = [
   'POSTED_OPENING',
-  'RECURRING_PROGRAM',
   'CREDIT_FORMALIZATION_POSSIBLE',
   'COURSE_CREDIT_PATHWAY',
   'PAST_UNDERGRADS',
@@ -57,11 +56,7 @@ export const accessSignalTypes = [
   'REACH_OUT_PLAUSIBLE',
   'APPLICATION_FORM_EXISTS',
   'CONTACT_INSTRUCTIONS_EXIST',
-  'LAB_MANAGER_LISTED',
-  'PROGRAM_MANAGER_LISTED',
-  'APPLICATION_ONLY',
   'NOT_CURRENTLY_AVAILABLE',
-  'NO_EVIDENCE',
 ] as const;
 
 export type AccessSignalType = (typeof accessSignalTypes)[number];
@@ -76,6 +71,9 @@ export type AccessSignalConfidence = (typeof accessSignalConfidences)[number];
  * so a `Signal` now carries an access type and nothing else. Stored rows keep the
  * retired names, because dropping an enum value never rewrites a document, and no
  * read path queries them. See docs/decisions.md for the measurement.
+ * `LAB_MANAGER_LISTED`, `PROGRAM_MANAGER_LISTED`, `APPLICATION_ONLY`, `NO_EVIDENCE`
+ * and the `RECURRING_PROGRAM` signal type were dropped the same way (#4585); none
+ * was ever written.
  */
 export const signalTypes = accessSignalTypes;
 

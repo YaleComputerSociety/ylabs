@@ -194,8 +194,6 @@ export const getEvidenceSignalLabel = (value?: string): string => {
   switch (value) {
     case 'POSTED_OPENING':
       return 'Posted opening';
-    case 'RECURRING_PROGRAM':
-      return 'Recurring program';
     case 'PAST_UNDERGRADS':
       return 'Past undergraduate participation';
     case 'CURRENT_UNDERGRADS':
@@ -398,18 +396,10 @@ const pathwaysForEntities = (
   });
 };
 
-const hasContactRoute = (pathway: PathwaySearchHit): boolean =>
-  Boolean(pathway.contactRoute?.url || pathway.contactRoute?.routeType) ||
-  ['contact-program', 'plan-outreach'].includes(pathway.bestNextStepCategory);
-
-const pathwayEvidenceTypes = (pathways: PathwaySearchHit[]): string[] =>
-  pathways.flatMap((pathway) => pathway.evidence || []).map((item) => item.signalType);
-
 /**
  * The browse card's fallback, for the surface where `pathways` is absent.
  *
- * `buildWayInBadges` derives every badge from a pathway hit, and the browse
- * response from `/api/research/search` carries no `pathways` and no
+ * The browse response from `/api/research/search` carries no `pathways` and no
  * `wayInBadges` field, so on `/research` the signals were always empty and the
  * block that renders them was never entered: 0 of 24 cards, measured. The same
  * response does carry the underlying evidence, just in the entity shape, so the
@@ -440,23 +430,6 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
 
   return badges;
-};
-
-export const buildWayInBadges = (
-  entity: ResearchEntity | undefined,
-  pathways: PathwaySearchHit[],
-): string[] => {
-  const signalTypes = pathwayEvidenceTypes(pathways);
-  const badges: string[] = [];
-  const addBadge = (label: string, condition: boolean) => {
-    if (condition && !badges.includes(label)) badges.push(label);
-  };
-
-  addBadge('Contact route', pathways.some(hasContactRoute));
-  addBadge('Undergrad evidence', signalTypes.includes('PAST_UNDERGRADS'));
-  addBadge('Student project evidence', signalTypes.includes('FACULTY_SUPERVISES_STUDENT_PROJECTS'));
-
-  return badges.slice(0, 5);
 };
 
 export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
@@ -564,7 +537,7 @@ const buildProfileDiscoveryClusters = (
         ...(entity.studentVisibilityTier === 'limited_but_safe' ? ['Limited profile'] : []),
         ...getUniqueDepartmentLabels(entity.departments).slice(0, 2),
       ]).slice(0, 5),
-      wayInBadges: buildWayInBadges(entity, pathways),
+      wayInBadges: buildWayInBadgesFromEntity(entity),
       entities: [entity],
       pathways,
       evidence: [

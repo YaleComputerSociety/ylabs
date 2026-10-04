@@ -3,7 +3,6 @@ import { memo, type MouseEvent } from 'react';
 import { CheckIcon } from '../shared/icons';
 
 import {
-  buildWayInBadges,
   buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
   type ResearchCluster,
@@ -103,13 +102,8 @@ const ResearchHomeCard = ({
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
       ? primaryLinkedEntity
       : null;
-  const pathwayBadges = home.wayInBadges?.length
+  const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
-    : buildWayInBadges(home.entities[0], home.pathways || []);
-  // The browse response carries no pathways, so fall back to the entity's own
-  // evidence fields rather than rendering nothing. See #3555.
-  const wayInBadges = pathwayBadges.length
-    ? pathwayBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
   const leadAccessSignal = orderedAccessSignals.find((signal) =>

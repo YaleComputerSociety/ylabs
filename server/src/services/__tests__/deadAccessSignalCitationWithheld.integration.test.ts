@@ -59,7 +59,7 @@ const seed = async () => {
   const signal = (url: string) => ({
     _id: new mongoose.Types.ObjectId(),
     researchEntityId: entityId,
-    type: 'RECURRING_PROGRAM',
+    type: 'POSTED_OPENING',
     archived: false,
     confidence: 'HIGH',
     observedAt: new Date('2026-09-01T00:00:00Z'),
@@ -104,7 +104,7 @@ describe('a dead access-signal citation is withheld and the signal stays (#3267)
 
     expect(signals).toHaveLength(2);
     expect(signals.every((s: any) => s.excerpt === EXCERPT)).toBe(true);
-    expect(signals.every((s: any) => s.signalType === 'RECURRING_PROGRAM')).toBe(true);
+    expect(signals.every((s: any) => s.signalType === 'POSTED_OPENING')).toBe(true);
   });
 
   it('keeps a citation whose probe was inconclusive, because a server answered', async () => {
