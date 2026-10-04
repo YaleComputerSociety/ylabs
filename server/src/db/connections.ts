@@ -334,19 +334,86 @@ export async function reportMissingMongoIndexes(
     const model = connection.model(modelName);
     const collection = model.collection.name;
     if (!live.has(collection)) continue;
-    const declared = model.schema
-      .indexes()
-      .map(([key, options]) =>
-        declaredIndexName(key as Record<string, unknown>, options as Record<string, unknown>),
-      )
-      .filter(Boolean);
+    const declared = schemaDeclaredIndexNames(model.schema);
     if (declared.length === 0) continue;
-    const present = new Set((await db.collection(collection).indexes()).map((entry) => entry.name));
-    const missingIndexNames = declared.filter((name) => !present.has(name));
-    if (missingIndexNames.length > 0)
-      drift.push({ model: modelName, collection, missingIndexNames });
+    const present = (await db.collection(collection).indexes()).map((entry) => entry.name ?? '');
+    const { missing } = compareDeclaredAndLiveIndexNames(declared, present);
+    if (missing.length > 0)
+      drift.push({ model: modelName, collection, missingIndexNames: missing });
   }
   return drift;
+}
+
+export interface UndeclaredMongoIndexDrift {
+  collection: string;
+  models: string[];
+  undeclaredIndexNames: string[];
+}
+
+const MONGO_DEFAULT_ID_INDEX_NAME = '_id_';
+
+function schemaDeclaredIndexNames(schema: Pick<mongoose.Schema, 'indexes'>): string[] {
+  return schema
+    .indexes()
+    .map(([key, options]) =>
+      declaredIndexName(key as Record<string, unknown>, options as Record<string, unknown>),
+    )
+    .filter(Boolean);
+}
+
+export function compareDeclaredAndLiveIndexNames(
+  declared: readonly string[],
+  live: readonly string[],
+): { missing: string[]; undeclared: string[] } {
+  const declaredSet = new Set(declared);
+  const liveSet = new Set(live.filter(Boolean));
+  return {
+    missing: declared.filter((name) => !liveSet.has(name)),
+    undeclared: [...liveSet]
+      .filter((name) => name !== MONGO_DEFAULT_ID_INDEX_NAME && !declaredSet.has(name))
+      .sort(),
+  };
+}
+
+export function declaredIndexNamesByCollection(
+  connection: mongoose.Connection = mongoose.connection,
+): Map<string, { models: string[]; indexNames: string[] }> {
+  const byCollection = new Map<string, { models: string[]; indexNames: string[] }>();
+  for (const modelName of connection.modelNames()) {
+    const model = connection.model(modelName);
+    const entry = byCollection.get(model.collection.name) ?? { models: [], indexNames: [] };
+    entry.models.push(modelName);
+    entry.indexNames.push(...schemaDeclaredIndexNames(model.schema));
+    byCollection.set(model.collection.name, entry);
+  }
+  return byCollection;
+}
+
+/**
+ * The reverse of `reportMissingMongoIndexes`: physical indexes on a modelled
+ * collection that no registered model declares. Mongoose never drops an index it
+ * has stopped declaring, so a retirement leaves one behind unless something
+ * reports it. Reads only, and skips absent collections for the same reason the
+ * forward report does.
+ */
+export async function reportUndeclaredMongoIndexes(
+  connection: mongoose.Connection = mongoose.connection,
+): Promise<UndeclaredMongoIndexDrift[]> {
+  const db = connection.db;
+  if (!db) return [];
+  const live = new Set(
+    (await db.listCollections({}, { nameOnly: true }).toArray()).map((entry) => entry.name),
+  );
+  const drift: UndeclaredMongoIndexDrift[] = [];
+  for (const [collection, declared] of declaredIndexNamesByCollection(connection)) {
+    if (!live.has(collection)) continue;
+    const present = (await db.collection(collection).indexes()).map((entry) => entry.name ?? '');
+    const { undeclared } = compareDeclaredAndLiveIndexNames(declared.indexNames, present);
+    if (undeclared.length > 0) {
+      drift.push({ collection, models: declared.models, undeclaredIndexNames: undeclared });
+    }
+  }
+  return drift.sort((left, right) => left.collection.localeCompare(right.collection));
 }
 
 export async function logMissingMongoIndexes(

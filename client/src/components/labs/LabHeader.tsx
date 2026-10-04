@@ -20,7 +20,7 @@ import {
   researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
-import { GlobeIcon, MapPinIcon } from '../shared/icons';
+import { GlobeIcon } from '../shared/icons';
 import SlashBreakableText from '../shared/SlashBreakableText';
 
 interface LabHeaderProps {
@@ -81,12 +81,6 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl sm:leading-10">
             <SlashBreakableText text={researchEntityTitle(group)} />
           </h1>
-          {group.location && (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
-              <MapPinIcon size={14} />
-              {group.location}
-            </p>
-          )}
         </div>
         {actions && <div className="w-full shrink-0 sm:w-auto">{actions}</div>}
       </div>

@@ -43,8 +43,7 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const SELECT =
-  'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId embedding';
+const SELECT = 'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId';
 
 function buildInScopeQuarantines(entities: MatcherEntity[]): SameNameQuarantineLike[] {
   const byName = new Map<string, Array<{ id: string; personId?: unknown }>>();
@@ -71,7 +70,6 @@ function toMatcherEntity(doc: Record<string, any>): MatcherEntity {
     researchAreas: doc.researchAreas,
     methods: doc.methods,
     websiteUrl: doc.websiteUrl,
-    embedding: doc.embedding,
     entityType: typeof doc.entityType === 'string' ? doc.entityType : undefined,
     pi,
   };

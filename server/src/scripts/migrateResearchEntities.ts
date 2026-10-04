@@ -216,7 +216,6 @@ function normalizeResearchEntityDoc(doc: Record<string, any>): Record<string, an
     name,
     displayName: doc.displayName || name,
     entityType: doc.entityType || mapResearchGroupKindToEntityType(doc.kind),
-    description: doc.description || doc.fullDescription || doc.shortDescription || '',
     websiteUrl: doc.websiteUrl || doc.website || '',
     departments: normalizeArray(doc.departments),
     researchAreas: normalizeArray(doc.researchAreas),

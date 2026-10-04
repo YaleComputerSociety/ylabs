@@ -56,7 +56,8 @@ Archived entities are always loaded, because merge losers are archived and leavi
 `autoBandRecallByProvenance` reports recall separately for each label provenance.
 The buckets do not partition the positives: a transitive pair whose two members were merged into the same canonical by different provenances is in the total and in no bucket.
 
-`fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, plus embedding cosine ANN, then scores each pair.
+`fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, then scores each pair.
+Its embedding-cosine blocking and feature compare only entities that carry an `embedding`, and the CLI loads none because `ResearchEntity` no longer stores one, so neither contributes to the report.
 The scorer sums per-feature Fellegi-Sunter weights only for comparable features (both sides carry the data), applies hard vetoes for conflicting first names and incompatible entity types, and assigns each pair an `auto`, `review`, or `discard` band via two probability thresholds.
 The CLI prints a JSON report of candidate/auto/review counts and measures blocking recall and auto-band precision against the labeled positives and same-name-different-PI hard negatives.
 
