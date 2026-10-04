@@ -114,6 +114,40 @@ describe('merge lead-edge conflict is judged on the survivor’s live edges (#39
     expect(await liveLeadCount()).toBe(1);
   });
 
+  it('repoints only one live edge when two losers carry the same person and role (#4791)', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const secondLoserId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertOne({
+      _id: secondLoserId,
+      slug: 'nsf-pi-jane-roe',
+      name: 'Jane Roe Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+    await db.collection('role_assignments').insertMany(
+      [loserId, secondLoserId].map((id) => ({
+        personId,
+        target: { kind: 'RESEARCH_ENTITY', id },
+        role: 'PI',
+        state: 'CURRENT',
+        archived: false,
+      })),
+    );
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: survivorId.toHexString(),
+        duplicateEntityIds: [loserId.toHexString(), secondLoserId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      },
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+    expect(result.retiredConflictingMembers).toBe(1);
+    expect(await liveLeadCount()).toBe(1);
+  });
+
   it('still retires the loser’s edge when the survivor holds a live one for the same role', async () => {
     await seedEdges({ state: 'CURRENT', archived: false });
     const result = await merge();

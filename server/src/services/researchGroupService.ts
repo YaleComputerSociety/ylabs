@@ -14,7 +14,11 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
-import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
+import {
+  pinRoleAssignmentUpsertToLiveEdge,
+  RoleAssignment,
+  roleAssignmentReattachWrite,
+} from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
@@ -442,8 +446,9 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       'target.id': group._id,
       role: 'PI',
     };
+    const liveRoleFilter = await pinRoleAssignmentUpsertToLiveEdge(roleFilter);
     await RoleAssignment.updateOne(
-      roleFilter,
+      liveRoleFilter,
       {
         $set: {
           personId: ownerPersonId,
@@ -457,7 +462,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       },
       { upsert: true },
     );
-    const reattach = roleAssignmentReattachWrite(roleFilter, 'UNREVIEWED');
+    const reattach = roleAssignmentReattachWrite(liveRoleFilter, 'UNREVIEWED');
     await RoleAssignment.updateOne(reattach.filter, reattach.update);
   }
 

@@ -2616,8 +2616,14 @@ export async function applyResearchEntityDedupeMergeGroup(
         .lean()
     ).map((member) => `${String(member.personId)}:${member.role || ''}`),
   );
+  const heldMemberKeys = new Set(canonicalMemberKeys);
   const conflictingMemberIds = duplicateMembers
-    .filter((member) => canonicalMemberKeys.has(`${String(member.personId)}:${member.role || ''}`))
+    .filter((member) => {
+      const key = `${String(member.personId)}:${member.role || ''}`;
+      if (heldMemberKeys.has(key)) return true;
+      if (member.state !== 'HISTORICAL' && member.archived !== true) heldMemberKeys.add(key);
+      return false;
+    })
     .map((member) => member._id);
 
   const retiredConflictingMembers =
