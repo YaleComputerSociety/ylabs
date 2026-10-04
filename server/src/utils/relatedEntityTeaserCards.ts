@@ -48,7 +48,9 @@ const linksOutsidePageSubtree = (href: string | undefined, page: URL): boolean =
 };
 
 const isTeaserCardBlock = ($: cheerio.CheerioAPI, element: any): boolean =>
-  ($(element).attr('class') || '').split(/\s+/).some((token) => TEASER_CARD_CLASS_TOKEN.test(token));
+  ($(element).attr('class') || '')
+    .split(/\s+/)
+    .some((token) => TEASER_CARD_CLASS_TOKEN.test(token));
 
 const hasSameShapeSibling = ($: cheerio.CheerioAPI, element: any): boolean => {
   const tag = element.tagName;
@@ -56,7 +58,10 @@ const hasSameShapeSibling = ($: cheerio.CheerioAPI, element: any): boolean => {
   return $(element)
     .siblings()
     .toArray()
-    .some((sibling: any) => sibling.tagName === tag && ($(sibling).attr('class') || '').trim() === className);
+    .some(
+      (sibling: any) =>
+        sibling.tagName === tag && ($(sibling).attr('class') || '').trim() === className,
+    );
 };
 
 // The repeating unit of a listing is the card itself, or the list item or article
@@ -66,9 +71,9 @@ const isInListingOfCards = ($: cheerio.CheerioAPI, element: any): boolean => {
   const parent = $(element).parent()[0] as any;
   return Boolean(
     parent &&
-      ['li', 'article'].includes(parent.tagName) &&
-      $(parent).children().length === 1 &&
-      hasSameShapeSibling($, parent),
+    ['li', 'article'].includes(parent.tagName) &&
+    $(parent).children().length === 1 &&
+    hasSameShapeSibling($, parent),
   );
 };
 
