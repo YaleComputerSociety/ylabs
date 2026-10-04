@@ -304,8 +304,9 @@ const nameTokenForms = (token: string): string[] =>
  * leads and not the person the record is named for. Such a body describes someone
  * else's work, however well it reads, so it is withheld rather than served under this
  * lead. Only a person-scoped record is judged, because an organization's page names
- * its staff in subject position as a matter of course. Any token of the titled name matching a lead or the record's own name keeps
- * the body, because compound surnames and familiar given names are common. A lead
+ * its staff in subject position as a matter of course. Any token of the titled name
+ * matching a lead or the record's own name keeps the body, because compound surnames
+ * and familiar given names are common. A lead
  * named earlier in the sentence also keeps it, because the titled person is then a
  * collaborator rather than the subject.
  */
