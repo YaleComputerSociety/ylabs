@@ -6,7 +6,6 @@ import { clearC4Flags } from './c4FlagTestEnv';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Signal } from '../../models/signal';
-import { ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON } from '../accessMaterializer';
 import { materializeEntity } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 
@@ -67,7 +66,7 @@ const signalState = async () =>
     ),
   );
 
-describe('undergrad lane access signals follow the newest read (#3921, #3928)', () => {
+describe('undergrad lane access reads follow the newest read (#3921, #3928, #4637)', () => {
   let replSet: MongoMemoryReplSet;
   let entityId: mongoose.Types.ObjectId;
 
@@ -111,79 +110,22 @@ describe('undergrad lane access signals follow the newest read (#3921, #3928)', 
     expect(live.map((o) => o.value)).toEqual(['Please email the lab coordinator to join.']);
   });
 
-  it('retires a reach-out signal once the newest verdict is no, and revives it on a newer yes', async () => {
-    await laneRun('yes', 'Please email the lab manager to join.', '2026-05-01T12:00:00Z');
-    await accessPass();
-    expect(await signalState()).toMatchObject({ [REACH_OUT]: 'live', [MICROSITE_CONTACT]: 'live' });
-
-    await laneRun('no', 'Please email the lab manager to join.', '2026-06-01T12:00:00Z');
-    const dryRun = await accessPass(true);
-    expect(
-      dryRun.accessSignalChanges?.retired.map((change) => change.derivationKey).sort(),
-    ).toEqual([MICROSITE_CONTACT, REACH_OUT].sort());
-    expect(await signalState()).toMatchObject({ [REACH_OUT]: 'live', [MICROSITE_CONTACT]: 'live' });
-
-    await accessPass();
-    expect(await signalState()).toMatchObject({
-      [REACH_OUT]: 'archived',
-      [MICROSITE_CONTACT]: 'archived',
-    });
-    const retired = await Signal.findOne({ derivationKey: REACH_OUT }).lean();
-    expect(retired?.archivedReason).toBe(ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON);
-
-    await laneRun('yes', 'Please email the lab manager to join.', '2026-07-01T12:00:00Z');
-    await accessPass();
-    expect(await signalState()).toMatchObject({ [REACH_OUT]: 'live', [MICROSITE_CONTACT]: 'live' });
-  });
-
-  it('retires a contact signal whose only quote is an address, leaving no contact claim', async () => {
-    await Signal.create({
-      researchEntityId: entityId,
-      type: 'CONTACT_INSTRUCTIONS_EXIST',
-      derivationKey: MICROSITE_CONTACT,
-      source: { name: LANE, url: PAGE_URL },
-    });
-    await laneRun('yes', '[email redacted]', '2026-05-01T12:00:00Z');
-
-    await accessPass();
-
-    expect(await signalState()).toMatchObject({
-      [REACH_OUT]: 'live',
-      [MICROSITE_CONTACT]: 'archived',
-    });
-    expect(
-      await Signal.countDocuments({ type: 'CONTACT_INSTRUCTIONS_EXIST', archived: { $ne: true } }),
-    ).toBe(0);
-  });
-
-  it('archives nothing for a signal whose evidence the read does not hold', async () => {
-    await Signal.create({
+  it('mints no reach-out or contact signal from any verdict and leaves a stored one to the archive (#4637)', async () => {
+    await Signal.collection.insertOne({
       researchEntityId: entityId,
       type: 'REACH_OUT_PLAUSIBLE',
       derivationKey: REACH_OUT,
-      source: { name: 'research-entity-cache-backfill', url: PAGE_URL },
+      archived: false,
+      source: { name: LANE, url: PAGE_URL },
     });
-    await appendObservations(
-      [
-        {
-          entityType: 'researchEntity' as const,
-          entityKey: SLUG,
-          field: 'fullDescription',
-          value: 'The fixture lab studies synthetic access questions with careful measurement.',
-          sourceUrl: PAGE_URL,
-        },
-      ],
-      {
-        scrapeRunId: String(new mongoose.Types.ObjectId()),
-        sourceId: String(new mongoose.Types.ObjectId()),
-        sourceName: 'lab-microsite-description-llm',
-        sourceWeight: 0.8,
-        dryRun: false,
-      },
-    );
 
+    await laneRun('yes', 'Please email the lab manager to join.', '2026-05-01T12:00:00Z');
     await accessPass();
-
     expect(await signalState()).toEqual({ [REACH_OUT]: 'live' });
+
+    await laneRun('no', 'Please email the lab manager to join.', '2026-06-01T12:00:00Z');
+    await accessPass();
+    expect(await signalState()).toEqual({ [REACH_OUT]: 'live' });
+    expect(await Signal.countDocuments({ derivationKey: MICROSITE_CONTACT })).toBe(0);
   });
 });

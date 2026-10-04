@@ -4,7 +4,6 @@ import {
   isWithinCrawlSubtree,
   readCourseCreditRouteFromHtml,
 } from '../utils/courseCreditRouteEvidence';
-import { readOrgUnitCourseCreditRouteValue } from '../orgUnitSignalMaterializer';
 import { Signal, signalTargetIsExactlyOne } from '../../models/signal';
 
 const page = (body: string, heading = 'Undergraduate Program') =>
@@ -222,28 +221,6 @@ describe('isWithinCrawlSubtree', () => {
   });
 });
 
-describe('readOrgUnitCourseCreditRouteValue', () => {
-  const value = {
-    schemaVersion: 1,
-    evidenceQuote: 'Undergraduates receive course credit for directed research in ABCD 4900.',
-    supportingQuoteCount: 2,
-  };
-
-  it('accepts a versioned value with a quote and a supporting count', () => {
-    expect(readOrgUnitCourseCreditRouteValue(value)).toMatchObject({
-      schemaVersion: 1,
-      supportingQuoteCount: 2,
-    });
-  });
-
-  it('refuses an unversioned value, an empty quote, and a zero supporting count', () => {
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, schemaVersion: 2 })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, evidenceQuote: '   ' })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, supportingQuoteCount: 0 })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue(null)).toBeNull();
-  });
-});
-
 describe('Signal targeting', () => {
   it('requires exactly one of researchEntityId and orgUnitId', () => {
     expect(signalTargetIsExactlyOne({ researchEntityId: 'a' })).toBe(true);
@@ -255,12 +232,12 @@ describe('Signal targeting', () => {
   it('validates an org-unit-targeted signal and refuses one with neither target', () => {
     const orgUnitSignal = new Signal({
       orgUnitId: '507f1f77bcf86cd799439011',
-      type: 'COURSE_CREDIT_PATHWAY',
+      type: 'CURRENT_UNDERGRADS',
       status: 'KNOWN',
     });
     expect(orgUnitSignal.validateSync()).toBeUndefined();
 
-    const targetless = new Signal({ type: 'COURSE_CREDIT_PATHWAY', status: 'KNOWN' });
+    const targetless = new Signal({ type: 'CURRENT_UNDERGRADS', status: 'KNOWN' });
     expect(targetless.validateSync()?.errors.researchEntityId).toBeDefined();
   });
 

@@ -5,12 +5,12 @@ import {
   deriveAccessArtifactsFromObservations,
   planEvidenceGovernedSignalChanges,
   deriveAccessArtifactsForResearchGroup,
-  isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
   parsePostedOpening,
   type AccessObservation,
 } from '../accessMaterializer';
+import { isExplicitUndergradUnavailabilityPhrase } from '../undergradEvidenceQuoteValidation';
 
 const D = new Date('2026-05-07T12:00:00.000Z');
 
@@ -104,7 +104,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
-  it('turns past undergraduate advisees into exploratory outreach plus fellowship-compatible evidence', () => {
+  it('turns fellowship-recipient advisees into past-undergraduates evidence only (#4637)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'pastUndergradAdvisees',
@@ -114,10 +114,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
-      'FELLOWSHIP_COMPATIBLE',
-      'PAST_UNDERGRADS',
-    ]);
+    expect(result.accessSignals.map((signal) => signal.type)).toEqual(['PAST_UNDERGRADS']);
     expect(result.accessSignals.every((signal) => signal.confidence === 'HIGH')).toBe(true);
   });
 
@@ -191,7 +188,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       ]);
     });
 
-    it('keeps fellowship evidence from the fellowship lane beside roster alumni', () => {
+    it('derives one past-undergraduates signal from roster alumni and fellowship recipients (#4637)', () => {
       expect(
         types([
           obs({
@@ -207,7 +204,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
             sourceName: 'undergrad-fellowships-recipients',
           }),
         ]),
-      ).toEqual(['FELLOWSHIP_COMPATIBLE', 'PAST_UNDERGRADS']);
+      ).toEqual(['PAST_UNDERGRADS']);
     });
   });
 
@@ -264,20 +261,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
-  it('does not derive reach-out-plausible from an unvalidated quote alone (#1387)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradEvidenceQuote',
-        value: 'Undergraduates are welcome to join the lab.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
-  });
-
-  it('derives reach-out-plausible from structured undergradAccessEvidence, using a companion quote only as the excerpt (#1387)', () => {
+  it('derives no access signal from a yes verdict, its quote, or contact instructions (#4637)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -295,67 +279,19 @@ describe('deriveAccessArtifactsFromObservations', () => {
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.6,
       }),
-    ]);
-
-    expect(result.accessSignals).toMatchObject([
-      {
-        type: 'REACH_OUT_PLAUSIBLE',
-        excerpt: 'Undergraduates are welcome to join the lab.',
-      },
-    ]);
-  });
-
-  it('drops a wrong-entity/mission-blurb quote from the excerpt even when structured evidence corroborates access (#1387)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'undergradAccessEvidence',
-        value: { openToUndergrads: 'yes', evidenceSource: 'members_section' },
+        field: 'contactInstructionsQuote',
+        value: 'Interested undergraduates should email the lab manager with a CV.',
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.6,
       }),
-      obs({
-        field: 'undergradEvidenceQuote',
-        value:
-          'The Department of Chemistry maintains a glassblowing facility to benefit the research community.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
+      obs({ field: 'contactEmail', value: 'fixture.person@example.edu', confidence: 0.7 }),
     ]);
 
-    expect(result.accessSignals).toMatchObject([
-      {
-        type: 'REACH_OUT_PLAUSIBLE',
-        excerpt: undefined,
-      },
-    ]);
+    expect(result.accessSignals).toEqual([]);
   });
 
-  it('stores explicit negative availability as a signal without creating a pathway', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradAccessEvidence',
-        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-      obs({
-        field: 'undergradEvidenceQuote',
-        value: 'We are not taking undergraduate researchers this year.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-    ]);
-
-    expect(result.accessSignals).toMatchObject([
-      {
-        type: 'NOT_CURRENTLY_AVAILABLE',
-        confidence: 'MEDIUM',
-        excerpt: 'We are not taking undergraduate researchers this year.',
-      },
-    ]);
-  });
-
-  it('emits NOT_CURRENTLY_AVAILABLE from an explicit phrase inside undergradAccessEvidence (#1304)', () => {
+  it('derives no access signal from a no verdict that states the lab takes no undergraduates (#4637)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -369,75 +305,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals).toMatchObject([
-      {
-        type: 'NOT_CURRENTLY_AVAILABLE',
-        excerpt: 'We are not currently accepting undergraduate students.',
-      },
-    ]);
-  });
-
-  it('does not emit NOT_CURRENTLY_AVAILABLE from postdoc/grad recruiting text misparsed as negative (#1304)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradAccessEvidence',
-        value: {
-          openToUndergrads: 'no',
-          evidenceSource: 'explicit_text',
-          evidenceQuote:
-            'We currently have an opening for either a postdoctoral associate or an associate research scientist.',
-        },
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
-      'NOT_CURRENTLY_AVAILABLE',
-    );
-  });
-
-  it('does not emit NOT_CURRENTLY_AVAILABLE from a research-abstract sentence misparsed as negative (#1304)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradAccessEvidence',
-        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.8,
-      }),
-      obs({
-        field: 'undergradEvidenceQuote',
-        value:
-          'My research relates to the study of conformal field theories and the conformal bootstrap.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.8,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
-      'NOT_CURRENTLY_AVAILABLE',
-    );
-  });
-
-  it('does not emit NOT_CURRENTLY_AVAILABLE from an empty-roster fact (#1304)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradAccessEvidence',
-        value: { openToUndergrads: 'no', evidenceSource: 'members_section' },
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.7,
-      }),
-      obs({
-        field: 'undergradEvidenceQuote',
-        value: 'No undergraduates listed on the lab roster.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.7,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
-      'NOT_CURRENTLY_AVAILABLE',
-    );
+    expect(result.accessSignals).toEqual([]);
   });
 
   it('derives official application routes from lab-microsite join-page evidence', () => {
@@ -466,14 +334,10 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
-      'APPLICATION_FORM_EXISTS',
-      'CONTACT_INSTRUCTIONS_EXIST',
-      'REACH_OUT_PLAUSIBLE',
-    ]);
+    expect(result.accessSignals.map((signal) => signal.type)).toEqual(['APPLICATION_FORM_EXISTS']);
   });
 
-  it('does not mint microsite contact-instructions access evidence when undergrad access is explicitly no', () => {
+  it('mints no join-page signal when the only undergraduate verdict is no (#4637)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -486,19 +350,17 @@ describe('deriveAccessArtifactsFromObservations', () => {
         confidence: 0.5,
       }),
       obs({
-        field: 'contactInstructionsQuote',
-        value: 'Please contact the PI by email to inquire.',
+        field: 'joinPageUrl',
+        value: 'https://lab.example.edu/join-us',
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.5,
       }),
     ]);
 
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
-      'CONTACT_INSTRUCTIONS_EXIST',
-    );
+    expect(result.accessSignals).toEqual([]);
   });
 
-  it('treats department undergraduate research pages as access evidence, not posted openings', () => {
+  it('derives no reach-out or posted-opening signal from a department undergraduate research page (#4637)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -520,14 +382,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals).toMatchObject([
-      {
-        type: 'REACH_OUT_PLAUSIBLE',
-        excerpt:
-          'Students interested in research should contact the faculty member directly to explore opportunities.',
-      },
-    ]);
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('POSTED_OPENING');
+    expect(result.accessSignals).toEqual([]);
   });
 
   it('derives department structured application pages as guarded official routes', () => {
@@ -551,10 +406,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
-      'APPLICATION_FORM_EXISTS',
-      'REACH_OUT_PLAUSIBLE',
-    ]);
+    expect(result.accessSignals.map((signal) => signal.type)).toEqual(['APPLICATION_FORM_EXISTS']);
   });
 
   describe('join pages that are not an undergraduate route (#4430)', () => {
@@ -721,7 +573,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       expect(application(signals)?.sourceUrl).toBe('https://examplelab.yale.edu/join-our-lab');
     });
 
-    it('leaves a generic recruiting line to the contact signal and mints no application route', () => {
+    it('mints no application route from a generic recruiting line (#4637)', () => {
       const signals = derive(
         [
           access(
@@ -738,10 +590,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
         ],
         labRow,
       );
-      expect(signals.map((signal) => signal.type).sort()).toEqual([
-        'CONTACT_INSTRUCTIONS_EXIST',
-        'REACH_OUT_PLAUSIBLE',
-      ]);
+      expect(signals).toEqual([]);
     });
 
     it("refuses the row's home page and a member listing that invite no undergraduate by name", () => {
@@ -882,80 +731,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
 
     expect(result.accessSignals).toEqual([]);
-  });
-
-  it('drops marker-only contact quotes from derived signal excerpts (#1112)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'undergradAccessEvidence',
-        value: {
-          openToUndergrads: 'yes',
-          evidenceSource: 'explicit_text',
-          evidenceQuote: 'Email ada@yale.edu to apply.',
-        },
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-      obs({
-        field: 'undergradEvidenceQuote',
-        value: 'Email ada@yale.edu to apply.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-      obs({
-        field: 'contactInstructionsQuote',
-        value: 'Call 203-432-1234 or email ada@yale.edu to arrange a visit.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-    ]);
-
-    expect(result.accessSignals).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: 'REACH_OUT_PLAUSIBLE', excerpt: undefined }),
-        expect.objectContaining({ type: 'CONTACT_INSTRUCTIONS_EXIST', excerpt: undefined }),
-      ]),
-    );
-    const serialized = JSON.stringify(result.accessSignals);
-    expect(serialized).not.toContain('ada@yale.edu');
-    expect(serialized).not.toContain('203-432-1234');
-    expect(serialized).not.toMatch(/redacted/i);
-  });
-
-  it('keeps a substantive contact quote while dropping its marker sentence (#1112)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'contactInstructionsQuote',
-        value:
-          'Prospective students should review current projects before writing. Email ada@yale.edu with a short note.',
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.5,
-      }),
-    ]);
-
-    const contactSignal = result.accessSignals.find(
-      (signal) => signal.type === 'CONTACT_INSTRUCTIONS_EXIST',
-    );
-    expect(contactSignal?.excerpt).toMatch(/Prospective students should review current projects/i);
-    expect(contactSignal?.excerpt ?? '').not.toContain('ada@yale.edu');
-    expect(contactSignal?.excerpt ?? '').not.toMatch(/redacted/i);
-  });
-
-  it('derives contact-instruction signals from contact observations', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({ field: 'contactName', value: 'Ada Manager' }),
-      obs({ field: 'contactEmail', value: 'Ada.Manager@Yale.edu' }),
-      obs({ field: 'contactRole', value: 'Lab Manager' }),
-    ]);
-
-    expect(result.accessSignals).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'CONTACT_INSTRUCTIONS_EXIST',
-          excerpt: 'Official contact listed: Ada Manager, Lab Manager.',
-        }),
-      ]),
-    );
   });
 
   it('emits exactly the signal types listed in MATERIALIZED_ACCESS_SIGNAL_TYPES (#1303)', () => {
@@ -1332,58 +1107,28 @@ const signalKeys = (observations: AccessObservation[]) =>
     .accessSignals.map((signal) => signal.derivationKey)
     .sort();
 
-describe('undergrad lane contact quotes must state an instruction (#3928)', () => {
-  it('mints no microsite contact signal from a quote that is only an address', () => {
+describe('contact quotes and verdicts mint no signal (#4637)', () => {
+  it('mints no contact signal from an address or from an instruction', () => {
     for (const value of [
-      '[email redacted]',
       'Contact [email redacted]',
-      '[email redacted] (copy)',
+      'Interested students should email [email redacted] with a CV.',
     ]) {
       expect(
         signalKeys([obs({ field: 'contactInstructionsQuote', value, sourceName: LANE })]),
-      ).not.toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
+      ).toEqual([]);
     }
   });
 
-  it('still mints it from a quote that tells a student how to reach out', () => {
+  it('mints no signal from verdicts alone, whichever is newest', () => {
     expect(
-      signalKeys([
-        obs({
-          field: 'contactInstructionsQuote',
-          value: 'Interested students should email [email redacted] with a CV.',
-          sourceName: LANE,
-        }),
-      ]),
-    ).toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
-  });
-});
-
-describe('the undergrad lane verdict is latest-wins (#3921)', () => {
-  it('derives no reach-out signal when the newest verdict is no', () => {
-    const keys = signalKeys([
-      verdict('yes', EARLIER, 'older-yes'),
-      verdict('no', LATER, 'newer-no'),
-    ]);
-    expect(keys).not.toContain('signal:REACH_OUT_PLAUSIBLE');
-    expect(keys).toContain('signal:NOT_CURRENTLY_AVAILABLE');
+      signalKeys([verdict('yes', EARLIER, 'older-yes'), verdict('no', LATER, 'newer-no')]),
+    ).toEqual([]);
+    expect(
+      signalKeys([verdict('no', EARLIER, 'older-no'), verdict('yes', LATER, 'newer-yes')]),
+    ).toEqual([]);
   });
 
-  it('lets a newer yes lift an older veto on the contact signal', () => {
-    const keys = signalKeys([
-      verdict('no', EARLIER, 'older-no'),
-      verdict('yes', LATER, 'newer-yes'),
-      obs({
-        field: 'contactInstructionsQuote',
-        value: 'Please email the lab manager to join.',
-        sourceName: LANE,
-        observedAt: LATER,
-      }),
-    ]);
-    expect(keys).toContain('signal:REACH_OUT_PLAUSIBLE');
-    expect(keys).toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
-  });
-
-  it('leaves join-page and current-undergraduate minting reading every live read', () => {
+  it('leaves join-page minting reading every live read', () => {
     const keys = signalKeys([
       verdict('yes', EARLIER, 'older-yes'),
       verdict('no', LATER, 'newer-no'),
@@ -1394,8 +1139,7 @@ describe('the undergrad lane verdict is latest-wins (#3921)', () => {
         observedAt: EARLIER,
       }),
     ]);
-    expect(keys).toContain('signal:APPLICATION_FORM_EXISTS:JOIN_PAGE');
-    expect(keys).not.toContain('signal:REACH_OUT_PLAUSIBLE');
+    expect(keys).toEqual(['signal:APPLICATION_FORM_EXISTS:JOIN_PAGE']);
   });
 });
 
@@ -1405,15 +1149,19 @@ describe('planEvidenceGovernedSignalChanges', () => {
     derivationKey,
     archived: false,
   });
+  const pastAdvisees = (id: string) =>
+    obs({ _id: id, field: 'pastUndergradAdvisees', value: [], observedAt: LATER });
+  const independentStudy = (id: string) =>
+    obs({ _id: id, field: 'offersIndependentStudy', value: false, observedAt: LATER });
 
   it('retires a live signal the derivation declined over evidence it read', () => {
     const plan = planEvidenceGovernedSignalChanges(
-      new Set(['signal:NOT_CURRENTLY_AVAILABLE']),
-      [verdict('no', LATER, 'newer-no')],
-      [live('signal:REACH_OUT_PLAUSIBLE')],
+      new Set(),
+      [pastAdvisees('newer-read')],
+      [live('signal:PAST_UNDERGRADS')],
     );
     expect(plan.retired).toEqual([
-      { signalId: '64f0000000000000000000a1', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' },
+      { signalId: '64f0000000000000000000a1', derivationKey: 'signal:PAST_UNDERGRADS' },
     ]);
   });
 
@@ -1421,7 +1169,10 @@ describe('planEvidenceGovernedSignalChanges', () => {
     const plan = planEvidenceGovernedSignalChanges(
       new Set(),
       [],
-      [live('signal:REACH_OUT_PLAUSIBLE'), live('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE')],
+      [
+        live('signal:PAST_UNDERGRADS'),
+        live('signal:CREDIT_FORMALIZATION_POSSIBLE', '64f0000000000000000000a2'),
+      ],
     );
     expect(plan).toEqual({ retired: [], revived: [] });
   });
@@ -1429,12 +1180,13 @@ describe('planEvidenceGovernedSignalChanges', () => {
   it('never touches a signal key it does not govern or a suppression-locked signal', () => {
     const plan = planEvidenceGovernedSignalChanges(
       new Set(),
-      [verdict('no', LATER, 'newer-no')],
+      [pastAdvisees('newer-read'), verdict('no', LATER, 'newer-no')],
       [
         live('signal:CURRENT_UNDERGRADS', '64f0000000000000000000a2'),
         live('signal:APPLICATION_FORM_EXISTS:JOIN_PAGE', '64f0000000000000000000a6'),
+        live('signal:REACH_OUT_PLAUSIBLE', '64f0000000000000000000a7'),
         {
-          ...live('signal:REACH_OUT_PLAUSIBLE', '64f0000000000000000000a3'),
+          ...live('signal:PAST_UNDERGRADS', '64f0000000000000000000a3'),
           suppression: { reason: 'operator review' },
         },
       ],
@@ -1445,14 +1197,17 @@ describe('planEvidenceGovernedSignalChanges', () => {
   it('governs every other materializer key by its own evidence fields (#3920)', () => {
     const plan = planEvidenceGovernedSignalChanges(
       new Set(),
-      [verdict('no', LATER, 'newer-no')],
+      [independentStudy('newer-read')],
       [
-        live('signal:NOT_CURRENTLY_AVAILABLE', '64f0000000000000000000a7'),
+        live('signal:CREDIT_FORMALIZATION_POSSIBLE', '64f0000000000000000000a7'),
         live('signal:PAST_UNDERGRADS', '64f0000000000000000000a8'),
       ],
     );
     expect(plan.retired).toEqual([
-      { signalId: '64f0000000000000000000a7', derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE' },
+      {
+        signalId: '64f0000000000000000000a7',
+        derivationKey: 'signal:CREDIT_FORMALIZATION_POSSIBLE',
+      },
     ]);
   });
 
@@ -1467,7 +1222,7 @@ describe('planEvidenceGovernedSignalChanges', () => {
           source: { evidenceIds: [withdrawn] },
         },
         {
-          ...live('signal:FELLOWSHIP_COMPATIBLE', '64f0000000000000000000a9'),
+          ...live('signal:CREDIT_FORMALIZATION_POSSIBLE', '64f0000000000000000000a9'),
           source: { evidenceIds: [] },
         },
       ],
@@ -1482,10 +1237,10 @@ describe('planEvidenceGovernedSignalChanges', () => {
     const elsewhere = '64f0000000000000000000e2';
     const plan = planEvidenceGovernedSignalChanges(
       new Set(),
-      [verdict('no', LATER, '64f0000000000000000000e9')],
+      [pastAdvisees('64f0000000000000000000e9')],
       [
         {
-          ...live('signal:REACH_OUT_PLAUSIBLE'),
+          ...live('signal:PAST_UNDERGRADS'),
           source: { evidenceIds: [elsewhere] },
         },
       ],
@@ -1496,12 +1251,12 @@ describe('planEvidenceGovernedSignalChanges', () => {
 
   it('revives only a signal this lane archived, once the evidence derives it again', () => {
     const plan = planEvidenceGovernedSignalChanges(
-      new Set(['signal:REACH_OUT_PLAUSIBLE', 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE']),
-      [verdict('yes', LATER, 'newer-yes')],
+      new Set(['signal:PAST_UNDERGRADS', 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE']),
+      [pastAdvisees('newer-read')],
       [
         {
           _id: '64f0000000000000000000a4',
-          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
+          derivationKey: 'signal:PAST_UNDERGRADS',
           archived: true,
           archivedReason: ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
         },
@@ -1514,7 +1269,7 @@ describe('planEvidenceGovernedSignalChanges', () => {
       ],
     );
     expect(plan.revived).toEqual([
-      { signalId: '64f0000000000000000000a4', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' },
+      { signalId: '64f0000000000000000000a4', derivationKey: 'signal:PAST_UNDERGRADS' },
     ]);
     expect(plan.retired).toEqual([]);
   });

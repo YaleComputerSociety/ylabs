@@ -1,8 +1,6 @@
 import { servedCurrentFunding } from './servedCurrentFunding';
 
 export const EMERITUS_WITHHELD_WAY_IN_SIGNAL_TYPES: ReadonlySet<string> = new Set([
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'REACH_OUT_PLAUSIBLE',
   'APPLICATION_FORM_EXISTS',
 ]);
 

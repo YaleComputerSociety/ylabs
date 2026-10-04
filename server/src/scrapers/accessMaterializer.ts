@@ -12,7 +12,6 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
 import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
-import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
@@ -21,12 +20,7 @@ import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
 } from '../services/claimValidation/accessClaims';
-import {
-  isExplicitUndergradUnavailabilityPhrase,
-  isPlausibleUndergradEvidenceQuote,
-  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
-  UNDERGRAD_MICROSITE_LANE,
-} from './undergradEvidenceQuoteValidation';
+import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from './undergradEvidenceQuoteValidation';
 import {
   isProgrammePageAdmittedAsJoinRoute,
   isSameJoinRoutePage,
@@ -38,15 +32,7 @@ import {
 } from './undergradJoinPageAdmission';
 import { isRecruitingOrContactPageUrl } from './undergradRosterEvidence';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
-import {
-  CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
-  RESEARCH_ENTITY_CONTACT_FIELDS,
-  observationIsKeyedToRow,
-  type ContactEvidenceRow,
-} from './rowKeyedContactEvidence';
-import { contactQuoteStatesAnInstruction } from './contactInstructionQuoteAdmission';
-
-export { isExplicitUndergradUnavailabilityPhrase };
+import { observationIsKeyedToRow, type ContactEvidenceRow } from './rowKeyedContactEvidence';
 
 /**
  * Every access-signal type the materializer has a live emission path for. This
@@ -58,12 +44,8 @@ export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
   'CREDIT_FORMALIZATION_POSSIBLE',
   'FACULTY_SUPERVISES_STUDENT_PROJECTS',
   'CURRENT_UNDERGRADS',
-  'REACH_OUT_PLAUSIBLE',
-  'NOT_CURRENTLY_AVAILABLE',
   'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
   'PAST_UNDERGRADS',
-  'FELLOWSHIP_COMPATIBLE',
   'POSTED_OPENING',
 ];
 
@@ -150,24 +132,12 @@ export const ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON = 'access-materializer:evid
 // `signal:CURRENT_UNDERGRADS` and `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` are absent
 // on purpose: #4430 owns whether those two types are admissible at all (#3920).
 export const EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  'signal:REACH_OUT_PLAUSIBLE': ['undergradAccessEvidence'],
-  'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': [
-    'contactInstructionsQuote',
-    'undergradAccessEvidence',
-  ],
-  'signal:NOT_CURRENTLY_AVAILABLE': [
-    'undergradAccessEvidence',
-    'undergradConstraintQuote',
-    'undergradEvidenceQuote',
-  ],
   'signal:CREDIT_FORMALIZATION_POSSIBLE': ['offersIndependentStudy', 'independentStudyCourses'],
   'signal:FACULTY_SUPERVISES_STUDENT_PROJECTS:SENIOR_THESIS': [
     'offersIndependentStudy',
     'independentStudyCourses',
   ],
   'signal:PAST_UNDERGRADS': ['pastUndergradAdvisees'],
-  'signal:FELLOWSHIP_COMPATIBLE': ['pastUndergradAdvisees'],
-  [CONTACT_FIELDS_SIGNAL_DERIVATION_KEY]: [...RESEARCH_ENTITY_CONTACT_FIELDS],
 };
 
 function observationId(obs: AccessObservation): string | undefined {
@@ -195,10 +165,6 @@ function confidenceLabel(score: number): AccessSignalConfidence {
 
 function firstString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function publicExcerpt(value: unknown): string | undefined {
-  return sanitizeEvidenceExcerpt(firstString(value)) || undefined;
 }
 
 function firstUrlValue(value: unknown): string {
@@ -300,42 +266,6 @@ function bestObservation(observations: AccessObservation[]): AccessObservation |
   })[0];
 }
 
-function contactSignalExcerpt(input: {
-  contactName: string;
-  contactRole: string;
-  contactEmail: string;
-}): string {
-  const parts = [input.contactName, input.contactRole].filter(Boolean);
-  if (parts.length > 0) return `Official contact listed: ${parts.join(', ')}.`;
-  if (input.contactEmail) return 'Official contact email listed.';
-  return 'Official contact listed.';
-}
-
-function deriveContactFieldsSignal(
-  researchEntityId: string,
-  byField: Map<string, AccessObservation[]>,
-): DerivedAccessSignal | undefined {
-  const contactObservations = [
-    ...(byField.get('contactName') || []),
-    ...(byField.get('contactEmail') || []),
-    ...(byField.get('contactRole') || []),
-  ];
-  const contactEmail = firstString(bestObservation(byField.get('contactEmail') || [])?.value);
-  const contactName = firstString(bestObservation(byField.get('contactName') || [])?.value);
-  const contactRole = firstString(bestObservation(byField.get('contactRole') || [])?.value);
-  if (contactObservations.length === 0 || !(contactEmail || contactName || contactRole)) {
-    return undefined;
-  }
-  return makeSignal({
-    researchEntityId,
-    derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
-    type: 'CONTACT_INSTRUCTIONS_EXIST',
-    score: maxConfidence(contactObservations),
-    observations: contactObservations,
-    excerpt: contactSignalExcerpt({ contactName, contactRole, contactEmail }),
-  });
-}
-
 function makeSignal(input: {
   researchEntityId: string;
   derivationKey: string;
@@ -362,20 +292,6 @@ function makeSignal(input: {
     sourceUrl: input.sourceUrl || obs?.sourceUrl,
     originalConfidence: obs?.confidence,
   };
-}
-
-function newestReadPerSource(observations: AccessObservation[]): AccessObservation[] {
-  const newest = new Map<string, AccessObservation>();
-  for (const obs of observations) {
-    const incumbent = newest.get(obs.sourceName);
-    if (
-      !incumbent ||
-      new Date(obs.observedAt).getTime() > new Date(incumbent.observedAt).getTime()
-    ) {
-      newest.set(obs.sourceName, obs);
-    }
-  }
-  return [...newest.values()];
 }
 
 function uniqueByDerivationKey<T extends { derivationKey: string }>(items: T[]): T[] {
@@ -577,56 +493,6 @@ export function deriveAccessArtifactsFromObservations(
   const positiveAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'yes',
   );
-  const negativeAccessEvidence = undergradAccessEvidence.filter(
-    (obs) => undergradAccessVerdict(obs.value) === 'no',
-  );
-  const currentAccessEvidence = newestReadPerSource(undergradAccessEvidence);
-  const currentPositiveAccessEvidence = currentAccessEvidence.filter(
-    (obs) => undergradAccessVerdict(obs.value) === 'yes',
-  );
-  const currentNegativeAccessEvidence = currentAccessEvidence.filter(
-    (obs) => undergradAccessVerdict(obs.value) === 'no',
-  );
-  const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
-    (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
-  );
-  const undergradAccessQuote =
-    publicExcerpt(
-      bestObservation(newestReadPerSource(byField.get('undergradRoleEvidenceQuote') || []))?.value,
-    ) || publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
-  if (currentPositiveAccessEvidence.length > 0) {
-    const score = maxConfidence(currentPositiveAccessEvidence);
-    accessSignals.push(
-      makeSignal({
-        researchEntityId,
-        derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-        type: 'REACH_OUT_PLAUSIBLE',
-        score,
-        observations: currentPositiveAccessEvidence,
-        excerpt: undergradAccessQuote || undefined,
-      }),
-    );
-  }
-
-  const negativeUnavailabilityQuote = [
-    firstString(bestObservation(byField.get('undergradConstraintQuote') || [])?.value),
-    firstString(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value),
-    ...negativeAccessEvidence.map((obs) => undergradAccessEvidenceQuote(obs.value)),
-  ].find(isExplicitUndergradUnavailabilityPhrase);
-  if (negativeAccessEvidence.length > 0 && negativeUnavailabilityQuote) {
-    const score = maxConfidence(negativeAccessEvidence);
-    accessSignals.push(
-      makeSignal({
-        researchEntityId,
-        derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE',
-        type: 'NOT_CURRENTLY_AVAILABLE',
-        score,
-        observations: negativeAccessEvidence,
-        excerpt: publicExcerpt(negativeUnavailabilityQuote) || undefined,
-      }),
-    );
-  }
-
   // Collapsed before admission, so a lane's newer read that found no admissible join page
   // (an empty value) replaces the page an older read named instead of standing beside it.
   const quotePages = positiveAccessEvidence.flatMap(accessQuotePages);
@@ -651,30 +517,6 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  // A microsite that explicitly states it does not take undergraduates still
-  // usually lists generic contact instructions (e.g. "email the PI") aimed at
-  // prospective postdocs/graduate students. Those instructions must not be
-  // minted into undergraduate action evidence: an explicit negative verdict
-  // vetoes the credit, matching the join-page path's positive-evidence guard
-  // above so an "open to undergrads: no" lab is never surfaced as reach-out.
-  const contactInstructionObservations = newestReadPerSource(
-    byField.get('contactInstructionsQuote') || [],
-  ).filter((obs) => contactQuoteStatesAnInstruction(obs.value));
-  const hasExplicitUndergradExclusion = currentNegativeAccessEvidence.length > 0;
-  if (contactInstructionObservations.length > 0 && !hasExplicitUndergradExclusion) {
-    const score = maxConfidence(contactInstructionObservations);
-    accessSignals.push(
-      makeSignal({
-        researchEntityId,
-        derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE',
-        type: 'CONTACT_INSTRUCTIONS_EXIST',
-        score,
-        observations: contactInstructionObservations,
-        excerpt: publicExcerpt(bestObservation(contactInstructionObservations)?.value),
-      }),
-    );
-  }
-
   const pastAdviseeObservations = (byField.get('pastUndergradAdvisees') || []).filter((obs) =>
     hasPastUndergradAdvisees(obs.value),
   );
@@ -689,23 +531,6 @@ export function deriveAccessArtifactsFromObservations(
       }),
     );
   }
-  // Alumni on a lab roster show the lab has hosted undergraduates, not that a fellowship
-  // funded them, so they back PAST_UNDERGRADS only (#4430).
-  const fellowshipAdviseeObservations = pastAdviseeObservations.filter(
-    (obs) => obs.sourceName !== UNDERGRAD_MICROSITE_LANE,
-  );
-  if (fellowshipAdviseeObservations.length > 0) {
-    accessSignals.push(
-      makeSignal({
-        researchEntityId,
-        derivationKey: 'signal:FELLOWSHIP_COMPATIBLE',
-        type: 'FELLOWSHIP_COMPATIBLE',
-        score: maxConfidence(fellowshipAdviseeObservations),
-        observations: fellowshipAdviseeObservations,
-      }),
-    );
-  }
-
   const postedOpeningObservations = (byField.get('postedOpening') || []).filter(
     (obs) => parsePostedOpening(obs.value) !== null,
   );
@@ -730,9 +555,6 @@ export function deriveAccessArtifactsFromObservations(
       }),
     );
   }
-
-  const contactFieldsSignal = deriveContactFieldsSignal(researchEntityId, byField);
-  if (contactFieldsSignal) accessSignals.push(contactFieldsSignal);
 
   return filterArtifactsByValidatedClaims({
     accessSignals: uniqueByDerivationKey(accessSignals),
@@ -1002,56 +824,7 @@ export async function materializeAccessForResearchGroup(
   };
 }
 
-interface ContactSignalLike {
-  _id?: unknown;
-  researchEntityId?: unknown;
-  derivationKey?: unknown;
-  source?: { excerpt?: unknown } | null;
-}
-
 const idText = (value: unknown): string => (value == null ? '' : String(value).trim());
-
-// The access pass keeps a signal whose cited evidence it did not read (#3920), so a
-// contact signal derived before #3609 from another row's contact evidence is withheld
-// here at serve time and kept as history. Its stored
-// evidence id names only the single best contact observation while its excerpt
-// combines the best of each contact field, so the excerpt itself is re-derived.
-export async function foreignContactFieldSignalIds(
-  signals: readonly ContactSignalLike[],
-  rows: readonly ContactEvidenceRow[],
-): Promise<Set<string>> {
-  const contactSignals = signals.filter(
-    (signal) => signal.derivationKey === CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
-  );
-  if (contactSignals.length === 0) return new Set();
-  const rowIds = rows
-    .map((row) => toAccessMaterializerObjectId(row._id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  const slugs = rows.map((row) => idText(row.slug)).filter(Boolean);
-  const liveContactObservations = (await Observation.find({
-    entityType: { $in: researchEntityObservationSubjects },
-    superseded: false,
-    field: { $in: [...RESEARCH_ENTITY_CONTACT_FIELDS] },
-    $or: [{ entityId: { $in: rowIds } }, { entityKey: { $in: slugs } }],
-  }).lean()) as unknown as AccessObservation[];
-  const rowsById = new Map(rows.map((row) => [idText(row._id), row]));
-
-  const foreign = new Set<string>();
-  for (const signal of contactSignals) {
-    const row = rowsById.get(idText(signal.researchEntityId));
-    const byField = new Map<string, AccessObservation[]>();
-    for (const observation of liveContactObservations) {
-      if (!row || !observationIsKeyedToRow(observation, row)) continue;
-      byField.set(observation.field, [...(byField.get(observation.field) || []), observation]);
-    }
-    const rowKeyedExcerpt = deriveContactFieldsSignal(idText(row?._id), byField)?.excerpt;
-    const statedByRow =
-      rowKeyedExcerpt !== undefined &&
-      sanitizeEvidenceExcerpt(rowKeyedExcerpt) === firstString(signal.source?.excerpt);
-    if (!statedByRow) foreign.add(idText(signal._id));
-  }
-  return foreign;
-}
 
 /**
  * The signal types whose stored copies are re-derived at read time. Each is minted only by
@@ -1091,7 +864,7 @@ export interface ReDerivedAccessSignalJudgement {
   citations: Map<string, string>;
 }
 
-// Upserted and never archived, like the contact signal above, so a stored signal this
+// Upserted and never archived, so a stored signal this
 // materializer would no longer derive is withheld at serve time and not counted by the
 // gate; the stored row stays as history. A merged-in row's evidence still counts, because
 // the dedupe merge carries its signals onto the survivor.

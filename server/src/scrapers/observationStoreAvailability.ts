@@ -1,8 +1,5 @@
 import { Observation } from '../models/observation';
 
-export const OBSERVATION_STORE_EMPTY_REASON =
-  'observation store holds no documents in this database';
-
 /**
  * Whether this database carries an observation store at all, as distinct from
  * whether a particular entity has evidence in it.

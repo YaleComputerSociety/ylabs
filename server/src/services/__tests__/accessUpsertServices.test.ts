@@ -16,7 +16,7 @@ describe('access upsert services', () => {
     await upsertSignal(
       {
         researchEntityId: 'research-1',
-        type: 'REACH_OUT_PLAUSIBLE',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'HIGH',
         observedAt: new Date('2026-05-12T00:00:00.000Z'),
         excerpt: 'Questions: hidden@example.edu or 203-432-1234.',
@@ -47,7 +47,7 @@ describe('access upsert services', () => {
     await upsertSignal(
       {
         researchEntityId: 'research-1',
-        type: 'REACH_OUT_PLAUSIBLE',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'HIGH',
         observedAt: new Date('2026-05-12T00:00:00.000Z'),
         excerpt:

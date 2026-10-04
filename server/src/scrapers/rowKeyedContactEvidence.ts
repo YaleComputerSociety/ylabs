@@ -9,9 +9,6 @@ export const RESEARCH_ENTITY_CONTACT_FIELDS: readonly string[] = [
 
 const CONTACT_FIELDS = new Set(RESEARCH_ENTITY_CONTACT_FIELDS);
 
-export const CONTACT_FIELDS_SIGNAL_DERIVATION_KEY =
-  'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS';
-
 export interface ContactEvidenceRow {
   _id?: unknown;
   slug?: unknown;
