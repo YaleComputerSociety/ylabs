@@ -99,7 +99,7 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 They run serially because they share the per-host fetch budget and the storage quota.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when any requested mode failed or wrote no summary.
 7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
-With one cron job per mode that is two points a week, each taken after only that mode's refresh.
+The single weekly job runs both modes, so that is one point a week, taken after both refreshes.
 8. Records the run in one `weekly_sweep_runs` row in Development, whether it succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if either write fails, because an unrecorded run cannot be audited.
 The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
@@ -151,17 +151,18 @@ The sweep's own peak memory has not been measured, so start the service on an in
 ### Render Cron Job Settings
 
 Render stops a cron run after 12 hours, and the research sweep alone has measured 414 minutes (2026-09-28) and 556 minutes (2026-09-26), while the fellowship sweep has never been timed.
-Running both modes in one run therefore risks the limit, so the weekly runner is two cron jobs, one per mode, each with its own 12-hour budget.
-Create them only after the image builds, with identical settings except the name, the schedule, and the Docker Command:
+The weekly runner is one cron job, `ylabs-scraper`, that runs both modes in one run, by the owner's decision (2026-10-04) that both fit inside the limit.
+Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server scrape:sweep:weekly-runs --limit 1`; if a run is stopped at the limit, its row stays `running`, and the remedy is to split the job by `--mode`.
 
 | Service | Docker Command | Schedule |
 |---|---|---|
-| `ylabs-weekly-fellowship-sweep` | `--confirm-weekly-development-sweep --mode fellowship-development-full` | `0 7 * * 6`, Saturdays at 07:00 UTC |
-| `ylabs-weekly-sweep` | `--confirm-weekly-development-sweep --mode development-full` | `0 7 * * 0`, Sundays at 07:00 UTC |
+| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 7 * * 0`, Sundays at 07:00 UTC |
 
-The Docker Command replaces the image's default arguments, so it must carry the confirmation flag; the image's default with no Docker Command runs both modes, for a manual run that fits.
-For each job's first manual trigger use `--dry-run --mode <mode>` instead, which runs the preflight and writes nothing, then set the confirmed command.
-The day apart matters: each job refuses to start while any sweep source holds a live scrape job lock, so a fellowship run still going on Sunday morning makes the research run refuse, recorded as `refused`, rather than run both at once.
+The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
+For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
+The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
+The service builds from `beta` and redeploys on every commit, so a merged scraper change reaches the next weekly run without touching the image; only a new system dependency, or a file outside the paths `.dockerignore` admits, needs a change under `deploy/sweep-runner/`.
+Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
 
 Shared settings:
 
@@ -180,7 +181,7 @@ Then allow each service into Atlas: on the service's page open **Connect**, swit
 Outbound ranges differ per Render region, so the Virginia ranges are a new entry even when Ohio services are already allowed.
 Those ranges are shared by every Render service in the region, so scope the database user the service holds to the `Development` database.
 
-Read each job's first duration with `yarn --cwd server scrape:sweep:weekly-runs --limit 2` against the 12-hour limit.
+Read the job's first duration with `yarn --cwd server scrape:sweep:weekly-runs --limit 1` against the 12-hour limit.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
 
