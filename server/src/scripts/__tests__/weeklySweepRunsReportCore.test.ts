@@ -181,8 +181,8 @@ describe('formatWeeklySweepRunsComparison', () => {
     expect(lines[3]).toMatch(/^source-a\s+2h00m\s+-\s+2h30m\s+\+25%$/);
   });
 
-  it('labels a legacy row without requestedModes by the modes it recorded', () => {
-    const legacy = { ...runOn('2026-10-11', 120, 8), requestedModes: undefined };
+  it('labels a legacy row without requestedModes as covering every mode', () => {
+    const legacy = { ...runOn('2026-10-11', 120, 8), requestedModes: undefined, modes: [] };
     expect(formatWeeklySweepRun(legacy)).toContain('UTC  research+fellowship  failed');
   });
 });

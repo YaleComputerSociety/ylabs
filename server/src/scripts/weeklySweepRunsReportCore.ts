@@ -60,17 +60,14 @@ const MODE_LABELS: Record<string, string> = {
 
 export function weeklySweepRunModes(run: StoredWeeklySweepRun): WeeklySweepMode[] {
   const requested = run.requestedModes ?? [];
-  const named =
-    requested.length > 0 ? requested : (run.modes ?? []).map((mode) => mode?.mode ?? null);
-  return WEEKLY_SWEEP_MODES.filter((mode) => named.includes(mode));
+  if (requested.length === 0) return [...WEEKLY_SWEEP_MODES];
+  return WEEKLY_SWEEP_MODES.filter((mode) => requested.includes(mode));
 }
 
-const formatModes = (run: StoredWeeklySweepRun): string => {
-  const modes = weeklySweepRunModes(run);
-  return modes.length > 0
-    ? modes.map((mode) => MODE_LABELS[mode] ?? mode).join('+')
-    : 'no modes recorded';
-};
+const formatModes = (run: StoredWeeklySweepRun): string =>
+  weeklySweepRunModes(run)
+    .map((mode) => MODE_LABELS[mode] ?? mode)
+    .join('+');
 
 export function formatDuration(ms: number | null | undefined): string {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '-';

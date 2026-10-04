@@ -115,9 +115,31 @@ describe('weeklyRunCoverage', () => {
     ]);
   });
 
-  it('reads a legacy row without requestedModes by the outcomes it recorded', () => {
+  it('reads a legacy row without requestedModes as covering every mode', () => {
     const legacy = succeededRun({ _id: 'legacy1', requestedModes: undefined });
     expect(weeklyRunCoverage([legacy], NOW).problems).toEqual([]);
+  });
+
+  it('refuses on a newer legacy row that never recorded an outcome instead of an older success', () => {
+    const unfinished = succeededRun({
+      _id: 'legacy2',
+      startedAt: new Date('2026-10-04T07:00:00Z'),
+      finishedAt: undefined,
+      status: 'running',
+      exitCode: undefined,
+      requestedModes: [],
+      modes: [],
+    });
+    const olderSuccess = succeededRun({
+      _id: 'legacy1',
+      startedAt: new Date('2026-09-29T07:00:00Z'),
+      finishedAt: new Date('2026-09-29T16:00:00Z'),
+      requestedModes: undefined,
+    });
+    const coverage = weeklyRunCoverage([unfinished, olderSuccess], NOW);
+    expect(coverage.covered).toEqual([]);
+    expect(coverage.problems.length).toBeGreaterThan(0);
+    expect(coverage.problems.every((problem) => problem.includes('legacy2'))).toBe(true);
   });
 
   it('names a requested run id that was not found', () => {

@@ -98,7 +98,8 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 5. Runs the requested modes one after the other, each with `--restart`: both `development-full` and `fellowship-development-full` by default, or only the ones `--mode` names (repeatable, also `--mode=<mode>`).
 They run serially because they share the per-host fetch budget and the storage quota.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when any requested mode failed or wrote no summary.
-7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per weekly run.
+7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
+With one cron job per mode that is two points a week, each taken after only that mode's refresh.
 8. Records the run in one `weekly_sweep_runs` row in Development, whether it succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if either write fails, because an unrecorded run cannot be audited.
 The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
