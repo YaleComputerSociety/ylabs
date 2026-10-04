@@ -15,6 +15,20 @@ First-party `analytics_events` remain, under the constraints in `docs/research-j
 Google Fonts is a separate decision and is unchanged here.
 `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` and `server/src/middleware/__tests__/securityHeaders.test.ts` fail if the tag or its origins reappear.
 
+## 2026-10-04: The Program Card Bar Refuses An Administrative Note And Cuts An Over-Long Lead At A Clause (#4747)
+
+A program card line states what the program is or funds, so a sentence that is an administrative note fails the program card bar as `administrative-chrome` in any phrasing: a note or please-note opener, an application-process heading, a deadline, due-by, nomination or endorsement sentence, a program-dates or info-session fragment, application routing through a portal or common application, an opening or rolling-review window, a click-through instruction, a donor-provenance sentence, and a line led by a third-person pronoun with no antecedent on the card.
+The derivation then falls to the next sentence of the same evidence-backed text that clears the bar, and a stored line that opens on such a note falls to its own next usable sentence, or to no card when it has none.
+When no sentence fits whole, the lead sentence of the body, if the bar refuses it for length alone, is cut at a clause boundary (a semicolon, a non-restrictive or restrictive relative clause, an including or such-as tail, a trailing participial phrase, a time phrase or a parenthesis) into a complete line under the cap.
+A cut is refused when it would end on a function word or a short comma tail, fall under ten words, or lack a finite verb, and a sentence refused for anything besides its length, such as first person, an incomplete sentence or administrative text, is never cut.
+Only the lead is cut, because a cut later sentence measured as eligibility rather than an offer.
+A dedication sentence ("is named in honor of") stays admissible, because refusing it promoted a biography sentence about the honoree to the card.
+Calibrated through `searchProgramsController` over all 170 served programs on Development, 137 of them fellowships: 15 served cards changed and each was read against its source page.
+Eight administrative-note cards were replaced by the program's own offer sentence, six programs that served no card gained a cut lead sentence, and one administrative-note card was withdrawn with nothing usable behind it.
+None misleads; the weakest is a dedication sentence that names the program as undergraduate research assistantships.
+Programs serving a card summary went from 152 to 157 of 170, and fellowships from 122 to 127 of 137.
+The 13 that still serve none have no admissible sentence: a lead with no clause boundary under the cap, a bare application announcement, first-person copy, or a glued unterminated lead.
+
 ## 2026-10-04: Login Counts Personalization Signal Coverage In Aggregate Only, Until The Personalization Decision (#4744)
 
 Personalizing default `/research` browse from the Yalies major, or a graduate curriculum, is only worth building if enough signed-in students carry that signal, and that share is unknown.
