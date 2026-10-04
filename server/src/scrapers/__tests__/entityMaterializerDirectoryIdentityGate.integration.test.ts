@@ -764,6 +764,22 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(minted).not.toBeNull();
     });
 
+    it('mints the researcher under a clean name when the given name was split from a headshot caption', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Photo of Dean Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.created).toBe(true);
+      const minted = await Researcher.find({}).lean();
+      expect(minted.map((researcher) => researcher.displayName)).toEqual(['Ada Lovelace']);
+    });
+
     it('mints once, so a repeated pass enriches the minted record instead of duplicating it', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');

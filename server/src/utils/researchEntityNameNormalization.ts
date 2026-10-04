@@ -120,8 +120,8 @@ const CAPTIONED_PERSON_RESEARCH_NAME_RE =
 
 /**
  * A roster that names people by their headshot's alt text yields "Photo of <name>."
- * as the person's name, and a heading composed from it reads "Photo of Dean Robert
- * Blocker. Faculty Research". The person half is cleaned by the same caption rule the
+ * as the person's name, and a heading composed from it reads "Photo of Dean Robin
+ * Fixture. Faculty Research". The person half is cleaned by the same caption rule the
  * person-name hygiene applies, so a heading and its lead's name cannot disagree.
  */
 export function stripResearchHomeNameCaptionWrapper(value: string): string {
