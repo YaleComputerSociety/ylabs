@@ -1783,6 +1783,201 @@ describe('shortDescriptionQuality doubled-conjunction glue guard (#1616)', () =>
   });
 });
 
+const OVER_LONG_SENTENCE_WITHOUT_A_CLAUSE_BOUNDARY =
+  'The fixture travel award provides support for senior undergraduates and graduate students in the fixture department to conduct field research or study abroad in Latin America or the Caribbean or Portugal or Spain or Brazil or Mexico over a ten week summer term each year and in the following academic year as well.';
+
+describe('program card bar refuses an administrative note (#4747)', () => {
+  const OFFER =
+    'The fixture award supports conference travel and research by Yale students on topics in migration studies.';
+
+  it.each([
+    [
+      'a note opener',
+      'Note: Application to this fellowship competition will be via the fixture office common application.',
+    ],
+    [
+      'a please-note opener',
+      'Please note: the current cycle for this award closes at 1:00pm on a spring weekday.',
+    ],
+    [
+      'a nomination sentence',
+      'Students who wish to be considered must first apply for the campus nomination by early autumn.',
+    ],
+    [
+      'an endorsement sentence',
+      'Institutional endorsement is no longer required for applicants to this fixture scholarship.',
+    ],
+    [
+      'a deadline sentence in prose',
+      'The application deadline for the fixture fellowship is the first of April every year.',
+    ],
+    [
+      'a due-by sentence',
+      'All completed applications are due by a Wednesday in February at noon with a transcript.',
+    ],
+    [
+      'a glued program-dates fragment',
+      'Program dates: June 4 - July 27 The fixture undergraduate program is supported by the fixture foundation.',
+    ],
+    [
+      'an application-window sentence',
+      'The student application will open on Monday, August 31 for the coming fixture term.',
+    ],
+    [
+      'a rolling-review sentence',
+      'Applications will be accepted on a rolling basis from the start of term until the fixture cutoff.',
+    ],
+    [
+      'an application-process heading',
+      'Application Process:In order to receive consideration a candidate must have a fixture faculty sponsor.',
+    ],
+    [
+      'a navigation instruction',
+      'Click through the grant name for full application details about the fixture award program.',
+    ],
+    [
+      'a donor-provenance sentence',
+      'These funds were generously provided by the fixture family and students are strongly encouraged to apply.',
+    ],
+    [
+      'a sentence led by a third-person pronoun',
+      'She also served as director of the fixture observatory for over twenty years and ran summer programs.',
+    ],
+  ])('flags %s as administrative chrome', (_label, line) => {
+    const quality = programCardShortDescriptionQuality(line, `${line} ${OFFER}`);
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('administrative-chrome');
+  });
+
+  it('falls to the next usable sentence of the same body', () => {
+    expect(
+      deriveProgramCardShortDescription(
+        `Note: The next date by which to apply for the campus nomination is 1pm ET on October 1. Click through the grant name for full application details. ${OFFER}`,
+      ),
+    ).toBe(OFFER);
+  });
+
+  it('replaces a stored administrative-note line with a body sentence', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription:
+          'Please note: the current deadline for this award will be 1:00pm in late March.',
+        fullDescription: `Please note: the current deadline for this award will be 1:00pm in late March. ${OFFER}`,
+      }),
+    ).toBe(OFFER);
+  });
+
+  it('falls to a later sentence of a stored line that opens on an administrative note when there is no body', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: `Note: Applications will be accepted via the fixture common application. ${OFFER}`,
+        fullDescription: '',
+      }),
+    ).toBe(OFFER);
+  });
+
+  it('serves no card rather than a stored administrative note with nothing usable behind it', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription:
+          'Applications for this fellowship will be accepted via the fixture office common application.',
+        fullDescription: 'These funds were generously provided by the fixture family.',
+      }),
+    ).toBe('');
+  });
+
+  it('keeps an offer sentence that names the program without any administrative phrasing', () => {
+    expect(programCardShortDescriptionQuality(OFFER, OFFER).isUseful).toBe(true);
+  });
+});
+
+describe('program card derivation cuts an over-long lead sentence at a clause boundary', () => {
+  const cutCases: Array<[string, string, string]> = [
+    [
+      'a restrictive relative clause',
+      'The fixture research fellowship provides a limited number of fellowships to support research projects in the field of fixture studies that augment our understanding of this field and its history and that advance the value of equality and dignity for people in the United States and around the world.',
+      'The fixture research fellowship provides a limited number of fellowships to support research projects in the field of fixture studies.',
+    ],
+    [
+      'a trailing participial phrase',
+      'These fixture fellowships provide support for research projects or internships related to the historical study or contemporary practice of fixture strategy, undertaken by students who have been, or who are currently, enrolled in a course designated as part of the fixture program in strategy.',
+      'These fixture fellowships provide support for research projects or internships related to the historical study or contemporary practice of fixture strategy.',
+    ],
+    [
+      'a time phrase',
+      'The fixture club provides a grant of up to $3,500 to be awarded on a competitive basis to a qualified student in the fixture graduate school who will be engaged in full-time dissertation research and writing during the summer months of the coming academic year.',
+      'The fixture club provides a grant of up to $3,500 to be awarded on a competitive basis to a qualified student in the fixture graduate school who will be engaged in full-time dissertation research and writing.',
+    ],
+  ];
+
+  it.each(cutCases)(
+    'cuts before %s into a complete line under the cap',
+    (_label, full, expected) => {
+      expect(programCardShortDescriptionQuality(full, full).flags).toEqual(['too-long']);
+      const card = deriveProgramCardShortDescription(full);
+      expect(card).toBe(expected);
+      expect(programCardShortDescriptionQuality(card, full).isUseful).toBe(true);
+      expect(full.startsWith(card.slice(0, -1))).toBe(true);
+    },
+  );
+
+  it('never cuts mid-word and always ends the line on a full stop after a whole word', () => {
+    for (const [, full] of cutCases) {
+      const card = deriveProgramCardShortDescription(full);
+      expect(card).toMatch(/[\p{L}\d)]\.$/u);
+      expect(full.charAt(card.length - 1)).toMatch(/[\s,;(]/);
+    }
+  });
+
+  it('prefers a later sentence that fits whole over cutting the lead', () => {
+    const fitting = 'The fixture award funds summer research by undergraduates in fixture studies.';
+    const full = `${cutCases[0][1]} ${fitting}`;
+    expect(deriveProgramCardShortDescription(full)).toBe(fitting);
+  });
+
+  it('does not cut a sentence that leaves a dangling clause', () => {
+    const full =
+      'The fixture program ensures that undergraduate students across every fixture department who are interested in laboratory work receive mentoring and funding and housing and travel support and a stipend and access to equipment and a community of peers over a full summer term each year at the fixture campus.';
+    expect(programCardShortDescriptionQuality(full, full).flags).toEqual(['too-long']);
+    expect(deriveProgramCardShortDescription(full)).not.toMatch(/\bensures\.$/);
+  });
+
+  it('does not cut a head that ends on a short list tail after a comma', () => {
+    const full =
+      'The fixture award funds research in many places for fixture students, especially abroad, who plan to conduct field research or language study in fixture regions across several continents over a long summer term and into the next academic year for credit toward a degree program at Yale.';
+    expect(deriveProgramCardShortDescription(full)).not.toMatch(/especially abroad\.$/);
+  });
+
+  it('does not cut a head whose only verb sits inside a comma-opened relative clause', () => {
+    const full =
+      'The fixture fellowship, which is awarded each year to a graduating senior in the fixture sciences who has shown exceptional promise in laboratory research, provides a stipend for a full year of independent laboratory research and travel to partner institutions in the fixture region and abroad.';
+    expect(programCardShortDescriptionQuality(full, full).flags).toEqual(['too-long']);
+    expect(deriveProgramCardShortDescription(full)).toBe('');
+  });
+
+  it('does not cut a sentence the bar refuses for anything besides its length', () => {
+    const firstPerson =
+      'We provide a limited number of fixture fellowships to support research projects in the field of fixture studies that augment our understanding of this field and its history and that advance the value of equality and dignity for people in the United States and around the world.';
+    const adminNote =
+      'Note: the fixture office provides a limited number of fellowships to support research projects in the field of fixture studies that augment our understanding of this field and its history and that advance the value of equality and dignity for people in the United States.';
+    const unterminated =
+      'The fixture council announces its student internship and research grant competition, which affords students in the northeastern United States the opportunity to deepen fixture-related experience and skills by undertaking relevant unpaid or underpaid internships and research projects in the region and abroad';
+    for (const full of [firstPerson, adminNote, unterminated]) {
+      expect(programCardShortDescriptionQuality(full, full).flags).not.toEqual(['too-long']);
+      expect(deriveProgramCardShortDescription(full)).toBe('');
+    }
+  });
+
+  it('only cuts the lead sentence of the body', () => {
+    const full = `Students apply through the fixture office. ${cutCases[0][1]}`;
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'Students apply through the fixture office.',
+    );
+    const leadRefused = `Note: Applications will be accepted via the fixture common application. ${cutCases[0][1]}`;
+    expect(deriveProgramCardShortDescription(leadRefused)).toBe('');
+  });
+});
+
 describe('programCardShortDescriptionQuality (#1425)', () => {
   it('accepts a program description verbatim even though it does not open with a research verb', () => {
     const full =
@@ -1873,9 +2068,15 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
   });
 
   it('fails closed when no sentence in the description fits the card length bar', () => {
-    const full =
-      'The Latin American and Iberian Studies Summer Travel Awards at the MacMillan Center provide support for senior undergraduates and graduate students who plan to conduct research or study abroad (including language study) in Latin America, the Caribbean, Portugal or Spain during the summer.';
-    expect(deriveProgramCardShortDescription(full)).toBe('');
+    expect(
+      programCardShortDescriptionQuality(
+        OVER_LONG_SENTENCE_WITHOUT_A_CLAUSE_BOUNDARY,
+        OVER_LONG_SENTENCE_WITHOUT_A_CLAUSE_BOUNDARY,
+      ).flags,
+    ).toContain('too-long');
+    expect(deriveProgramCardShortDescription(OVER_LONG_SENTENCE_WITHOUT_A_CLAUSE_BOUNDARY)).toBe(
+      '',
+    );
   });
 
   it('returns empty for a blank description', () => {
@@ -1947,8 +2148,7 @@ describe('programLikeCardShortDescription (#2215)', () => {
   });
 
   it('keeps a failing line whole when no sentence of the body clears the bar', () => {
-    const noSentenceFits =
-      'The Latin American and Iberian Studies Summer Travel Awards at the MacMillan Center provide support for senior undergraduates and graduate students who plan to conduct research or study abroad (including language study) in Latin America, the Caribbean, Portugal or Spain during the summer.';
+    const noSentenceFits = OVER_LONG_SENTENCE_WITHOUT_A_CLAUSE_BOUNDARY;
     expect(deriveProgramCardShortDescription(noSentenceFits)).toBe('');
     expect(
       programLikeCardShortDescription({
