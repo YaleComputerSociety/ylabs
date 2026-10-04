@@ -1035,9 +1035,10 @@ describe('departmentUndergradResearchScraper', () => {
       parser: 'structured-opportunity',
     });
 
-    const awardHtml = `<html><body><nav><a href="/apply">Apply to Yale</a></nav><main>
+    const awardHtml = `<html><head><title>Undergraduate Research | Synthetic School</title></head><body><nav><a href="/apply">Apply to Yale</a></nav><main>
       <h1>Undergraduate Research</h1>
       <p>Students in the major can conduct research that leads to a senior thesis and secure research funding from the school.</p>
+      <h2>Undergraduate Research Award</h2>
       <p>The undergraduate research award supports undergraduate research up to a stated amount each academic year.</p>
       <p>Fall applications are open this month and can be submitted through the <a href="https://forms.example.org/synthetic-award">Undergraduate Research Award Application</a>.</p>
     </main></body></html>`;
@@ -1061,6 +1062,10 @@ describe('departmentUndergradResearchScraper', () => {
       name: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
       joinPageUrl: 'https://consortium.example.org/summer-research',
     });
+
+    expect(
+      classificationFromObservedFacts(departmentUndergradResearchRecordsToObservations([award])),
+    ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING', entryMode: 'APPLY_TO_PROGRAM' });
 
     const fields = departmentUndergradResearchRecordsToObservations([award, surf]).map(
       (observation) => observation.field,

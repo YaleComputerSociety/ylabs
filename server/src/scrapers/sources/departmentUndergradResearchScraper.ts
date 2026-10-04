@@ -569,6 +569,23 @@ function pageOwnTitle($: cheerio.CheerioAPI): string | undefined {
   return documentTitle || normalizeText($('h1').first().text()) || undefined;
 }
 
+function seededOpportunityHeading(
+  $: cheerio.CheerioAPI,
+  pageTitle: string | undefined,
+  seededTitle: string | undefined,
+): string | undefined {
+  if (!pageTitle || !seededTitle) return undefined;
+  const page = pageTitle.toLowerCase();
+  const seeded = seededTitle.toLowerCase();
+  return $('h2, h3, h4')
+    .toArray()
+    .map((heading) => normalizeText($(heading).text()))
+    .find((heading) => {
+      const lower = heading.toLowerCase();
+      return lower.length > page.length && lower.includes(page) && seeded.includes(lower);
+    });
+}
+
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
   return `department-undergrad-research-${slugify(config.department || config.key)}`.slice(0, 100);
 }
@@ -719,6 +736,7 @@ export function parseStructuredOpportunityPage(
   const contactEmail = firstEmail(text);
   const joinPageUrl = bestApplicationUrl($, config.url);
   const description = departmentGuidanceDescription(config, text);
+  const pageTitle = pageOwnTitle($);
 
   return [
     {
@@ -737,7 +755,7 @@ export function parseStructuredOpportunityPage(
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
       contactOffice: statedAdministeringOffice([text]),
       joinPageUrl,
-      pageTitle: pageOwnTitle($),
+      pageTitle: seededOpportunityHeading($, pageTitle, config.title) || pageTitle,
     },
   ];
 }
