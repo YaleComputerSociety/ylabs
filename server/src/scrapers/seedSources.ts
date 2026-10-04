@@ -521,7 +521,7 @@ const SOURCES: SourceSeed[] = [
     name: 'coverage-synthesis-llm',
     displayName: 'Coverage synthesis (LLM)',
     description:
-      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+      "The one writer of every live research row's description: a grounded LLM synthesis of 1 to 3 sentences from the row's already-harvested evidence, which outranks copied page text when it serves (#4788). Emits fullDescription only, never access, route or opportunity evidence.",
     baseUrl: '',
     defaultWeight: 0.5,
     cadence: 'monthly',

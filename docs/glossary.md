@@ -69,6 +69,11 @@ A tombstone on a record, not on a field.
 An absent `reason` is the resting state; a present one stops materializers resurrecting a record they would otherwise rewrite.
 Owner: `recordSuppressionSchema` in `server/src/models/modelPrimitives.ts`.
 
+**Written description.**
+The `fullDescription` the one writer, `research-entity:coverage-synthesis`, synthesizes from a row's live evidence (#4788).
+It is itself an observation, re-derived when the evidence or the prompt changes, and it outranks copied page text whenever it serves; copied text is the fallback only.
+Owner: `server/src/scripts/coverageSynthesis.ts`, with ranking in `server/src/scrapers/confidenceResolver.ts`.
+
 **Derivation versus repair.**
 Both are post-processing and both are legitimate, but they differ in durability.
 A derivation runs on every resolve, reads evidence, writes no field, and needs no lock.

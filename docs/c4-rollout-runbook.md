@@ -63,14 +63,14 @@ The canonical-alias ledger is retired (#3027), so resolve-at-mint resolves only 
 Run from `server/`.
 Data-writing CLIs are dry-run by default and require an explicit confirm flag plus a Development database guard to apply.
 
-- `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): grounded gpt-5-mini description synthesis for description-blocked entities; requires a hand-created `coverage-synthesis-llm` source row (see the go-live sequence below).
+- `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): the one writer of every live research row's description since #4788, grounded gpt-5-mini synthesis over the row's live evidence; requires the `coverage-synthesis-llm` source row, which `scrape:seed-sources` seeds.
 - `yarn fuzzy:labeled-set`: report the labeled positives and negatives and their counts.
 - `yarn fuzzy:residual-report`: run the fuzzy matcher over a scope and report pair-completeness and precision and recall against the labeled set.
 - `yarn eval:pipeline --sample=<N> [--llm] [--gate]`: score C0 through C3 (efficiency, accuracy, churn) over a seeded sample.
 
 ## Dev-first go-live sequence
 
-1. Create the `coverage-synthesis-llm` source row in the Development database by hand; `scrape:seed-sources` does not carry this source, and the coverage CLI errors clearly if the row is absent.
+1. Seed the `coverage-synthesis-llm` source row with `scrape:seed-sources`; the coverage CLI errors clearly if the row is absent.
 2. No alias backfill step is needed for prevention to work, but do not expect a re-projection to seed the ledger.
 The canonical-alias ledger is retired (#3027), so there is nothing to seed and nothing to back-fill.
    Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.

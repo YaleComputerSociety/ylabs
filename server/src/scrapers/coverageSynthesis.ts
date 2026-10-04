@@ -8,16 +8,27 @@ import {
   cardGroundingScore,
 } from '../utils/groundedCardSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
+import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
+
+export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 
 export const COVERAGE_SYNTHESIS_MODEL = CARD_SYNTHESIS_MODEL;
 export const COVERAGE_MIN_OVERLAP = 0.45;
 export const COVERAGE_CONFIDENCE = 0.5;
 export const MAX_COVERAGE_SNIPPETS = 12;
 export const MAX_COVERAGE_SNIPPET_CHARS = 1200;
+/**
+ * The prompt asks for at most 70 words; the refusal sits above that so a model that
+ * overshoots by a clause is not discarded, while the 120-word bodies the #4788 pilot
+ * measured are.
+ */
+export const MAX_WRITTEN_DESCRIPTION_WORDS = 90;
 
-const SNIPPET_FIELDS = new Set([
+export const COVERAGE_SNIPPET_FIELDS: ReadonlySet<string> = new Set([
   'fullDescription',
   'shortDescription',
   'description',
@@ -41,6 +52,26 @@ export interface CoverageObservationLike {
   value: unknown;
   sourceUrl?: string;
   sourceName?: string;
+  confidence?: number;
+}
+
+const MANUAL_ADMIN_EDIT_SOURCE_NAME = 'manual-admin-edit';
+
+/**
+ * Whether one observation is evidence the writer may read. The writer's own output is
+ * never its input, so a re-run cannot launder its last body into the next one. A
+ * `manual-admin-edit` description is ordinary evidence unless it narrates its sources,
+ * which is the shape the owner ruled is not a description (#4788).
+ */
+export function isWriterEvidenceObservation(obs: CoverageObservationLike): boolean {
+  if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
+  if (
+    obs.sourceName === MANUAL_ADMIN_EDIT_SOURCE_NAME &&
+    isSourcePageNarrationDescription(obs.value)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export interface CoverageSynthesisLLMResult {
@@ -57,7 +88,8 @@ export function gatherCoverageSnippets(observations: CoverageObservationLike[]):
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
   for (const obs of observations) {
-    if (!SNIPPET_FIELDS.has(obs.field)) continue;
+    if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
+    if (!isWriterEvidenceObservation(obs)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
     const raw = textValue(obs.value);
     if (!raw) continue;
@@ -104,7 +136,10 @@ export type CoverageSynthesisRefusal =
   | 'no-cited-snippets'
   | 'grounding-overlap-below-floor'
   | 'quality-bar'
-  | 'internal-vocabulary';
+  | 'internal-vocabulary'
+  | 'past-career-clause'
+  | 'source-narration'
+  | 'over-length';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -151,6 +186,46 @@ const INTERNAL_RECORD_NOUN_SUBJECT = new RegExp(
  * identifier `researchHome` never match. Only prose does.
  */
 const DEPRECATED_PRODUCT_VOCABULARY = /research\s+(?:home|area)s?\b/i;
+
+const PAST_CAREER_VERB =
+  '(?:led|developed|served|worked|directed|held|founded|co-founded|headed|chaired|ran|managed|was|were|built|taught|trained|launched)';
+
+/**
+ * Anchored on the clause's subject position rather than on the adverb, because
+ * "previously" is ordinary research prose: "combines new and previously developed
+ * methods" and "previously uncharacterized genes" must survive. The clause counts at a
+ * sentence start, after a subject pronoun, or after a clause break.
+ */
+const PAST_CAREER_CLAUSE = new RegExp(
+  [
+    `^(?:previously|formerly)(?:,|\\s+${PAST_CAREER_VERB}\\b)`,
+    `\\b(?:he|she|they|who)\\s+(?:also\\s+)?(?:previously|formerly)\\s+${PAST_CAREER_VERB}\\b`,
+    `[;,]\\s*(?:and\\s+)?(?:previously|formerly)\\s+${PAST_CAREER_VERB}\\b`,
+    '\\b(?:before|prior\\s+to)\\s+(?:joining|coming\\s+to|arriving\\s+at|moving\\s+to)\\b',
+    '\\bearlier\\s+in\\s+(?:his|her|their)\\s+career\\b',
+  ].join('|'),
+  'i',
+);
+
+export function isPastCareerClauseSentence(sentence: string): boolean {
+  return PAST_CAREER_CLAUSE.test(sentence);
+}
+
+/**
+ * The body with every sentence that narrates a past post removed, or `null` when
+ * nothing else is left. A sentence is dropped whole rather than trimmed to its clause,
+ * because the clause carries the sentence's subject and a trimmed remainder reads as
+ * a fragment.
+ */
+export function withoutPastCareerSentences(description: string): string | null {
+  const sentences = splitDescriptionSentences(description);
+  const kept = sentences.filter((sentence) => !isPastCareerClauseSentence(sentence));
+  if (kept.length === sentences.length) return description;
+  const joined = kept.join(' ').trim();
+  return joined || null;
+}
+
+const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).length;
 
 export function hasInternalVocabulary(value: unknown): boolean {
   const text = textValue(value);
@@ -201,8 +276,10 @@ export async function coverageSynthesisDecision(
   }
   if (!raw || typeof raw !== 'object') return refuse('llm-malformed-response');
 
-  const description = redactDirectContactInfo(textValue(raw.fullDescription));
-  if (!description) return refuse('empty-description');
+  const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
+  if (!drafted) return refuse('empty-description');
+  const description = withoutPastCareerSentences(drafted);
+  if (!description) return refuse('past-career-clause');
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
@@ -215,14 +292,18 @@ export async function coverageSynthesisDecision(
   if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
     return refuse('grounding-overlap-below-floor');
   }
+  // Before the quality bar, which blanks the same shape through the serve sanitizer and
+  // would otherwise report a narrating body as a generic quality verdict.
+  if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
   if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
     return refuse('quality-bar');
   }
-  // Last, so every arm above keeps the attribution it had and this one's count is
-  // exactly the bodies that would otherwise have been ACCEPTED. A refusal placed
-  // earlier would absorb rows another gate was already refusing and overstate itself,
-  // which is the #2440 shape of a counter that misreports its own outcome.
+  // After the older arms, so every arm above keeps the attribution it had and each
+  // count below is exactly the bodies that would otherwise have been ACCEPTED. A refusal
+  // placed earlier would absorb rows another gate was already refusing and overstate
+  // itself, which is the #2440 shape of a counter that misreports its own outcome.
   if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
+  if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
 
   const sourceUrls = Array.from(
     new Set(

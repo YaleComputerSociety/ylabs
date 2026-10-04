@@ -1166,6 +1166,24 @@ A citing lane is credited only when no lane asserted the value at a field, so a 
 Measured on Development before the first run, those two choices move attribution from 73 to 229 of 277 refusals.
 A stored attribution only grows, so `observations:prune-dead` removing the evidence never un-attributes a refusal, and a second run plans nothing.
 
+### The written description: one writer for every row (#4788)
+
+Evidence is input to the description, not the description (owner decision, 2026-10-04, recorded in `docs/decisions.md`).
+`research-entity:coverage-synthesis` (`server/src/scripts/coverageSynthesis.ts`, pure steps in `coverageSynthesisCore.ts`) is the one writer: for every live research row it gathers the row's live description-shaped observations under both identity forms, then its grant titles and abstracts in whatever room is left, and asks `coverageSynthesisDecision` for 1 to 3 sentences answering what the row studies.
+The writer never reads its own output, and it reads a `manual-admin-edit` description as ordinary evidence unless that description narrates its sources (`isWriterEvidenceObservation`).
+Each run is keyed on a hash of the ordered snippet set, the prompt hash and `WRITER_CONTRACT_VERSION`, stored as the lane's `sourceContentHash`, so a re-run calls the model only for a row whose evidence or prompt changed.
+A failed call records no hash, so the next run retries that row.
+On a content refusal, and on a row with no evidence left, the lane retires its own earlier body, because a body the current evidence no longer supports must not keep outranking the fallback.
+Every refusal names its arm, including the three deterministic arms the writer added: `past-career-clause`, `source-narration` and `over-length`.
+In apply mode each changed row is materialized, the touched rows are regated through `regateRematerializedEntities`, which also re-syncs their search documents, and the report counts `written`, `observationDropped`, `retired` and `adopted`.
+Read `adopted`, not `written`, for what students now see.
+`confidenceResolver` serves a servable written body (undemoted, clears the quality bar, not a biography, not narration) over every copied `fullDescription`, and the copied values stay ranked behind it as the fallback the materializer walks to when the written body fails a content gate.
+A `manual-pi-edit` value is the one source the written body does not outrank.
+`manual-admin-edit` decays and is reordered like any other source on `fullDescription`, `shortDescription` and `description`, and keeps its curated precedence on every other field.
+While the written body is the served body, the card is derived from it (`writtenBodyCardBasis` in `entityMaterializer.ts`): a card resolved from copied card observations is set aside, and a stored card already derived from the same written body is kept, so a re-materialize spends no card synthesis.
+The prompt is shared with the grant-corpus and faculty-research-area lanes, so they write in the same voice and pass the same arms.
+The first full Development run is about 3,900 model calls (3,936 of 4,230 live rows carried evidence when measured on 2026-10-04); later runs call the model only for rows whose evidence changed.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.

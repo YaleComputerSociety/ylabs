@@ -3127,3 +3127,34 @@ describe('a card that is the title of a citation body (#4623)', () => {
     expect(sanitized.shortDescription).toBe(card);
   });
 });
+
+describe('possessive and next-source narration is not a research description (#4788)', () => {
+  it('rejects narration of a profile, a site or a next source', () => {
+    for (const value of [
+      "Dr. Example's Yale School of Medicine profile lists interests in sleep and memory.",
+      'Her Yale profile lists research on coastal sediment transport.',
+      'His faculty profile describes work on Byzantine manuscripts.',
+      'The profile lists clinical interests in pediatric cardiology.',
+      'The site presents projects on urban heat islands.',
+      'Studies coastal erosion. The lab website describes field sites along the Atlantic coast.',
+      'The official next source for students to review is the department page.',
+      'Students can use the program page for students to review current openings.',
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(true);
+      expect(publicResearchEntityDescriptionText(value)).toBe('');
+    }
+  });
+
+  it('keeps research prose that uses the same nouns and verbs', () => {
+    for (const value of [
+      'Studies the profile of gene expression across developing mouse tissues.',
+      "The tumor's expression profile identifies subtypes that respond to immunotherapy.",
+      'Maps how the binding site presents a pocket for small-molecule inhibitors.',
+      'Identifies the next source of antibiotic resistance in hospital wastewater.',
+      'Develops web site accessibility tools for screen-reader users.',
+      'Her research profile spans genetics and chronic disease.',
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(false);
+    }
+  });
+});

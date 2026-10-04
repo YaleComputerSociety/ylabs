@@ -126,7 +126,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_IDENTITY'],
     defaultConfidence: 'LOW',
     notes:
-      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+      "The one writer of every live research row's description: a grounded LLM synthesis of 1 to 3 sentences from the row's already-harvested evidence, which outranks copied page text when it serves (#4788). Emits fullDescription only, never access, route or opportunity evidence.",
   },
   'visibility-repair-queue': {
     priority: 3,

@@ -28,6 +28,7 @@ import { isCareerBiographyDescription } from '../utils/careerBiographyDescriptio
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
+import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
 
 export interface ResolverObservation {
   field: string;
@@ -81,6 +82,21 @@ const PROSE_COMPLETENESS_FIELDS = new Set(['bio', 'fullDescription', 'researchIn
 // for any realistic observation age.
 const NON_DECAYING_SOURCES = new Set(['manual-admin-edit', 'manual-pi-edit']);
 const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
+// Owner decision 2026-10-04 (#4788): an admin's description is evidence input to the
+// written description, not the description, so on these fields it decays and is
+// reordered like any other source. Every other field keeps the curated precedence.
+const ADMIN_EDIT_ORDINARY_FIELDS = new Set(['fullDescription', 'shortDescription', 'description']);
+const ADMIN_EDIT_SOURCE = 'manual-admin-edit';
+
+// The one writer of `fullDescription` (#4788). A servable written body outranks every
+// copied value, which stays in the ranked list as the fallback the materializer walks
+// to when the writer refused, has not run, or its body fails a content gate. A PI's own
+// edit is not copied page text, so it is the one source the written body does not
+// outrank.
+export const WRITTEN_DESCRIPTION_SOURCE_NAME = 'coverage-synthesis-llm';
+const WRITTEN_DESCRIPTION_SOURCES = new Set([WRITTEN_DESCRIPTION_SOURCE_NAME]);
+const WRITTEN_DESCRIPTION_FIELDS = new Set(['fullDescription']);
+const WRITTEN_DESCRIPTION_PEER_SOURCES = new Set(['manual-pi-edit']);
 
 // Sources whose description prose is keyword-synthesized from directory listings
 // rather than extracted from the entity's own page. For prose fields these rank
@@ -211,8 +227,17 @@ function recencyDecay(observedAt: Date, now: Date, halfLifeDays: number): number
   return Math.pow(0.5, ageDays / halfLifeDays);
 }
 
-function halfLifeDaysForSource(sourceName: string, defaultHalfLifeDays: number): number {
-  return NON_DECAYING_SOURCES.has(sourceName)
+function isCuratedSourceForField(sourceName: string, field: string): boolean {
+  if (!NON_DECAYING_SOURCES.has(sourceName)) return false;
+  return !(sourceName === ADMIN_EDIT_SOURCE && ADMIN_EDIT_ORDINARY_FIELDS.has(field));
+}
+
+function halfLifeDaysForSource(
+  sourceName: string,
+  defaultHalfLifeDays: number,
+  field: string,
+): number {
+  return isCuratedSourceForField(sourceName, field)
     ? NON_DECAYING_SOURCE_HALF_LIFE_DAYS
     : defaultHalfLifeDays;
 }
@@ -349,17 +374,17 @@ function isUsefulProseGroup(field: string, group: { value: unknown }): boolean {
 // A curated override is a human decision about what this entity should say, so
 // it is never reordered by a text heuristic. Same set as the decay exemption
 // above, for the same reason: these two sources are the manual-edit lanes.
-function isCuratedGroup(group: { sources: Set<string> }): boolean {
+function isCuratedGroup(group: { sources: Set<string> }, field: string): boolean {
   for (const source of group.sources) {
-    if (NON_DECAYING_SOURCES.has(source)) return true;
+    if (isCuratedSourceForField(source, field)) return true;
   }
   return false;
 }
 
-function isDemotableBioProseGroup(group: RankedGroup): boolean {
+function isDemotableBioProseGroup(field: string, group: RankedGroup): boolean {
   return (
     typeof group.value === 'string' &&
-    !isCuratedGroup(group) &&
+    !isCuratedGroup(group, field) &&
     (isDemotablePersonBio(group.value) || isBiographyRatherThanResearch(group.value))
   );
 }
@@ -428,7 +453,7 @@ function demotePersonBioProseGroups(
     for (const group of bioGroups) group.demoted = true;
     return;
   }
-  const demotable = bioGroups.filter(isDemotableBioProseGroup);
+  const demotable = bioGroups.filter((group) => isDemotableBioProseGroup(field, group));
   if (demotable.length === 0 || demotable.length === groups.length) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
   if (
@@ -549,7 +574,7 @@ function demoteUnusableProseGroups(
 ): void {
   if (!QUALITY_DEMOTION_FIELDS.has(field)) return;
   const unusable = groups.filter(
-    (group) => !group.demoted && !isCuratedGroup(group) && !isUsefulProseGroup(field, group),
+    (group) => !group.demoted && !isCuratedGroup(group, field) && !isUsefulProseGroup(field, group),
   );
   if (unusable.length === 0) return;
   const promoted = highestWeightedGroup(
@@ -557,6 +582,37 @@ function demoteUnusableProseGroups(
   );
   if (!promoted || !isAdoptableResearchProseGroup(field, promoted, kind)) return;
   for (const group of unusable) group.demoted = true;
+}
+
+function hasSourceIn(group: { sources: Set<string> }, names: ReadonlySet<string>): boolean {
+  for (const source of group.sources) {
+    if (names.has(source)) return true;
+  }
+  return false;
+}
+
+/**
+ * Runs last, so a written body every earlier rule left standing is the one judged.
+ * "Servable" is the bar the resolver can ask without entity context: undemoted, clears
+ * the quality bar, is not a biography, and does not narrate its sources. The materializer's serving bar
+ * still runs on whatever wins, and walks past a written body it refuses.
+ */
+function preferWrittenDescriptionGroups(field: string, groups: RankedGroup[]): void {
+  if (!WRITTEN_DESCRIPTION_FIELDS.has(field)) return;
+  const servableWritten = groups.some(
+    (group) =>
+      !group.demoted &&
+      hasSourceIn(group, WRITTEN_DESCRIPTION_SOURCES) &&
+      isUsefulProseGroup(field, group) &&
+      !isBiographyRatherThanResearch(group.value) &&
+      !isSourcePageNarrationDescription(group.value),
+  );
+  if (!servableWritten) return;
+  for (const group of groups) {
+    if (hasSourceIn(group, WRITTEN_DESCRIPTION_SOURCES)) continue;
+    if (hasSourceIn(group, WRITTEN_DESCRIPTION_PEER_SOURCES)) continue;
+    group.demoted = true;
+  }
 }
 
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
@@ -655,7 +711,7 @@ function rankFieldGroups(
     const decay = recencyDecay(
       obs.observedAt,
       now,
-      halfLifeDaysForSource(obs.sourceName, halfLifeDays),
+      halfLifeDaysForSource(obs.sourceName, halfLifeDays, field),
     );
     const contribution = obs.confidence * decay;
     let g = groups.get(key);
@@ -689,6 +745,7 @@ function rankFieldGroups(
   demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
   demoteUnusableProseGroups(field, rankable, descriptionKind);
   demoteFallbackOnlyGroups(field, rankable);
+  preferWrittenDescriptionGroups(field, rankable);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );

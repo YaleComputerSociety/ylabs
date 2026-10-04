@@ -104,6 +104,7 @@ import {
   ResolverObservation,
   ResolvedField,
   sourceRanksOnlyAsFieldFallback,
+  WRITTEN_DESCRIPTION_SOURCE_NAME,
 } from './confidenceResolver';
 import {
   MaterializationChunkPrefetch,
@@ -572,6 +573,39 @@ function resolvedShortDescriptionCandidateIsUsable(
   if (isUngroundedSynthesizedCard({ card: candidate, body: fullDescription })) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
+}
+
+/**
+ * The card a written body is served with is derived from that body (#4788), so while the
+ * written body is what the row serves, a card resolved from copied card observations is
+ * set aside. The stored card is kept only when it was itself derived from this same
+ * written body, which keeps a re-materialize stable and spends no card synthesis.
+ */
+export function writtenBodyCardBasis(input: {
+  set: Record<string, unknown>;
+  entityDoc: any;
+  fullDescription: string;
+  cardLocked: boolean;
+}): { followsWrittenBody: boolean; currentCard?: string } {
+  if (input.cardLocked || !input.fullDescription) return { followsWrittenBody: false };
+  const fullProvenance = (
+    Object.hasOwn(input.set, 'fullDescription')
+      ? input.set['fieldProvenance.fullDescription']
+      : input.entityDoc?.fieldProvenance?.fullDescription
+  ) as { sourceName?: unknown } | undefined;
+  if (fullProvenance?.sourceName !== WRITTEN_DESCRIPTION_SOURCE_NAME) {
+    return { followsWrittenBody: false };
+  }
+  const storedCard = textValue(input.entityDoc?.shortDescription);
+  const storedCardFromThisBody =
+    Boolean(storedCard) &&
+    input.entityDoc?.fieldProvenance?.shortDescription?.sourceName ===
+      WRITTEN_DESCRIPTION_SOURCE_NAME &&
+    textValue(input.entityDoc?.fullDescription) === input.fullDescription;
+  return {
+    followsWrittenBody: true,
+    currentCard: storedCardFromThisBody ? storedCard : undefined,
+  };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -7762,6 +7796,17 @@ export async function projectFromLog(
       kind: set.kind ?? entityDoc?.kind,
       entityType: set.entityType ?? entityDoc?.entityType,
     });
+    const writtenCard = writtenBodyCardBasis({
+      set,
+      entityDoc,
+      fullDescription,
+      cardLocked: manuallyLockedFields.includes('shortDescription'),
+    });
+    if (writtenCard.followsWrittenBody) {
+      delete set.shortDescription;
+      delete set['fieldProvenance.shortDescription'];
+      delete confidenceByField.shortDescription;
+    }
     const groundedShortDescription = await resolveMaterializedShortDescription({
       fullDescription,
       // When the single-PI-shell guard just rejected fullDescription in favor
@@ -7771,7 +7816,9 @@ export async function projectFromLog(
       // fixed full (issue #1595).
       currentShortDescription: fullDescriptionShellGated
         ? undefined
-        : (set.shortDescription ?? entityDoc?.shortDescription),
+        : writtenCard.followsWrittenBody
+          ? writtenCard.currentCard
+          : (set.shortDescription ?? entityDoc?.shortDescription),
       reconsiderCurrentShortDescription: fullRestatesCurrentCard,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
