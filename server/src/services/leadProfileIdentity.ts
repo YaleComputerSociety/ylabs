@@ -280,14 +280,13 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     lead.name ||
     row.name ||
     '';
+  const ownProfileSlugs = leadOfficialProfileSlugs(lead);
   return {
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
-    profileSlugs: new Set(leadOfficialProfileSlugs(lead).map(normalizeIdentityToken)),
-    profileSlugNameTokens: leadOfficialProfileSlugs(lead).map(
-      (slug) => new Set(nameTokensFrom(slug)),
-    ),
+    profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
+    profileSlugNameTokens: ownProfileSlugs.map((slug) => new Set(nameTokensFrom(slug))),
   };
 };
 
@@ -323,6 +322,18 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
     if (nameTokens.has(token)) shared += 1;
   }
   return shared;
+};
+
+// Shared surname or suffix tokens alone (a compound surname, `jr`) are also
+// carried by a different person, so the slug's own given name must be among
+// the shared tokens.
+const sharesGivenNameAndAnotherToken = (slug: string, nameTokens: Set<string>): boolean => {
+  const [slugGiven] = nameTokensFrom(slug);
+  return (
+    Boolean(slugGiven) &&
+    nameTokens.has(slugGiven) &&
+    sharedNameTokenCount(slug, nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+  );
 };
 
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
@@ -374,18 +385,12 @@ const profileSlugCorroboratesLead = (
   // tokens (typically given plus family). This one symmetric rule replaces the
   // asymmetric behavior that held same-person slug variants when the lead had
   // its own profile URL, yet cleared surname-only collisions when it did not.
-  if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
-    return true;
-  }
-  // A lead who goes by another given name than the one on their account: the
-  // account reads "Harrison Fixture" while their own verified profile is
-  // `/profile/huibin-harry-fixture`, so a second profile at `/people/huibin-fixture`
-  // shares two tokens with the lead's own profile and none but the surname with the
-  // account name. The lead's own profile is evidence of the names they use.
+  if (sharesGivenNameAndAnotherToken(slug, identity.nameTokens)) return true;
+  // A lead can go by a given name their account does not carry; their own
+  // verified profile is evidence of the names they use.
   if (
-    identity.profileSlugNameTokens.some(
-      (ownProfileTokens) =>
-        sharedNameTokenCount(slug, ownProfileTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE,
+    identity.profileSlugNameTokens.some((ownProfileTokens) =>
+      sharesGivenNameAndAnotherToken(slug, ownProfileTokens),
     )
   ) {
     return true;

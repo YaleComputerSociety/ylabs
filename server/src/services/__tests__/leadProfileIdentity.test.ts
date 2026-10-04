@@ -195,6 +195,44 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(true);
   });
 
+  it.each([
+    ['a compound surname', 'robin-fixture-sample', 'sam-fixture-sample'],
+    ['a name suffix', 'robin-fixture-jr', 'sam-fixture-jr'],
+  ])(
+    'still flags a different given name that shares only %s with the lead own profile',
+    (_case, ownSlug, citedSlug) => {
+      expect(
+        detectProfileIdentityRisk({
+          entity: {
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: [`https://medicine.yale.edu/profile/${citedSlug}/`],
+          },
+          leadMembers: [
+            {
+              user: {
+                fname: 'Robin',
+                lname: 'Fixture',
+                profileUrls: { official: `https://ysph.yale.edu/people/${ownSlug}` },
+              },
+            },
+          ],
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it('still flags a different given name that shares only a compound surname with the account name', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://medicine.yale.edu/profile/sam-fixture-sample/'],
+        },
+        leadMembers: [{ user: { fname: 'Robin', lname: 'Fixture Sample' } }],
+      }),
+    ).toBe(true);
+  });
+
   it('does not flag when the lead directory name corroborates the profile home', () => {
     expect(
       detectProfileIdentityRisk({
