@@ -8,7 +8,9 @@
  * lab, that is evidence the row may be a mistyped lab, and this leaves it alone.
  *
  * Applied at read time beside the first-person revoice, so it writes nothing, needs no
- * lock, and stops applying the moment a non-LLM source names the lab.
+ * lock, and stops applying the moment a non-LLM source names the lab by surname. The
+ * full-name form ("The <given> <surname> Lab") is recast whatever its provenance, because
+ * it is our writers' wording rather than a page's.
  */
 
 const LLM_AUTHORED_SOURCE_SUFFIX = /-llm$/;
@@ -27,6 +29,11 @@ const LAB_NAME_CONTINUATION =
   /^\s+(?:(?:for|of)\s+[A-Z]|[A-Z]|(?:members?|group|groups|team|teams|website|site|page|staff|alumni)\b)/;
 
 const ANOTHER_NAMED_LAB = /\b(?!The\b)[A-Z][\p{L}'’-]*\s+Lab(?:oratory)?\b/u;
+
+// "<Lab> is a hematology lab ..." defines the lab itself, so recasting its subject onto
+// the person would make the sentence say the person is a lab. Left for the serve chain.
+const IDENTITY_SENTENCE_CONTINUATION =
+  /^\s+(?:is|was)\s+(?:an?|the)\s+(?:(?!(?:an?|the|of|in|for|at|on|with|from|by|to|and)\s)[\p{L}'’-]+\s+){0,3}lab(?:oratory)?(?![\p{L}'’-])/iu;
 
 const LEADER_APPOSITIVE = /,\s*(?:led|directed|headed|run)\s+by\s+[^,]+,/;
 
@@ -120,12 +127,30 @@ function nonLlmEvidenceNamesTheLab(entity: Record<string, any>, person: string):
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
   if (urls.some((url) => urlNamesThisPersonsLab(url, person))) return true;
-  const labMention = namedLabPattern(person, '');
   return DESCRIPTION_FIELDS.some(
     (field) =>
       !isLlmAuthoredSourceName(entity.fieldProvenance?.[field]?.sourceName) &&
-      labMention.test(textValue(entity[field])),
+      [...textValue(entity[field]).matchAll(namedLabPattern(person, 'g'))].some(
+        (match) => !isFullNameLabForm(match[2], person),
+      ),
   );
+}
+
+/**
+ * Whether a "<given names> <surname> Lab" mention spells out the person's own given name.
+ *
+ * Official pages name a lab by surname ("The Okonkwo Lab"); the full-name form is the
+ * wording our own description writers produce, and it reaches non-LLM provenance through
+ * repairs and enrichment rewrites. So it is never evidence that a lab exists, whatever
+ * source recorded it (#4707).
+ */
+function isFullNameLabForm(givenRun: string | undefined, person: string): boolean {
+  const tokens = personTokens(person);
+  const givenNames = new Set(tokens.slice(0, -1).map((token) => token.toLowerCase()));
+  return (givenRun ?? '')
+    .split(/\s+/)
+    .map((token) => token.replace(/[.,]+$/, '').toLowerCase())
+    .some((token) => givenNames.has(token) && !new RegExp(`^${SURNAME_PARTICLE}$`).test(token));
 }
 
 function possessive(person: string): string {
@@ -156,7 +181,7 @@ export function recastUnbackedLabSelfDescription(
   const text = typeof value === 'string' ? value : '';
   if (!text || !entity || !/\blab(?:oratory)?\b/i.test(text)) return text;
   if (textValue(entity.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return text;
-  if (!isLlmAuthoredSourceName(entity.fieldProvenance?.[field]?.sourceName)) return text;
+  const llmAuthored = isLlmAuthoredSourceName(entity.fieldProvenance?.[field]?.sourceName);
   const person = facultyResearchPersonName(entity);
   if (!person || nonLlmEvidenceNamesTheLab(entity, person)) return text;
 
@@ -172,6 +197,13 @@ export function recastUnbackedLabSelfDescription(
       full: string,
     ) => {
       if (!runNamesOnlyThisPerson(givenRun, person)) return match;
+      if (!llmAuthored && !isFullNameLabForm(givenRun, person)) return match;
+      if (
+        !possessiveSuffix &&
+        IDENTITY_SENTENCE_CONTINUATION.test(full.slice(offset + match.length))
+      ) {
+        return match;
+      }
       if (/["“‘]$/.test(full.slice(0, offset))) return match;
       if (!possessiveSuffix && LAB_NAME_CONTINUATION.test(full.slice(offset + match.length))) {
         return match;

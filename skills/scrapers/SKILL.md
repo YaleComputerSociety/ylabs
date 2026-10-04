@@ -1180,9 +1180,11 @@ Without that withdrawal the strip traded a title run for "trained at three unive
 Beside the first-person revoice, `withoutUnbackedLabSelfDescription` (`server/src/utils/unbackedLabSelfDescription.ts`) recasts an LLM-written "The <surname> Lab ..." self-reference on a `FACULTY_RESEARCH_AREA` row onto the row's own person, on both the card and the body (#4681).
 It applies only when the field's provenance is an LLM lane (`isLlmAuthoredSourceName`, pinned by test to the seeds whose display name says LLM, because `utils/` cannot import `seedSources`), the words before the surname are the row's own person's name, no non-LLM description says "<surname> Lab", and no cited URL is this person's own lab site (a lab-named URL that carries the surname); a shared lab host such as a department's `/labs/` path is not evidence that this person runs one.
 An official, non-LLM text that names the lab is evidence the row may be a mistyped lab, so it is left alone rather than rewritten.
+Only the surname form ("The <Surname> Lab") counts as that evidence: the full-name form ("The <given> <surname> Lab", spelling out the row's own lead) is recast whatever its provenance, because it is the wording of the description lanes and reached non-LLM provenance through retired enrichment lanes and a manual repair batch (#4707).
 It is a read-time derivation and writes nothing.
 It runs on both the chain's main path and the biography-repair branch, so stripping a biography opener cannot leave the lab claim heading the body.
 A mention whose lab name continues past the word ("Lab for ...", "Lab members") is left unchanged rather than recast into an ungrammatical phrase.
+A sentence that defines the lab itself ("<Lab> is a <kind> lab") is also left unchanged, because recasting its subject would say the person is a lab; any other "is a ..." continuation is still recast.
 A body whose recast would fall under the `too-short` floor of `fullDescriptionQuality` keeps its original text, because a body under that floor withholds the whole row.
 
 #### A sanitizer that empties a candidate has rejected it, not learned the field is empty (#2958)
