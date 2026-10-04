@@ -42,6 +42,7 @@ import {
 } from '../scrapers/sources/yaleDirectoryScraper';
 import {
   namesARankItServesRatherThanHolds,
+  type TitleRankSpan,
   titleRankSpans,
   titleResearchOwnership,
 } from '../scrapers/utils/titleResearchOwnership';
@@ -152,11 +153,18 @@ function statesOnlyThatItsHolderIsAStudent(title: string | undefined | null): bo
   return !ADMINISTRATIVE_HEAD_NOUN.test(stripInvisibleFormatCharacters(String(title)));
 }
 
-// The ranks the owner ruled cannot host a student's research (2026-10-04). Clinical
-// fellows, residents, staff affiliates and postgraduate associates await a ruling, so a
-// title naming any of them beside a ruled rank stays out of an irreversible archive.
+// The ranks the owner ruled cannot host a student's research (2026-10-04, the second
+// ruling adding clinical fellow, staff affiliate, hospital resident and postgraduate
+// associate). A rank span outside this list, such as a bare resident, an intern or a
+// trainee, spares the title from an irreversible archive.
 const OWNER_RULED_NON_HOSTING_RANK =
-  /^(?:post-?doc(?:toral)?|research (?:associate|assistant)|visiting (?:fellow|scholar|researcher))$/i;
+  /^(?:post-?doc(?:toral)?|research (?:associate|assistant)|visiting (?:fellow|scholar|researcher)|clinical fellow|staff affiliate|postgraduate associate)$/i;
+
+// The lattice reads a resident as one rank span whatever its setting, and the owner ruled
+// on the hospital resident only, so the span counts as ruled only when that word leads it.
+const isOwnerRuledNonHostingSpan = (span: TitleRankSpan, title: string): boolean =>
+  OWNER_RULED_NON_HOSTING_RANK.test(span.text) ||
+  (/^resident$/i.test(span.text) && /\bhospital\s+$/i.test(title.slice(0, span.start)));
 
 /**
  * A rank that cannot host a student's research, on two witnesses that must agree: the
@@ -172,7 +180,7 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
   if (!clean.trim()) return false;
   if (titleResearchOwnership(clean) !== 'works_in_another_group') return false;
   if (!isSubordinateResearchRank(clean)) return false;
-  if (!titleRankSpans(clean).every((span) => OWNER_RULED_NON_HOSTING_RANK.test(span.text))) {
+  if (!titleRankSpans(clean).every((span) => isOwnerRuledNonHostingSpan(span, clean))) {
     return false;
   }
   if (namesARankItServesRatherThanHolds(clean)) return false;

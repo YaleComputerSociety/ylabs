@@ -77,6 +77,20 @@ describe('staffMintedEntityReasonFor', () => {
       'Visiting Fellow',
       'Visiting Scholar',
       'Visiting Researcher',
+      'Clinical Fellow',
+      'Clinical Fellow in Pediatrics (Hematology / Oncology)',
+      'Staff Affiliate - Hospital',
+      'Hospital Resident',
+      'Postgraduate Associate',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBe('non_hosting_trainee_title');
+    }
+  });
+
+  it('retires a title naming only ruled ranks', () => {
+    for (const title of [
+      'Postdoctoral Associate and Clinical Fellow',
+      'Visiting Fellow and Staff Affiliate',
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBe('non_hosting_trainee_title');
     }
@@ -92,26 +106,26 @@ describe('staffMintedEntityReasonFor', () => {
     }
   });
 
-  it('leaves research scientists and the ranks awaiting a ruling out of the population', () => {
+  it('leaves research scientists and the ranks the owner has not ruled on out of the population', () => {
     for (const title of [
       'Associate Research Scientist in Neurology',
-      'Postgraduate Associate',
+      'Postgraduate Fellow',
       'Research Affiliate',
       'Resident',
+      'Chief Resident',
       'Trainee',
-      'Clinical Fellow',
-      'Staff Affiliate - Hospital',
+      'Clinical Fellow and Instructor of Medicine',
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBeUndefined();
     }
   });
 
-  it('spares a ruled rank named beside a rank still awaiting a ruling', () => {
+  it('spares a ruled rank named beside a rank the owner has not ruled on', () => {
     for (const title of [
-      'Postdoctoral Associate and Clinical Fellow',
       'Research Associate; Resident',
-      'Visiting Fellow and Staff Affiliate',
+      'Resident; Hospital Resident',
       'Postdoctoral Associate and Research Fellow',
+      'Clinical Fellow and Trainee',
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBeUndefined();
     }

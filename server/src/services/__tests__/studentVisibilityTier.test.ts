@@ -78,7 +78,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
       'unbacked_lab_name',
-      'lead_title_pending_policy',
+      'lead_title_ruled_non_hosting_rank',
       'inactive_at_yale',
       'not_undergraduate_relevant',
     ]) {
