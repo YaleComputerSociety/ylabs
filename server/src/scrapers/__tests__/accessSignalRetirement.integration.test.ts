@@ -194,6 +194,26 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
     expect(await liveKeys('synthetic-tidepool-lab')).not.toContain('signal:CURRENT_UNDERGRADS');
   }, 120000);
 
+  it('keeps the current-undergraduates signal a merged-in row count still derives (#4580)', async () => {
+    await seedLab('synthetic-tidepool-lab');
+    await resolve('synthetic-tidepool-lab');
+    const row = await ResearchEntity.findOne({ slug: 'synthetic-tidepool-lab' }).lean<any>();
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      slug: 'synthetic-tidepool-lab-merged',
+      name: 'Synthetic Tidepool Lab Merged',
+      archived: true,
+      canonicalGroupId: row._id,
+    });
+    await Observation.updateMany(
+      { entityKey: 'synthetic-tidepool-lab', field: 'currentUndergradCount' },
+      { $set: { sourceName: 'research-entity-cache-backfill' } },
+    );
+    await seed('synthetic-tidepool-lab-merged', 'currentUndergradCount', 4, '2026-09-20', ROSTER);
+    await resolve('synthetic-tidepool-lab');
+    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:CURRENT_UNDERGRADS');
+  }, 120000);
+
   it('leaves the join-page signal live even when no longer derived', async () => {
     await seedLab('synthetic-tidepool-lab');
     await resolve('synthetic-tidepool-lab');

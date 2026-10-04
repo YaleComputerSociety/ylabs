@@ -742,7 +742,7 @@ async function storedEvidenceGovernedSignals(
     researchEntityId: toAccessMaterializerObjectId(researchEntityId),
     derivationKey: { $in: Object.keys(EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS) },
   })
-    .select('_id derivationKey archived archivedReason suppression source.evidenceIds')
+    .select('_id type derivationKey archived archivedReason suppression source.evidenceIds')
     .lean()) as unknown as StoredAccessSignal[];
 }
 
@@ -791,6 +791,45 @@ async function applyAccessSignalChanges(
   );
 }
 
+// The pass reads only this row's own observations, but a merged-in row's evidence still
+// derives a re-derived type at serve time (`judgeReDerivedAccessSignals`), so retiring on
+// the pass alone would archive a signal the detail route serves (#4580).
+async function withoutRetirementsMergedInEvidenceDerives(
+  researchEntityId: string,
+  changes: AccessSignalChangePlan,
+  stored: readonly StoredAccessSignal[],
+): Promise<AccessSignalChangePlan> {
+  const storedById = new Map(stored.map((signal) => [serializedDocumentId(signal._id), signal]));
+  const reDerived = changes.retired
+    .map(
+      (change) =>
+        storedById.get(change.signalId) as (StoredAccessSignal & { type?: unknown }) | undefined,
+    )
+    .filter(
+      (signal): signal is StoredAccessSignal & { type?: unknown } =>
+        Boolean(signal) && isReDerivedAccessSignalType(signal?.type),
+    );
+  if (reDerived.length === 0) return changes;
+  const row = (await ResearchEntity.findOne(
+    { _id: toAccessMaterializerObjectId(researchEntityId) },
+    { entityType: 1, kind: 1, websiteUrl: 1, departments: 1, name: 1, slug: 1 },
+  ).lean()) as AccessEvidenceRow | null;
+  if (!row) return changes;
+  const { underived } = await judgeReDerivedAccessSignals(
+    reDerived.map((signal) => ({ ...signal, researchEntityId })),
+    [row],
+  );
+  const stillDerived = new Set(
+    reDerived
+      .map((signal) => serializedDocumentId(signal._id))
+      .filter((id): id is string => Boolean(id) && !underived.has(id as string)),
+  );
+  return {
+    ...changes,
+    retired: changes.retired.filter((change) => !stillDerived.has(change.signalId)),
+  };
+}
+
 export async function materializeAccessForResearchGroup(
   identifier: { researchEntityId?: string; entityKey?: string },
   inputObservations?: AccessObservation[],
@@ -808,11 +847,16 @@ export async function materializeAccessForResearchGroup(
   }
   const { researchEntityId, artifacts } = derivation;
   const stored = await storedEvidenceGovernedSignals(researchEntityId);
-  const changes = planEvidenceGovernedSignalChanges(
+  const planned = planEvidenceGovernedSignalChanges(
     new Set(artifacts.accessSignals.map((signal) => signal.derivationKey)),
     derivation.observations ?? [],
     stored,
     await citedAccessEvidenceStatus(stored),
+  );
+  const changes = await withoutRetirementsMergedInEvidenceDerives(
+    researchEntityId,
+    planned,
+    stored,
   );
   if (!options.dryRun) await applyAccessSignalChanges(artifacts.accessSignals, changes);
 
