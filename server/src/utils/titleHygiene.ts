@@ -236,6 +236,9 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
 
 const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
 
+export const stripTitleFieldLabel = (value: string): string =>
+  value.replace(FIELD_LABEL_PREFIX, '');
+
 /**
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
@@ -252,7 +255,7 @@ const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:
  * stale data (#708, #740, #1257).
  */
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
-  const text = normalizeTitleWhitespace(value).replace(FIELD_LABEL_PREFIX, '');
+  const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;

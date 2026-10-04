@@ -136,6 +136,23 @@ describe('materializeEntity joins a user key on the official profile page it cit
     expect((await storedProfile(owner._id))?.profile?.title).toBe('Professor of Computing');
   });
 
+  it('stores the title without a field label scraped in front of it', async () => {
+    const owner = await Researcher.create({
+      displayName: 'Ada Lovelace',
+      profileLinks: [yaleOfficialLink('https://medicine.yale.edu/profile/ada-lovelace/')],
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    await seedRosterIdentity('dept:computing:ada-lovelace', 'Ada Lovelace', {
+      title: 'Title: Lecturer in Computing',
+      profileUrls: { official: 'https://medicine.yale.edu/profile/ada-lovelace/' },
+    });
+
+    await materializeEntity('user', { entityKey: 'dept:computing:ada-lovelace' }, {});
+
+    expect((await storedProfile(owner._id))?.profile?.title).toBe('Lecturer in Computing');
+  });
+
   it('refuses when two live researchers carry the same page, rather than picking one', async () => {
     const first = await Researcher.create({
       displayName: 'Chris Taylor',

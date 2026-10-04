@@ -237,6 +237,7 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
+import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -6088,7 +6089,7 @@ export async function joinUserIdentityToExistingResearcher(
     servedUserName('displayName') ||
       [servedUserName('fname'), servedUserName('lname')].filter(Boolean).join(' ').trim(),
   );
-  const title = textValue(resolvedValue('title')) || undefined;
+  const title = stripTitleFieldLabel(textValue(resolvedValue('title'))) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
   const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
   const websiteUrl =
