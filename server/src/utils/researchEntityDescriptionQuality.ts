@@ -1636,6 +1636,37 @@ const EVIDENCE_RATIONALE_PATTERN =
 const TOPIC_STATEMENT_PATTERN =
   /^(?:(?:Clinical|Basic|Translational|Epidemiological|Experimental|Theoretical)(?:\s+and\s+\w+)?\s+)*research\s+(?:in|on)\s|^Scholar\s+of\s|\bsubject\s+areas?\s+(?:are|include)\s/i;
 
+const RESEARCH_STATEMENT_SUBJECT =
+  "(?:I|We|He|She|They|The\\s+faculty\\s+member|(?:(?:Dr|Prof|Professor)\\.?\\s+)?\\p{Lu}[\\p{L}'’-]*(?:\\s+\\p{Lu}[\\p{L}'’-]*){0,3})";
+const RESEARCH_STATEMENT_POSSESSIVE =
+  "(?:My|Our|His|Her|Their|(?:(?:Dr|Prof|Professor)\\.?\\s+)?\\p{Lu}[\\p{L}'’-]*(?:\\s+\\p{Lu}[\\p{L}'’-]*){0,3}['’]s?)";
+
+const RESEARCH_STATEMENT_LEAD_PATTERNS: readonly RegExp[] = [
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+(?:do|does|conducts?)\\s+research\\s+(?:in|on)\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_POSSESSIVE}\\s+(?:current\\s+|primary\\s+|main\\s+)?research(?:\\s+interests?)?\\s+(?:includes?|has\\s+been\\s+in|is\\s+in|lies?\\s+in)\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+works?\\s+(?:broadly\\s+)?on\\s+topics\\s+in\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+works?\\s+to\\s+(?:improve|understand|develop|advance|reduce|prevent)\\s`,
+    'u',
+  ),
+  /^\p{Lu}[^,.!?:;]{3,120},\s+focusing\s+on\s/u,
+];
+
+const leadsWithResearchStatement = (text: string): boolean =>
+  RESEARCH_STATEMENT_LEAD_PATTERNS.some((pattern) => pattern.test(text));
+
+const OWN_TOPICS_STUDIES_SENTENCE_PATTERN = /^Studies\s[^.!?]+\.$/;
+const MIN_OWN_TOPICS_STUDIES_WORDS = 2;
+
 const readsAsPageFragment = (text: string): boolean =>
   COLON_BEFORE_TERMINAL_PATTERN.test(text) ||
   !/[.!?]\s*$/.test(text) ||
@@ -1644,19 +1675,46 @@ const readsAsPageFragment = (text: string): boolean =>
   EVIDENCE_RATIONALE_PATTERN.test(text);
 
 /**
+ * The single "Studies <topics>." sentence the pipeline writes from the row's own
+ * topics. It says nothing beyond the chips, but it is true, so under the owner's
+ * thin-but-accurate decision it is shown rather than held.
+ */
+export function isOwnTopicsStudiesSentence(quality: FieldQuality): boolean {
+  const { text, flags } = quality;
+  if (!text || !flags.includes('research-area-echo')) return false;
+  if (!OWN_TOPICS_STUDIES_SENTENCE_PATTERN.test(text)) return false;
+  if (wordCount(text) < MIN_OWN_TOPICS_STUDIES_WORDS) return false;
+  if (!flags.every((flag) => flag === 'research-area-echo' || THIN_BODY_FLAGS.has(flag))) {
+    return false;
+  }
+  return !readsAsPageFragment(text);
+}
+
+/**
  * A body the strict bar refuses only for being thin: short (at least six words) or a
  * restatement of the row's own topics, carrying a research-focus phrase, and not a
- * page fragment. A staff or appointment profile states no research and stays held.
+ * page fragment. A sentence that leads with a research statement may also list its
+ * topics, because those topics were read from the sentence itself. A staff or
+ * appointment profile states no research and stays held.
  */
 export function isThinButAccurateBody(quality: FieldQuality): boolean {
   const { text, flags } = quality;
   if (quality.isUseful || !text || flags.length === 0) return false;
-  if (!flags.every((flag) => THIN_BODY_FLAGS.has(flag))) return false;
+  if (isOwnTopicsStudiesSentence(quality)) return true;
+  const researchStatementLead = leadsWithResearchStatement(text);
+  if (
+    !flags.every(
+      (flag) => THIN_BODY_FLAGS.has(flag) || (researchStatementLead && flag === 'topic-label-list'),
+    )
+  ) {
+    return false;
+  }
   if (wordCount(text) < MIN_THIN_BODY_WORDS) return false;
+  if (readsAsPageFragment(text)) return false;
+  if (researchStatementLead) return true;
   return (
     (hasResearchFocusPhrase(text) || TOPIC_STATEMENT_PATTERN.test(text)) &&
-    !lacksResearchStatement(text) &&
-    !readsAsPageFragment(text)
+    !lacksResearchStatement(text)
   );
 }
 

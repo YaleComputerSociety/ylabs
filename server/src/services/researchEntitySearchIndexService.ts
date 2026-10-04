@@ -511,7 +511,12 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     let cleaned = sanitizeResearchEntityDescription(
       revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
     );
-    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    const hasOtherBody =
+      typeof out.profileSynthesisDescription === 'string' &&
+      out.profileSynthesisDescription.trim().length > 0;
+    if (hasOtherBody && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
+      cleaned = '';
+    }
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.fullDescription = stripEndowedChairTitles(cleaned);
   }

@@ -241,7 +241,7 @@ describe('researchEntityPublicDescription', () => {
       ).toBe(false);
     });
 
-    it('rejects a faculty research area whose fullDescription is a bare "Studies <areas>" echo of its own researchAreas chips, with no prose (#1532)', () => {
+    it('serves a faculty research area whose only body is a "Studies <areas>" echo of its own chips, as thin but accurate', () => {
       expect(
         researchEntityServesPublicDetail({
           kind: 'individual',
@@ -250,6 +250,34 @@ describe('researchEntityPublicDescription', () => {
           shortDescription: 'Studies extragalactic astronomy.',
           fullDescription: 'Studies extragalactic astronomy.',
           sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
+          fieldProvenance: { fullDescription: { sourceName: 'dept-faculty-roster' } },
+        }),
+      ).toBe(true);
+    });
+
+    it('still holds a "Studies <areas>" echo a language-model lane wrote (#4763)', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          researchAreas: ['Extragalactic Astronomy'],
+          shortDescription: 'Studies extragalactic astronomy.',
+          fullDescription: 'Studies extragalactic astronomy.',
+          sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
+          fieldProvenance: { fullDescription: { sourceName: 'lab-microsite-description-llm' } },
+        }),
+      ).toBe(false);
+    });
+
+    it('still refuses a "Studies <areas>" echo that is a page fragment', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          researchAreas: ['Particle Physics'],
+          shortDescription: '',
+          fullDescription: 'Studies particle physics, including research areas:.',
+          sourceUrls: ['https://example.yale.edu/faculty/physics'],
         }),
       ).toBe(false);
     });

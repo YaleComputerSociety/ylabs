@@ -762,9 +762,15 @@ const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
 // it as usable let the gate promote a chips-only ghost card the serve DTO
 // blanks, inconsistent with every other served `student_ready` card (#1547
 // serve/quality unification). Only the free-text research fields carry this
-// template; program `description`/`summary` are unaffected.
+// template; program `description`/`summary` are unaffected. The exception is a
+// body echo that is the row's only body: the serve sanitizer keeps it as thin but
+// accurate prose (owner decision, 2026-10-04), so it is usable here too.
 const isStudiesResearchAreaEchoField = (record: Record<string, any>, field: string): boolean => {
   if (field !== 'fullDescription' && field !== 'shortDescription') return false;
+  const otherBody = record.profileSynthesisDescription;
+  if (field === 'fullDescription' && !(typeof otherBody === 'string' && otherBody.trim())) {
+    return false;
+  }
   const value = record[field];
   if (typeof value !== 'string' || !value.trim()) return false;
   return (

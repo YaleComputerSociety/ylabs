@@ -192,7 +192,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('embedding');
   });
 
-  it('blanks a "Studies <chips>" area echo of researchAreas in the indexed description fields (#1466)', () => {
+  it('blanks a "Studies <chips>" area echo of researchAreas beside other prose in the indexed description fields (#1466)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-studies-echo',
       name: 'Echo Lab',
@@ -200,9 +200,27 @@ describe('researchEntitySearchIndexService', () => {
       researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
       fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      profileSynthesisDescription:
+        'The Echo Lab builds models of how households save across business cycles.',
     });
 
     expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
+  it('keeps a "Studies <chips>" body echo that is the only body, as thin but accurate', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-studies-echo-only',
+      name: 'Echo Faculty Research',
+      archived: false,
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'Studies economic theory, financial economics, and macroeconomics.',
+    );
     expect(doc?.shortDescription).toBe('');
   });
 

@@ -2639,13 +2639,27 @@ describe('isResearchEntitySourceChromeText breadcrumb / page-dump detection (#12
 });
 
 describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1466)', () => {
-  it('blanks a served fullDescription/shortDescription that only echoes researchAreas', () => {
+  it('blanks a served fullDescription/shortDescription echo of researchAreas beside another body', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      profileSynthesisDescription:
+        'The faculty member builds models of how households save across business cycles.',
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('keeps a fullDescription echo that is the only body, as thin but accurate, and still blanks the echo card', () => {
     const served = sanitizeServedResearchEntityCopyFields({
       fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
     });
-    expect(served.fullDescription).toBe('');
+    expect(served.fullDescription).toBe(
+      'Studies economic theory, financial economics, and macroeconomics.',
+    );
     expect(served.shortDescription).toBe('');
   });
 
