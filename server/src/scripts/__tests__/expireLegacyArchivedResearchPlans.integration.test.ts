@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MongoClient, type Collection } from 'mongodb';
+import { MongoClient, type Collection, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { RESEARCH_PLAN_RESTORE_WINDOW_MS } from '../../models/researchPlan';
@@ -20,13 +20,15 @@ const STAMPED_UNTIL = new Date(NOW.getTime() + 30 * 60 * 1000);
 
 let server: MongoMemoryServer | undefined;
 let client: MongoClient | undefined;
+let db: Db;
 let plans: Collection;
 
 describe('expire legacy archived research plans (#4163)', () => {
   beforeAll(async () => {
     server = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
     client = await MongoClient.connect(server.getUri());
-    plans = client.db('expire_legacy_plans_test').collection('research_plans');
+    db = client.db('expire_legacy_plans_test');
+    plans = db.collection('research_plans');
   });
 
   afterAll(async () => {
@@ -55,7 +57,7 @@ describe('expire legacy archived research plans (#4163)', () => {
   const plan = (key: string) => plans.findOne({ key });
 
   it('counts the legacy archived plans on a dry run and writes nothing', async () => {
-    const result = await expireLegacyArchivedResearchPlans(plans, { apply: false, now: NOW });
+    const result = await expireLegacyArchivedResearchPlans(db, { apply: false, now: NOW });
 
     expect(result).toMatchObject({
       mode: 'dry-run',
@@ -71,7 +73,7 @@ describe('expire legacy archived research plans (#4163)', () => {
   });
 
   it('gives each legacy archived plan the restore window it would have had, so the TTL index expires it', async () => {
-    const result = await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
+    const result = await expireLegacyArchivedResearchPlans(db, { apply: true, now: NOW });
 
     expect(result.stamped).toBe(3);
     expect(result.legacyArchivedAfter).toBe(0);
@@ -85,7 +87,7 @@ describe('expire legacy archived research plans (#4163)', () => {
   });
 
   it('leaves active plans and plans that already carry a restore window untouched', async () => {
-    await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
+    await expireLegacyArchivedResearchPlans(db, { apply: true, now: NOW });
 
     expect((await plan('active'))?.restorableUntil).toBeUndefined();
     expect((await plan('active'))?.privateNotes).toBe('kept');
@@ -93,15 +95,15 @@ describe('expire legacy archived research plans (#4163)', () => {
   });
 
   it('leaves a plan a system lane archived untouched, because the student never removed it', async () => {
-    await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
+    await expireLegacyArchivedResearchPlans(db, { apply: true, now: NOW });
 
     expect((await plan('dedupe-conflict'))?.restorableUntil).toBeUndefined();
     expect((await plan('dedupe-conflict'))?.privateNotes).toBe('kept');
   });
 
   it('stamps nothing on a second run', async () => {
-    await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
-    const second = await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
+    await expireLegacyArchivedResearchPlans(db, { apply: true, now: NOW });
+    const second = await expireLegacyArchivedResearchPlans(db, { apply: true, now: NOW });
 
     expect(second.legacyArchivedBefore).toBe(0);
     expect(second.stamped).toBe(0);

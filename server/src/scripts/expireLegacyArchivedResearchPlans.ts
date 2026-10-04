@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import type { Collection, Document } from 'mongodb';
+import type { Db, Document } from 'mongodb';
 import { connectScriptMongo } from '../db/connections';
 import { RESEARCH_PLAN_RESTORE_WINDOW_MS } from '../models/researchPlan';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -14,7 +14,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRIPT_NAME = 'research-plans:expire-legacy-archived';
 export const EXPIRE_CONFIRM_FLAG = '--confirm-expire-legacy-archived-research-plans';
-export const RESEARCH_PLANS_COLLECTION = 'research_plans';
 
 export type ExpireEnvironment = 'development' | 'beta' | 'production';
 
@@ -113,9 +112,10 @@ export interface ExpireLegacyArchivedResearchPlansResult {
 }
 
 export async function expireLegacyArchivedResearchPlans(
-  plans: Collection,
+  db: Db,
   options: { apply: boolean; now?: Date },
 ): Promise<ExpireLegacyArchivedResearchPlansResult> {
+  const plans = db.collection('research_plans');
   const legacy = legacyArchivedResearchPlanFilter();
   const now = options.now ?? new Date();
   const legacyArchivedBefore = await plans.countDocuments(legacy);
@@ -159,10 +159,9 @@ async function main(): Promise<void> {
 
   await connectScriptMongo(mongoUrl);
   try {
-    const result = await expireLegacyArchivedResearchPlans(
-      mongoose.connection.db!.collection(RESEARCH_PLANS_COLLECTION),
-      { apply: args.apply },
-    );
+    const result = await expireLegacyArchivedResearchPlans(mongoose.connection.db!, {
+      apply: args.apply,
+    });
     console.log(
       JSON.stringify({
         script: SCRIPT_NAME,
