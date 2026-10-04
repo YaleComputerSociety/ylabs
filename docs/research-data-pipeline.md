@@ -1822,6 +1822,8 @@ It may state that a stored website is gone (`assertsNoValueFor: ['websiteUrl', '
 A JSON-LD affiliation counts as a slot only when it links the stored website or names a research home the way `extractOfficialProfileResearchHomes` screens one, so the department affiliation nearly every profile carries does not block the claim.
 It retracts `website` beside `websiteUrl` because it asserts both from the same link and every reader serves `websiteUrl || website`, so retracting one alone would leave the link served and promoted back.
 A refusal of a link the page still carries, and a read of a different profile, state nothing, and the `fieldRetraction` contract then retracts only after two such complete reads and inside the drop guard.
+A complete read of a survivor counts as a re-read for observations filed under any key merged into it, because the source reads the survivor under its own key and a merged-in key's state is already the survivor's (#3560, #4568).
+Before #4568 such an observation was judged `source-has-not-reread` forever; on 2026-10-04 that was 873 of `dept-faculty-roster`'s 1,800 active `websiteUrl` observations, and every other retraction guard is unchanged.
 The refusal is limited to a row serving the refused link because the withdrawal reaches every older website the lane asserted on the row, including one its lead-direct mode read from the lead's own website slot.
 An untargeted run selects rows with no website and rows whose stored `websiteUrl` this lane supplied, so it re-reads a row already serving an affiliated organization; a targeted run, `--only profile-research-home-backfill,<keys>`, narrows that to named rows.
 

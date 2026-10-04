@@ -4,6 +4,7 @@ import {
   assertFieldRetractionContractsAreDeclarable,
   classifyFieldRetraction,
   completeReadsSupportingRetraction,
+  completeReadsAcrossMergedEvidence,
   FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION,
   fieldRetractionContractFor,
   fieldRetractionContracts,
@@ -133,6 +134,75 @@ describe('field-retraction contract declarability', () => {
     expect(fieldRetractionContractFor('constructor')).toBeUndefined();
     expect(fieldRetractionContractFor('ysm-faculty-directory')).toBeDefined();
     expect(fieldRetractionContractFor('dept-faculty-roster')).toBeDefined();
+  });
+});
+
+describe('completeReadsAcrossMergedEvidence', () => {
+  const read = (
+    entityKey: string,
+    scrapeRunId: string,
+    observedAt: string,
+    fields: string[] = [],
+  ) => ({
+    entityKey,
+    scrapeRunId,
+    observedAt: new Date(observedAt),
+    assertsNoValueFor: fields,
+  });
+
+  it('shares a survivor read with a key merged into it', () => {
+    const shared = completeReadsAcrossMergedEvidence(
+      [read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl'])],
+      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+    );
+    expect(shared).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'merged-key',
+          scrapeRunId: 'run-2',
+          assertsNoValueFor: ['websiteUrl'],
+        }),
+        expect.objectContaining({ entityKey: 'survivor-key', scrapeRunId: 'run-2' }),
+      ]),
+    );
+  });
+
+  it('unions one run across the group instead of dropping a member read', () => {
+    const shared = completeReadsAcrossMergedEvidence(
+      [
+        read('merged-key', 'run-2', '2026-03-01T00:00:00Z'),
+        read('survivor-key', 'run-2', '2026-03-02T00:00:00Z', ['websiteUrl']),
+      ],
+      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+    );
+    const forMerged = shared.filter((entry) => entry.entityKey === 'merged-key');
+    expect(forMerged).toHaveLength(1);
+    expect(forMerged[0].assertsNoValueFor).toEqual(['websiteUrl']);
+    expect(forMerged[0].observedAt).toEqual(new Date('2026-03-02T00:00:00Z'));
+  });
+
+  it('leaves a key with no merged evidence unchanged', () => {
+    const reads = [read('lone-key', 'run-1', '2026-03-01T00:00:00Z', ['websiteUrl'])];
+    expect(completeReadsAcrossMergedEvidence(reads, [{ entityKey: 'lone-key' }])).toEqual(reads);
+  });
+
+  it('lets the classifier see a merged key as re-read', () => {
+    const observation = {
+      scrapeRunId: 'run-1',
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      field: 'websiteUrl',
+    };
+    const reads = completeReadsAcrossMergedEvidence(
+      [
+        read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl']),
+        read('survivor-key', 'run-3', '2026-04-01T00:00:00Z', ['websiteUrl']),
+      ],
+      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+    ).filter((entry) => entry.entityKey === 'merged-key');
+    expect(classifyFieldRetraction({ observation, completeReads: [] })).toBe(
+      'source-has-not-reread',
+    );
+    expect(classifyFieldRetraction({ observation, completeReads: reads })).toBe('retract');
   });
 });
 
