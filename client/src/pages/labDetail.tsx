@@ -57,6 +57,7 @@ import {
   resolveOutreachApplySource,
   servedResearchWebsiteUrl,
   resolveOutreachOfficialSource,
+  vettedJoinPageUrls,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
@@ -527,6 +528,7 @@ const DecisionSummary = ({
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
   const offersOrgEngagementPage = actionLinks.offersOrgEngagementPage;
   const applyPageUrl = actionLinks.offersApplyPage ? applySource?.url : undefined;
+  const joinPageLinkUrl = actionLinks.offersJoinLinkBesideWebsite ? applySource?.url : undefined;
   const showsProfileButton = actionLinks.showsProfileButton;
   /**
    * A generic official page beside a lead card that already links the profile is a
@@ -666,6 +668,17 @@ const DecisionSummary = ({
                   >
                     {researchWebsiteCtaLabel(group)}
                   </a>
+                  {joinPageLinkUrl && (
+                    <a
+                      href={joinPageLinkUrl}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+                    >
+                      See how to join
+                      <ArrowRightIcon />
+                    </a>
+                  )}
                 </div>
               ) : offersOrgEngagementPage && officialSource ? (
                 <>
@@ -1033,6 +1046,7 @@ const LabDetail = () => {
     group.entityType,
     { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] },
     leadPersonNames,
+    vettedJoinPageUrls(accessSignals),
   );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
     ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'

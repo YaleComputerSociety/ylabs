@@ -10,6 +10,7 @@ import {
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   servedResearchWebsiteUrl,
+  vettedJoinPageUrls,
 } from './researchDetailSources';
 import { safeHttpUrl } from './url';
 import { dedupeLeadMembers, memberPersonName } from './leadMemberDedupe';
@@ -52,6 +53,7 @@ export interface ResearchDetailActionLinks {
   showsProfileButton: boolean;
   offersOrgEngagementPage: boolean;
   offersApplyPage: boolean;
+  offersJoinLinkBesideWebsite: boolean;
   activityCheckUrl?: string;
   leadCardLinksProfile: boolean;
   profileOpenedAbove: boolean;
@@ -80,6 +82,7 @@ function resolveWithheldWayInActionLinks(
     showsProfileButton: false,
     offersOrgEngagementPage: false,
     offersApplyPage: false,
+    offersJoinLinkBesideWebsite: false,
     ...(activityCheckUrl ? { activityCheckUrl } : {}),
     leadCardLinksProfile,
     profileOpenedAbove:
@@ -114,12 +117,14 @@ export function resolveResearchDetailActionLinks(
     websiteSlotOpen && !profileTakesWebsiteSlot && !repeatsLeadCardProfileLink;
   /**
    * The research's own homepage is a better way in than a page deep inside it, so it
-   * takes the block's one action and an apply or get-involved page is the fallback for
-   * a row with no homepage to offer. An organization that coordinates involvement
+   * takes the block's one button. A join page becomes the button for a row with no
+   * homepage, and otherwise sits beneath it as a secondary link (#4753). An organization
+   * that coordinates involvement
    * centrally keeps its own branch above both, because there the get-involved page is
    * the way in rather than a page beneath a homepage.
    */
   const offersApplyPage = hasApplyPage && !offersOrgEngagementPage && !showsWebsiteCta;
+  const offersJoinLinkBesideWebsite = hasApplyPage && !offersOrgEngagementPage && showsWebsiteCta;
   const showsProfileButton = profileTakesWebsiteSlot;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
@@ -130,6 +135,7 @@ export function resolveResearchDetailActionLinks(
     showsProfileButton,
     offersOrgEngagementPage,
     offersApplyPage,
+    offersJoinLinkBesideWebsite,
     leadCardLinksProfile,
     profileOpenedAbove: !profileNeedsOwnButton || showsProfileButton,
     // Read before the CTA suppression, so the audit can separate "both slots would
@@ -213,6 +219,7 @@ export function resolveResearchDetailActionLinkContext({
     group.entityType,
     outreachSchools,
     leadPersonNames,
+    vettedJoinPageUrls(accessSignals as never),
   );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
     ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'
