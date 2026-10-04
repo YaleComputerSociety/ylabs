@@ -75,6 +75,25 @@ beforeEach(() => {
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
 });
 
+describe('deferred search index writes', () => {
+  it('writes and deletes nothing in any index while SEARCH_INDEX_WRITES is deferred', async () => {
+    vi.stubEnv('SEARCH_INDEX_WRITES', 'deferred');
+    try {
+      const live = { _id: new mongoose.Types.ObjectId(), name: 'Synthetic Lab' };
+      const archived = { ...live, _id: new mongoose.Types.ObjectId(), archived: true };
+
+      expect(await syncEntity('researchEntity', live)).toBe(false);
+      expect(await syncEntity('researchEntity', archived)).toBe(false);
+      expect(await syncEntities('researchEntity', [live, archived])).toBe(0);
+      expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
+      expect(mocks.addDocuments).not.toHaveBeenCalled();
+      expect(mocks.deleteDocuments).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('isSyncableEntityType', () => {
   it('accepts the only registered entity type', () => {
     expect(isSyncableEntityType('researchEntity')).toBe(true);

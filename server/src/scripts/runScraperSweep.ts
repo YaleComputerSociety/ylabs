@@ -75,6 +75,7 @@ import { SweepRunLogger } from './scraperSweepLogging';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
 import { connectScriptMongo } from '../db/connections';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -247,6 +248,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming {
     | 'inferred-pi-lead-reclaim'
     | 'visibility-gate'
     | 'search-rebuild'
+    | 'search-index-check'
     | 'lane-scorecard'
     | 'engine-benchmark'
     | 'coverage-audit'
@@ -382,6 +384,25 @@ export interface ScraperSweepSummary {
     status: 'succeeded' | 'failed';
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
   } & SweepStepTiming;
+  searchIndex?: SweepSearchIndexOutcome;
+}
+
+export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
+  'sorted-browse-keeps-order',
+  'title-sorted-browse-follows-card-title',
+] as const;
+
+export const DEVELOPMENT_SEARCH_RESYNC_COMMAND = 'yarn development:search:rebuild';
+
+export type SweepSearchIndexOutcome =
+  { status: 'written' } | { status: 'resync-required'; remedy: string };
+
+export function sweepSearchIndexOutcome(
+  env: NodeJS.ProcessEnv = process.env,
+): SweepSearchIndexOutcome {
+  return searchIndexWritesDeferred(env)
+    ? { status: 'resync-required', remedy: DEVELOPMENT_SEARCH_RESYNC_COMMAND }
+    : { status: 'written' };
 }
 
 export interface FellowshipPostRunStage extends SweepStepTiming {
@@ -788,7 +809,7 @@ export function validateScraperSweepEnvironment(
   if (config.writes && env.ALLOW_NON_PROD_SCRAPER_WRITES !== 'true') {
     throw new Error(`${mode} requires ALLOW_NON_PROD_SCRAPER_WRITES=true`);
   }
-  if (config.autoMaterialize) {
+  if (config.autoMaterialize && !searchIndexWritesDeferred(env)) {
     let meiliHost: URL;
     try {
       meiliHost = new URL(env.MEILISEARCH_HOST || '');
@@ -1544,7 +1565,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'meili:rebuild-research-entities',
     artifactName: 'development-search-rebuild.json',
     buildArgs: () => ['--clear', '--confirm-meili-rebuild'],
-    isEnabled: () => true,
+    isEnabled: () => !searchIndexWritesDeferred(),
+  },
+  {
+    name: 'search-index-check',
+    command: 'journey:eval',
+    artifactName: 'development-search-index-check.json',
+    buildArgs: () => [
+      `--case=${SEARCH_INDEX_CHECK_JOURNEY_CASES.join(',')}`,
+      '--fail-on-inconclusive',
+    ],
+    isEnabled: () => !searchIndexWritesDeferred(),
   },
   {
     // Replays each lane against its frozen benchmark, so the stored trend moves only when
@@ -2391,6 +2422,7 @@ export async function runScraperSweep(
     phases,
     ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
+    searchIndex: sweepSearchIndexOutcome(),
   };
   const summaryPath = path.join(outputDirectory, 'summary.json');
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);

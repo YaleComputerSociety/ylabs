@@ -62,6 +62,7 @@ import {
   type RosterLeadResolutionResult,
 } from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { readIndexedFieldByDocumentId, syncEntities } from './meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
@@ -1755,6 +1756,7 @@ export interface StudentVisibilityGateIndexDrift {
   divergentTierRecordIds: string[];
   missingFromIndex: number;
   indexReadFailed: boolean;
+  indexDeferred?: true;
 }
 
 export interface StudentVisibilityGateIndexSyncResult extends StudentVisibilityGateIndexDrift {
@@ -1765,6 +1767,7 @@ export interface StudentVisibilityGateIndexSyncResult extends StudentVisibilityG
 export function studentVisibilityGateIndexSyncBlocker(
   result: StudentVisibilityGateIndexSyncResult,
 ): string | undefined {
+  if (result.indexDeferred) return undefined;
   if (result.indexReadFailed) {
     return 'Could not read the search index, so the applied tiers are unverified and any divergence is unrepaired.';
   }
@@ -1798,6 +1801,7 @@ export async function readStudentVisibilityGateIndexDrift(
     indexReadFailed: false,
   };
   if (plannedIds.length === 0) return empty;
+  if (searchIndexWritesDeferred()) return { ...empty, indexDeferred: true };
 
   let indexedTiers: Map<string, unknown>;
   try {
@@ -1848,6 +1852,7 @@ async function syncGatedResearchEntitiesToIndex(
     researchOps.map((op) => op?.updateOne?.filter?._id),
   );
   const drift = await readStudentVisibilityGateIndexDrift(plans);
+  if (drift.indexDeferred) return { ...drift, syncedRecordIds: [], unsyncedRecordIds: [] };
   const recordIds = Array.from(new Set([...changedRecordIds, ...drift.divergentTierRecordIds]));
   const syncedRecordIds: string[] = [];
   const unsyncedRecordIds: string[] = [];

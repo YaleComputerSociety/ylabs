@@ -162,7 +162,7 @@ Every stage is spawned with `cwd` set to the repository root, so whatever `HEAD`
 
 `summary.json` records that commit as `codeSha`, which makes a stage's behaviour attributable after the fact; each scrape run a stage writes also records its own `codeSha` (#3824).
 Read it rather than the merge time of a fix: a fix merged while a sweep is running reaches none of its stages, because nothing pulls the checkout mid-run.
-A sweep run from the weekly runner image has no `.git`, so it takes `codeSha` from `RENDER_GIT_COMMIT`, the commit the image was built from, and an image cannot move mid-run (`docs/data-refresh-runbook.md`, "Weekly Development Sweep Runner").
+The weekly runner does not run the image's own code: it runs from a clone of `beta` detached at the one commit it resolved at start, so its `codeSha` is that checkout's `HEAD` (`docs/data-refresh-runbook.md`, "Weekly Development Sweep Runner").
 
 If the checkout moves during a run, each later stage is refused rather than spawned, and the refusal is recorded in `summary.json` as `codeDrift` naming both commits.
 This fails closed because the alternative is silent: a stage running newer or older code than the stages before it can re-apply a defect the checkout predates, and for a sweep that writes data that means storing values a merged fix had already removed.

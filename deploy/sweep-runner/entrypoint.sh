@@ -7,23 +7,37 @@ if [ "${1:-}" = "--probe-hosts" ]; then
   exec yarn --cwd server scrape:probe-hosts "$@"
 fi
 
-meili_dir="$(mktemp -d)"
-MEILISEARCH_API_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-export MEILISEARCH_API_KEY
-export MEILISEARCH_HOST="http://127.0.0.1:7700"
-unset MEILISEARCH_INDEX_PREFIX
+repository_url="${SWEEP_REPOSITORY_URL:-https://github.com/YaleComputerSociety/ylabs.git}"
+work_dir="$(mktemp -d)"
+checkout="$work_dir/ylabs"
 
-meilisearch --db-path "$meili_dir/data" --dump-dir "$meili_dir/dumps" \
-  --http-addr 127.0.0.1:7700 --master-key "$MEILISEARCH_API_KEY" --env development \
-  --no-analytics >"$meili_dir/meilisearch.log" 2>&1 &
-meili_pid=$!
-trap 'kill "$meili_pid" 2>/dev/null || true' EXIT
+refuse_to_start() {
+  echo "[weekly-sweep] REFUSING TO START: $1" >&2
+  exit 1
+}
 
-for _ in $(seq 1 60); do
-  if curl -fsS "$MEILISEARCH_HOST/health" >/dev/null 2>&1; then break; fi
-  sleep 1
-done
-curl -fsS "$MEILISEARCH_HOST/health" >/dev/null || { echo "[weekly-sweep] the in-container Meilisearch did not start" >&2; exit 1; }
+target_sha="$(git ls-remote "$repository_url" refs/heads/beta | cut -f1 || true)"
+if [ -z "$target_sha" ]; then
+  refuse_to_start "could not resolve beta HEAD from $repository_url"
+fi
+echo "[weekly-sweep] resolved beta HEAD to $target_sha; the whole sweep runs at this commit"
 
-cd /app
-yarn --cwd server scrape:sweep:weekly-development "$@"
+git clone --quiet --filter=blob:none --no-checkout --single-branch --branch beta \
+  "$repository_url" "$checkout" \
+  || refuse_to_start "could not clone beta from $repository_url"
+git -C "$checkout" checkout --quiet --detach "$target_sha" \
+  || refuse_to_start "could not check out $target_sha"
+
+if cmp -s /app/server/yarn.lock "$checkout/server/yarn.lock" \
+  && cmp -s /app/server/package.json "$checkout/server/package.json"; then
+  cp -a /app/server/node_modules "$checkout/server/node_modules"
+fi
+yarn --cwd "$checkout/server" install --immutable
+
+for name in $(compgen -e | grep '^MEILISEARCH_' || true); do unset "$name"; done
+export SEARCH_INDEX_WRITES=deferred
+export SWEEP_TARGET_SHA="$target_sha"
+export SOURCE_COMMIT="$target_sha"
+
+cd "$checkout"
+exec yarn --cwd server scrape:sweep:weekly-development "$@"

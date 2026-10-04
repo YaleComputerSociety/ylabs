@@ -14,8 +14,10 @@ import { DEVELOPMENT_DATABASE_NAME } from './databaseCopyPairs';
 import {
   buildPruneDeadObservationsChildArgs,
   type ScraperSweepMode,
+  type SweepSearchIndexOutcome,
   type SweepThrottleRetrySummary,
 } from './runScraperSweep';
+import type { SweepCodeFreshness } from './sweepCodeFreshness';
 
 export const WEEKLY_SWEEP_MODES = weeklySweepModes;
 
@@ -214,6 +216,7 @@ export interface WeeklySweepPreflightRecord {
   storageAfter?: WeeklySweepStorageReading;
   snapshotCacheDropped: boolean;
   refusal?: string;
+  codeFreshness?: SweepCodeFreshness;
 }
 
 export interface WeeklySweepCorpusSnapshotRecord {
@@ -307,6 +310,7 @@ export interface WeeklySweepRunRecord {
   refusals: string[];
   throttleRetry: SweepThrottleRetrySummary;
   corpusSnapshot: WeeklySweepCorpusSnapshotRecord;
+  searchIndex?: SweepSearchIndexOutcome;
   error?: string;
 }
 
@@ -488,6 +492,7 @@ export interface WeeklySweepRunRecordInput {
   preflight: WeeklySweepPreflightRecord;
   outcomes: WeeklySweepModeOutcome[];
   corpusSnapshot: WeeklySweepCorpusSnapshotRecord;
+  searchIndex?: SweepSearchIndexOutcome;
   error?: string;
 }
 
@@ -526,6 +531,25 @@ export function buildWeeklySweepRunRecord(input: WeeklySweepRunRecordInput): Wee
     ],
     throttleRetry: totalWeeklyThrottleRetry(input.outcomes),
     corpusSnapshot: input.corpusSnapshot,
+    searchIndex: input.searchIndex,
     error,
   });
+}
+
+export function codeFreshnessRefusalPreflight(
+  codeFreshness: SweepCodeFreshness,
+): WeeklySweepPreflightRecord {
+  return {
+    ok: false,
+    heldLockSources: [],
+    snapshotCacheDropped: false,
+    refusal: codeFreshness.refusal ?? 'the sweep code is not current beta',
+    codeFreshness,
+  };
+}
+
+export const WEEKLY_SWEEP_REFUSED_MARKER = 'WEEKLY_SWEEP_REFUSED';
+
+export function formatWeeklySweepRefusalLine(codeFreshness: SweepCodeFreshness): string {
+  return `${WEEKLY_SWEEP_REFUSED_MARKER} ${JSON.stringify(codeFreshness)}`;
 }

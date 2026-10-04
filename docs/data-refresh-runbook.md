@@ -80,19 +80,46 @@ Until that cron job exists and has completed a run, keep the semester calendar r
 
 ### Weekly Development Sweep Runner
 
-The image holds the repository's Node major, the server's dependencies, Python 3 with a pinned Scrapling, the Chromium that Scrapling drives, and a pinned Meilisearch binary.
+The image holds the repository's Node major, the server's dependencies, Python 3 with a pinned Scrapling, and the Chromium that Scrapling drives.
 It runs as a non-root user and carries no secret: every credential arrives as an environment variable of the Render service.
-The commit it was built from arrives as `RENDER_GIT_COMMIT`, which `summary.json` records as `codeSha` and every scrape run records as its own `codeSha`, because the image carries no `.git`.
-Without history in the image, a retraction cutoff that would ask git whether a run contains a fix falls back to the run's start time, which is the documented behaviour for a deploy image (`scrapers/scrapeRunCodeIdentity.ts`).
+The image no longer carries a Meilisearch binary, because no index it could start would be one anybody serves (#4755).
 
-The entrypoint starts a throwaway Meilisearch on `127.0.0.1` with a random key, because the Development sweep's `search-rebuild` stage refuses any non-local index.
-That index lives only as long as the container and serves nobody, so the stage proves the rebuild works rather than refreshing anything a person reads.
-Beta and Production indexes are still rebuilt by the reindex runbook.
+#### The Sweep Runs Current `beta`, At One Commit (#4743)
 
-Every index sync the run's materializer makes also lands in that throwaway index, so a hosted run writes the Development database while the Development index keeps the values from before it.
-Rebuild the Development index with `yarn development:search:rebuild` once the run has finished.
-Until then a sorted browse serves each changed card at its old position, a page can come back short because hydration drops rows the stale index still calls served, and `journey:eval` fails `indexed-sort-key-is-fresh` (#4746).
+The image is only the toolchain; it is never the code a sweep runs.
+A hosted run once stamped every lane `codeSha 7ca4a6fa5` while `beta` already held later lane and materializer fixes, and running that older code over the live corpus rewrote rows those fixes had corrected.
+So at start the entrypoint resolves `beta` HEAD once with `git ls-remote`, makes a blobless clone of the repository, detaches it at that commit, installs the server's dependencies there (reusing the image's `node_modules` when the lockfile is unchanged), and runs the whole job from that checkout.
+Every stage of both modes runs from that one checkout, so one sweep never spans two commits, which is the split #3814 fixed.
+`SWEEP_REPOSITORY_URL` overrides the repository the entrypoint clones; leave it unset on Render.
+
+Before anything else writes, the job reads the checkout's freshness (`server/src/scripts/sweepCodeFreshness.ts`):
+
+- It fetches `origin/beta` again and finds the newest commit on it touching `server/src/scrapers/` or any materializer file under `server/src/scripts/` or `server/src/services/`.
+- It refuses to start when the commit it would run does not contain that commit, when the checkout is not the commit the entrypoint resolved (`SWEEP_TARGET_SHA`), when the fetch fails, or when the code has no git history to prove any of it.
+- A refusal prints `REFUSING TO START` and a `WEEKLY_SWEEP_REFUSED` line carrying the commits as JSON, and is recorded as a `refused` row in `weekly_sweep_runs` with the reason in `refusals` and the commits in `preflight.codeFreshness`.
+- A run that passes records the commit it ran as `codeSha`, in `weekly_sweep_runs` and in each mode's `summary.json`, and the newest lane commit it was checked against in `preflight.codeFreshness`.
+
+The same check runs when the job is started from a laptop checkout, so a primary checkout that has fallen behind `origin/beta` refuses too.
+
+#### The Search Index Is Re-synced From The Laptop (#4755)
+
+The Development index the browse route reads is the local Meilisearch on the maintainer's machine, so a hosted job cannot reach it.
+Until #4755 the entrypoint started a throwaway Meilisearch inside the container, so every index write of a hosted run landed in an index nobody serves while the Development index kept the values from before the run.
 Measured on 2026-10-04 while a hosted run was materializing: 3,871 of 4,249 Development index documents held an older `lastObservedAt` than their stored row, and 88 that the index read as `student_ready` were no longer served.
+
+The entrypoint now starts no index, unsets every `MEILISEARCH_*` variable, and sets `SEARCH_INDEX_WRITES=deferred` (`server/src/utils/searchIndexWrites.ts`).
+With that set, the Meilisearch client refuses to open any connection, every materializer and repair sync records the row as not synced instead of writing, the visibility gate skips its index read and resync and reports `indexDeferred`, and the sweep skips its `search-rebuild` and `search-index-check` stages.
+Each mode's `summary.json` and the run's `weekly_sweep_runs` row then carry `searchIndex.status: resync-required` with the remedy, and the job's log says the index was not updated.
+
+So a hosted run ends with a re-sync from a checkout whose `server/.env` reaches the Development index:
+
+```bash
+yarn development:search:rebuild
+```
+
+That rebuilds the index with `--clear` and then runs `yarn development:search:check`, which is `journey:eval` limited to its two sorted-browse cases; their `indexed-sort-key-is-fresh` invariant (#4751) compares the indexed sort key of each served row in a 100-row window with what the stored row derives, and fails the command when any differs, or when no served row settled long enough before the read to be compared.
+Until the re-sync runs, a sorted browse serves each changed card at its old position and a page can come back short.
+A laptop sweep writes the real index, so it runs the same check as its `search-index-check` stage right after `search-rebuild` and fails the sweep when the index it wrote disagrees with Mongo.
 
 The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --confirm-weekly-development-sweep` (`server/src/scripts/weeklyDevelopmentSweep.ts`), which in order:
 
@@ -166,7 +193,7 @@ Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server sc
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
 The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
-The service builds from `beta` and redeploys on every commit, so a merged scraper change reaches the next weekly run without touching the image; only a new system dependency, or a file outside the paths `.dockerignore` admits, needs a change under `deploy/sweep-runner/`.
+The service builds from `beta` and redeploys on every commit, but each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even when the image is stale; only a new system dependency, or a file outside the paths `.dockerignore` admits, needs a change under `deploy/sweep-runner/`.
 Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
 
 Shared settings:
@@ -179,7 +206,7 @@ The operator services in [One-Command Promotion](#one-command-promotion) are the
 - **Dockerfile Path:** `deploy/sweep-runner/Dockerfile`, with the build context left at the repository root.
 - **Instance:** 4 CPU and 8 GB (`4c-8g`), because a sweep runs 8 source children at once and the materialize and gate stages are CPU-bound; read the memory graph after the first run.
 - **Environment variables:** `MONGODBURL` (the Development connection string), `OPENAI_API_KEY`, and `YALIES_API_KEY`, all as secrets.
-Do not set `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, or any `MEILISEARCH_*` variable; the job refuses the first two and the entrypoint sets the third.
+Do not set `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, or any `MEILISEARCH_*` variable; the job refuses the first two and the entrypoint unsets the third.
 Give the job its own OpenAI key rather than reusing an operator's, so it can be spend-capped and rotated without touching anyone's local setup.
 
 Then allow each service into Atlas: on the service's page open **Connect**, switch to the **Outbound** tab, and add each listed range to the Atlas **Network Access** list.
@@ -223,7 +250,7 @@ The median rose at 3 while the wall time fell by 12 to 16 percent, and refusal v
 
 To run it on the Render cron job:
 
-1. Set the service's **Docker Command** to `--probe-hosts`; the entrypoint runs the probe instead of the sweep and starts no Meilisearch.
+1. Set the service's **Docker Command** to `--probe-hosts`; the entrypoint runs the probe from the image instead of the sweep.
 2. Click **Trigger Run** and read the table at the end of the run's log. It takes about a minute.
 3. Restore the **Docker Command** to what it was, so the next scheduled run is a sweep rather than another probe.
 

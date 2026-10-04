@@ -815,11 +815,12 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 
 ## The weekly sweep runs from an image
 
-The weekly Development sweep runs on Render from `deploy/sweep-runner/Dockerfile`, which Render rebuilds from `beta` on every push while auto-deploy is on, so the engine and every lane are the same code a laptop sweep runs.
+The weekly Development sweep runs on Render from `deploy/sweep-runner/Dockerfile`, but the image is only the toolchain: its entrypoint clones `beta` HEAD at start and runs the whole sweep from that one commit, and the job refuses to start when that commit lacks the newest `beta` commit touching the scrapers or a materializer (#4743).
 A change to a lane, the engine, a materializer or a post-run stage needs no image change.
+A hosted run sets `SEARCH_INDEX_WRITES=deferred`, so it writes no search index and ends with `yarn development:search:rebuild` from the laptop (#4755).
 The image needs a matching change only when a lane starts depending on something outside `server/` and its Node dependencies:
 
-- a new system binary, Python package, or browser requirement (the image pins Scrapling and Meilisearch versions);
+- a new system binary, Python package, or browser requirement (the image pins the Scrapling version);
 - a file outside `server/`, `package.json`, `.yarnrc.yml` and `deploy/sweep-runner/`, because `.dockerignore` is an allowlist and anything else is absent from the image;
 - a hand-placed input file, which must get a durable home or stay manual-only, because the image has no laptop paths;
 - a new required secret, which also belongs in the weekly job's preflight (`weeklySweepEnvironmentProblems`) and the runbook's Render settings;

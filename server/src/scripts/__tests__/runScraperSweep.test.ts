@@ -15,6 +15,7 @@ import {
   MANUAL_ONLY_SWEEP_SOURCES,
   RESEARCH_SWEEP_SOURCES,
   buildDevelopmentPostRunStages,
+  sweepSearchIndexOutcome,
   buildFellowshipPostRunStages,
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
@@ -609,6 +610,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
+      'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
       'coverage-audit',
@@ -778,6 +780,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
+      'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
       'coverage-audit',
@@ -833,6 +836,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
+      'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
       'coverage-audit',
@@ -1134,6 +1138,53 @@ describe('runScraperSweep', () => {
         MEILISEARCH_HOST: 'https://search.example.test',
       }),
     ).toThrow(/non-local/);
+  });
+
+  it('runs a sweep that defers its search index writes without any Meilisearch target', () => {
+    const deferredEnv = {
+      SCRAPER_ENV: 'development',
+      MONGODBURL: 'mongodb+srv://example.invalid/Development',
+      ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+      SEARCH_INDEX_WRITES: 'deferred',
+    };
+    expect(() => validateScraperSweepEnvironment('development-full', deferredEnv)).not.toThrow();
+    expect(() =>
+      validateScraperSweepEnvironment('development-full', {
+        ...deferredEnv,
+        SEARCH_INDEX_WRITES: undefined,
+      }),
+    ).toThrow(/local MEILISEARCH_HOST/);
+    expect(sweepSearchIndexOutcome(deferredEnv)).toEqual({
+      status: 'resync-required',
+      remedy: 'yarn development:search:rebuild',
+    });
+    expect(sweepSearchIndexOutcome({})).toEqual({ status: 'written' });
+  });
+
+  it('checks the rebuilt index against Mongo, and skips both stages when writes are deferred', () => {
+    const names = (stages: Array<{ name: string }>) => stages.map((stage) => stage.name);
+    const writing = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    const rebuildAt = names(writing).indexOf('search-rebuild');
+    expect(names(writing)[rebuildAt + 1]).toBe('search-index-check');
+    expect(writing.find((stage) => stage.name === 'search-index-check')?.args).toEqual([
+      '--cwd',
+      'server',
+      'journey:eval',
+      '--case=sorted-browse-keeps-order,title-sorted-browse-follows-card-title',
+      '--fail-on-inconclusive',
+      '--output',
+      '/tmp/development-sweep/development-search-index-check.json',
+    ]);
+
+    vi.stubEnv('SEARCH_INDEX_WRITES', 'deferred');
+    try {
+      const deferred = names(buildDevelopmentPostRunStages('/tmp/development-sweep'));
+      expect(deferred).not.toContain('search-rebuild');
+      expect(deferred).not.toContain('search-index-check');
+      expect(deferred).toContain('visibility-gate');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('holds the fellowship sweep to the same Development guards as the research sweep', () => {
