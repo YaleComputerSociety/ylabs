@@ -25,9 +25,9 @@ describe('extractProfileHonors', () => {
     expect(dated('<p>In 2023, Dr. Placeholder was named a Sloan Research Fellow.</p>')).toEqual([
       ['sloan', 2023],
     ]);
-    expect(
-      dated('<p>In 2024, Prof. A. Placeholder received a Guggenheim Fellowship.</p>'),
-    ).toEqual([['guggenheim', 2024]]);
+    expect(dated('<p>In 2024, Prof. A. Placeholder received a Guggenheim Fellowship.</p>')).toEqual(
+      [['guggenheim', 2024]],
+    );
   });
 
   it('reads adjacent paragraphs as separate sentences so a refused one spares its neighbour', () => {

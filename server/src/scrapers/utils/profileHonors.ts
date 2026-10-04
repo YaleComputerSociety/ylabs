@@ -223,7 +223,8 @@ function surnameOf(personName: string): string {
 }
 
 const BLOCK_BREAK = '\u2029';
-const BLOCK_ELEMENTS = 'p, li, div, h1, h2, h3, h4, h5, h6, dt, dd, br, tr, td, th, section, article';
+const BLOCK_ELEMENTS =
+  'p, li, div, h1, h2, h3, h4, h5, h6, dt, dd, br, tr, td, th, section, article';
 
 function blockSeparatedText($: cheerio.CheerioAPI): string {
   $(BLOCK_ELEMENTS).after(BLOCK_BREAK);
