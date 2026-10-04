@@ -23,6 +23,7 @@ const PROGRAM_PAGE =
 const APPLICATION_FORM = 'https://forms.gle/FixtureForm4699';
 const OFFICE_SOURCE = 'yale-college-fellowships-office';
 const DEPARTMENT_SOURCE = 'department-undergrad-research';
+const UNRELATED_SOURCE = 'fixture-unrelated-source';
 const SEEDED_AT = new Date('2026-01-02T00:00:00.000Z');
 
 const fundCopy = (overrides: Record<string, unknown>) => ({
@@ -132,6 +133,29 @@ describe('a scoped program gate pass re-gates every copy of a duplicated fund (#
       collection: 'programs',
       mode: 'apply',
       recordIds: [String(OFFICE_COPY_ID)],
+    });
+    await applyStudentVisibilityGatePlans(plans);
+
+    expect(await servedCopyIds()).toEqual([String(DEPARTMENT_COPY_ID)]);
+  });
+
+  it('keeps the fund served once after a pass scoped to a source unrelated to the fund', async () => {
+    await mongoose.connection.db!.collection('fellowships').insertOne(
+      fundCopy({
+        _id: new mongoose.Types.ObjectId('000000000000000000004701'),
+        sourceName: UNRELATED_SOURCE,
+        sourceKey: 'fixture-unrelated-program',
+        title: 'Fixture Unrelated Summer Program',
+        sourceUrl: 'https://unrelated.example.yale.edu/fixture-program',
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityReasons: ['official_source'],
+      }),
+    );
+
+    const plans = await planStudentVisibilityGate({
+      collection: 'programs',
+      mode: 'apply',
+      sourceName: UNRELATED_SOURCE,
     });
     await applyStudentVisibilityGatePlans(plans);
 

@@ -2302,7 +2302,7 @@ async function outOfScopeProgramIdsToRegate(
     .filter((id) => !scoped.has(id) && !keptCopyById.has(id));
   return [
     ...new Set([
-      ...duplicateProgramFundMateIds(scopedIds, keptCopyById),
+      ...duplicateProgramFundMateIds([...scopedIds, ...staleDuplicateSuppressions], keptCopyById),
       ...staleDuplicateSuppressions,
     ]),
   ].sort();
