@@ -156,6 +156,45 @@ describe('the microsite lane emits the page-stated lab name on every description
     expect(valueOf('name')).toBeUndefined();
   });
 
+  it('emits a unit title from a page naming the lead as its Principal Investigator', async () => {
+    const unit = 'Fixture Computation Unit';
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(`Yale ${unit} | Quill Lab`)
+        .replace(LAB_NAME, unit)
+        .replace('<ul>', '<p>Principal Investigator: Ada Quill, Ph.D.</p><ul>'),
+      extraction: extraction({ name: unit, subject: 'organization' }),
+    });
+
+    expect(valueOf('name')).toBe(unit);
+    expect(valueOf('entityType')).toBeUndefined();
+  });
+
+  it('keeps the description a credited unit page gives of itself', async () => {
+    const unit = 'Fixture Computation Unit';
+    const body = `The ${unit} uses computational modeling and neuroimaging to study how people learn from reward and punishment, with the aim of improving psychiatric care.`;
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(unit)
+        .replace(LAB_NAME, unit)
+        .replace('<ul>', `<p>Principal Investigator: Ada Quill</p><div>${body}</div><ul>`),
+      extraction: extraction({ name: unit, fullDescription: body }),
+    });
+
+    expect(String(valueOf('fullDescription'))).toContain('computational modeling');
+    expect(valueOf('name')).toBe(unit);
+  });
+
+  it('withholds a unit title from a page naming someone else as its Principal Investigator', async () => {
+    const unit = 'Fixture Computation Unit';
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(unit)
+        .replace(LAB_NAME, unit)
+        .replace('<ul>', '<p>Principal Investigator: Ben Moreau</p><ul>'),
+      extraction: extraction({ name: unit, subject: 'organization' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+  });
+
   it("withholds another person's eponymous lab", async () => {
     const foreign = 'Moreau Lab';
     const { valueOf } = await runLane({

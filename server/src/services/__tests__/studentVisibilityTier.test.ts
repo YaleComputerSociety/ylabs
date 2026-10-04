@@ -416,6 +416,34 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  it('admits a unit name its own site declares under the lead as Principal Investigator', () => {
+    const input = {
+      entity: {
+        _id: 'led-unit-named',
+        name: 'Fixture Computation Unit',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies decision making with computational models and neuroimaging.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering decision making with computational models.',
+        websiteUrl: 'https://fixtureunit.example.org/',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    };
+
+    expect(computeResearchEntityStudentVisibility(input).reasons).toContain('unusable_name');
+    expect(
+      computeResearchEntityStudentVisibility({
+        ...input,
+        entity: { ...input.entity, siteDeclaredOwnNames: ['Yale Fixture Computation Unit'] },
+      }).reasons,
+    ).not.toContain('unusable_name');
+  });
+
   // The roster is a corpus load, so a caller that judges one record omits it. What it
   // costs was measured rather than assumed, and it is narrower than "the eponym arm
   // goes quiet": an eponym the row's own URL path corroborates is still refused without

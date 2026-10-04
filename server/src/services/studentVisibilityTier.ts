@@ -1106,6 +1106,7 @@ export function computeResearchEntityStudentVisibility({
       websiteUrl: entity.fieldProvenance?.name?.sourceUrl || entity.websiteUrl || entity.website,
       knownPersonSurnames,
       recordCitedUrls,
+      siteDeclaredOwnNames: entity.siteDeclaredOwnNames,
     });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&

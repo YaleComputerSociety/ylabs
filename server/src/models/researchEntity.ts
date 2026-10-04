@@ -461,6 +461,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: [],
     },
     /**
+     * The names the row's own website gives itself on a page crediting the row's lead as
+     * its Principal Investigator, re-derived by the materializer on every resolve from the
+     * live lab-microsite name observations. The name authority reads it at every serve
+     * path, which judges the stored row without observations, so an umbrella-headed lab
+     * name such as "Computational Psychiatry Unit" is admitted everywhere or nowhere.
+     */
+    siteDeclaredOwnNames: {
+      type: [String],
+      default: undefined,
+    },
+    /**
      * Why each `manuallyLockedFields` entry was locked, keyed by field name. A
      * field locked without an entry here reads as `unknown`, which is the
      * conservative reading: a lock is never revisited on the strength of a

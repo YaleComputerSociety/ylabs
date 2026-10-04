@@ -159,6 +159,7 @@ function servedPersonScopedDisplayName(group: Record<string, any>, value: unknow
     slug: group.slug,
     websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
     recordCitedUrls: [group.websiteUrl, group.website, group.sourceUrls],
+    siteDeclaredOwnNames: group.siteDeclaredOwnNames,
   })
     ? ''
     : displayName;

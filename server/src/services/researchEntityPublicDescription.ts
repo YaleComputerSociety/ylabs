@@ -81,6 +81,7 @@ export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] =
   'descriptionSource',
   'researchAreas',
   'fieldProvenance',
+  'siteDeclaredOwnNames',
   'sourceUrls',
   'website',
   'websiteUrl',

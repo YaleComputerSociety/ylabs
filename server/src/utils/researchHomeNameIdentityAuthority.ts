@@ -1484,6 +1484,14 @@ export interface PersonScopedNameIdentityArgs {
    * the page is real provenance for the person named on it.
    */
   recordCitedUrls?: unknown;
+  /**
+   * The names the record's own website gives itself on a page that also names the
+   * record's person as its Principal Investigator, as the lab-microsite lanes assert
+   * them. An umbrella-headed name matching one of these is the person's own lab under
+   * an organizational noun ("Computational Psychiatry Unit") rather than an
+   * organization they merely belong to.
+   */
+  siteDeclaredOwnNames?: readonly unknown[];
 }
 
 const nameNamesThisRecordsOwnPerson = (name: string, identityTokens: string[]): boolean =>
@@ -1609,7 +1617,10 @@ function personScopedNameIdentityPrelude(
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
-  if (isUmbrellaOrganizationName(name)) {
+  if (
+    isUmbrellaOrganizationName(name) &&
+    !organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+  ) {
     return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };
   }
   if (
@@ -1622,6 +1633,45 @@ function personScopedNameIdentityPrelude(
     return { settled: true };
   }
   return { name, identityTokens };
+}
+
+const organizationNameMatchKey = (value: unknown): string =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/^(?:the\s+)?(?:yale\s+)?/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+export function organizationNameIsAmong(name: unknown, names: readonly unknown[] = []): boolean {
+  const key = organizationNameMatchKey(name);
+  return key.length > 0 && names.some((candidate) => organizationNameMatchKey(candidate) === key);
+}
+
+// A single named Principal Investigator is how a lab's site credits its lead. A
+// center, institute or core credits a Director instead, and a shared unit lists
+// several investigators, so neither title reaches this test.
+const PRINCIPAL_INVESTIGATOR_LABEL_RE =
+  /(?<!\bco[-\s])\bprincipal\s+investigator\s*[:\u2013\u2014|-]\s*((?:dr\.?\s+|prof(?:essor)?\.?\s+)?[^\n.;:|]{1,60})/gi;
+const PRINCIPAL_INVESTIGATOR_TRAILING_RE =
+  /([^\n.;:|,]{1,40})\s*(?:,|[\u2013\u2014|-])\s*(?<!\bco[-\s])principal\s+investigator\b(?!s)/gi;
+
+/**
+ * Whether a page names this person as its Principal Investigator, either as a label
+ * ("Principal Investigator: Jane Doe, Ph.D.") or as a trailing title ("Jane Doe,
+ * Principal Investigator"). Judged on the surname, the token every byline keeps.
+ */
+export function pageStatesPersonAsPrincipalInvestigator(
+  pageText: unknown,
+  personName: unknown,
+): boolean {
+  const surname = personIdentityTokens(personName).at(-1);
+  const text = textValue(pageText);
+  if (!surname || !text) return false;
+  const surnameRe = new RegExp(`\\b${surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+  return [PRINCIPAL_INVESTIGATOR_LABEL_RE, PRINCIPAL_INVESTIGATOR_TRAILING_RE].some((pattern) =>
+    Array.from(text.matchAll(pattern)).some((match) => surnameRe.test(match[1] || '')),
+  );
 }
 
 export function personScopedResearchEntityNameNamesSomethingElseByUrlPath(

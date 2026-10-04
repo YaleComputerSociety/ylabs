@@ -30,6 +30,8 @@ import {
   nameNamesACitedSharedAcademicHost,
   namesASelfDeclaredLaboratory,
   namesAServiceFacility,
+  organizationNameIsAmong,
+  pageStatesPersonAsPrincipalInvestigator,
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
@@ -2014,5 +2016,86 @@ describe('namesAScholarlyEventSeries', () => {
     ]) {
       expect(namesAScholarlyEventSeries(name), name).toBe(false);
     }
+  });
+});
+
+describe('a unit its own site credits to the lead as Principal Investigator', () => {
+  const quillRow = {
+    entityType: 'LAB',
+    kind: 'lab',
+    slug: 'ysm-faculty-ada-quill',
+    personName: 'Ada Quill',
+    knownPersonSurnames: NO_SURNAME_ROSTER,
+  };
+
+  it('reads a labelled or trailing Principal Investigator credit for the person', () => {
+    expect(
+      pageStatesPersonAsPrincipalInvestigator(
+        'Principal Investigator: Ada Quill, Ph.D. Fixture School of Medicine',
+        'Ada Quill',
+      ),
+    ).toBe(true);
+    expect(
+      pageStatesPersonAsPrincipalInvestigator('Dr. Ada Quill, Principal Investigator', 'Ada Quill'),
+    ).toBe(true);
+    expect(
+      pageStatesPersonAsPrincipalInvestigator(
+        'Principal Investigator - Dr. Ada Quill',
+        'Ada Quill',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not read a director, a co-investigator, a plural list or another person', () => {
+    expect(pageStatesPersonAsPrincipalInvestigator('Director: Ada Quill', 'Ada Quill')).toBe(false);
+    expect(
+      pageStatesPersonAsPrincipalInvestigator('Co-Principal Investigator: Ada Quill', 'Ada Quill'),
+    ).toBe(false);
+    expect(
+      pageStatesPersonAsPrincipalInvestigator(
+        'Principal Investigators: Ada Quill, Ben Moreau',
+        'Ada Quill',
+      ),
+    ).toBe(false);
+    expect(
+      pageStatesPersonAsPrincipalInvestigator('Principal Investigator: Ben Moreau', 'Ada Quill'),
+    ).toBe(false);
+    expect(pageStatesPersonAsPrincipalInvestigator('Principal Investigator: Ada Quill', '')).toBe(
+      false,
+    );
+  });
+
+  it('matches an organization name across a leading article, Yale and an ampersand', () => {
+    expect(
+      organizationNameIsAmong('Fixture Computation Unit', ['Yale Fixture Computation Unit']),
+    ).toBe(true);
+    expect(
+      organizationNameIsAmong('Fixture Mind & Brain Unit', ['The Fixture Mind and Brain Unit']),
+    ).toBe(true);
+    expect(organizationNameIsAmong('Fixture Computation Unit', ['Fixture Imaging Unit'])).toBe(
+      false,
+    );
+    expect(organizationNameIsAmong('', [''])).toBe(false);
+  });
+
+  it('admits an umbrella-headed name only when the row own site declares it', () => {
+    const candidateName = 'Fixture Computation Unit';
+    expect(personScopedResearchEntityNameNamesSomethingElse({ ...quillRow, candidateName })).toBe(
+      true,
+    );
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...quillRow,
+        candidateName,
+        siteDeclaredOwnNames: ['Yale Fixture Computation Unit'],
+      }),
+    ).toBe(false);
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...quillRow,
+        candidateName: 'Fixture Stem Cell Center',
+        siteDeclaredOwnNames: ['Yale Fixture Computation Unit'],
+      }),
+    ).toBe(true);
   });
 });
