@@ -151,11 +151,15 @@ test('TypeScript source files do not contain nested import declarations', () => 
   }
 });
 
-test('Yarn git dependency allowlist is narrow', () => {
-  assert.match(
-    yarnrc,
-    /approvedGitRepositories:\s*\n\s*- "https:\/\/github\.com\/coursetable\/passport-cas"/,
-  );
+test('Yarn approves no git dependency source', () => {
+  assert.match(yarnrc, /^approvedGitRepositories: \[\]$/m);
+  for (const lockfile of ['../yarn.lock', '../server/yarn.lock', '../client/yarn.lock']) {
+    assert.doesNotMatch(
+      fs.readFileSync(new URL(lockfile, import.meta.url), 'utf8'),
+      /^\s*resolution: "[^"]*@(?:git\+|https:\/\/github\.com\/)/m,
+      `${lockfile} resolves a dependency from a git source`,
+    );
+  }
   assert.match(yarnrc, /npmMinimalAgeGate: 1d/);
   assert.doesNotMatch(yarnrc, /approvedGitRepositories:\s*\n\s*- "\*\*"/);
   assert.doesNotMatch(yarnrc, /\n\s*- "\*"/);

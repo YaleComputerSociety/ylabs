@@ -180,9 +180,10 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
     max = limiters.AUTH_VALIDATION_FAILURE_MAX;
     const { default: passport } = await import('passport');
     const { passportRoutes } = await import('../../passport');
+    const { CasTicketRejectedError } = await import('../../utils/casCallbackFailure');
 
     // Stands in for the strategy's verdict only. The ticketless leg redirects to
-    // CAS the way `passport-cas` does, carrying the `service` URL the route has
+    // CAS the way `CasStrategy` does, carrying the `service` URL the route has
     // already stamped with its single-use state, because the callback leg is
     // refused unless it returns that state (#4081).
     const stubbedVerdict =
@@ -198,10 +199,7 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
         if (req.query.ticket === 'server-fault') {
           return callback(new Error('user-provided verify function failed'), false);
         }
-        return callback(
-          new Error('Error in validation', { cause: new Error('Authentication rejected') }),
-          false,
-        );
+        return callback(new CasTicketRejectedError(), false);
       };
     vi.spyOn(passport, 'authenticate').mockImplementation(stubbedVerdict as never);
 

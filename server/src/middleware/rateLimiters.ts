@@ -2,6 +2,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { randomBytes } from 'node:crypto';
 import { allowsNonProductionSecurityBypass } from '../utils/environment';
+import { presentedCasTicket } from '../utils/casStrategy';
 import { createRateLimitHandler } from './rateLimitResponse';
 
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -285,11 +286,11 @@ export const writeLimit = rateLimit({
 
 // A request to the CAS route with no `ticket` is the START of login: the strategy
 // only redirects the caller to CAS. A ticket-bearing request is the one that
-// spends a CAS validation. Mirrors the strategy's own `if (!ticket)` test
-// (`passport-cas`), so this limiter's idea of a validation attempt cannot drift
-// from what the strategy actually attempts.
+// spends a CAS validation. Calls the strategy's own `presentedCasTicket`, so this
+// limiter's idea of a validation attempt cannot drift from what the strategy
+// actually attempts.
 const attemptsCasTicketValidation = (req: Request): boolean =>
-  Boolean((req.query as Record<string, unknown> | undefined)?.ticket);
+  presentedCasTicket(req) !== undefined;
 
 // The status cannot tell an accepted validation from a rejected one, because
 // `casLogin` answers both with a redirect when the caller names an `error`

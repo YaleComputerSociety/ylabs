@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CasMalformedResponseError,
+  CasTicketRejectedError,
+  CasUnreachableError,
   UnusableCasIdentityError,
   casCallbackFailureStatus,
   classifyCasCallbackError,
@@ -8,23 +11,20 @@ import {
 
 const wrapped = (message: string, cause: unknown): Error => new Error(message, { cause });
 
-const unreachableCas = (): Error => {
-  const error = Object.assign(new Error('connect ECONNREFUSED'), {
-    name: 'AxiosError',
-    code: 'ECONNREFUSED',
-    isAxiosError: true,
-    config: { url: 'https://cas.invalid/cas/validate?ticket=ST-unit-ticket' },
+const unreachableCas = (): Error =>
+  new CasUnreachableError('request failed', {
+    cause: Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      url: 'https://cas.invalid/cas/validate?ticket=ST-unit-ticket',
+    }),
   });
-  return wrapped('Error in validation', error);
-};
 
 describe('classifyCasCallbackError', () => {
   it('reads a CAS refusal anywhere in the cause chain as a rejection', () => {
-    expect(
-      classifyCasCallbackError(
-        wrapped('Error in validation', new Error('Authentication rejected')),
-      ),
-    ).toBe('rejected');
+    expect(classifyCasCallbackError(new CasTicketRejectedError())).toBe('rejected');
+    expect(classifyCasCallbackError(wrapped('outer', new CasTicketRejectedError()))).toBe(
+      'rejected',
+    );
     expect(
       classifyCasCallbackError(
         wrapped('user-provided verify function failed', new UnusableCasIdentityError()),
@@ -45,17 +45,13 @@ describe('classifyCasCallbackError', () => {
   });
 
   it('reads a malformed CAS answer as unavailable and anything else as our server error', () => {
-    expect(
-      classifyCasCallbackError(
-        wrapped('Error in validation', new Error('The response from the server was bad')),
-      ),
-    ).toBe('unavailable');
+    expect(classifyCasCallbackError(new CasMalformedResponseError())).toBe('unavailable');
     expect(classifyCasCallbackError(new TypeError('boom'))).toBe('server_error');
   });
 
   it('follows a VError-style cause method as well as a cause property', () => {
     const outer = Object.assign(new Error('Error in validation'), {
-      cause: () => new Error('Authentication rejected'),
+      cause: () => new CasTicketRejectedError(),
     });
     expect(classifyCasCallbackError(outer)).toBe('rejected');
   });
@@ -74,7 +70,7 @@ describe('reportableCasLoginError', () => {
     const reported = reportableCasLoginError('unavailable', unreachableCas());
 
     expect(reported.message).toBe(
-      'CAS login callback failed (unavailable): Error > AxiosError > ECONNREFUSED',
+      'CAS login callback failed (unavailable): CasUnreachableError > TypeError > Error > ECONNREFUSED',
     );
     expect(`${reported.message}${reported.stack}`).not.toContain('ST-unit-ticket');
   });
@@ -86,5 +82,17 @@ describe('reportableCasLoginError', () => {
     );
 
     expect(reported.message).toBe('CAS login callback failed (server_error): Error');
+  });
+});
+
+describe('classifyCasCallbackError message independence', () => {
+  it('no longer reads an untyped error as a CAS verdict because of its message text', () => {
+    expect(classifyCasCallbackError(new Error('Authentication rejected'))).toBe('server_error');
+    expect(classifyCasCallbackError(new Error('The response from the server was bad'))).toBe(
+      'server_error',
+    );
+    expect(classifyCasCallbackError(Object.assign(new Error('x'), { isAxiosError: true }))).toBe(
+      'server_error',
+    );
   });
 });
