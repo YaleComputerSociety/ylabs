@@ -13,6 +13,7 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { writeFileSync, mkdirSync } from 'fs';
 import { connectScriptMongo } from '../db/connections';
+import { resolveScraperEnvironment } from '../scrapers/scraperEnvironment';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -144,7 +145,10 @@ async function main(): Promise<void> {
   await connectScriptMongo(mongoUrl);
   const result: PostMaterializationIntegritySummary & {
     claimGate?: ReturnType<typeof buildClaimGateReport>;
-  } = await runPostMaterializationIntegrityGate(options);
+  } = await runPostMaterializationIntegrityGate({
+    ...options,
+    commandEnvironment: resolveScraperEnvironment(),
+  });
   if (options.includeClaimGate) {
     const artifacts = await loadResearchAccessArtifacts(options.limit);
     result.claimGate = buildClaimGateReport({
