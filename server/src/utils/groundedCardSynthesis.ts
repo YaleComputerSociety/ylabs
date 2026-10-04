@@ -665,7 +665,7 @@ const cardLengthInstruction = (input: CardSynthesisLLMInput): string[] => {
   if (!input.previousAttempt) return [limit];
   return [
     limit,
-    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Shorten it to at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, keeping what is studied and how.`,
+    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Rewrite it in at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, using only words and terms that appear in the description, keeping what is studied and how.`,
   ];
 };
 
@@ -739,6 +739,15 @@ export async function synthesizeGroundedCardDescription(
     isSynthesizedCardGroundedInFullDescription(card, full) &&
     shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
       .isUseful;
+  // The serve chain surrenders a synthesized card its stricter grader calls ungrounded
+  // whenever giving it up reaches a summary of the body, so a card accepted on the
+  // stem-aware grader alone can be stored and never shown: 237 served Development rows
+  // read that way on 2026-10-04 (#4809). Such a card is still accepted, as #3282 decided,
+  // but a line the serving bar keeps is preferred when the retry yields one.
+  const shownWhole = (card: string): boolean =>
+    acceptable(card) &&
+    !isUngroundedSynthesizedCard({ card, body: full }) &&
+    cardLineFitsBrowseCard(card);
   const attempt = async (previousAttempt?: string): Promise<string> => {
     try {
       return normalizeCardText(
@@ -756,11 +765,12 @@ export async function synthesizeGroundedCardDescription(
 
   const first = await attempt();
   if (!acceptable(first)) return '';
+  if (shownWhole(first)) return first;
+  // One retry, for a line that runs long or that the serving bar would surrender.
+  const retried = await attempt(first);
+  if (shownWhole(retried)) return retried;
   if (cardLineFitsBrowseCard(first)) return first;
-  // One shortening retry: a grounded line that runs long is still the best line
-  // this body yields, so it is kept when the retry does not fit or does not pass.
-  const shortened = await attempt(first);
-  return acceptable(shortened) && cardLineFitsBrowseCard(shortened) ? shortened : first;
+  return acceptable(retried) && cardLineFitsBrowseCard(retried) ? retried : first;
 }
 
 export interface ResolveGroundedCardInput {

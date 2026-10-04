@@ -732,7 +732,12 @@ export async function resolveMaterializedShortDescription(
     !isBareResearchAreasFallback &&
     Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  const currentFitsBrowseCard = cardLineFitsBrowseCard(current);
+  // Shown whole: it fits the browse card and the serve chain will not surrender it as an
+  // ungrounded synthesized card in favour of a longer line derived from the body (#4809).
+  const shownWholeOnBrowseCard = (card: string): boolean =>
+    cardLineFitsBrowseCard(card) &&
+    !isUngroundedSynthesizedCard({ card, body: input.fullDescription });
+  const currentFitsBrowseCard = shownWholeOnBrowseCard(current);
   if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
     return null;
   }
@@ -761,7 +766,7 @@ export async function resolveMaterializedShortDescription(
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
   // A current card reconsidered only because the browse card cuts it is replaced
   // only by a line that shows whole; trading one cut line for another is churn.
-  if (reconsideredOnlyBecauseCut && !cardLineFitsBrowseCard(grounded)) return null;
+  if (reconsideredOnlyBecauseCut && !shownWholeOnBrowseCard(grounded)) return null;
   // Reconsidering is triggered by a body that restates the current card, so a replacement
   // that restates the body too is no upgrade: a single-sentence body derives itself as its
   // card, and served beside its own body that card reads as empty and refuses the row (#3866).
