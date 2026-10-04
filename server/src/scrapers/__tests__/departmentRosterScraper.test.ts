@@ -1181,6 +1181,37 @@ describe('nodePersonCardExtractor reads the card heading, not the headshot capti
     expect(entry.identityName).toBeUndefined();
     expect(rosterResearchEntitySlug(entry, music)).toBe('dept-school-of-music-robin-fixture');
   });
+
+  it('keeps the slug an honorific or parenthetical alt text first normalized to', () => {
+    const honorific = captionedCard.replace('Photo of Dean Robin Fixture.', 'Dr. Robin Fixture');
+    const [plain] = nodePersonCardExtractor(honorific, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(plain.identityName).toBeUndefined();
+    expect(rosterResearchEntitySlug(plain, music)).toBe('dept-school-of-music-robin-fixture');
+
+    const parenthetical = captionedCard.replace(
+      'Photo of Dean Robin Fixture.',
+      'Photo of Robin (Bo) Fixture.',
+    );
+    const [captioned] = nodePersonCardExtractor(parenthetical, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(rosterResearchEntitySlug(captioned, music)).toBe(
+      'dept-school-of-music-photo-of-robin-fixture',
+    );
+  });
+
+  it('keeps the profile-slug key for a card without alt text', () => {
+    const html = captionedCard
+      .replace(' alt="Photo of Dean Robin Fixture."', '')
+      .replace('<span>Robin Fixture</span>', '<span>Robin Q. Fixture</span>');
+    const [entry] = nodePersonCardExtractor(html, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Q. Fixture');
+    expect(rosterResearchEntitySlug(entry, music)).toBe('dept-school-of-music-robin-fixture');
+  });
 });
 
 describe('normalizeName strips a headshot caption', () => {

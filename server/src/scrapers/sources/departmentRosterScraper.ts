@@ -58,6 +58,7 @@ import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
+  normalizeNameKeepingCaption,
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
@@ -1449,7 +1450,9 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
     const name = headingName || normalizeName(altText) || nameFromPeopleSlug(about);
     if (!name) return;
-    const identityName = altText && slugify(altText) !== slugify(name) ? altText : undefined;
+    const firstKeyedName = normalizeNameKeepingCaption(altText) || nameFromPeopleSlug(about);
+    const identityName =
+      firstKeyedName && slugify(firstKeyedName) !== slugify(name) ? firstKeyedName : undefined;
 
     const profileUrl = about ? absolutize(about, ctx.pageUrl) : undefined;
     const title =
@@ -4015,14 +4018,14 @@ export function rosterResearchEntityMint(
  * Sharing the formula is the point: a second copy would drift and the lookup would
  * silently miss.
  */
-function rosterIdentityNameSlug(entry: FacultyEntry): string {
-  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
-}
-
 export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
   const nameSlug = rosterIdentityNameSlug(entry) || (entry.labUrl ? slugify(entry.labUrl) : '');
   if (!nameSlug) return '';
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+}
+
+function rosterIdentityNameSlug(entry: FacultyEntry): string {
+  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
 }
 
 function entryToResearchEntityObservationsUnscreened(

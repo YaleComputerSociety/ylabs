@@ -149,9 +149,21 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
-  let n = stripPersonNameCaptionWrapper(
-    stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim(),
-  );
+  return normalizeNameKeepingCaption(stripPersonNameCaptionWrapper(collapseNameWhitespace(name)));
+}
+
+function collapseNameWhitespace(name: string): string {
+  return stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * `normalizeName` without the headshot-caption rule: the form a roster row's slug and
+ * user key were first minted from, before that rule existed, so identity continuity
+ * can re-derive them unchanged (#4716).
+ */
+export function normalizeNameKeepingCaption(name: string | undefined | null): string {
+  if (!name) return '';
+  let n = collapseNameWhitespace(name);
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",
