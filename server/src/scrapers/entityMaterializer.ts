@@ -3236,7 +3236,7 @@ async function researcherCanLeadEntity(
  * Resolves a stored PI key to a researcher. The netid, alias-map and key-name walk runs
  * first on the key as stored, and whatever it matches stands exactly as before.
  * Two routes are added after it. Both refuse a researcher whose title cannot own a
- * research home, since a lead edge on such a person is retired again by
+ * research row, since a lead edge on such a person is retired again by
  * `retireNonOwnerPiEdges`, and a researcher other than the person an eponymous lab name
  * names as a known researcher's surname, because a roster that lists a lab member under the
  * PI field yields a key that is faithfully that member's (measured: 3 of the first 22 rows
