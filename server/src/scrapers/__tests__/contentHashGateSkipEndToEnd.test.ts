@@ -85,7 +85,7 @@ const laneHashInput = (pages: { url: string; html: string }[]): string =>
   contentHashGate.computePageSetTextDigest(pages, (page) => {
     const prose = extractDescriptionPageProse(page, 'organization');
     return [
-      htmlToText(page.html),
+      htmlToText(page.html, page.url),
       prose?.fullDescription ?? '',
       prose?.shortDescription ?? '',
     ].join('\n');
@@ -215,6 +215,131 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       const { skipped } = await runWith(groundingRereadContentHash(hashFor()));
 
       expect(skipped).toBe(true);
+    });
+  });
+
+  describe('bounds a grounding re-read to one per page version on every path (#4809)', () => {
+    type Page = { url: string; html: string };
+    const homeUrl = 'https://examplelab.org/';
+    const researchUrl = 'https://examplelab.org/research';
+    const shellHome: Page = {
+      url: homeUrl,
+      html: '<main><a href="/research">Research</a></main>',
+    };
+    const researchPage: Page = {
+      url: researchUrl,
+      html: '<main><p>We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.</p></main>',
+    };
+    const ungroundedStoredValue =
+      'The Fixture Lab builds deep-sea autonomous submarines for oceanographic expeditions in polar waters.';
+    const hashFor = (pages: Page[]) =>
+      contentHashGate.computeVersionedContentHash(
+        laneHashInput(pages),
+        DESCRIPTION_EXTRACTION_PROMPT_HASH,
+        DEFAULT_MODEL,
+        CARD_SYNTHESIS_MODEL,
+        CARD_SYNTHESIS_PROMPT_HASH,
+        LAB_NAME_EMISSION_CONTRACT,
+      );
+
+    async function runLane(options: {
+      pages: Page[];
+      storedHash: string;
+      stored: { value: string; sourceUrl: string };
+      fullDescription?: string;
+      priorAttestedReads?: number;
+    }) {
+      vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(options.storedHash);
+      vi.spyOn(contentHashGate, 'loadStoredLaneDescriptionObservation').mockResolvedValue(
+        options.stored,
+      );
+      vi.spyOn(contentHashGate, 'countAttestedEmptyLaneReads').mockResolvedValue(
+        options.priorAttestedReads ?? 0,
+      );
+      const callLLM = vi
+        .fn<CallDescriptionLLMFn>()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] });
+      const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'entity-fixture',
+            slug: 'fixture-lab',
+            name: 'Fixture Lab',
+            websiteUrl: options.pages[0].url,
+            fullDescription: options.fullDescription,
+            manuallyLockedFields: [],
+          },
+        ],
+        fetchPage: vi.fn(async (url: string) => {
+          const page = options.pages.find((candidate) => candidate.url === url);
+          if (!page) throw new Error('not found');
+          return page;
+        }),
+        callLLM,
+        callCardLLM: vi
+          .fn<CardSynthesisLLMFn>()
+          .mockResolvedValue('Studies parametric amplification in superconducting circuits.'),
+      });
+      const { ctx, emitted, logs } = makeContext();
+      await scraper.run(ctx);
+      return {
+        callLLM,
+        skipped: logs.some((line) => /content unchanged/.test(line)),
+        hashes: emitted
+          .filter((o) => o.field === contentHashGate.SOURCE_CONTENT_HASH_FIELD)
+          .map((o) => o.value),
+      };
+    }
+
+    async function expectOneRereadThenSkip(
+      options: Omit<Parameters<typeof runLane>[0], 'storedHash'>,
+    ) {
+      const realHash = hashFor(options.pages);
+      const reread = await runLane({ ...options, storedHash: realHash });
+      expect(reread.skipped).toBe(false);
+      expect(reread.hashes).toEqual([groundingRereadContentHash(realHash)]);
+
+      vi.restoreAllMocks();
+      const next = await runLane({ ...options, storedHash: reread.hashes[0] as string });
+      expect(next.skipped).toBe(true);
+      expect(next.callLLM).not.toHaveBeenCalled();
+      expect(next.hashes).toEqual([]);
+    }
+
+    it('records the marked hash when the stored description is kept against an unopposed crawled page', async () => {
+      await expectOneRereadThenSkip({
+        pages: [shellHome, researchPage],
+        stored: { value: ungroundedStoredValue, sourceUrl: homeUrl },
+        fullDescription:
+          'The Fixture Lab focuses on quantum information research, particularly using superconducting microwave circuits as a platform to entangle larger quantum systems.',
+      });
+    });
+
+    it('re-reads a stored description cited from a crawled page that the page does not carry', async () => {
+      await expectOneRereadThenSkip({
+        pages: [shellHome, researchPage],
+        stored: { value: ungroundedStoredValue, sourceUrl: researchUrl },
+      });
+    });
+
+    it('records the marked hash on the teaser retraction read once one attested read exists', async () => {
+      const coreUrl = 'https://medicine.yale.edu/cores/a';
+      const siblingTeaser =
+        'The Fixture Metabolism Core focuses on metabolomics research, particularly using stable isotope flux analysis and lipid profiling to study metabolic disease across the medical campus.';
+      const corePage: Page = {
+        url: coreUrl,
+        html: `<html><body><main><h1>Fixture Core A</h1><ul><li><div class="cores-card listing-item card--listing"><div class="card__content"><h2><a href="/cores/b">Metabolism Core</a></h2><p>${siblingTeaser}</p></div></div></li><li><div class="cores-card listing-item card--listing"><div class="card__content"><h2><a href="/cores/c">Screening Center</a></h2><p>The Fixture Screening Center provides assay development and high-throughput screening with small-molecule libraries for investigators.</p></div></div></li></ul></main></body></html>`,
+      };
+      await expectOneRereadThenSkip({
+        pages: [corePage],
+        stored: { value: siblingTeaser, sourceUrl: coreUrl },
+        priorAttestedReads: 1,
+      });
     });
   });
 

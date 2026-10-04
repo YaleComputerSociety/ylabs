@@ -988,15 +988,18 @@ export function groundingRereadContentHash(contentHash: string): string {
   return computeContentHash(`${contentHash} ${GROUNDING_REREAD}`);
 }
 
-/** Whether this lane's own stored description from this page is the page's text. */
-async function storedLaneDescriptionIsGroundedOnPage(
+/** Whether this lane's own stored description is the text of the fetched page it cites. */
+async function storedLaneDescriptionIsGroundedOnCitedPage(
   sourceName: string,
   entityRef: ContentHashEntityRef,
-  page: FetchedDescriptionPage,
+  pages: FetchedDescriptionPage[],
   kind: DescriptionEntityKind,
 ): Promise<boolean> {
   const stored = await loadStoredLaneDescriptionObservation(sourceName, entityRef);
-  if (!stored || comparableUrl(stored.sourceUrl) !== comparableUrl(page.url)) return true;
+  const page = stored
+    ? pages.find((fetched) => comparableUrl(fetched.url) === comparableUrl(stored.sourceUrl))
+    : undefined;
+  if (!stored || !page) return true;
   const prose = extractDescriptionPageProse(page, kind);
   const pageText = [htmlToText(page.html, page.url), prose?.fullDescription ?? ''].join('\n');
   return isDescriptionGroundedInSource(stored.value, pageText);
@@ -1006,8 +1009,9 @@ async function storedLaneDescriptionIsGroundedOnPage(
  * The refusal pass refuses a stored description only after `MIN_ATTESTED_EMPTY_READS` (2)
  * attested-empty reads in distinct runs, but the content-hash gate would stop the lane
  * after the first. So the first teaser read records a marked hash the next ordinary run
- * cannot match, and the second records the real one: exactly two reads, then the gate
- * closes again.
+ * cannot match, and the second records the grounding re-read hash, because the stored
+ * teaser is never grounded on its page and the real hash would reopen the gate on every
+ * run: exactly two reads, then the gate closes again.
  */
 async function teaserRetractionContentHash(
   sourceName: string,
@@ -1023,7 +1027,7 @@ async function teaserRetractionContentHash(
   );
   return priorAttestedReads === 0
     ? computeContentHash(`${contentHash} ${TEASER_RETRACTION_PENDING}`)
-    : contentHash;
+    : groundingRereadContentHash(contentHash);
 }
 
 export function withDescriptionSlotAttestation(
@@ -2374,7 +2378,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const rereadForGrounding =
           unchanged &&
           !alreadyRereadForGrounding &&
-          !(await storedLaneDescriptionIsGroundedOnPage(this.name, entityRef, page, kind));
+          !(await storedLaneDescriptionIsGroundedOnCitedPage(this.name, entityRef, pages, kind));
         if (unchanged && !rereadForGrounding) {
           contentUnchangedSkipped += 1;
           ctx.log(
@@ -2479,10 +2483,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // decision: clearing the stored description later would never be
         // reconsidered because the content-unchanged gate returns first. Leave
         // the hash unwritten so the next run re-decides on current state, like
-        // the crawl-incomplete guard that returns before hashing (#2180).
-        const hashObservations = unopposedCrawledProseSuppressed
-          ? []
-          : [contentHashObservation(entityRef, page.url, storedHashForThisRead)];
+        // the crawl-incomplete guard that returns before hashing (#2180). A grounding re-read
+        // still records its marked hash, or the ungrounded stored description would send
+        // every later run back through a full re-read of the unchanged page.
+        const hashObservations =
+          unopposedCrawledProseSuppressed && !rereadForGrounding
+            ? []
+            : [contentHashObservation(entityRef, page.url, storedHashForThisRead)];
 
         // Methods are grounded in the text of the page that is actually cited, so
         // a crawled winner never attributes home-page methods to its own URL.
