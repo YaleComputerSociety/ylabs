@@ -174,3 +174,68 @@ describe('planFellowshipUnbackedFieldClears', () => {
     expect(() => assertFellowshipEvidenceOnlyFieldsAreClearable(['deadline'])).toThrow(/fund key/);
   });
 });
+
+describe('a fellowship contact no observation backs (#4600)', () => {
+  const IMPORTED_EMAIL = 'fixture.contact@example.edu';
+  const IMPORTED_NAME = 'Fixture Contact';
+
+  it('clears a stored contact email and name when no live observation on the row states them', async () => {
+    const stored = grantsRow({
+      summary: '',
+      contactEmail: IMPORTED_EMAIL,
+      contactName: IMPORTED_NAME,
+    });
+
+    const result = await projectFellowship(stored, [
+      { field: 'sourceKey', value: stored.sourceKey, sourceName: DATABASE },
+      { field: 'title', value: stored.title, sourceName: DATABASE },
+      { field: 'description', value: OBSERVED_DESCRIPTION, sourceName: DATABASE },
+    ]);
+
+    expect(result.fellowshipUnbackedClears).toEqual(['contactEmail', 'contactName']);
+    expect(result.plannedUnset).toMatchObject({ contactEmail: '', contactName: '' });
+    expect(result.plannedSet).not.toHaveProperty('contactEmail');
+  });
+
+  it('keeps a contact email a live observation states', async () => {
+    const stored = {
+      _id: 'fixture-id',
+      sourceKey: `${OFFICE}:fixture-research-fellowship`,
+      sourceName: OFFICE,
+      title: 'Fixture Research Fellowship',
+      sourceUrl: OFFICIAL_PAGE,
+      contactEmail: IMPORTED_EMAIL,
+    };
+
+    const result = await projectFellowship(stored, [
+      { field: 'sourceKey', value: stored.sourceKey, sourceName: OFFICE },
+      { field: 'title', value: stored.title, sourceName: OFFICE },
+      { field: 'contactEmail', value: IMPORTED_EMAIL, sourceName: OFFICE },
+    ]);
+
+    expect(result.fellowshipUnbackedClears ?? []).not.toContain('contactEmail');
+    expect(result.plannedUnset ?? {}).not.toHaveProperty('contactEmail');
+  });
+
+  it('leaves a contact on another lane’s row alone on a pass entered through a fund key', async () => {
+    const stored = {
+      _id: 'fixture-id',
+      sourceKey: `${OFFICE}:fixture-research-fellowship`,
+      sourceName: OFFICE,
+      title: 'Fixture Research Fellowship',
+      sourceUrl: OFFICIAL_PAGE,
+      contactEmail: IMPORTED_EMAIL,
+    };
+
+    const result = await projectFellowship(
+      stored,
+      [
+        { field: 'sourceKey', value: `${DATABASE}:fixture-fund`, sourceName: DATABASE },
+        { field: 'title', value: stored.title, sourceName: DATABASE },
+      ],
+      `${DATABASE}:fixture-fund`,
+    );
+
+    expect(result.plannedUnset ?? {}).not.toHaveProperty('contactEmail');
+  });
+});

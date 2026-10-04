@@ -1087,7 +1087,9 @@ Both gold benchmarks replay to the same output fingerprint and the same per-fiel
 ### Fellowship evidence-only fields: a summary no observation backs (#4586)
 
 A fellowship field listed in `FELLOWSHIP_EVIDENCE_ONLY_FIELDS` (`scrapers/fellowshipUnbackedFieldClear.ts`) is cleared by the projection when no live observation in the pass states it and the row stores a value.
-The list holds `summary` only.
+The list holds `summary`, `contactEmail` and `contactName`.
+The contact fields joined it in #4600: on Development on 2026-10-04, 169 live rows (139 grants-owned, 30 fellowships-office) stored a `contactEmail` and 6 a `contactName` that no observation had ever stated under either identity form, written by the same retired import.
+The public program reader does not project either field, so no student saw them, but contact data with no evidence behind it fails closed under the scraper contract.
 
 The defect it closes was measured on Development on 2026-10-03.
 The retired `data-migration/importFellowships.ts` loaded a spreadsheet export of the Student Grants Database in 2026-02 and wrote `summary` straight onto each row.
@@ -2036,6 +2038,7 @@ Both mint gates write the row's `websiteUrl` FROM the lab link on the person's o
 Refusing on any website at all spared 22 of the 34 rows that carry one, which is the defect rather than a floor, so the refusal compares the website's provenance against the identity page and fires on 11 rows whose website came from somewhere else.
 The join is `researchers.profileLinks.url`, and a row whose identity page matches no person has no self to compare against, so every edge on it reads as foreign and it refuses.
 
+`--reason=<reason>` scopes a run to the planned rows with that reason, repeatable, so one issue's operation does not apply another's; the report records `reasonScope` and `plannedInReasonScope` beside the unscoped plan.
 It is dry-run by default; `--apply` additionally requires `--confirm-staff-minted-entity-retirement`, routes through `assertScriptApplyAllowed` so a production-looking target needs `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`, and is bounded by `--max-apply` (default 200).
 It archives with the `research-entity:retire-staff-minted-entities` attribution through `archivedEntityUpdate`, so the stale visibility verdict is cleared in the same write, and it deletes the Meilisearch documents for what it archived.
 It supersedes nothing and deletes nothing: the row and its observations stay as evidence of what the lane once asserted.

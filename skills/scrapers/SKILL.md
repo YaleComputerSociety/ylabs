@@ -1099,7 +1099,7 @@ The classifier reads `textForProgram`, which omits `restrictionsToUseOfAward`, s
 A fellowship lane withdraws a value it no longer asserts by saying the page has none, on the `sourceKey` observation that witnesses its read: `assertsNoValueFor: [field]`, built by `fellowshipAbsenceAssertion` (`scrapers/fellowshipFieldAbsence.ts`, #4230).
 Silence retracts nothing, so a fetch failure, a page the lane could not parse, and a read that simply found no value all leave the stored value standing.
 The claim withdraws only its own source's live observations of that field, before the pass resolves, and the projection clears the stored field only when nothing is left standing; `docs/research-data-pipeline.md` owns the contract, including what may be declared and why an enrich-only lane cannot clear another lane's value.
-A fellowship `summary` needs no claim: it is evidence-only (`scrapers/fellowshipUnbackedFieldClear.ts`, #4586), so a pass that read the row under its own `sourceKey` or id clears a stored summary no live observation states, which is how the 2026-02 CSV-import summaries stop being served.
+A fellowship `summary`, `contactEmail` or `contactName` needs no claim: each is evidence-only (`scrapers/fellowshipUnbackedFieldClear.ts`, #4586, #4600), so a pass that read the row under its own `sourceKey` or id clears a stored value no live observation states, which is how the 2026-02 CSV-import summaries stop being served.
 Listing another field there first needs proof that all of its evidence sits under the row's own key; `description` fails that, because the grants lane writes it under its fund key onto rows other lanes own.
 
 #### Verifying an attached lead against the lab's own site

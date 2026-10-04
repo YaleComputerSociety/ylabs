@@ -57,6 +57,7 @@ import {
   writeResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
+import { RESEARCH_PLAN_RESTORE_WINDOW_MS } from '../../models/researchPlan';
 
 describe('planStrandedFundingObservationRelink', () => {
   const survivorKey = 'ysm-faculty-person-a';
@@ -1825,6 +1826,23 @@ describe('buildResearchEntityPiDedupePlan', () => {
       studentVisibilityComputedAt: '',
       studentVisibilityEvaluatedAt: '',
     });
+  });
+
+  it('gives an archived duplicate research plan the restore window, so the TTL index expires it (#4163)', () => {
+    const now = new Date('2026-05-31T12:00:00Z');
+
+    const plan = buildArchivedDocumentArchiveUpdate({
+      now,
+      includeRelink: false,
+      collectionName: 'research_plans',
+    });
+    expect(plan.$set.restorableUntil).toEqual(
+      new Date(now.getTime() + RESEARCH_PLAN_RESTORE_WINDOW_MS),
+    );
+    expect(
+      buildArchivedDocumentArchiveUpdate({ now, includeRelink: false, collectionName: 'signals' })
+        .$set,
+    ).not.toHaveProperty('restorableUntil');
   });
 
   it('names the dedupe lane on an archived artifact, so the write is attributable', () => {
