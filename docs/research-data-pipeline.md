@@ -452,7 +452,7 @@ The four grant fields (`recentGrants`, `recentGrantPeriods`, `recentGrantCount` 
 That union keys an award by `grantAwardIdentity` (`server/src/scrapers/utils/grantAwardIdentity.ts`): the award number with case and punctuation dropped, scoped to its funder, with an NIH application number collapsed to its core project number and a DOE number keeping one identity with or without its `DE-` prefix, so an award two lanes report under two spellings is listed and counted once (#4593).
 When one award arrives twice, the record that ends later is kept.
 A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.
-The Crossref grant lane stores each funder's own Crossref name as `agency`, so it refuses any record from a funder a federal lane reports (NIH, NSF, NEH or DOE, by Crossref funder DOI or name) rather than duplicate that award under a second label.
+The Crossref grant lane stores each funder's own Crossref name as `agency`, so it refuses any record from a funder a federal lane reports (NIH, NSF or DOE by Crossref funder DOI or name, and NEH by name) rather than duplicate that award under a second label.
 A scoped pass also scopes what runs after the projection (#3874).
 Lead-PI school inheritance (`lead-pi-school-inheritance`) runs only when the expanded scope names `school` or `departments`, and otherwise appends no observation and writes no field; before this, a pass scoped to `researchAreas` wrote `departments` on 2 Development rows.
 The inferred-PI and inferred-director lead edges, the access-signal upserts, and the department-roster shell fold are skipped, because they write no field and the report compares fields, so any write they made would be invisible.
