@@ -404,19 +404,21 @@ export function isTitleCaseHeading(sentence: string): boolean {
  * A sentence that states research of its own keeps its place, because a career
  * sentence that says "where her research examined ..." is the research evidence.
  */
+const HELD_POST =
+  '(?:the\\s+|an?\\s+)?(?:former\\s+|founding\\s+)?(?:[\\p{L}-]+\\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel)\\b';
+
 const CAREER_HISTORY_MARKERS: readonly RegExp[] = [
-  /\b(?:was|is|has\s+been|had\s+been)\s+(?:the\s+|an?\s+)?(?:former\s+|founding\s+)?(?:[\p{L}-]+\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel)\b/iu,
-  /\b(?:prior\s+to|before)\s+(?:joining|coming|this|that|his|her|their|\p{Lu})/u,
+  new RegExp(`\\b(?:was|is|has\\s+been|had\\s+been)\\s+${HELD_POST}`, 'iu'),
+  /\b(?:[Pp]rior\s+to|[Bb]efore)\s+(?:joining|coming|this|that|his|her|their|\p{Lu})/u,
   /\bcomes\s+to\s+(?:Yale|the)\b/i,
   /\b(?:his|her|their)\s+(?:work|role|job|responsibilities)\s+(?:was|were|included)\b/i,
-  /\bpreviously\b/i,
+  /\b(?:previously|most\s+recently),?\s+(?:[\p{L}-]+\s+)?(?:served|worked|taught|held|directed|managed|practiced)\b/iu,
   /\bspent\s+(?:\w+\s+){1,2}years?\b/i,
   /\b(?:worked|working)\s+(?:full[-\s]time\s+)?(?:as|at|for)\b/i,
   /\bbegan\s+(?:his|her|their)\s+career\b/i,
   /\bbrings\s+(?:over\s+|more\s+than\s+|nearly\s+|almost\s+)?(?:a|\w+)\s+(?:decades?|years?)\b/i,
   /\byears\s+of\s+(?:\w+\s+)?experience\b/i,
-  /\bmost\s+recently\b/i,
-  /\bserved\s+as\b/i,
+  new RegExp(`\\bserved\\s+as\\s+${HELD_POST}`, 'iu'),
 ];
 
 const STATES_RESEARCH =

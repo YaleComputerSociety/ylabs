@@ -889,6 +889,25 @@ describe('publication records and career history are not research prose (#4561)'
     ).toBe(true);
   });
 
+  it('refuses a sentence that opens on the post held before', () => {
+    for (const sentence of [
+      'Prior to joining Yale, she directed a community clinic serving families across the region.',
+      'Before coming to the school, he spent a decade managing a regional housing nonprofit.',
+    ]) {
+      expect(isCareerHistorySentence(sentence), sentence).toBe(true);
+    }
+  });
+
+  it('keeps research findings told with a career adverb or a served-as phrase', () => {
+    for (const sentence of [
+      'Most recently, her group identified a signaling pathway that controls how neurons regenerate after injury.',
+      'She previously showed that loss of the gene disrupts synaptic pruning in the developing cortex.',
+      'The fruit fly served as a model system for tracing how circadian clocks shape behavior.',
+    ]) {
+      expect(isCareerHistorySentence(sentence), sentence).toBe(false);
+    }
+  });
+
   it('counts the refusals a withdrawal reads', () => {
     const reading = readProfileResearchEvidence(`${CAREER_HISTORY_PAGE} ${CITATION_ONLY}`);
     expect(reading.researchSentences).toEqual([]);

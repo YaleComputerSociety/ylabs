@@ -48,8 +48,10 @@ async function main(): Promise<void> {
   });
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('research-entity:fra-profile-synthesis requires OPENAI_API_KEY');
-  const callLLM = defaultCoverageSynthesisLLM(apiKey);
+  if (!apiKey && !args.revalidateOnly) {
+    throw new Error('research-entity:fra-profile-synthesis requires OPENAI_API_KEY');
+  }
+  const callLLM = apiKey ? defaultCoverageSynthesisLLM(apiKey) : null;
 
   await initializeConnections();
   const source = args.apply ? await getSourceByName(FRA_PROFILE_SYNTHESIS_SOURCE_NAME) : null;
@@ -85,23 +87,25 @@ async function main(): Promise<void> {
   let revertLeftRowUnserved = 0;
   const runId = newFraProfileSynthesisRunId();
 
-  for (const entity of targets) {
-    const report = await runFraProfileSynthesisEntity({
-      entity,
-      profileUrls: profileUrlsOf(entity),
-      callLLM,
-      fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
-      apply: args.apply,
-      runId,
-      sourceId: source?._id,
-    });
-    reports.push(report);
-    if (report.synthesized) synthesized += 1;
-    if (report.written) written += 1;
-    if (report.adopted) adopted += 1;
-    if (report.reverted) reverted += 1;
-    if (report.regated) regated += 1;
-    if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
+  if (callLLM) {
+    for (const entity of targets) {
+      const report = await runFraProfileSynthesisEntity({
+        entity,
+        profileUrls: profileUrlsOf(entity),
+        callLLM,
+        fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
+        apply: args.apply,
+        runId,
+        sourceId: source?._id,
+      });
+      reports.push(report);
+      if (report.synthesized) synthesized += 1;
+      if (report.written) written += 1;
+      if (report.adopted) adopted += 1;
+      if (report.reverted) reverted += 1;
+      if (report.regated) regated += 1;
+      if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
+    }
   }
 
   const revalidationFilter: Record<string, unknown> = {
