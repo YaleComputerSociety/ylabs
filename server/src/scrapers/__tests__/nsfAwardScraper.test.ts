@@ -534,15 +534,17 @@ describe('NsfAwardScraper.run', () => {
     expect(result.notes).toMatch(/fetched 1 of 40 reported/);
   });
 
-  const pagesByOffset =
-    (byOffset: Record<number, (call: number) => unknown[]>, totalCount: number) => {
-      const calls = new Map<number, number>();
-      return vi.fn(async (offset: number) => {
-        const call = calls.get(offset) ?? 0;
-        calls.set(offset, call + 1);
-        return { awards: byOffset[offset]?.(call) ?? [], totalCount };
-      });
-    };
+  const pagesByOffset = (
+    byOffset: Record<number, (call: number) => unknown[]>,
+    totalCount: number,
+  ) => {
+    const calls = new Map<number, number>();
+    return vi.fn(async (offset: number) => {
+      const call = calls.get(offset) ?? 0;
+      calls.set(offset, call + 1);
+      return { awards: byOffset[offset]?.(call) ?? [], totalCount };
+    });
+  };
 
   it('pages from the first record NSF serves', async () => {
     const fetchPage = pagesByOffset({ 1: () => [GRANT_AWARD] }, 2);
@@ -564,10 +566,7 @@ describe('NsfAwardScraper.run', () => {
   it('completes the window by re-paging when one pass drops an award a later pass serves', async () => {
     const page1 = fullPage('a');
     const tail = fullPage('b');
-    const fetchPage = pagesByOffset(
-      { 1: () => page1, 26: (call) => [tail[call]] },
-      28,
-    );
+    const fetchPage = pagesByOffset({ 1: () => page1, 26: (call) => [tail[call]] }, 28);
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
