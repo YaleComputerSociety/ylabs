@@ -13,7 +13,7 @@ It loaded on the initial document before any consent existed, and so sent every 
 The CSP drops the Google tag and measurement origins with it, so `script-src` is `'self'` alone.
 First-party `analytics_events` remain, under the constraints in `docs/research-journey-analytics.md`, and they still record signed-in students only.
 Google Fonts is a separate decision and is unchanged here.
-`client/src/__tests__/noGoogleAnalyticsGuard.test.ts`, `server/src/middleware/__tests__/securityHeaders.test.ts` and `scripts/security-preflight.test.mjs` fail if the tag or its origins reappear.
+`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` and `server/src/middleware/__tests__/securityHeaders.test.ts` fail if the tag or its origins reappear.
 
 ## 2026-10-04: Login Counts Personalization Signal Coverage In Aggregate Only, Until The Personalization Decision (#4744)
 

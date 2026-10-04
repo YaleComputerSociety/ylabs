@@ -111,10 +111,9 @@ That redaction went with it, because with no tag there is no measurement request
 The CSP in `server/src/middleware/securityHeaders.ts` now allows scripts from `'self'` only, and names no Google tag or measurement origin in `connect-src` or `img-src`.
 Google Fonts is a separate decision and is unchanged: `style-src` still names `https://fonts.googleapis.com` and `font-src` still names `https://fonts.gstatic.com`.
 
-Three tests keep the tag from coming back unnoticed.
-`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` scans the entry document, everything under `client/public/` and the application source for a Google tag loader, a measurement host, a `gtag` or `dataLayer` call, or a measurement id.
+Two tests keep the tag from coming back unnoticed.
+`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` runs a real production `vite build` into a temporary directory and scans every emitted file for a Google tag loader, a measurement host, a `gtag` call, or a measurement id, and checks that no `analytics.js` is emitted.
 `server/src/middleware/__tests__/securityHeaders.test.ts` pins every directive string literally and asserts that neither the production nor the local-development CSP names a Google tag or measurement origin.
-`scripts/security-preflight.test.mjs` pins `script-src 'self'` and the absence of those origins in the CSP source.
 
 So `analytics_events` is the only analytics instrument.
 It cannot record a logged-out visitor at all (#2333), and that is now the whole posture rather than half of it: a logged-out visitor is not measured by anything.

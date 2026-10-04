@@ -1998,19 +1998,6 @@ test('deployed runtime emits HSTS independent of proxy request shape', () => {
   assert.match(source, /Strict-Transport-Security', 'max-age=31536000; includeSubDomains'/);
 });
 
-test('content security policy allows scripts from self only and names no Google Analytics origin', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/middleware/securityHeaders.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /"script-src 'self'"/);
-  assert.doesNotMatch(
-    source,
-    /googletagmanager\.com|google-analytics\.com|analytics\.google\.com|doubleclick\.net/,
-  );
-});
-
 test('served browser assets do not expose source maps or hidden static files', () => {
   const appSource = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
   const staticSource = fs.readFileSync(
