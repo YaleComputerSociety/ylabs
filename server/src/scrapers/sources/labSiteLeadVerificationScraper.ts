@@ -251,10 +251,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     private readonly readSite: (
       website: string,
       useCache: boolean,
-    ) => Promise<LabSiteReading | null> = (
-      website,
-      useCache,
-    ) => readLabSite(website, useCache),
+    ) => Promise<LabSiteReading | null> = (website, useCache) => readLabSite(website, useCache),
     private readonly probePage?: LanePageProbe,
   ) {}
 
