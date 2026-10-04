@@ -95,11 +95,13 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 2. Refuses when any Beta, Production, or copy-pair database URL is present, because this service holds Development credentials only.
 3. Refuses when any sweep source holds a live scrape job lock, which means another writer, such as a laptop sweep, is writing Development.
 4. Measures the cluster's dataSize plus indexSize, and when headroom is below what a sweep needs it runs `observations:prune-dead --apply --drop-snapshot-cache` once, which also deletes dead superseded observations, and measures again, refusing if headroom is still short (#3536).
-5. Runs `development-full`, then `fellowship-development-full`, one after the other and each with `--restart`, because they share the per-host fetch budget and the storage quota.
-6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when either mode failed or wrote no summary.
-7. After both modes succeed, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per weekly run.
+5. Runs the requested modes one after the other, each with `--restart`: both `development-full` and `fellowship-development-full` by default, or only the ones `--mode` names (repeatable, also `--mode=<mode>`).
+They run serially because they share the per-host fetch budget and the storage quota.
+6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when any requested mode failed or wrote no summary.
+7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
+With one cron job per mode that is two points a week, each taken after only that mode's refresh.
 8. Records the run in one `weekly_sweep_runs` row in Development, whether it succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if either write fails, because an unrecorded run cannot be audited.
-The row is inserted with status `running`, `startedAt` and `codeSha` before step 3, and the job refuses to start if that insert fails.
+The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
 
 `--dry-run` in place of the confirmation runs steps 1 to 4 read-only, prints the two sweep commands without running them, and writes no row.
@@ -111,6 +113,7 @@ Each weekly run leaves one row in Development's `weekly_sweep_runs` collection (
 The row flattens both modes' `summary.json` into queryable fields rather than storing it whole:
 
 - `startedAt`, `finishedAt`, `durationMs`, and `renderLimit`, which holds Render's 12-hour limit, whether the run fit, and the headroom left.
+- `requestedModes`, the modes the run was asked to cover, which is what tells a split research run from a split fellowship run.
 - `codeSha`, `status` (`running`, `succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
 - `preflight`: the held lock sources, storage before and after the fetch-cache drop as `usedMb`, `quotaMb`, `headroomMb` and `minHeadroomMb`, and whether the cache was dropped.
 - `modes`: per mode, its wall time, source counts, post-run status and duration, and throttle totals.
@@ -132,8 +135,9 @@ yarn --cwd server scrape:sweep:weekly-runs --compare --limit 6
 yarn --cwd server scrape:sweep:weekly-runs --limit 1 --json
 ```
 
-The default view prints the last five runs, each with its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
-`--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run, so a regression shows as a growing number.
+The default view prints the last five runs, each with the modes it covered, its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
+`--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run that has that step, so a regression shows as a growing number.
+Each run's column is labelled with its modes, and the `TOTAL` change compares the latest run with the last run of the same modes, so a split research run is not measured against a fellowship run.
 `--json` prints the stored rows.
 
 Two sources stay out of the image on purpose.
@@ -146,23 +150,37 @@ The sweep's own peak memory has not been measured, so start the service on an in
 
 ### Render Cron Job Settings
 
-Create the service only after the image builds, and use these settings:
+Render stops a cron run after 12 hours, and the research sweep alone has measured 414 minutes (2026-09-28) and 556 minutes (2026-09-26), while the fellowship sweep has never been timed.
+Running both modes in one run therefore risks the limit, so the weekly runner is two cron jobs, one per mode, each with its own 12-hour budget.
+Create them only after the image builds, with identical settings except the name, the schedule, and the Docker Command:
+
+| Service | Docker Command | Schedule |
+|---|---|---|
+| `ylabs-weekly-fellowship-sweep` | `--confirm-weekly-development-sweep --mode fellowship-development-full` | `0 7 * * 6`, Saturdays at 07:00 UTC |
+| `ylabs-weekly-sweep` | `--confirm-weekly-development-sweep --mode development-full` | `0 7 * * 0`, Sundays at 07:00 UTC |
+
+The Docker Command replaces the image's default arguments, so it must carry the confirmation flag; the image's default with no Docker Command runs both modes, for a manual run that fits.
+For each job's first manual trigger use `--dry-run --mode <mode>` instead, which runs the preflight and writes nothing, then set the confirmed command.
+The day apart matters: each job refuses to start while any sweep source holds a live scrape job lock, so a fellowship run still going on Sunday morning makes the research run refuse, recorded as `refused`, rather than run both at once.
+
+Shared settings:
 
 - **Service type:** New, then Cron Job.
 - **Repository and branch:** `YaleComputerSociety/ylabs`, branch `beta`.
+- **Region:** Virginia (US East), next to the Development Atlas cluster in AWS us-east-1, because a sweep spends its time on database round trips and talks to no other Render service.
+The operator services in [One-Command Promotion](#one-command-promotion) are the opposite case: they belong in the region of the private Meilisearch they reindex (Ohio), because Render's private network is per region.
 - **Language:** Docker.
 - **Dockerfile Path:** `deploy/sweep-runner/Dockerfile`, with the build context left at the repository root.
-- **Schedule:** `0 7 * * 0`, Sundays at 07:00 UTC.
-- **Docker Command:** leave empty, so the image runs the confirmed job; set it to `--dry-run` for the first manual trigger, then clear it.
+- **Instance:** 4 CPU and 8 GB (`4c-8g`), because a sweep runs 8 source children at once and the materialize and gate stages are CPU-bound; read the memory graph after the first run.
 - **Environment variables:** `MONGODBURL` (the Development connection string), `OPENAI_API_KEY`, and `YALIES_API_KEY`, all as secrets.
 Do not set `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, or any `MEILISEARCH_*` variable; the job refuses the first two and the entrypoint sets the third.
 Give the job its own OpenAI key rather than reusing an operator's, so it can be spend-capped and rotated without touching anyone's local setup.
 
-Then allow the service into Atlas: on the service's page open **Connect**, switch to the **Outbound** tab, and add each listed range to the Atlas **Network Access** list.
+Then allow each service into Atlas: on the service's page open **Connect**, switch to the **Outbound** tab, and add each listed range to the Atlas **Network Access** list.
+Outbound ranges differ per Render region, so the Virginia ranges are a new entry even when Ohio services are already allowed.
 Those ranges are shared by every Render service in the region, so scope the database user the service holds to the `Development` database.
 
-Render stops a cron run after 12 hours.
-The research sweep alone took 414 minutes on 2026-09-28, so read the first run's duration before trusting both modes to fit; if they do not, split them into two cron jobs on different days.
+Read each job's first duration with `yarn --cwd server scrape:sweep:weekly-runs --limit 2` against the 12-hour limit.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
 Render keeps logs for a limited time and a cron container's disk is discarded, so the `weekly_sweep_runs` row is the durable record of a run, alongside Development's own per-source `scrape_runs`.
@@ -386,7 +404,9 @@ Both are operator-triggered, run from a laptop, and compose the commands Phases 
 
 ### What `yarn promote:beta` does
 
-1. Reads the newest `weekly_sweep_runs` row in Development, or the one `--weekly-run <id>` names, and refuses unless it `succeeded`, recorded no code drift or refusal, ran both modes with a summary, and finished within the last 8 days.
+1. For each mode, finds the newest `weekly_sweep_runs` row in Development that covers it, so one run of both modes or the two split weekly jobs both satisfy it, and refuses unless that row `succeeded`, recorded no code drift or refusal, left that mode a summary, and finished within the last 8 days.
+It prints which run satisfied each mode.
+`--weekly-run <id>`, repeatable, restricts the check to the named rows, so `--weekly-run <research-id> --weekly-run <fellowship-id>` pins a split pair.
 `--allow-without-weekly-run` skips this check for a Development refreshed by a laptop sweep, which writes no row.
 2. Refuses while any sweep source holds a live scrape job lock, because a mirror of a Development that is being written copies a moving corpus.
 3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.

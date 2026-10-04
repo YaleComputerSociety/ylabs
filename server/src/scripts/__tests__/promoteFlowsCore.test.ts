@@ -17,6 +17,7 @@ const RENDER_ENV = {
 };
 
 const goodRun: StoredWeeklySweepRun = {
+  _id: 'run1',
   startedAt: new Date('2026-10-04T07:00:00Z'),
   finishedAt: new Date('2026-10-04T16:00:00Z'),
   status: 'succeeded',
@@ -133,7 +134,7 @@ function betaDeps(
       answer,
       renderFetch(harness, 'crn-beta1', 'beta', finalStatus),
     ),
-    loadWeeklyRun: async () => goodRun,
+    loadWeeklyRuns: async () => [goodRun],
     heldSweepLocks: async () => [],
     ...rest,
   };
@@ -217,17 +218,68 @@ describe('promote:beta', () => {
     const code = await runPromoteBeta(
       ['--backup-ref', 'snap'],
       betaDeps(harness, {
-        loadWeeklyRun: async () => ({ ...goodRun, status: 'failed', exitCode: 1 }),
+        loadWeeklyRuns: async () => [{ ...goodRun, status: 'failed', exitCode: 1 }],
         heldSweepLocks: async () => ['ysm-atoz-index'],
       }),
     );
     expect(code).toBe(1);
+    const label = 'run run1 started 2026-10-04T07:00:00.000Z';
     expect(harness.errors).toEqual([
-      'refused: latest weekly run status is failed',
-      'refused: latest weekly run exit code is 1',
+      `refused: development-full ${label} status is failed`,
+      `refused: development-full ${label} exit code is 1`,
+      `refused: fellowship-development-full ${label} status is failed`,
+      `refused: fellowship-development-full ${label} exit code is 1`,
       'refused: a Development writer holds a live scrape job lock on ysm-atoz-index',
     ]);
     expect(yarnScripts(harness)).toHaveLength(1);
+  });
+
+  it('accepts split weekly runs, names the run behind each mode, and checks named ids', async () => {
+    const research: StoredWeeklySweepRun = {
+      ...goodRun,
+      _id: 'research1',
+      requestedModes: ['development-full'],
+      modes: [{ mode: 'development-full', exitCode: 0, summaryFound: true }],
+    };
+    const fellowship: StoredWeeklySweepRun = {
+      ...goodRun,
+      _id: 'fellowship1',
+      startedAt: new Date('2026-10-03T07:00:00Z'),
+      finishedAt: new Date('2026-10-03T09:00:00Z'),
+      requestedModes: ['fellowship-development-full'],
+      modes: [{ mode: 'fellowship-development-full', exitCode: 0, summaryFound: true }],
+    };
+    const requested: string[][] = [];
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'snap', '--weekly-run', 'research1', '--weekly-run', 'fellowship1'],
+      betaDeps(harness, {
+        loadWeeklyRuns: async (ids) => {
+          requested.push(ids);
+          return [research, fellowship];
+        },
+      }),
+    );
+    expect(code).toBe(0);
+    expect(requested).toEqual([['research1', 'fellowship1']]);
+    expect(harness.logs.join('\n')).toContain(
+      'development-full satisfied by run research1 started 2026-10-04T07:00:00.000Z',
+    );
+    expect(harness.logs.join('\n')).toContain(
+      'fellowship-development-full satisfied by run fellowship1 started 2026-10-03T07:00:00.000Z',
+    );
+
+    const missing = newHarness();
+    expect(
+      await runPromoteBeta(
+        ['--backup-ref', 'snap', '--weekly-run', 'gone'],
+        betaDeps(missing, { loadWeeklyRuns: async () => [research] }),
+      ),
+    ).toBe(1);
+    expect(missing.errors).toEqual([
+      'refused: weekly run gone was not found in weekly_sweep_runs',
+      'refused: no weekly_sweep_runs record in Development covers fellowship-development-full',
+    ]);
   });
 
   it('requires a backup reference before applying', async () => {

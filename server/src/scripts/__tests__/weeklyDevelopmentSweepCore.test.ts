@@ -48,12 +48,41 @@ describe('parseWeeklySweepArgs', () => {
     expect(() => parseWeeklySweepArgs([])).toThrow(WEEKLY_SWEEP_CONFIRM_FLAG);
   });
 
-  it('accepts a dry run and a confirmed run', () => {
-    expect(parseWeeklySweepArgs(['--dry-run'])).toEqual({ dryRun: true, confirmed: false });
+  it('accepts a dry run and a confirmed run, defaulting to both modes', () => {
+    expect(parseWeeklySweepArgs(['--dry-run'])).toEqual({
+      dryRun: true,
+      confirmed: false,
+      modes: ['development-full', 'fellowship-development-full'],
+    });
     expect(parseWeeklySweepArgs([WEEKLY_SWEEP_CONFIRM_FLAG])).toEqual({
       dryRun: false,
       confirmed: true,
+      modes: ['development-full', 'fellowship-development-full'],
     });
+  });
+
+  it('narrows the run to the requested modes, in sweep order, in either flag form', () => {
+    expect(
+      parseWeeklySweepArgs([WEEKLY_SWEEP_CONFIRM_FLAG, '--mode', 'fellowship-development-full'])
+        .modes,
+    ).toEqual(['fellowship-development-full']);
+    expect(
+      parseWeeklySweepArgs([
+        '--dry-run',
+        '--mode=fellowship-development-full',
+        '--mode',
+        'development-full',
+        '--mode',
+        'development-full',
+      ]).modes,
+    ).toEqual(['development-full', 'fellowship-development-full']);
+  });
+
+  it('rejects an unknown or missing mode', () => {
+    expect(() => parseWeeklySweepArgs(['--dry-run', '--mode', 'beta-fetch'])).toThrow(
+      '--mode must be one of',
+    );
+    expect(() => parseWeeklySweepArgs(['--dry-run', '--mode'])).toThrow('(missing)');
   });
 
   it('rejects an unknown argument', () => {
@@ -228,6 +257,7 @@ describe('buildWeeklySweepRunRecord', () => {
       databaseName: 'Development',
       codeSha: 'abc123',
       exitCode: 1,
+      requestedModes: ['development-full', 'fellowship-development-full'],
       preflight: okPreflight,
       outcomes: [
         {

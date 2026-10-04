@@ -21,6 +21,7 @@ const runOn = (day: string, sourceAMinutes: number, totalHours: number) =>
     databaseName: 'Development',
     codeSha: 'abcdef1234567890',
     exitCode: 1,
+    requestedModes: ['development-full', 'fellowship-development-full'],
     preflight: {
       ok: true,
       heldLockSources: [],
@@ -89,7 +90,7 @@ describe('formatWeeklySweepRun', () => {
   it('shows total time against the Render limit, slowest steps, failures and throttle losses', () => {
     const text = formatWeeklySweepRun(runOn('2026-10-11', 120, 8.5));
     expect(text).toContain(
-      '2026-10-11 07:00 UTC  failed  code abcdef123  took 8h30m of 12h00m (3h30m headroom)',
+      '2026-10-11 07:00 UTC  research+fellowship  failed  code abcdef123  took 8h30m of 12h00m (3h30m headroom)',
     );
     expect(text).toContain(
       'research: 6h00m, 1 ok / 1 failed / 0 not run, post-run succeeded (20m)',
@@ -112,11 +113,14 @@ describe('formatWeeklySweepRun', () => {
       startedAt: new Date('2026-10-11T07:00:00Z'),
       databaseName: 'Development',
       codeSha: 'abcdef1234567890',
+      requestedModes: ['development-full'],
     });
 
   it('reports a run stopped at the Render limit as never finished', () => {
     const text = formatWeeklySweepRun(startedRun(), new Date('2026-10-11T19:30:00Z'));
-    expect(text).toContain('2026-10-11 07:00 UTC  running  code abcdef123  never finished');
+    expect(text).toContain(
+      '2026-10-11 07:00 UTC  research  running  code abcdef123  never finished',
+    );
     expect(text).toContain('started 12h30m ago, past the 12h00m limit');
   });
 
@@ -147,9 +151,38 @@ describe('formatWeeklySweepRunsComparison', () => {
       runOn('2026-10-11', 120, 8),
     ]);
     const lines = table.split('\n');
-    expect(lines[0]).toMatch(/^step\s+2026-10-11\s+2026-10-18\s+change$/);
+    expect(lines[0]).toMatch(
+      /^step\s+2026-10-11 research\+fellowship\s+2026-10-18 research\+fellowship\s+change$/,
+    );
     expect(lines[2]).toMatch(/^TOTAL\s+8h00m\s+9h00m\s+\+13%$/);
     expect(lines[3]).toMatch(/^source-a\s+2h00m\s+2h30m\s+\+25%$/);
     expect(table).toContain('visibility-gate (research post-run)');
+  });
+
+  it('compares a split run against the last run that covered the same modes and steps', () => {
+    const researchOnly = (day: string, minutes: number, hours: number) => ({
+      ...runOn(day, minutes, hours),
+      requestedModes: ['development-full' as const],
+    });
+    const fellowshipOnly = {
+      ...runOn('2026-10-17', 1, 2),
+      requestedModes: ['fellowship-development-full' as const],
+      sources: [],
+      stages: [],
+    };
+    const table = formatWeeklySweepRunsComparison([
+      researchOnly('2026-10-18', 150, 9),
+      fellowshipOnly,
+      researchOnly('2026-10-11', 120, 8),
+    ]);
+    const lines = table.split('\n');
+    expect(lines[0]).toContain('2026-10-17 fellowship');
+    expect(lines[2]).toMatch(/^TOTAL\s+8h00m\s+2h00m\s+9h00m\s+\+13%$/);
+    expect(lines[3]).toMatch(/^source-a\s+2h00m\s+-\s+2h30m\s+\+25%$/);
+  });
+
+  it('labels a legacy row without requestedModes as covering every mode', () => {
+    const legacy = { ...runOn('2026-10-11', 120, 8), requestedModes: undefined, modes: [] };
+    expect(formatWeeklySweepRun(legacy)).toContain('UTC  research+fellowship  failed');
   });
 });

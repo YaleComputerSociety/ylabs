@@ -125,6 +125,7 @@ const weeklySweepRunSchema = new mongoose.Schema(
     codeSha: { type: String, required: false },
     status: { type: String, enum: weeklySweepRunStatuses, required: true },
     exitCode: { type: Number, required: requiredOnceFinished },
+    requestedModes: { type: [{ type: String, enum: weeklySweepModes }], default: [] },
     preflight: {
       ok: { type: Boolean, required: requiredOnceFinished },
       heldLockSources: { type: [String], default: [] },

@@ -45,28 +45,49 @@ export const WEEKLY_SWEEP_SUMMARY_MARKER = 'WEEKLY_SWEEP_SUMMARY';
 export interface WeeklySweepArgs {
   dryRun: boolean;
   confirmed: boolean;
+  modes: WeeklySweepMode[];
 }
 
 export const WEEKLY_SWEEP_CONFIRM_FLAG = '--confirm-weekly-development-sweep';
 
+function parseWeeklySweepMode(raw: string | undefined): WeeklySweepMode {
+  const mode = WEEKLY_SWEEP_MODES.find((candidate) => candidate === raw);
+  if (!mode) {
+    throw new Error(
+      `--mode must be one of ${WEEKLY_SWEEP_MODES.join(', ')}; got ${raw ?? '(missing)'}`,
+    );
+  }
+  return mode;
+}
+
 export function parseWeeklySweepArgs(argv: string[]): WeeklySweepArgs {
-  const args: WeeklySweepArgs = { dryRun: false, confirmed: false };
-  for (const arg of argv) {
+  const args = { dryRun: false, confirmed: false };
+  const requested = new Set<WeeklySweepMode>();
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') {
       args.dryRun = true;
     } else if (arg === WEEKLY_SWEEP_CONFIRM_FLAG) {
       args.confirmed = true;
+    } else if (arg === '--mode') {
+      requested.add(parseWeeklySweepMode(argv[++index]));
+    } else if (arg.startsWith('--mode=')) {
+      requested.add(parseWeeklySweepMode(arg.slice('--mode='.length)));
     } else {
       throw new Error(`Unknown weekly sweep argument: ${arg}`);
     }
   }
+  const modes =
+    requested.size > 0
+      ? WEEKLY_SWEEP_MODES.filter((mode) => requested.has(mode))
+      : [...WEEKLY_SWEEP_MODES];
   if (!args.dryRun && !args.confirmed) {
     throw new Error(
       `The weekly sweep writes Development: pass ${WEEKLY_SWEEP_CONFIRM_FLAG}, or --dry-run to run only its preflight`,
     );
   }
-  return args;
+  return { ...args, modes };
 }
 
 export function weeklySweepEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
@@ -276,6 +297,7 @@ export interface WeeklySweepRunRecord {
   codeSha: string | null;
   status: WeeklySweepRunStatus;
   exitCode: number;
+  requestedModes: WeeklySweepMode[];
   preflight: WeeklySweepPreflightRecord;
   modes: WeeklySweepModeRecord[];
   sources: WeeklySweepSourceRecord[];
@@ -443,6 +465,7 @@ export interface WeeklySweepRunStartRecord {
   environment: 'development';
   databaseName: string;
   codeSha: string | null;
+  requestedModes: WeeklySweepMode[];
   status: 'running';
 }
 
@@ -450,6 +473,7 @@ export function buildWeeklySweepRunStartRecord(input: {
   startedAt: Date;
   databaseName: string;
   codeSha: string | null;
+  requestedModes: WeeklySweepMode[];
 }): WeeklySweepRunStartRecord {
   return { ...input, environment: 'development', status: 'running' };
 }
@@ -460,6 +484,7 @@ export interface WeeklySweepRunRecordInput {
   databaseName: string;
   codeSha: string | null;
   exitCode: number;
+  requestedModes: WeeklySweepMode[];
   preflight: WeeklySweepPreflightRecord;
   outcomes: WeeklySweepModeOutcome[];
   corpusSnapshot: WeeklySweepCorpusSnapshotRecord;
@@ -488,6 +513,7 @@ export function buildWeeklySweepRunRecord(input: WeeklySweepRunRecordInput): Wee
     codeSha: input.codeSha,
     status: weeklySweepRunStatus(input.preflight.ok, input.exitCode, error),
     exitCode: input.exitCode,
+    requestedModes: input.requestedModes,
     preflight,
     modes: input.outcomes.map(modeRecord),
     sources: input.outcomes.flatMap(sourceRecords),
