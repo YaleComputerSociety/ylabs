@@ -135,8 +135,9 @@ yarn --cwd server scrape:sweep:weekly-runs --compare --limit 6
 yarn --cwd server scrape:sweep:weekly-runs --limit 1 --json
 ```
 
-The default view prints the last five runs, each with its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
-`--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run, so a regression shows as a growing number.
+The default view prints the last five runs, each with the modes it covered, its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
+`--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run that has that step, so a regression shows as a growing number.
+Each run's column is labelled with its modes, and the `TOTAL` change compares the latest run with the last run of the same modes, so a split research run is not measured against a fellowship run.
 `--json` prints the stored rows.
 
 Two sources stay out of the image on purpose.
