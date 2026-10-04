@@ -4,6 +4,10 @@ import { Fellowship } from '../../models/fellowship';
 import { Observation } from '../../models/observation';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { materializeEntity } from '../entityMaterializer';
+import {
+  CLASSIFIER_OWNED_FELLOWSHIP_FIELDS,
+  classificationFromObservedFacts,
+} from '../fellowshipClassificationDerivation';
 import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 
 // These cases mock the observation read rather than connecting to a database, so the
@@ -635,6 +639,55 @@ describe('fellowship materialization', () => {
       expect(result.plannedSet).not.toHaveProperty('programDates');
       expect(result.plannedUnset).toHaveProperty('compensationSummary');
       expect(result.plannedUnset).not.toHaveProperty('programDates');
+    });
+
+    describe('a requirement stated past the display cap (#4232)', () => {
+      const address = 'fixture.office@example.edu';
+      const head = Array.from(
+        { length: 40 },
+        (_, index) =>
+          `Recipient cohort ${index + 1} presents findings from archival fieldwork at the spring forum.`,
+      ).join(' ');
+      const observations = [
+        fact('title', 'Fixture College Research Grant'),
+        fact(
+          'description',
+          `${head} Questions go to ${address}. Provides funding to offset the costs associated with a senior research project or senior essay. Each application must include the approval of a faculty advisor who will supervise the research project.`,
+        ),
+        fact('eligibility', `Open to seniors. Email ${address} to confirm eligibility.`),
+      ];
+      const row = { _id: storedRow._id, sourceKey: storedRow.sourceKey };
+
+      async function plan() {
+        mockRead(observations, row);
+        return materializeEntity('fellowship', { entityKey: row.sourceKey }, { dryRun: true });
+      }
+
+      it('derives the purpose and requirement while the stored description stays capped and redacted', async () => {
+        const result = await plan();
+        const description = String(result.plannedSet?.description);
+
+        expect(description.length).toBeLessThanOrEqual(2000);
+        expect(description).not.toContain('faculty advisor');
+        expect(description).not.toContain(address);
+        expect(result.plannedSet).toMatchObject({
+          programKind: 'SENIOR_THESIS_FUNDING',
+          requiresMentorBeforeApply: true,
+          entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        });
+      });
+
+      it('derives what the lane scorecard derives from the same observations', async () => {
+        const result = await plan();
+        const scored = classificationFromObservedFacts(observations) as unknown as Record<
+          string,
+          unknown
+        >;
+
+        for (const field of CLASSIFIER_OWNED_FELLOWSHIP_FIELDS) {
+          expect(result.plannedSet?.[field], field).toEqual(scored[field]);
+        }
+      });
     });
 
     it('keeps a stored award amount the classifier is silent about', async () => {

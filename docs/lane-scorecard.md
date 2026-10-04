@@ -138,6 +138,7 @@ A fellowship `eligibility` is a statement: it matches when it is a clause of an 
 Plain containment would credit a lane that stored a whole page as the statement, which is the failure a statement field invites.
 No lane emits `requiresMentorBeforeApply` or `entryMode`, because the materializer derives them with the program classifier.
 The scorecard therefore derives both per program from the replay's planned observations with `classificationFromObservedFacts` and scores that derivation, and a program with no planned observations derives nothing.
+That function runs the materializer's own `planFellowshipClassification` on the observations as a pass staging every one of them, so the scorecard reads the same uncapped, contact-redacted prose the materializer classifies and scores the value a student is served (#4232).
 
 ```bash
 yarn --cwd server lane:benchmark-label --id=<benchmark-id> --file=<labels.json>

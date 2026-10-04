@@ -18,6 +18,7 @@ import {
   type ProgramClassification,
   type ProgramClassificationInput,
 } from '../services/programClassifier';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
 
 export const CLASSIFIER_OWNED_FELLOWSHIP_FIELDS = [
@@ -133,38 +134,54 @@ const CLASSIFIER_PROSE_FIELDS = [
   'applicationInformation',
   'eligibility',
   'additionalInformation',
+  'fullSourceDescription',
 ] as const;
 
-const capMarker = /\s*…$/;
+export const FELLOWSHIP_DESCRIPTION_FIELDS: ReadonlySet<string> = new Set([
+  'description',
+  'summary',
+]);
 
 /**
- * The stored prose is capped, so a requirement stated past the cap is invisible in it
- * (#4232). Where a stored value is the head of what a source observed, the requirement
- * check also reads the whole observed text, sanitized the same way but never clamped.
- * Only the requirement check reads it, so the rest of the classification keeps reading
- * the copy a student sees.
+ * The stored description is the display copy, capped by the sanitizer, so a requirement
+ * stated past the cap was invisible to the classifier (#4232). The classifier reads the
+ * observed text through the same sanitizer without the cap. Every prose field is
+ * contact-redacted first, so no raw address reaches anything derived from it and stored.
  */
-function withUncappedRequirementText(
-  input: ProgramClassificationInput,
-  observedValues: Record<string, unknown>,
-  lockedFields: readonly string[],
-): ProgramClassificationInput {
-  const uncapped: string[] = [];
+export function fellowshipClassifierProse(field: string, value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return textOrUndefined(
+    FELLOWSHIP_DESCRIPTION_FIELDS.has(field)
+      ? sanitizeStoredCatalogDescription(value, Number.POSITIVE_INFINITY)
+      : redactDirectContactInfo(value),
+  );
+}
+
+/**
+ * A prose field this pass stages from an observation is read whole from that observation.
+ * One it does not stage, because it is locked, withheld by source precedence or refused by
+ * the sanitizer, keeps the standing copy, so the classifier never reads text the row will
+ * not carry.
+ */
+export function fellowshipClassifierInput(input: {
+  stored: Record<string, unknown> | null | undefined;
+  staged?: Record<string, unknown>;
+  unset?: Record<string, unknown>;
+  lockedFields?: readonly string[];
+  observedValues?: Record<string, unknown>;
+}): ProgramClassificationInput {
+  const staged = input.staged ?? {};
+  const lockedFields = input.lockedFields ?? [];
+  const observedValues = input.observedValues ?? {};
+  const standing = fellowshipClassificationInput(input.stored, staged, input.unset ?? {});
+  const prose: Record<string, string | undefined> = {};
   for (const field of CLASSIFIER_PROSE_FIELDS) {
-    if (lockedFields.includes(field)) continue;
-    const observed = observedValues[field];
-    const standing = textOrUndefined(input[field]);
-    if (typeof observed !== 'string' || !standing) continue;
-    const whole = sanitizeStoredCatalogDescription(observed, Number.POSITIVE_INFINITY);
-    if (whole.length > standing.length && whole.startsWith(standing.replace(capMarker, ''))) {
-      uncapped.push(whole);
-    }
+    const readsObservation = field in staged && !lockedFields.includes(field);
+    prose[field] =
+      (readsObservation ? fellowshipClassifierProse(field, observedValues[field]) : undefined) ??
+      fellowshipClassifierProse(field, standing[field]);
   }
-  if (uncapped.length === 0) return input;
-  return {
-    ...input,
-    fullSourceDescription: [input.fullSourceDescription, ...uncapped].filter(Boolean).join(' '),
-  };
+  return { ...standing, ...prose };
 }
 
 function sameValue(left: unknown, right: unknown): boolean {
@@ -186,16 +203,9 @@ export function planFellowshipClassification(input: {
   observedValues?: Record<string, unknown>;
 }): FellowshipClassificationPlan {
   const staged = input.staged ?? {};
-  const unset = input.unset ?? {};
   const lockedFields = input.lockedFields ?? [];
   const observedValues = input.observedValues ?? {};
-  const classifierReading = classifyProgram(
-    withUncappedRequirementText(
-      fellowshipClassificationInput(input.stored, staged, unset),
-      observedValues,
-      lockedFields,
-    ),
-  );
+  const classifierReading = classifyProgram(fellowshipClassifierInput(input));
   const standingKind = lockedFields.includes('programKind')
     ? (input.stored?.programKind as ProgramKind)
     : classifierReading.programKind;
@@ -224,6 +234,7 @@ export function planFellowshipClassification(input: {
 export function classificationFromObservedFacts(
   observations: ReadonlyArray<{ field: string; value?: unknown }>,
 ): ProgramClassification {
-  const stored = Object.fromEntries(observations.map((obs) => [obs.field, obs.value]));
-  return planFellowshipClassification({ stored }).classification;
+  const observed = Object.fromEntries(observations.map((obs) => [obs.field, obs.value]));
+  return planFellowshipClassification({ stored: null, staged: observed, observedValues: observed })
+    .classification;
 }

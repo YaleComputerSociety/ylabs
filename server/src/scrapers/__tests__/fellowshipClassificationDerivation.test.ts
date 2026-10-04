@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { planFellowshipClassification } from '../fellowshipClassificationDerivation';
+import {
+  fellowshipClassifierInput,
+  planFellowshipClassification,
+} from '../fellowshipClassificationDerivation';
+import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 
 describe('planFellowshipClassification program role (#3904)', () => {
   const stored = {
@@ -77,24 +81,35 @@ describe('planFellowshipClassification department internships (#4089)', () => {
   });
 });
 
-describe('planFellowshipClassification reads prose past the stored cap (#4232)', () => {
+describe('planFellowshipClassification reads the whole observed prose (#4232)', () => {
   const head = Array.from(
     { length: 40 },
     (_, index) =>
       `Recipient cohort ${index + 1} presents findings from archival fieldwork at the spring forum.`,
   ).join(' ');
   const observedDescription = `${head} Each application must include the approval of a faculty advisor who will supervise the research project.`;
+  const displayDescription = sanitizeStoredCatalogDescription(observedDescription);
   const stored = {
     title: 'Fixture College Senior Research Grant',
-    description: `${head.slice(0, 1990).replace(/\s+\S*$/, '')}…`,
+    description: displayDescription,
   };
 
-  it('finds an adviser requirement the stored copy cut off', () => {
+  it('stores a display copy that ends before the requirement', () => {
+    expect(displayDescription.length).toBeLessThanOrEqual(2000);
+    expect(displayDescription).not.toContain('faculty advisor');
+  });
+
+  it('finds an adviser requirement past the display cap in the observation this pass stages', () => {
     const plan = planFellowshipClassification({
       stored,
+      staged: { description: displayDescription },
       observedValues: { description: observedDescription },
     });
-    expect(plan.classification.requiresMentorBeforeApply).toBe(true);
+    expect(plan.classification).toMatchObject({
+      requiresMentorBeforeApply: true,
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
+    expect(plan.set).not.toHaveProperty('description');
   });
 
   it('reads the stored copy alone when no source observed more of it', () => {
@@ -106,19 +121,34 @@ describe('planFellowshipClassification reads prose past the stored cap (#4232)',
   it('keeps reading the stored copy of a locked field', () => {
     const plan = planFellowshipClassification({
       stored,
+      staged: { description: displayDescription },
       lockedFields: ['description'],
       observedValues: { description: observedDescription },
     });
     expect(plan.classification.requiresMentorBeforeApply).toBe(false);
   });
 
-  it('ignores an observed text the stored copy does not begin', () => {
+  it('keeps reading the stored copy when the pass does not stage the observed field', () => {
     const plan = planFellowshipClassification({
       stored,
-      observedValues: {
-        description: `A different paragraph entirely. ${observedDescription}`,
-      },
+      observedValues: { description: observedDescription },
     });
     expect(plan.classification.requiresMentorBeforeApply).toBe(false);
+  });
+
+  it('never hands the classifier a raw contact address from any prose field', () => {
+    const address = 'fixture.office@example.edu';
+    const input = fellowshipClassifierInput({
+      stored: { title: 'Fixture Research Grant', additionalInformation: `Write to ${address}.` },
+      staged: { description: 'x', eligibility: 'x' },
+      observedValues: {
+        description: `${head} Questions go to ${address} before the deadline.`,
+        eligibility: `Open to juniors. Email ${address} to confirm.`,
+      },
+    });
+    expect(JSON.stringify(input)).not.toContain(address);
+    expect(input.description?.length).toBeGreaterThan(2000);
+    expect(input.eligibility).toContain('[email redacted]');
+    expect(input.additionalInformation).toContain('[email redacted]');
   });
 });
