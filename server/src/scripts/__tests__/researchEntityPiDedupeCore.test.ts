@@ -3510,6 +3510,10 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
       nameAgreementKey('Zoe Muric Nunez - Research'),
     );
     expect(nameAgreementKey('Ortolan Lab')).toBe(nameAgreementKey('Ortolan Laboratory'));
+    expect(nameAgreementKey('Wren Q. Ortolan Faculty Research')).toBe(
+      nameAgreementKey('Wren Ortolan Faculty Research'),
+    );
+    expect(nameAgreementKey('W. Ortolan Lab')).not.toBe(nameAgreementKey('Wren Ortolan Lab'));
   });
 
   it('groups rows that agree on lead, name and type', () => {

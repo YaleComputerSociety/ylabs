@@ -936,12 +936,15 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
 
 /**
  * The comparable form of a research row's name for the name-agreement lane. Diacritics
- * fold because one roster spells a name with them and another without, and the kind
+ * fold because one roster spells a name with them and another without, a lone initial
+ * drops because one roster prints a middle initial another omits, and the kind
  * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees when the
  * type already agrees.
  */
 export function nameAgreementKey(value: string | undefined): string {
-  return entityNameWordsWithoutKindNouns(value).join(' ');
+  return entityNameWordsWithoutKindNouns(value)
+    .filter((word) => word.length > 1)
+    .join(' ');
 }
 
 /**
