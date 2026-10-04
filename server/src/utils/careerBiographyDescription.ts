@@ -304,7 +304,7 @@ const BIBLIOGRAPHIC_CITATION_SENTENCE: readonly RegExp[] = [
   /\b\d{1,4}\s?\(\d{1,4}\)\s?[,:]\s?\d{1,5}\s?[-–]\s?\d{1,5}\b/,
   /\((?:[A-Z][\p{L}.]+(?:[\s,]+[A-Z][\p{L}.]+){0,3})\s*:\s*[^():]{2,60},\s*(?:19|20)\d{2}\)/u,
   /^\(\s*with\s+[A-Z]/,
-  /^["“][^"”]{8,250}(?:[.?!]["”]|["”]\s*\(with\s[^)]+\)|["”][^"“”]{0,80}?\b(?:(?:19|20)\d{2}|Paper|Slides|Journal|Review|Quarterly|Press)\b)/,
+  /^["“][^"”]{8,250}(?:[.?!]["”](?!\s*[-–—]\s*[A-Z])|["”]\s*\(with\s[^)]+\)|["”][^"“”]{0,80}?\b(?:(?:19|20)\d{2}|Paper|Slides|Journal|Review|Quarterly|Press)\b)/,
   /\b(?:articles?|essays?|papers?|work|writing|research)\s+(?:has|have)\s+(?:also\s+)?appeared\s+in\b/i,
   new RegExp(`^${BIBLIOGRAPHY_LINK_LABEL}(?:\\s+${BIBLIOGRAPHY_LINK_LABEL})*$`, 'i'),
   /^(?:Here\s+(?:are|is)\s+)?(?:a\s+few\s+|some\s+)?(?:of\s+(?:my|his|her|their)\s+)?(?:recent|selected|representative)\s+(?:papers|publications|articles)(?:\s+include)?\s*(?::|\.?\s*$)/i,

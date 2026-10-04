@@ -74,6 +74,15 @@ describe('a body that opens on a teaching appointment is narrowed to its researc
   });
 });
 
+describe('a press quote is not read as a citation', () => {
+  it('keeps an attributed review quote as the body', () => {
+    const body =
+      '“The soloist was the finest synthetic tenor singing today: Sam Example, from Exampleton.” - Pat Sample, “The Synthetic Review”';
+
+    expect(servedBody(row({ fullDescription: body }))).not.toBe(RESEARCH_CARD);
+  });
+});
+
 describe('research prose is not read as a citation', () => {
   it('keeps a research body that mentions a year', () => {
     const body =
