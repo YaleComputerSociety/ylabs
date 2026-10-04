@@ -58,6 +58,17 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
     });
   });
 
+  it('still reads a negated predicate that follows a relative clause as an exclusion', () => {
+    expect(
+      read(
+        'Open to all undergraduates. Seniors who have previously received the award are not eligible.',
+      ),
+    ).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior', 'Senior'],
+    });
+  });
+
   it('still reads a bare first-year student as an undergraduate first year', () => {
     expect(read('Open to first-year students only.')).toEqual({
       kind: 'prose',

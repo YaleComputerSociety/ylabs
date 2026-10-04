@@ -235,9 +235,15 @@ function expandYearRange(phrase: string, terms: LevelTerm[]): LevelTerm[] {
 
 const RELATIVE_CLAUSE_AFTER = /^\W*(?:who|that|whose)\b/;
 
+const NEGATED_PREDICATE_AFTER_RELATIVE_CLAUSE = new RegExp(
+  `^\\W*(?:who|that|whose)\\W+\\w+[^,;()]{0,80}?${NEGATED_PREDICATE.source}`,
+);
+
 function negationOf(before: string, after: string): 'blanket' | 'qualified' | null {
   if (NEGATION_BEFORE.test(before)) return 'blanket';
-  if (RELATIVE_CLAUSE_AFTER.test(after)) return null;
+  if (RELATIVE_CLAUSE_AFTER.test(after)) {
+    return NEGATED_PREDICATE_AFTER_RELATIVE_CLAUSE.test(after) ? 'qualified' : null;
+  }
   const immediate = after.match(IMMEDIATE_NEGATION);
   if (immediate) {
     return QUALIFIER.test(after.slice(immediate[0].length)) ? 'qualified' : 'blanket';
