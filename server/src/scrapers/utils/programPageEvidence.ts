@@ -1,5 +1,4 @@
 import type * as cheerio from 'cheerio';
-import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 import {
@@ -7,6 +6,7 @@ import {
   NUMERIC_PROGRAM_DATE_SOURCE,
   OPTIONAL_STATED_CLOCK_TIME,
 } from './programDeadline';
+import { sanitizedObservedFellowshipProse } from '../fellowshipProse';
 
 const SITE_CHROME_SELECTOR =
   'header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu';
@@ -167,7 +167,6 @@ export function programPageDescription(
   $: cheerio.CheerioAPI,
   chromeFreeRoot: cheerio.Cheerio<any>,
   bodyText: string,
-  maxLength = 2000,
 ): string | undefined {
   const prose = chromeFreeRoot
     .find('p')
@@ -178,9 +177,9 @@ export function programPageDescription(
       (text) => text.length >= MIN_PROSE_PARAGRAPH_CHARS && !FAQ_OR_QUESTION_PARAGRAPH.test(text),
     )
     .join(' ');
-  const fromProse = prose ? sanitizeStoredCatalogDescription(prose, maxLength) : '';
+  const fromProse = sanitizedObservedFellowshipProse(prose) ?? '';
   if (wordCount(fromProse) >= MIN_PROSE_DESCRIPTION_WORDS) return fromProse;
-  return sanitizeStoredCatalogDescription(bodyText, maxLength) || fromProse || undefined;
+  return sanitizedObservedFellowshipProse(bodyText) || fromProse || undefined;
 }
 
 /**

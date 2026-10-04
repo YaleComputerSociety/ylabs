@@ -140,10 +140,8 @@ import {
   planStoredTextNormalization,
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
-import {
-  FELLOWSHIP_DESCRIPTION_FIELDS,
-  planFellowshipClassification,
-} from './fellowshipClassificationDerivation';
+import { planFellowshipClassification } from './fellowshipClassificationDerivation';
+import { fellowshipDisplayProse, OBSERVED_FELLOWSHIP_PROSE_FIELDS } from './fellowshipProse';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   FUND_AUTHORITY_FIELDS,
@@ -214,7 +212,6 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
-  sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
@@ -1550,10 +1547,10 @@ export function materializedFieldValue(
   }
   if (
     entityType === 'fellowship' &&
-    FELLOWSHIP_DESCRIPTION_FIELDS.has(field) &&
+    OBSERVED_FELLOWSHIP_PROSE_FIELDS.has(field) &&
     typeof value === 'string'
   ) {
-    return sanitizeStoredCatalogDescription(value);
+    return fellowshipDisplayProse(field, value) ?? value;
   }
   if (
     isResearchEntityObservationType(entityType) &&

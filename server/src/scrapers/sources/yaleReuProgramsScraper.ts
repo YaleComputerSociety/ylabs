@@ -32,6 +32,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
+import { boundedObservedFellowshipProse } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
@@ -75,6 +76,7 @@ export const NSF_REU_DIRECTORY_SEED_URLS = ['https://www.nsf.gov/crssprgm/reu/re
 
 const MAX_DISCOVERED_YALE_PROGRAM_PAGES = 60;
 const MAX_PROGRAM_LINKS = 8;
+const DEADLINE_APPLICATION_SECTION_CHARS = 1200;
 
 export interface ReuProgramCandidate {
   sourceKey: string;
@@ -205,7 +207,7 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
     if (section) sections.push(section);
   });
   const combined = normalizeWhitespace(sections.join(' '));
-  return combined ? combined.slice(0, 1200) : undefined;
+  return combined ? boundedObservedFellowshipProse(combined) : undefined;
 }
 
 function hasActiveApplicationLanguage(text: string): boolean {
@@ -276,7 +278,10 @@ export function parseReuProgramPage(
 
   const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
-  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
+  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE)?.slice(
+    0,
+    DEADLINE_APPLICATION_SECTION_CHARS,
+  );
   const deadline = parseProgramDate(
     nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
     'deadline',

@@ -61,6 +61,7 @@ function fundDetailHtml(
     fullDescription?: string;
     applicationInformation?: string;
     eligibility?: string;
+    restrictions?: string;
     yearOfStudy?: string[];
   } = {},
 ): string {
@@ -74,6 +75,7 @@ function fundDetailHtml(
     fullDescription = '',
     applicationInformation = '',
     eligibility = 'Enrolled Yale College undergraduates in good standing.',
+    restrictions = '',
     yearOfStudy = ['Sophomore', 'Junior'],
   } = options;
   const section = (heading: string, body: string) =>
@@ -95,7 +97,7 @@ function fundDetailHtml(
     <span id="${P}lblDescription">${section('Description', fullDescription)}</span>
     <span id="${P}lblApplicationInformation">${section('Application Information', applicationInformation)}</span>
     <span id="${P}lblSpecialEligibilityRequirements">${section('Special Eligibility Requirements', eligibility)}</span>
-    <span id="${P}lblRestrictionstoUseofAward"></span>
+    <span id="${P}lblRestrictionstoUseofAward">${section('Restrictions to Use of Award', restrictions)}</span>
     <span id="${P}lblFundContactInformation"><h1 class='Grant_Criteria_hd'>Contact Information:</h1>For questions, contact <a href=mailto:fixture.contact@example.org>fixture.contact@example.org</a></span>
     <span id="${P}lblEligibilityRequirements"><h1 class='Grant_Criteria_hd'>Search Filters:</h1></span>
     ${facetPanel(1, 'Current Year of Study', yearOfStudy)}
@@ -539,6 +541,51 @@ describe('the fund Description section the classifier reads (#4232)', () => {
     })!;
 
     expect(fundToObservations(fund).map((obs) => obs.field)).not.toContain('fullSourceDescription');
+  });
+});
+
+describe('prose a fund page states past the old emission caps (#4572)', () => {
+  const REQUIREMENT =
+    'Each application must include the approval of a faculty advisor who will supervise the research project.';
+  const filler = (topic: string, count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => `${topic} clause ${index + 1} describes a synthetic condition of the award.`,
+    ).join(' ');
+  const html = fundDetailHtml({
+    brief: 'To provide funding to offset the costs associated with an independent project.',
+    eligibility: `${filler('Eligibility', 12)} ${REQUIREMENT}`,
+    restrictions: filler('Restriction', 12),
+    applicationInformation: `${filler('Application', 40)} Submit the budget form last.`,
+  });
+
+  it('emits eligibility, restrictions and application information whole', () => {
+    const fund = parseFundDetailPage(html, { title: '', url: FUND_A_URL })!;
+
+    expect(fund.eligibility?.length).toBeGreaterThan(500);
+    expect(fund.eligibility).toContain(REQUIREMENT);
+    expect(fund.restrictionsToUseOfAward?.length).toBeGreaterThan(500);
+    expect(fund.applicationInformation?.length).toBeGreaterThan(2000);
+    expect(fund.applicationInformation).toMatch(/Submit the budget form last\.$/);
+  });
+
+  it('bounds a runaway section to the observation size limit', () => {
+    const fund = parseFundDetailPage(fundDetailHtml({ eligibility: filler('Runaway', 3000) }), {
+      title: '',
+      url: FUND_A_URL,
+    })!;
+
+    expect(fund.eligibility?.length).toBeLessThanOrEqual(20_000);
+    expect(fund.eligibility?.length).toBeGreaterThan(10_000);
+  });
+
+  it('lets the classifier read a requirement stated past the old eligibility cap', () => {
+    const fund = parseFundDetailPage(html, { title: '', url: FUND_A_URL })!;
+
+    expect(classificationFromObservedFacts(fundToObservations(fund))).toMatchObject({
+      requiresMentorBeforeApply: true,
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
   });
 });
 

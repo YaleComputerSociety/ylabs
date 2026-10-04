@@ -35,6 +35,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
+import { boundedObservedFellowshipProse } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -102,6 +103,7 @@ export const EXCLUDED_ALREADY_COVERED_URLS = [
 
 const MAX_DISCOVERED_PROGRAM_PAGES = 80;
 const MAX_PROGRAM_LINKS = 8;
+const DEADLINE_APPLICATION_SECTION_CHARS = 1200;
 
 export interface HealthSciencesProgramCandidate {
   sourceKey: string;
@@ -241,7 +243,7 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
     if (section) sections.push(section);
   });
   const combined = normalizeWhitespace(sections.join(' '));
-  return combined ? combined.slice(0, 1200) : undefined;
+  return combined ? boundedObservedFellowshipProse(combined) : undefined;
 }
 
 function hasActiveApplicationLanguage(text: string): boolean {
@@ -310,7 +312,10 @@ export function parseHealthSciencesProgramPage(
 
   const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
-  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
+  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE)?.slice(
+    0,
+    DEADLINE_APPLICATION_SECTION_CHARS,
+  );
   const deadline = parseProgramDate(
     nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
     'deadline',

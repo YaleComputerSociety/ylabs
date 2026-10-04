@@ -110,6 +110,9 @@ const AWARD_INSTRUMENT_TITLE =
 
 const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
 
+const RESEARCH_ASSISTANT_EXPENSE =
+  /\b(?:stipends?|salar(?:y|ies)|wages|pay(?:ing)?|hir(?:e|ing))\s+(?:for\s+)?(?:[a-z-]+\s+(?:or|and)\s+)?research assistants?\b/g;
+
 const RESEARCH_CAREER_AWARD_PROSE =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/;
 
@@ -724,7 +727,9 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     });
   }
 
-  if (/research assistant|\bra program|\bra\b/.test(lower)) {
+  if (
+    /research assistant|\bra program|\bra\b/.test(lower.replace(RESEARCH_ASSISTANT_EXPENSE, ''))
+  ) {
     return structuredProgram({
       programKind: 'RA_PROGRAM',
       entryMode: 'APPLY_TO_PROJECT',
