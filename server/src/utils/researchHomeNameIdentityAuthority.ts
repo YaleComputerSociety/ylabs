@@ -747,6 +747,34 @@ export function labResearchEntityNameFromStaleFacultyResearchSuffix(entity: {
   return derived === name ? '' : derived;
 }
 
+const LAB_NAME_SUFFIX_RE = /\s+(?:lab|laboratory)$/i;
+
+/**
+ * The name a `FACULTY_RESEARCH_AREA` row should carry when it wears a lab suffix that
+ * no live observation asserts, or `''` otherwise.
+ *
+ * The #2884 objection above is to the suffix as page evidence, so this only reaches
+ * a suffix nothing currently asserts: a value whose writer no longer observes it, or
+ * whose observation is gone, carries no harvested information (#4638).
+ */
+export function facultyResearchNameFromUnassertedLabSuffix(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  labAssertedByLiveObservation: boolean;
+}): string {
+  if (entity.labAssertedByLiveObservation) return '';
+  if (textValue(entity.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return '';
+  const name = textValue(entity.candidateName);
+  if (!LAB_NAME_SUFFIX_RE.test(name)) return '';
+  const derived = personScopedResearchEntityNameFromPersonName({
+    entityType: entity.entityType,
+    kind: entity.kind,
+    candidateName: name.replace(LAB_NAME_SUFFIX_RE, '').trim(),
+  });
+  return derived === name ? '' : derived;
+}
+
 /**
  * The research-record name to substitute when the name a person-scoped row carries
  * names something else and no candidate observation offers one that does not.

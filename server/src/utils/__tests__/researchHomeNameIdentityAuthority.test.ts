@@ -22,6 +22,7 @@ import {
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUnrecoverablePersonScopedEntityName,
+  facultyResearchNameFromUnassertedLabSuffix,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromPersonName,
   isUmbrellaOrganizationName,
@@ -1502,6 +1503,55 @@ describe('personScopedResearchEntityNameFromPersonName', () => {
         entityType: 'LAB',
       }),
     ).toBe('');
+  });
+});
+
+describe('facultyResearchNameFromUnassertedLabSuffix (#4638)', () => {
+  it('derives the faculty research name for an unasserted lab suffix', () => {
+    for (const candidateName of ['Robin Roster Lab', 'Robin Roster Laboratory']) {
+      expect(
+        facultyResearchNameFromUnassertedLabSuffix({
+          candidateName,
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          labAssertedByLiveObservation: false,
+        }),
+      ).toBe('Robin Roster Faculty Research');
+    }
+  });
+
+  it('leaves a lab suffix a live observation asserts', () => {
+    expect(
+      facultyResearchNameFromUnassertedLabSuffix({
+        candidateName: 'Robin Roster Lab',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        labAssertedByLiveObservation: true,
+      }),
+    ).toBe('');
+  });
+
+  it('leaves every other type alone', () => {
+    for (const entityType of ['LAB', 'FACULTY_PROJECT', 'CENTER', '']) {
+      expect(
+        facultyResearchNameFromUnassertedLabSuffix({
+          candidateName: 'Robin Roster Lab',
+          entityType,
+          labAssertedByLiveObservation: false,
+        }),
+      ).toBe('');
+    }
+  });
+
+  it('refuses a head that is not a bare person name, and is idempotent', () => {
+    for (const candidateName of ['Lab', 'Google Scholar Lab', 'Robin Roster Faculty Research']) {
+      expect(
+        facultyResearchNameFromUnassertedLabSuffix({
+          candidateName,
+          entityType: 'FACULTY_RESEARCH_AREA',
+          labAssertedByLiveObservation: false,
+        }),
+      ).toBe('');
+    }
   });
 });
 

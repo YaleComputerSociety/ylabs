@@ -75,6 +75,7 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   namesAScholarlyEventSeries,
+  facultyResearchNameFromUnassertedLabSuffix,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
@@ -221,6 +222,7 @@ import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
+import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
@@ -6665,6 +6667,32 @@ function enforceResearchEntityNameAuthority(input: {
       });
     if (!derived || derived === textValue(servedValue)) continue;
     set[field] = derived;
+    fieldsWritten++;
+  }
+
+  const labAssertedByLiveObservation = evidenceAssertsALab(
+    ...input.resolverObs
+      .filter((observation) =>
+        (RESEARCH_ENTITY_IDENTITY_NAME_FIELDS as readonly string[]).includes(observation.field),
+      )
+      .map((observation) => textValue(observation.value)),
+  );
+  for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
+    if (input.manuallyLockedFields.includes(field)) continue;
+    if (field in unset) continue;
+    const servedValue = set[field] ?? entityDoc?.[field];
+    const derived = facultyResearchNameFromUnassertedLabSuffix({
+      ...recordIdentity,
+      candidateName: servedValue,
+      labAssertedByLiveObservation,
+    });
+    if (!derived) continue;
+    set[field] = derived;
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (objectRecord(entityDoc?.fieldProvenance?.[field]).sourceUrl) {
+      unset[`fieldProvenance.${field}`] = '';
+    }
     fieldsWritten++;
   }
   return fieldsWritten;
