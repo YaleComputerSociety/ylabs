@@ -1313,6 +1313,8 @@ Two scoping rules keep that from re-ranking the whole corpus.
 The demotion only fires when the useful non-bio alternative comes from a source in `BIO_REPLACING_DESCRIPTION_SOURCES`, because `isHighConfidencePersonBio` also flags genuine organization prose ("Professor Jane Doe's laboratory investigates ...") that several scrapers emit with no write-time bio guard, and a field-wide rule promoted a bare grant abstract over an authoritative official description on labs and centers this lane never touches.
 The bio is demoted, never dropped: `entityMaterializer` walks the ranked list when its own content gates reject the winner, and removing the bio left that walk with no last resort and blanked descriptions that had been served.
 A sole bio is still served rather than blanked, and a non-bio alternative that fails the quality bar never displaces one.
+The research-prose arm still runs when every candidate trips the wide test, because a titled-name research statement ("Dr. Doe's research integrates ...") trips `isHighConfidencePersonBio` too, and with that arm skipped two 0.55 official-profile reads were ordered by recency alone, so whichever lane re-read last decided whether the row served research or a biography (#4660).
+In that arm a biography is demotable when `isDemotablePersonBio` or `isBiographyRatherThanResearch` fires, and the value promoted in its place must itself fail `isBiographyRatherThanResearch` and clear the research-home bar.
 Do not "fix" a lane that cannot displace a bio by raising its confidence above official extraction; that trades a real verbatim research statement away.
 
 Do not reach for the grant-corpus lane here: only 12 of the 464 bio-shaped FRAs have any grant at all, so #2191 reaches 3% of the cohort.

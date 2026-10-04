@@ -27,10 +27,20 @@ function firstPersonOpenerAfterHeading(text: string): number {
   return -1;
 }
 
-export function withoutGluedLeadingHeading(value: string): string {
-  const text = value.replace(/\s+/g, ' ').trim();
+function withoutOneGluedLeadingHeading(text: string): string {
   const labHeading = LAB_HEADING_BEFORE_TITLED_NAME.exec(text);
   if (labHeading) return text.slice(labHeading[0].length);
   const openerOffset = firstPersonOpenerAfterHeading(text);
-  return openerOffset > 0 ? text.slice(openerOffset) : value;
+  return openerOffset > 0 ? text.slice(openerOffset) : text;
+}
+
+export function withoutGluedLeadingHeading(value: string): string {
+  const text = value.replace(/\s+/g, ' ').trim();
+  let stripped = withoutOneGluedLeadingHeading(text);
+  if (stripped === text) return value;
+  for (let next = withoutOneGluedLeadingHeading(stripped); next !== stripped; ) {
+    stripped = next;
+    next = withoutOneGluedLeadingHeading(stripped);
+  }
+  return stripped;
 }

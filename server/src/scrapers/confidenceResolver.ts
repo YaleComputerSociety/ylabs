@@ -25,6 +25,7 @@ import {
   type DescriptionEntityKind,
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 
@@ -357,7 +358,9 @@ function isCuratedGroup(group: { sources: Set<string> }): boolean {
 
 function isDemotableBioProseGroup(group: RankedGroup): boolean {
   return (
-    typeof group.value === 'string' && !isCuratedGroup(group) && isDemotablePersonBio(group.value)
+    typeof group.value === 'string' &&
+    !isCuratedGroup(group) &&
+    (isDemotablePersonBio(group.value) || isBiographyRatherThanResearch(group.value))
   );
 }
 
@@ -414,7 +417,7 @@ function demotePersonBioProseGroups(
 ): void {
   if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
   const bioGroups = groups.filter(isPersonBioProseGroup);
-  if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
+  if (bioGroups.length === 0) return;
   const synthesisReplacementExists = groups.some(
     (group) =>
       !isPersonBioProseGroup(group) &&
@@ -426,9 +429,15 @@ function demotePersonBioProseGroups(
     return;
   }
   const demotable = bioGroups.filter(isDemotableBioProseGroup);
-  if (demotable.length === 0) return;
+  if (demotable.length === 0 || demotable.length === groups.length) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
-  if (!promoted || !isServableResearchHomeProseGroup(field, promoted, kind)) return;
+  if (
+    !promoted ||
+    isBiographyRatherThanResearch(promoted.value) ||
+    !isServableResearchHomeProseGroup(field, promoted, kind)
+  ) {
+    return;
+  }
   for (const group of demotable) group.demoted = true;
 }
 
