@@ -2522,3 +2522,28 @@ describe('a research-interests sentence is a body even when it lists the row top
     ).toContain('area-echo-fallback');
   });
 });
+
+describe('fullDescriptionQuality appointment line that names research topics (#4635)', () => {
+  it('keeps a first-person appointment sentence with a topic clause useful', () => {
+    const quality = fullDescriptionQuality(
+      'I am a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      ['Representation Theory', 'Algebraic Geometry'],
+      'FACULTY_RESEARCH_AREA',
+    );
+    expect(quality.flags).not.toContain('appointment-only');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('still flags an appointment sentence with no topic clause', () => {
+    expect(
+      fullDescriptionQuality(
+        'I am an assistant professor in the history department at Yale.',
+        [],
+        'FACULTY_RESEARCH_AREA',
+      ).flags,
+    ).toContain('appointment-only');
+    expect(
+      fullDescriptionQuality('Jane Doe is an Associate Professor of History at Yale.').flags,
+    ).toContain('appointment-only');
+  });
+});

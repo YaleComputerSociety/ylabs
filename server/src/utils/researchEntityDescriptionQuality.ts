@@ -30,6 +30,7 @@ import {
   isResearchEntitySourceChromeText,
   isRoleOnlyTitleFragment,
   isSyntheticResearchHomeMetadataDescription,
+  namesResearchTopics,
   publicResearchEntityDescriptionText,
 } from './researchEntityDescriptionText';
 
@@ -1387,6 +1388,7 @@ const isAppointmentOnly = (value: string): boolean => {
   if (isUndergraduateResearchProgramDescription(value)) return false;
   if (hasLaterResearchFocusSentence(value)) return false;
   if (hasExplicitProfileResearchFocus(value)) return false;
+  if (namesResearchTopics(value)) return false;
   return (
     isAcademicAppointmentDescription(value) ||
     /^(?:I am|I'm)\s+(?:an?\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b/i.test(

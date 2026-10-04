@@ -526,6 +526,31 @@ export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
   return /^research areas?\s*(?::|include\b)/i.test(cleaned);
 }
 
+const RESEARCH_TOPIC_POSSESSIVE =
+  "(?:my|his|her|their|our|this|[\\p{L}.'’-]+(?:\\s+[\\p{L}.'’-]+){0,3}['’]s)";
+
+// An appointment line that goes on to name what the person studies is a thin but
+// accurate research description, not a title fragment (#4635). The inflected forms
+// matter: "studying <topics>" and "working on <topics>" were absent from the bare
+// verb list below, the same inflection gap #1456 recorded.
+const RESEARCH_TOPIC_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /\b(?:studying|who\s+stud(?:y|ies)|working\s+on|who\s+works?\s+on)\s+(?!(?:at|in|under|with|for|abroad|toward|towards|behalf)\b)\p{L}/iu,
+  /\bwhose\s+research\s+(?:focuses|centers|centres|concentrates)\s+on\s+\p{L}/iu,
+  /\bwith\s+research\s+(?:in|on)\s+\p{L}/iu,
+  new RegExp(`\\b${RESEARCH_TOPIC_POSSESSIVE}\\s+research\\s+is\\s+in\\s+\\p{L}`, 'iu'),
+  new RegExp(
+    `\\b${RESEARCH_TOPIC_POSSESSIVE}\\s+subject\\s+areas?\\s+(?:are|is|include)\\s+\\p{L}`,
+    'iu',
+  ),
+];
+
+export function namesResearchTopics(value: unknown): boolean {
+  const cleaned = textValue(value);
+  return (
+    Boolean(cleaned) && RESEARCH_TOPIC_CLAUSE_PATTERNS.some((pattern) => pattern.test(cleaned))
+  );
+}
+
 export function isAcademicAppointmentDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   // The appointment patterns below identify a short title-only fragment ("X
@@ -541,7 +566,7 @@ export function isAcademicAppointmentDescription(value: unknown): boolean {
     /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
       cleaned,
     );
-  if (hasResearchDescriptionVerb) return false;
+  if (hasResearchDescriptionVerb || namesResearchTopics(cleaned)) return false;
 
   return [
     /^Department Chair\b.*\bProfessor of\b/i,
