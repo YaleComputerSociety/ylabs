@@ -51,15 +51,18 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
 import {
-  evidenceUrlCiterCounts,
-  evidenceUrlsOf,
+  evidenceUrlCiters,
   institutionalEvidenceHosts,
   isInstitutionSectionLandingUrl,
   isSharedEvidenceUrl,
   normalizeEvidenceUrl,
   sharedEvidenceUrls,
+  type EvidenceCiter,
 } from '../utils/sharedEvidenceUrls';
-import { DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS } from '../descriptionSourceOwnership';
+import {
+  OWNERSHIP_GUARDED_ENTITY_TYPE,
+  refusesDescriptionOnSharedPage,
+} from '../descriptionSourceOwnership';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import {
   describesResearchHome,
@@ -160,8 +163,6 @@ export interface CandidateDescriptionLab {
   fullDescription?: string;
   /** The page the stored `fullDescription` is credited to, if any. */
   fullDescriptionSourceUrl?: string;
-  /** The row's own stored citations, unlike `sourceUrls`, which holds expanded candidates. */
-  evidenceUrls?: string[];
   sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
@@ -232,24 +233,24 @@ export interface PageAttributionIdentityCorpus {
   sharedUrls?: ReadonlySet<string>;
   institutionalHosts?: ReadonlySet<string>;
   /**
-   * How many rows cite each normalized URL. The description is held to the engine's
+   * The rows citing each normalized URL. The description is held to the engine's
    * ownership bar, which `sharedUrls` is stricter than (#3740).
    */
-  evidenceCiterCounts?: ReadonlyMap<string, number>;
+  evidenceCiters?: ReadonlyMap<string, readonly EvidenceCiter[]>;
 }
 
-const EMPTY_CITER_COUNTS: ReadonlyMap<string, number> = new Map();
+const EMPTY_CITERS: ReadonlyMap<string, readonly EvidenceCiter[]> = new Map();
 
-export function foreignEvidenceCiters(
+export function foreignEvidenceCiterNames(
   url: string,
-  ownEvidenceUrls: readonly string[],
-  citerCounts: ReadonlyMap<string, number>,
-): number {
+  ownEntityId: string | undefined,
+  citers: ReadonlyMap<string, readonly EvidenceCiter[]>,
+): unknown[] {
   const normalized = normalizeEvidenceUrl(url);
-  if (!normalized) return 0;
-  const citers = citerCounts.get(normalized) ?? 0;
-  const ownCitation = ownEvidenceUrls.map(normalizeEvidenceUrl).includes(normalized) ? 1 : 0;
-  return Math.max(0, citers - ownCitation);
+  if (!normalized) return [];
+  return (citers.get(normalized) ?? [])
+    .filter((citer) => citer.id !== ownEntityId)
+    .map((citer) => citer.name);
 }
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
@@ -270,7 +271,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     loadResearchEntityLeadPersonNames(),
     ResearchEntity.find(
       { archived: { $ne: true } },
-      { websiteUrl: 1, website: 1, sourceUrls: 1 },
+      { name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
     ).lean() as Promise<Array<Record<string, unknown>>>,
   ]);
   return {
@@ -278,7 +279,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     leadPersonNameByEntityId,
     sharedUrls: sharedEvidenceUrls(evidenceRows),
     institutionalHosts: institutionalEvidenceHosts(evidenceRows),
-    evidenceCiterCounts: evidenceUrlCiterCounts(evidenceRows),
+    evidenceCiters: evidenceUrlCiters(evidenceRows),
   };
 }
 
@@ -817,7 +818,6 @@ export function candidateDescriptionLabsFromDocs(
         textValue((doc as { fullDescription?: unknown }).fullDescription) || undefined,
       fullDescriptionSourceUrl:
         textValue(doc.fieldProvenance?.fullDescription?.sourceUrl) || undefined,
-      evidenceUrls: evidenceUrlsOf(doc),
       sourceLinkHealth: doc.sourceLinkHealth,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
@@ -1348,8 +1348,15 @@ export function describeDescriptionExtraction(
   // Held to the ingest bar in `descriptionSourceOwnership`, which a second citer does
   // not meet; refusing earlier withheld bodies the store admits (#3740).
   if (
-    (context.descriptionSourceForeignCiters ?? 0) >= DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS &&
-    !isPersonProfileOrDirectoryUrl(context.sourceUrl)
+    refusesDescriptionOnSharedPage(
+      {
+        entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+        field: 'fullDescription',
+        sourceUrl: context.sourceUrl,
+        ownName: context.entityName,
+      },
+      context.descriptionSourceForeignCiterNames ?? [],
+    )
   ) {
     return refusedBy('shared_evidence_url');
   }
@@ -1531,11 +1538,12 @@ export interface ExtractedPageIdentityContext {
    */
   sharedEvidenceUrl?: boolean;
   /**
-   * How many rows other than this one cite `sourceUrl`. The description is refused
-   * from `DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS` on; `sharedEvidenceUrl` still governs
-   * the name a page may assert (#3740).
+   * The names of the rows other than this one that cite `sourceUrl`, judged by
+   * `refusesDescriptionOnSharedPage` with `entityName`; `sharedEvidenceUrl` still
+   * governs the name a page may assert (#3740).
    */
-  descriptionSourceForeignCiters?: number;
+  descriptionSourceForeignCiterNames?: readonly unknown[];
+  entityName?: unknown;
   /**
    * Whether `sourceUrl` is an institutional host's own whole-organisation landing
    * page. Distinct from `sharedEvidenceUrl` because the lane reaches such a page by
@@ -2260,11 +2268,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityKey: lab.slug,
           sourceUrl: page.url,
           sharedEvidenceUrl: isSharedEvidenceUrl(page.url, identityCorpus.sharedUrls ?? EMPTY_SET),
-          descriptionSourceForeignCiters: foreignEvidenceCiters(
+          descriptionSourceForeignCiterNames: foreignEvidenceCiterNames(
             page.url,
-            lab.evidenceUrls ?? evidenceUrlsOf(lab),
-            identityCorpus.evidenceCiterCounts ?? EMPTY_CITER_COUNTS,
+            serializedDocumentId(lab._id),
+            identityCorpus.evidenceCiters ?? EMPTY_CITERS,
           ),
+          entityName: lab.name,
           institutionLandingUrl: isInstitutionSectionLandingUrl(
             page.url,
             identityCorpus.institutionalHosts ?? EMPTY_SET,

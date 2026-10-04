@@ -89,6 +89,31 @@ export function evidenceUrlCiterCounts(rows: readonly EvidenceCitingRow[]): Map<
   return holders;
 }
 
+export interface EvidenceCiter {
+  id: string;
+  name: unknown;
+}
+
+export interface NamedEvidenceCitingRow extends EvidenceCitingRow {
+  _id?: unknown;
+  name?: unknown;
+}
+
+export function evidenceUrlCiters(
+  rows: readonly NamedEvidenceCitingRow[],
+): Map<string, EvidenceCiter[]> {
+  const citers = new Map<string, EvidenceCiter[]>();
+  for (const row of rows) {
+    const citer = { id: String(row._id ?? ''), name: row.name };
+    for (const url of evidenceUrlsOf(row)) {
+      const list = citers.get(url);
+      if (list) list.push(citer);
+      else citers.set(url, [citer]);
+    }
+  }
+  return citers;
+}
+
 export function isSharedEvidenceUrl(value: unknown, shared: ReadonlySet<string>): boolean {
   const normalized = normalizeEvidenceUrl(value);
   return normalized.length > 0 && shared.has(normalized);

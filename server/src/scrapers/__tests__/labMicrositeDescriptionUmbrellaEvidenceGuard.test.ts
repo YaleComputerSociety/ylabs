@@ -36,6 +36,10 @@ const landingExtraction = (): DescriptionExtraction => ({
   name: '',
 });
 
+const DISTINCT_CITER_NAMES = ['Marrowind Center', 'Peltasker Institute', 'Corvane Program'];
+
+const unrelatedCiters = (count: number): string[] => DISTINCT_CITER_NAMES.slice(0, count);
+
 const baseContext = {
   knownPersonSurnames: NO_SURNAME_ROSTER,
   entityId: 'entity-a',
@@ -51,7 +55,7 @@ describe('shared-evidence guard (#3148)', () => {
       descriptionExtractionToObservations(landingExtraction(), {
         ...baseContext,
         sharedEvidenceUrl: true,
-        descriptionSourceForeignCiters: 2,
+        descriptionSourceForeignCiterNames: unrelatedCiters(2),
       }),
     ).toEqual([]);
   });
@@ -59,7 +63,11 @@ describe('shared-evidence guard (#3148)', () => {
   it('describes a row from a page one other row cites, on the ingest bar, but asserts no name from it (#3740)', () => {
     const observations = descriptionExtractionToObservations(
       { ...landingExtraction(), name: 'Center for Translational Discovery' },
-      { ...baseContext, sharedEvidenceUrl: true, descriptionSourceForeignCiters: 1 },
+      {
+        ...baseContext,
+        sharedEvidenceUrl: true,
+        descriptionSourceForeignCiterNames: unrelatedCiters(1),
+      },
     );
     expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toBe(
       SCHOOL_LANDING_PROSE,
@@ -71,13 +79,29 @@ describe('shared-evidence guard (#3148)', () => {
 
   it('holds the lane to the same citer bar as the ingest ownership guard (#3740)', () => {
     expect(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS).toBe(2);
-    const at = (descriptionSourceForeignCiters: number) =>
+    const at = (foreignCiters: number) =>
       descriptionExtractionToObservations(landingExtraction(), {
         ...baseContext,
-        descriptionSourceForeignCiters,
+        descriptionSourceForeignCiterNames: unrelatedCiters(foreignCiters),
       }).length > 0;
     expect(at(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS - 1)).toBe(true);
     expect(at(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS)).toBe(false);
+  });
+
+  it('admits a page every citer of which is the same subject stored more than once, as the ingest bar does (#3740)', () => {
+    const observations = descriptionExtractionToObservations(landingExtraction(), {
+      ...baseContext,
+      sharedEvidenceUrl: true,
+      entityName: 'The Quillfeather Lab',
+      descriptionSourceForeignCiterNames: [
+        'Quillfeather Lab',
+        'Quillfeather Laboratory',
+        'Quillfeather Lab',
+      ],
+    });
+    expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toBe(
+      SCHOOL_LANDING_PROSE,
+    );
   });
 
   it('adopts the same prose when no other row cites the page', () => {
@@ -94,7 +118,11 @@ describe('shared-evidence guard (#3148)', () => {
     expect(
       descriptionExtractionToObservations(
         { ...landingExtraction(), name: 'Center for Translational Discovery' },
-        { ...baseContext, sharedEvidenceUrl: true, descriptionSourceForeignCiters: 3 },
+        {
+          ...baseContext,
+          sharedEvidenceUrl: true,
+          descriptionSourceForeignCiterNames: unrelatedCiters(3),
+        },
       ),
     ).toEqual([]);
   });

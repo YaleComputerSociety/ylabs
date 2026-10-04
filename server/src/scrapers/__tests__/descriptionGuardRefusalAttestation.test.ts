@@ -57,7 +57,9 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     () => ReturnType<typeof refusalFor>
   > = {
     rejected_source_url: () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' }),
-    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, { descriptionSourceForeignCiters: 2 }),
+    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, {
+        descriptionSourceForeignCiterNames: ['Marrowind Center', 'Peltasker Institute'],
+      }),
     institution_landing_url: () => refusalFor(RESEARCH_PROSE, { institutionLandingUrl: true }),
     another_persons_lab: () =>
       refusalFor(
@@ -162,7 +164,9 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     };
     const attestation = descriptionSlotAttestation({
       ...wholeRead,
-      guardRefusal: refusalFor(RESEARCH_PROSE, { descriptionSourceForeignCiters: 2 }).refusal,
+      guardRefusal: refusalFor(RESEARCH_PROSE, {
+        descriptionSourceForeignCiterNames: ['Marrowind Center', 'Peltasker Institute'],
+      }).refusal,
     });
 
     expect(

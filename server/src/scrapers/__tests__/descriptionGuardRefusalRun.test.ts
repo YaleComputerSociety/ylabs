@@ -6,7 +6,7 @@ import {
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
 import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
-import { evidenceUrlCiterCounts, sharedEvidenceUrls } from '../utils/sharedEvidenceUrls';
+import { evidenceUrlCiters, sharedEvidenceUrls } from '../utils/sharedEvidenceUrls';
 
 const PAGE_URL = 'https://research.example.edu/programs/fixture-shared-page/';
 
@@ -20,16 +20,20 @@ const EXTRACTION: DescriptionExtraction = {
   methods: [],
 };
 
-const OWN_ROW = { websiteUrl: PAGE_URL };
+const OWN_ROW = { _id: 'fixture-1', name: 'Fixture Lab', websiteUrl: PAGE_URL };
 
 const corpusCitedBy = (otherCiters: number) => {
   const rows = [
     OWN_ROW,
-    ...Array.from({ length: otherCiters }, () => ({ sourceUrls: [PAGE_URL] })),
+    ...Array.from({ length: otherCiters }, (_, index) => ({
+      _id: `other-${index}`,
+      name: ['Marrowind Center', 'Peltasker Institute'][index],
+      sourceUrls: [PAGE_URL],
+    })),
   ];
   return {
     sharedUrls: sharedEvidenceUrls(rows),
-    evidenceCiterCounts: evidenceUrlCiterCounts(rows),
+    evidenceCiters: evidenceUrlCiters(rows),
   };
 };
 
@@ -80,6 +84,23 @@ describe('the description lane records a shared-page refusal as refused (#3739)'
 
   it('describes the row from a page one other row cites, as the ingest bar admits (#3740)', async () => {
     const { emitted } = await runLane(corpusCitedBy(1));
+
+    expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
+  });
+
+  it('describes the row from a page its own duplicate rows cite, as the ingest bar admits (#3740)', async () => {
+    const rows = [
+      OWN_ROW,
+      ...['other-0', 'other-1', 'other-2'].map((_id) => ({
+        _id,
+        name: 'The Fixture Lab',
+        sourceUrls: [PAGE_URL],
+      })),
+    ];
+    const { emitted } = await runLane({
+      sharedUrls: sharedEvidenceUrls(rows),
+      evidenceCiters: evidenceUrlCiters(rows),
+    });
 
     expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
   });
