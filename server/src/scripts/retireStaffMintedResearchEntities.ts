@@ -117,17 +117,6 @@ const provenanceOf = (
 };
 
 /**
- * The citation that gave the row its identity, which is the only one whose person's
- * title may speak for the row.
- *
- * `slug` provenance only. Both mint gates write `slug` and `name` from the same
- * base, so for this population a `name` fallback adds nothing, and where it does
- * fire the row's `name` is by definition a value some other lane wrote - the
- * name-graft class this repo already tracks separately. It fired for 255 live rows
- * on Development, so dropping it is a real narrowing of what may be archived, in
- * the conservative direction.
- */
-/**
  * Whether either stored description makes an explicit research statement in its own
  * subject, the second witness an administrative title needs before the row can be
  * archived. The research-focus phrase test reads only the card's short description,
@@ -143,6 +132,17 @@ export function descriptionStatesResearch(entity: {
   );
 }
 
+/**
+ * The citation that gave the row its identity, which is the only one whose person's
+ * title may speak for the row.
+ *
+ * `slug` provenance only. Both mint gates write `slug` and `name` from the same
+ * base, so for this population a `name` fallback adds nothing, and where it does
+ * fire the row's `name` is by definition a value some other lane wrote - the
+ * name-graft class this repo already tracks separately. It fired for 255 live rows
+ * on Development, so dropping it is a real narrowing of what may be archived, in
+ * the conservative direction.
+ */
 export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): string | undefined {
   const url = provenanceOf(entity, 'slug')?.sourceUrl;
   return isPersonProfileIdentityUrl(url) ? String(url) : undefined;

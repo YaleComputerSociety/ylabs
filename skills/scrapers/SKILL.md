@@ -97,7 +97,7 @@ Orphans are reported as `orphanedClaims`, including on the `nothing-governed` pa
 `isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.
 Measured against all 5,573 distinct stored titles in the corpus, every title the vocabulary puts at risk is a conjoined appointment - a Special Collections Librarian who is also a Lecturer in American Religious History - and putting `librarian` in the short-circuiting list would refuse exactly those people.
 
-The retirement pass retires a research-support or technical title, a non-research staff role, a student title, and a trainee rank the owner ruled cannot host (`non_hosting_trainee_title`).
+The retirement pass retires a research-support or technical title, a non-research staff role, a student title, a trainee rank the owner ruled cannot host (`non_hosting_trainee_title`), and an administrative office title whose row's own description states no research (`administrative_staff_title`, detailed in `docs/research-data-pipeline.md`).
 A trainee rank is still refused at MINT by all four lanes, which is #2304, and the retirement pass now retires the ranks the owner ruled on, decided before the faculty-keyword yield.
 The yield cannot decide them because `FACULTY_KEYWORDS` spells `postdoc` but not `post-doc`, so `'Postdoctoral Fellow'` would be spared while `'Post-Doctoral Fellow'` was archived, and no irreversible archive should turn on a hyphen.
 Student titles have that predicate: `isStudentTitle` covers the spellings programme people pages use (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `IDE Alumni`), and the retirement pass reports them as `student_title` (#4654).
