@@ -21,6 +21,11 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   LAB_SITE_LEAD_VERIFICATION_SOURCE,
   MAX_PEOPLE_SUBPAGES,
   buildLabSiteLeadVerification,
@@ -241,6 +246,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
       website,
       useCache,
     ) => readLabSite(website, useCache),
+    private readonly probePage?: LanePageProbe,
   ) {}
 
   async run(context: ScraperContext): Promise<ScraperResult> {
@@ -251,10 +257,14 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     const tally = { verified: 0, partial: 0, contradicted: 0, unstated: 0, unreachable: 0 };
     let observationCount = 0;
     let contradictedLeads = 0;
+    const pageReads = new LanePageReads();
 
     for (const candidate of candidates) {
       const observedAt = context.options.referenceDate ?? new Date();
       const reading = await this.readSite(candidate.website, context.options.useCache);
+      if (reading?.html) pageReads.recordRead(candidate.website, reading.visitedUrls[0]);
+      else if (reading)
+        pageReads.recordFailure(candidate.website, { status: reading.httpStatusCode });
       const verification =
         reading && reading.html
           ? buildLabSiteLeadVerification(
@@ -279,6 +289,18 @@ export class LabSiteLeadVerificationScraper implements IScraper {
         `${candidate.slug}: ${verification.state} (${verification.confirmedCount} confirmed, ${verification.contradictedCount} contradicted, ${verification.unstatedCount} unstated across ${verification.pagesRead} pages)`,
       );
     }
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      context,
+      pageReads,
+      this.probePage,
+      context.options.only?.length
+        ? {
+            entityKeys: [...context.options.only, ...candidates.map((candidate) => candidate.slug)],
+          }
+        : undefined,
+    );
+    observationCount += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount,

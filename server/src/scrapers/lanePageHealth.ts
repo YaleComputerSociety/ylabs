@@ -291,6 +291,12 @@ export function planGoneLanePageFieldClears(input: {
 export class LanePageReads {
   readonly reads = new Map<string, { url: string; resolvedUrl: string }>();
   readonly failures = new Map<string, { url: string; httpStatusCode?: number }>();
+  readonly judged = new Set<string>();
+
+  recordJudged(url: string): void {
+    const key = sourceLinkHealthKey(url);
+    if (key) this.judged.add(key);
+  }
 
   recordRead(url: string, resolvedUrl: string = url): void {
     const key = sourceLinkHealthKey(url);
@@ -304,6 +310,39 @@ export class LanePageReads {
     if (!key || this.reads.has(key)) return;
     this.failures.set(key, { url, httpStatusCode: fetchFailureHttpStatus(error) });
   }
+}
+
+export function fetchRecordedBy<A extends [string, ...unknown[]], T>(
+  pageReads: LanePageReads,
+  fetchPage: (...args: A) => Promise<T>,
+): (...args: A) => Promise<T> {
+  return async (...args) => {
+    const [url] = args;
+    try {
+      const page = await fetchPage(...args);
+      const landedUrl = (page as { url?: unknown } | null | undefined)?.url;
+      if (typeof landedUrl === 'string' && landedUrl) pageReads.recordRead(url, landedUrl);
+      return page;
+    } catch (error) {
+      pageReads.recordFailure(url, error);
+      throw error;
+    }
+  };
+}
+
+export function trackingEmittedEntityKeys<C extends Pick<ScraperContext, 'emit'>>(
+  ctx: C,
+): { ctx: C; entityKeys: Set<string> } {
+  const entityKeys = new Set<string>();
+  const emit: ScraperContext['emit'] = async (observations) => {
+    for (const observation of Array.isArray(observations) ? observations : [observations]) {
+      if (observation.entityType === 'researchEntity' && observation.entityKey) {
+        entityKeys.add(observation.entityKey);
+      }
+    }
+    await ctx.emit(observations);
+  };
+  return { ctx: { ...ctx, emit }, entityKeys };
 }
 
 type CitedLaneObservation = LanePageObservation & { scrapeRunId?: unknown };
@@ -346,11 +385,23 @@ function citingRowsOf(observations: readonly CitedLaneObservation[]): Map<string
 export type CitedLanePageScope =
   { entityKeys: readonly string[] } | { sourceUrls: readonly string[] };
 
-function scopeFilter(scope: CitedLanePageScope | undefined): Record<string, unknown> {
+async function scopeFilter(
+  scope: CitedLanePageScope | undefined,
+): Promise<Record<string, unknown>> {
   if (!scope) return {};
-  return 'entityKeys' in scope
-    ? { entityKey: { $in: [...scope.entityKeys] } }
-    : { sourceUrl: { $in: [...scope.sourceUrls] } };
+  if ('sourceUrls' in scope) return { sourceUrl: { $in: [...scope.sourceUrls] } };
+  const entityKeys = [...scope.entityKeys];
+  const rowIds = (
+    await ResearchEntity.find({ slug: { $in: entityKeys } })
+      .select('_id')
+      .lean<Array<{ _id: unknown }>>()
+  ).map((row) => row._id);
+  return {
+    $or: [
+      { entityKey: { $in: entityKeys } },
+      ...(rowIds.length > 0 ? [{ entityId: { $in: rowIds } }] : []),
+    ],
+  };
 }
 
 async function storedHealthByIdentity(rows: Iterable<CitingRow>) {
@@ -401,7 +452,7 @@ export async function emitLanePageHealthForCitedPages(
     entityType: 'researchEntity',
     superseded: false,
     sourceUrl: { $type: 'string', $ne: '' },
-    ...scopeFilter(scope),
+    ...(await scopeFilter(scope)),
   })
     .select('sourceName field value sourceUrl observedAt entityKey entityId scrapeRunId')
     .lean<CitedLaneObservation[]>();
@@ -436,6 +487,7 @@ export async function emitLanePageHealthForCitedPages(
         .map((observation) => sourceLinkHealthKey(observation.sourceUrl)),
     );
     for (const [page, url] of pages) {
+      if (pageReads.judged.has(page)) continue;
       const read = pageReads.reads.get(page);
       if (read) {
         if (!gonePages.has(page)) continue;

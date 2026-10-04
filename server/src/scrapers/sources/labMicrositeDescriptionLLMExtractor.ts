@@ -37,7 +37,9 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   confirmGoneLanePage,
+  emitLanePageHealthForCitedPages,
   fetchFailureHttpStatus,
+  LanePageReads,
   goneLanePageKeys,
   loadLanePageHealthObservations,
   lanePageHealthObservation,
@@ -2082,6 +2084,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     }
 
     const only = uniqueStrings(ctx.options.only || []);
+    const pageReads = new LanePageReads();
     const offset = parseRuntimeIntegerOption(ctx.options.offset, '--offset', {
       min: 0,
       label: 'non-negative',
@@ -2153,6 +2156,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const pageHealthObservations: ObservationInput[] = [];
         const emittedPageHealth: ObservationInput[] = [];
         const recordGonePage = async (url: string, firstAnswer: { httpStatusCode?: unknown }) => {
+          pageReads.recordJudged(url);
           const verdict = await confirmGoneLanePage(
             url,
             { ...firstAnswer, storedHealth: lab.sourceLinkHealth },
@@ -2162,6 +2166,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           pageHealthObservations.push(lanePageHealthObservation(pageHealthEntity, verdict));
         };
         const recordReadPage = (requestedUrl: string, resolvedUrl: string) => {
+          pageReads.recordJudged(requestedUrl);
           if (landsAwayFromRequestedResource(requestedUrl, resolvedUrl)) return;
           pageHealthObservations.push(
             lanePageHealthObservation(
@@ -2692,6 +2697,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         ctx.log(`[${lab.slug || 'candidate'}] skipping description extraction: ${message}`);
       }
     });
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length
+        ? { entityKeys: [...only, ...candidates.flatMap((lab) => (lab.slug ? [lab.slug] : []))] }
+        : undefined,
+    );
+    observationCount += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount,
