@@ -2759,6 +2759,8 @@ describe('describesResearchFocus reads a page stating its work in the progressiv
   });
 
   it('still refuses a team description with no research verb', () => {
-    expect(describesResearchFocus('We are a friendly team located on the third floor.')).toBe(false);
+    expect(describesResearchFocus('We are a friendly team located on the third floor.')).toBe(
+      false,
+    );
   });
 });
