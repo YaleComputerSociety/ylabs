@@ -407,6 +407,7 @@ How that carried evidence stops backing the survivor:
   Now a loser key's state is the survivor its tombstone chain reaches: the survivor's stored value and locks decide, the clear lands on the survivor, and rival evidence is counted across every key and id merged into that survivor, because any of them refills the field on the next resolve.
   Two keys of one survivor retracting the same field in one pass are decided together, so the survivor clears once instead of each key deferring to the other.
 - **A survivor-key read never retires loser-keyed evidence.** It is a read of a different key, and often a different page (of the 779 slots whose source now reads the survivor instead, 116 are the same page), so it says nothing about what the loser's page states; that is the #2647 lesson that silence is not absence, one key over.
+  Superseded by #4568: a survivor's complete read now counts as a re-read for evidence filed under its merged-in keys, as the field-retraction section of [`research-data-pipeline.md`](research-data-pipeline.md) describes.
 - **Nothing is pruned.** A retired observation is superseded with a reason, and provenance that cites it is history.
 
 A dry run on Development on 2026-09-28 at 05:04 UTC, with the change, planned for `ysm-faculty-directory` 14 retirements and 8 stored clears, and for `dept-faculty-roster` 39 retirements and 5 clears, every clear on a live row.

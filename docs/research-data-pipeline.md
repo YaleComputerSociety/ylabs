@@ -936,10 +936,13 @@ The operator lane, `yarn --cwd server observations:reconcile-field-retractions`,
 It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
 Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 
-A tombstoned loser's evidence is carried rather than re-keyed: the loser's observation bundle stays active while `mergedSurvivorEvidence` resolves the survivor over it (#3560), and it retires only on the loser's own key, through the retraction path above, when a source that still reads that key stops stating the field.
-A read of the survivor's own key never retires loser-keyed evidence, because it says nothing about the page the loser key was read from; the 2026-09-28 #3609 entry in [`decisions.md`](decisions.md) records the per-field-class ownership and the measurements.
+A tombstoned loser's evidence is carried rather than re-keyed: the loser's observation bundle stays active while `mergedSurvivorEvidence` resolves the survivor over it (#3560), and it retires on the loser's own key, through the retraction path above, when a source that reads that key or the survivor's stops stating the field.
+A complete read of the survivor's own key also counts as a re-read for observations filed under any key merged into it, unioning that run's absence claims, because the source reads the survivor under its own key and a merged-in key's state is already the survivor's (#3560, #4568).
+A merged-in key's read is never shared with the survivor or with a sibling merged-in key, so a duplicate's absence claim never judges the survivor's own evidence.
+Before #4568 such an observation was judged `source-has-not-reread` forever; on 2026-10-04 that was 873 of `dept-faculty-roster`'s 1,800 active `websiteUrl` observations, and every other retraction guard is unchanged.
+The 2026-09-28 #3609 entry in [`decisions.md`](decisions.md) records the per-field-class ownership and the measurements.
 For `websiteUrl` and `website` on a survivor its own lab-identity lane typed, the survivor-ownership rule in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md) keeps that evidence out of the slot at resolve time (#3585).
-That is an ownership decision rather than a retirement, so every other field, and a survivor with no lab-identity typing of its own, still resolves over carried loser evidence until the loser key's own reads retire it.
+That is an ownership decision rather than a retirement, so every other field, and a survivor with no lab-identity typing of its own, still resolves over carried loser evidence until a read of the loser key or the survivor retires it.
 
 A stored `websiteUrl` that no observation states is left alone by default, because retention can prune the evidence behind a real value and an absence is not a claim (#3586).
 The one exception is a value whose `fieldProvenance.websiteUrl` names a lane but carries neither a `sourceId` nor an `observationId`: that record is the shape a direct write leaves (#3363), so `planUnsourcedProvenanceWebsiteUrlClear` (`scrapers/unsourcedProvenanceWebsiteClear.ts`) clears it on materialize when no observation the pass reads states it, and a cited `sourceUrls` entry may still refill the slot on the same pass.
@@ -1822,8 +1825,6 @@ It may state that a stored website is gone (`assertsNoValueFor: ['websiteUrl', '
 A JSON-LD affiliation counts as a slot only when it links the stored website or names a research home the way `extractOfficialProfileResearchHomes` screens one, so the department affiliation nearly every profile carries does not block the claim.
 It retracts `website` beside `websiteUrl` because it asserts both from the same link and every reader serves `websiteUrl || website`, so retracting one alone would leave the link served and promoted back.
 A refusal of a link the page still carries, and a read of a different profile, state nothing, and the `fieldRetraction` contract then retracts only after two such complete reads and inside the drop guard.
-A complete read of a survivor counts as a re-read for observations filed under any key merged into it, because the source reads the survivor under its own key and a merged-in key's state is already the survivor's (#3560, #4568).
-Before #4568 such an observation was judged `source-has-not-reread` forever; on 2026-10-04 that was 873 of `dept-faculty-roster`'s 1,800 active `websiteUrl` observations, and every other retraction guard is unchanged.
 The refusal is limited to a row serving the refused link because the withdrawal reaches every older website the lane asserted on the row, including one its lead-direct mode read from the lead's own website slot.
 An untargeted run selects rows with no website and rows whose stored `websiteUrl` this lane supplied, so it re-reads a row already serving an affiliated organization; a targeted run, `--only profile-research-home-backfill,<keys>`, narrows that to named rows.
 
