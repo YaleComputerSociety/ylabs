@@ -332,6 +332,7 @@ See the promotion lanes and copy-set details in [`scraper-deployment-runbook.md`
 ### Archives with no survivor pointer
 
 Some person-scoped rows were archived before archives recorded a reason (#2558) and carry no `canonicalGroupId`, so no survivor resolves over their evidence and their slug answers 404.
-`research-entity:tombstone-same-person-archives` points each `FACULTY_RESEARCH_AREA` or `INDIVIDUAL_RESEARCH` row archived with neither a reason nor a pointer at the one live row its lead key (`inferredPiUserKey`) reaches, records `SAME_PERSON_ARCHIVE_TOMBSTONE_REASON`, then re-materializes, re-gates and re-indexes each survivor and re-reads the redirect (#4696).
-It holds a row whose lead reaches several live rows and any row that is not person-scoped, such as an archived program.
+`research-entity:tombstone-same-person-archives` points each non-lab person-scoped row (`isPersonScopedResearchEntityType` minus `LAB`) archived with neither a reason nor a pointer at the one live non-lab person-scoped row its lead key (`inferredPiUserKey`, attested by slug or by entity id) reaches, records `SAME_PERSON_ARCHIVE_TOMBSTONE_REASON`, then re-materializes, re-gates and re-indexes each survivor and re-reads the redirect (#4696).
+It holds a row whose lead reaches several live rows, an archived `LAB` row, because a lead legitimately owns both a lab and a profile, and any row that is not person-scoped, such as an archived program.
+A live lab or collective sharing the lead is never chosen as the survivor and does not count toward the several-live-rows hold.
 Dry-run by default; apply needs `--apply --confirm-tombstone-same-person-archives`.

@@ -66,4 +66,40 @@ describe('planSamePersonArchiveTombstones (#4696)', () => {
       { slug: 'program', reason: 'not-person-scoped' },
     ]);
   });
+
+  it('never points a profile archive at a live collective or lab sharing its lead', () => {
+    const plan = planSamePersonArchiveTombstones({
+      rows: [
+        row('live-program', { entityType: 'PROGRAM' }),
+        row('live-lab', { entityType: 'LAB' }),
+        row('archived-profile', { archived: true }),
+      ],
+      leadKeysBySlug: new Map([
+        ['live-program', ['netid:example.lead']],
+        ['live-lab', ['netid:example.lead']],
+        ['archived-profile', ['netid:example.lead']],
+      ]),
+    });
+    expect(plan.tombstones).toEqual([]);
+    expect(plan.held).toEqual([{ slug: 'archived-profile', reason: 'no-live-row-for-the-lead' }]);
+  });
+
+  it('points past a live collective at the one live profile and holds a lab archive', () => {
+    const plan = planSamePersonArchiveTombstones({
+      rows: [
+        row('live-profile'),
+        row('live-center', { entityType: 'CENTER' }),
+        row('archived-profile', { archived: true, entityType: 'faculty_project' }),
+        row('archived-lab', { archived: true, entityType: 'LAB' }),
+      ],
+      leadKeysBySlug: new Map([
+        ['live-profile', ['netid:example.lead']],
+        ['live-center', ['netid:example.lead']],
+        ['archived-profile', ['netid:example.lead']],
+        ['archived-lab', ['netid:example.lead']],
+      ]),
+    });
+    expect(plan.tombstones.map((tombstone) => tombstone.survivorSlug)).toEqual(['live-profile']);
+    expect(plan.held).toEqual([{ slug: 'archived-lab', reason: 'lab-is-not-a-profile-duplicate' }]);
+  });
 });

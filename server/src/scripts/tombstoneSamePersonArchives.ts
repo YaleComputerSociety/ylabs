@@ -42,20 +42,34 @@ async function main(): Promise<void> {
   const rows = (await ResearchEntity.find({})
     .select('_id slug archived entityType canonicalGroupId archivedReason')
     .lean()) as any[];
+  const slugById = new Map(rows.map((row) => [String(row._id), String(row.slug)]));
+  const slugs = new Set(slugById.values());
   const leadKeys = (await Observation.find({
+    entityType: 'researchEntity',
     field: 'inferredPiUserKey',
     superseded: false,
-    entityKey: { $in: rows.map((row) => row.slug) },
+    $or: [
+      { entityKey: { $in: [...slugs] } },
+      { entityId: { $in: rows.map((row) => row._id) } },
+    ],
   })
-    .select('entityKey value')
+    .select('entityKey entityId value')
     .lean()) as any[];
   const leadKeysBySlug = new Map<string, string[]>();
   for (const observation of leadKeys) {
     const key = String(observation.value ?? '').trim();
     if (!key) continue;
-    const list = leadKeysBySlug.get(observation.entityKey) ?? [];
-    if (!list.includes(key)) list.push(key);
-    leadKeysBySlug.set(observation.entityKey, list);
+    const slugsForObservation = new Set(
+      [
+        slugs.has(observation.entityKey) ? observation.entityKey : undefined,
+        observation.entityId ? slugById.get(String(observation.entityId)) : undefined,
+      ].filter((slug): slug is string => Boolean(slug)),
+    );
+    for (const slug of slugsForObservation) {
+      const list = leadKeysBySlug.get(slug) ?? [];
+      if (!list.includes(key)) list.push(key);
+      leadKeysBySlug.set(slug, list);
+    }
   }
   const plan = planSamePersonArchiveTombstones({
     rows: rows.map((row) => ({

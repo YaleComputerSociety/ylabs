@@ -1,3 +1,5 @@
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
+
 export interface SamePersonArchiveRow {
   id: string;
   slug: string;
@@ -15,9 +17,19 @@ export interface SamePersonArchiveTombstone {
 }
 
 export type SamePersonArchiveHold =
-  'no-live-row-for-the-lead' | 'several-live-rows-for-the-lead' | 'not-person-scoped';
+  | 'no-live-row-for-the-lead'
+  | 'several-live-rows-for-the-lead'
+  | 'lab-is-not-a-profile-duplicate'
+  | 'not-person-scoped';
 
-const PERSON_SCOPED_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH']);
+function entityTypeOf(row: SamePersonArchiveRow): string {
+  return (row.entityType ?? '').trim().toUpperCase();
+}
+
+function isNonLabPersonScoped(row: SamePersonArchiveRow): boolean {
+  const entityType = entityTypeOf(row);
+  return entityType !== 'LAB' && isPersonScopedResearchEntityType(entityType);
+}
 
 /**
  * Points each person-scoped row that was archived with no survivor and no recorded reason
@@ -27,7 +39,9 @@ const PERSON_SCOPED_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL
  * person listed by two department rosters kept only one roster's profile and department,
  * and the archived slug answered 404. A row whose lead reaches several live rows is held,
  * because the key no longer says which one it duplicates, and so is a row that is not a
- * person's own research: a program or an organization is not the lead's duplicate.
+ * person's own research: a program or an organization is not the lead's duplicate. A lab is
+ * held too, and never chosen as a survivor, because a lead legitimately owns both a lab and
+ * a profile, so sharing a lead key does not make one the other's duplicate.
  */
 export function planSamePersonArchiveTombstones(input: {
   rows: readonly SamePersonArchiveRow[];
@@ -39,7 +53,7 @@ export function planSamePersonArchiveTombstones(input: {
   const liveSlugsByKey = new Map<string, Set<string>>();
   const bySlug = new Map(input.rows.map((row) => [row.slug, row]));
   for (const row of input.rows) {
-    if (row.archived) continue;
+    if (row.archived || !isNonLabPersonScoped(row)) continue;
     for (const key of input.leadKeysBySlug.get(row.slug) ?? []) {
       if (!liveSlugsByKey.has(key)) liveSlugsByKey.set(key, new Set());
       liveSlugsByKey.get(key)!.add(row.slug);
@@ -51,8 +65,11 @@ export function planSamePersonArchiveTombstones(input: {
     if (!row.archived || row.canonicalGroupId || (row.archivedReason ?? '').trim()) continue;
     const keys = input.leadKeysBySlug.get(row.slug) ?? [];
     if (keys.length === 0) continue;
-    if (!PERSON_SCOPED_ENTITY_TYPES.has((row.entityType ?? '').toUpperCase())) {
-      held.push({ slug: row.slug, reason: 'not-person-scoped' });
+    if (!isNonLabPersonScoped(row)) {
+      held.push({
+        slug: row.slug,
+        reason: entityTypeOf(row) === 'LAB' ? 'lab-is-not-a-profile-duplicate' : 'not-person-scoped',
+      });
       continue;
     }
     const live = new Set(keys.flatMap((key) => [...(liveSlugsByKey.get(key) ?? [])]));
