@@ -31,6 +31,11 @@ describe('cardSummary', () => {
     );
   });
 
+  it('keeps a short first sentence rather than cutting a long second one', () => {
+    const text = `The lab studies how we learn. ${'A long second sentence keeps going '.repeat(8).trim()}.`;
+    expect(cardSummary(text)).toBe('The lab studies how we learn.');
+  });
+
   it('falls back to a word boundary with an ellipsis when no sentence fits', () => {
     const text =
       'A single very long sentence describing computational approaches to protein folding, molecular dynamics, and the design of enzymes for industrial chemistry';

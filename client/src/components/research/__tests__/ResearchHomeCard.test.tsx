@@ -747,6 +747,22 @@ describe('ResearchHomeCard compact browse card', () => {
     expect(container.textContent).not.toContain('Lab · Neuroscience');
   });
 
+  it('names the kind when the title only contains it inside another word', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Collaborative Imaging Group',
+            entities: [{ ...researchHome().entities[0], name: 'Collaborative Imaging Group' }],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Lab · Neuroscience · School of Medicine');
+  });
+
   it('ends a long description at a whole sentence', () => {
     render(
       <MemoryRouter>

@@ -1,5 +1,4 @@
 const DEFAULT_CARD_SUMMARY_MAX_CHARACTERS = 200;
-const MIN_SENTENCE_SUMMARY_CHARACTERS = 60;
 const ELLIPSIS = '…';
 
 const NON_TERMINAL_ABBREVIATIONS = new Set([
@@ -54,7 +53,7 @@ export const cardSummary = (
   const lastFittingSentenceEnd = sentenceEndOffsets(text)
     .filter((offset) => offset <= maxCharacters)
     .pop();
-  if (lastFittingSentenceEnd && lastFittingSentenceEnd >= MIN_SENTENCE_SUMMARY_CHARACTERS) {
+  if (lastFittingSentenceEnd) {
     return text.slice(0, lastFittingSentenceEnd);
   }
 

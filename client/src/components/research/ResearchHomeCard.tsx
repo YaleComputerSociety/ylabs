@@ -63,8 +63,10 @@ const sentenceCaseLabel = (label: string): string =>
     .map((word, index) => (index === 0 ? word : word.toLowerCase()))
     .join(' ');
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
-  title.toLowerCase().includes(kind.toLowerCase());
+  new RegExp(`\\b${escapeRegExp(kind)}\\b`, 'i').test(title);
 
 const accessSignalRank = (label: string): number => {
   const index = ACCESS_SIGNAL_PRIORITY.indexOf(label);
