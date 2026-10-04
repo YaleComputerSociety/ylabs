@@ -405,14 +405,15 @@ export function isTitleCaseHeading(sentence: string): boolean {
  * sentence that says "where her research examined ..." is the research evidence.
  */
 const HELD_POST =
-  '(?:the\\s+|an?\\s+)?(?:former\\s+|founding\\s+)?(?:[\\p{L}-]+\\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel)\\b';
+  '(?:the\\s+|an?\\s+)?(?:former\\s+|founding\\s+)?(?:[\\p{L}-]+\\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel|chair|dean)\\b';
 
 const CAREER_HISTORY_MARKERS: readonly RegExp[] = [
   new RegExp(`\\b(?:was|is|has\\s+been|had\\s+been)\\s+${HELD_POST}`, 'iu'),
-  /\b(?:[Pp]rior\s+to|[Bb]efore)\s+(?:joining|coming|this|that|his|her|their|\p{Lu})/u,
+  /\b(?:prior\s+to|before)\s+(?:joining|coming)\b/i,
   /\bcomes\s+to\s+(?:Yale|the)\b/i,
   /\b(?:his|her|their)\s+(?:work|role|job|responsibilities)\s+(?:was|were|included)\b/i,
   /\b(?:previously|most\s+recently),?\s+(?:[\p{L}-]+\s+)?(?:served|worked|taught|held|directed|managed|practiced)\b/iu,
+  /\bpreviously\s+(?:at|with)\b/i,
   /\bspent\s+(?:\w+\s+){1,2}years?\b/i,
   /\b(?:worked|working)\s+(?:full[-\s]time\s+)?(?:as|at|for)\b/i,
   /\bbegan\s+(?:his|her|their)\s+career\b/i,

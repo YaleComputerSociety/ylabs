@@ -889,10 +889,13 @@ describe('publication records and career history are not research prose (#4561)'
     ).toBe(true);
   });
 
-  it('refuses a sentence that opens on the post held before', () => {
+  it('refuses a sentence that names a post held before', () => {
     for (const sentence of [
       'Prior to joining Yale, she directed a community clinic serving families across the region.',
       'Before coming to the school, he spent a decade managing a regional housing nonprofit.',
+      'She was previously at an example foundation, where she led advocacy for child health programs.',
+      'He served as chair of the example department of medicine from 2004 to 2015.',
+      'She served as dean of the example school of nursing for a decade.',
     ]) {
       expect(isCareerHistorySentence(sentence), sentence).toBe(true);
     }
@@ -903,6 +906,8 @@ describe('publication records and career history are not research prose (#4561)'
       'Most recently, her group identified a signaling pathway that controls how neurons regenerate after injury.',
       'She previously showed that loss of the gene disrupts synaptic pruning in the developing cortex.',
       'The fruit fly served as a model system for tracing how circadian clocks shape behavior.',
+      'Before CRISPR, editing a genome took months of painstaking work in mouse embryos.',
+      'Neurons prune excess synapses before their final connections stabilize in adolescence.',
     ]) {
       expect(isCareerHistorySentence(sentence), sentence).toBe(false);
     }
