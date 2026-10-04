@@ -13,7 +13,8 @@ Measured on Development on 2026-10-04, after #4788's written bodies landed, 1,64
 
 Resolution: every card producer prefers a line that shows whole, and a long line is the last resort rather than the first answer.
 `resolveGroundedCardDescription` returns a derived line only when it fits, then a synthesized line that fits, and only then the long derived or synthesized line, which still outranks the topic summary.
-Card synthesis asks for at most 190 characters and retries once with its own long answer to shorten it, keeping the long grounded line when the retry does not fit.
+Card synthesis asks for at most 20 words and 170 characters, naming only the main subject and method, and retries once with its own long answer to shorten it, keeping the long grounded line when the retry does not fit.
+A character limit alone did not hold: the model returned the same 206-character line on both attempts, and the word budget with what to leave out fit 12 of 12 cut cards.
 `resolveMaterializedShortDescription` reconsiders a stored card the browse card cuts and replaces it only with a line that fits, so one long line is never traded for another.
 
 The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
