@@ -98,6 +98,20 @@ const CORPUS_QUALITY_METRICS: CorpusQualityMetricDefinition[] = [
     fromSnapshot: (row) => row.description.shortDescriptionIsAreaEchoOnly,
   },
   {
+    metric: 'browseCardCutMidSentence',
+    label: 'Browse card cut mid-sentence',
+    hint: 'The card sentence runs past 200 characters, so the student sees it end in \u2026',
+    direction: 'lower-is-better',
+    fromSnapshot: (row) => row.description.browseCardCutMidSentence,
+  },
+  {
+    metric: 'browseCardSixWordsOrFewer',
+    label: 'Browse card of six words or fewer',
+    hint: 'Too short to tell a student what is studied, such as \u201cStudies human behavior.\u201d',
+    direction: 'lower-is-better',
+    fromSnapshot: (row) => row.description.browseCardSixWordsOrFewer,
+  },
+  {
     metric: 'fullDescriptionIsBiography',
     label: 'Serves a biography as its description',
     hint: 'No research prose exists, so the career biography is the fallback',

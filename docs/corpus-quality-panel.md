@@ -14,7 +14,7 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
-| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Browse card cut mid-sentence, Browse card of six words or fewer, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
 Four rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
@@ -54,6 +54,18 @@ The rest were written by lanes that record provenance today and simply had not b
 So the remedy for that population is a re-materialize pass rather than anything this lane does, and an attribution arm that reached one row in 56 was removed rather than carried.
 
 If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the aggregation would drift from the representation the same way. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
+
+## The browse card rows (#4809)
+
+"Useful" counts are not a student's view of a card: on 2026-10-04 the panel read `fullDescriptionUseful` 3,505 of 3,505 and `shortDescriptionUseful` 3,504 of 3,505, while 914 of 3,543 browse cards ended mid-sentence in "…".
+The card a student scans is the served short description (the full description when there is none) run through the client's `cardSummary`, which ends at the last whole sentence within 200 characters and otherwise cuts at a word with "…".
+`servedRowFacts` runs `browseCardSummary` (`server/src/utils/browseCardSummary.ts`), a server copy of `cardSummary`, because a server module cannot import a client util; `contracts/browseCardSummary.cases.json` pins the two copies, and both suites read it.
+**Browse card cut mid-sentence** counts cards that end in "…".
+**Browse card of six words or fewer** counts cards too short to say what is studied, such as "Studies human behavior."
+Snapshots taken before these rows existed carry no value and read "0 / 0", which the panel draws with no share and no trend rather than as 0%.
+
+The other half of the description measurement cannot be a count: whether a description is accurate and useful needs its cited page read.
+`docs/description-graded-sample.md` holds the rubric and procedure for that sample.
 
 ## The response is a DTO, not the stored row
 

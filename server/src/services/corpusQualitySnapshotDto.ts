@@ -28,6 +28,8 @@ export interface CorpusQualitySnapshotDto {
     shortDescriptionUseful: CorpusQualityRatio;
     leadSentenceStatesResearch: CorpusQualityRatio;
     shortDescriptionIsAreaEchoOnly: CorpusQualityRatio;
+    browseCardCutMidSentence: CorpusQualityRatio;
+    browseCardSixWordsOrFewer: CorpusQualityRatio;
     fullDescriptionIsBiography: CorpusQualityRatio;
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
   };
@@ -73,6 +75,8 @@ const DESCRIPTION_KEYS = [
   'shortDescriptionUseful',
   'leadSentenceStatesResearch',
   'shortDescriptionIsAreaEchoOnly',
+  'browseCardCutMidSentence',
+  'browseCardSixWordsOrFewer',
   'fullDescriptionIsBiography',
   'nameIsGenericFacultyResearchTitle',
 ] as const;

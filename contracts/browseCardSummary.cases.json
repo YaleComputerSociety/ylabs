@@ -1,0 +1,35 @@
+{
+  "$comment": "Shared behavioural contract for the browse card summary. client/src/utils/cardSummary.ts renders the card; server/src/utils/browseCardSummary.ts mirrors it so corpus:snapshot can count cards a student sees cut mid-sentence. Both suites read THIS file. Add a case here rather than to only one suite.",
+  "cases": [
+    {
+      "name": "returns a short description unchanged",
+      "input": "Studies how cells divide.",
+      "expect": "Studies how cells divide."
+    },
+    {
+      "name": "collapses whitespace",
+      "input": "  Studies   how\ncells divide. ",
+      "expect": "Studies how cells divide."
+    },
+    {
+      "name": "ends at the last whole sentence within 200 characters",
+      "input": "The lab studies how neural circuits in the cerebellum learn precise movements over time. We combine electrophysiology, imaging, and computational models to test circuit theories across species. Undergraduates join ongoing projects.",
+      "expect": "The lab studies how neural circuits in the cerebellum learn precise movements over time. We combine electrophysiology, imaging, and computational models to test circuit theories across species."
+    },
+    {
+      "name": "does not end a sentence at a title abbreviation",
+      "input": "Work with Dr. Example covers models of memory and replay during sleep, its role in consolidating new skills, and how it changes with age and disease across the lifespan in humans. More text follows here.",
+      "expect": "Work with Dr. Example covers models of memory and replay during sleep, its role in consolidating new skills, and how it changes with age and disease across the lifespan in humans."
+    },
+    {
+      "name": "cuts a single over-long sentence at a word boundary with an ellipsis",
+      "input": "A single very long sentence describing computational approaches to protein folding, molecular dynamics, and the design of enzymes for industrial chemistry and for agriculture across many decades of careful work in the field",
+      "expect": "A single very long sentence describing computational approaches to protein folding, molecular dynamics, and the design of enzymes for industrial chemistry and for agriculture across many decades of…"
+    },
+    {
+      "name": "returns an empty string for a missing description",
+      "input": null,
+      "expect": ""
+    }
+  ]
+}

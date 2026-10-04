@@ -4,6 +4,11 @@ import {
   describesResearchFocus,
 } from '../utils/researchEntityDescriptionQuality';
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
+import {
+  browseCardHasSixWordsOrFewer,
+  browseCardIsCutMidSentence,
+  browseCardSummary,
+} from '../utils/browseCardSummary';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { decideServedResearchEntityTopics } from './researchEntityDto';
 import {
@@ -69,6 +74,7 @@ export function servedRowFacts(
   const searchTopics = decideServedResearchEntityTopics(entity, leadMemberNames).served;
   const shortDescription = textValue(served.shortDescription);
   const areaSummary = textValue(buildResearchAreasCardSummary(searchTopics));
+  const browseCard = browseCardSummary(shortDescription || textValue(served.fullDescription));
 
   return {
     school: textValue(served.school),
@@ -82,6 +88,8 @@ export function servedRowFacts(
       leadSentence(representation.fullDescription || served.fullDescription),
     ),
     shortDescriptionIsAreaEchoOnly: shortDescription.length > 0 && shortDescription === areaSummary,
+    browseCardCutMidSentence: browseCardIsCutMidSentence(browseCard),
+    browseCardSixWordsOrFewer: browseCardHasSixWordsOrFewer(browseCard),
     fullDescriptionIsBiography:
       representation.invariant.fullDescriptionUseful &&
       isBiographyRatherThanResearch(representation.fullDescription),

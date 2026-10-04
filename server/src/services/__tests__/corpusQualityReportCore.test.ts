@@ -16,6 +16,8 @@ const row = (
   shortDescriptionUseful: true,
   leadSentenceStatesResearch: true,
   shortDescriptionIsAreaEchoOnly: false,
+  browseCardCutMidSentence: false,
+  browseCardSixWordsOrFewer: false,
   fullDescriptionIsBiography: false,
   nameIsGenericFacultyResearchTitle: false,
   publicDescriptionInvariantPasses: true,
@@ -47,6 +49,21 @@ describe('buildCorpusQualityReport', () => {
     });
 
     expect(report.description.fullDescriptionIsBiography).toEqual({ n: 1, of: 3 });
+  });
+
+  it('counts browse cards a student sees cut mid-sentence or too short to say what is studied', () => {
+    const report = buildCorpusQualityReport({
+      facts: [
+        row({ browseCardCutMidSentence: true }),
+        row({ browseCardSixWordsOrFewer: true }),
+        row(),
+        row(),
+      ],
+      corpus,
+    });
+
+    expect(report.description.browseCardCutMidSentence).toEqual({ n: 1, of: 4 });
+    expect(report.description.browseCardSixWordsOrFewer).toEqual({ n: 1, of: 4 });
   });
 
   it('counts a row with neither a research home nor an area as a dead end', () => {
