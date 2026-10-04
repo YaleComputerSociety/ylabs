@@ -95,7 +95,12 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
 
     expect(result.netidBackedAccountlessResearchers).toBe(1);
     expect(result.shellsMerged).toBe(1);
-    expect(result.foldsByMatchedIdentity).toEqual({ netid: 1, 'roster-identity': 0, name: 0 });
+    expect(result.foldsByMatchedIdentity).toEqual({
+      netid: 1,
+      'roster-identity': 0,
+      'verified-profile': 0,
+      name: 0,
+    });
     expect(result.merges[0]).toMatchObject({
       shellId: String(holderId),
       canonicalId: String(twinId),
@@ -139,6 +144,11 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
     const result = await dedupeAccountlessResearcherShells({ apply: false });
 
     expect(result.shellsMerged).toBe(0);
-    expect(result.foldsByMatchedIdentity).toEqual({ netid: 0, 'roster-identity': 0, name: 0 });
+    expect(result.foldsByMatchedIdentity).toEqual({
+      netid: 0,
+      'roster-identity': 0,
+      'verified-profile': 0,
+      name: 0,
+    });
   }, 60000);
 });

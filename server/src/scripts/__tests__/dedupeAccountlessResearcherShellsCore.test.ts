@@ -11,6 +11,7 @@ import {
   researcherIdentityTier,
   roleAssignmentEdgeKey,
   shellProfileLinkKindsReleasedWith,
+  buildVerifiedPrimaryProfileIndex,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -380,5 +381,88 @@ describe('decideShellMerge netid arm (#3166)', () => {
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
     ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+  });
+});
+
+describe('decideShellMerge verified-profile arm', () => {
+  const page = 'https://dept.example.edu/p/1001/';
+  const verified = (url: string) => [
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
+  ];
+  const account = (over: Record<string, unknown> = {}) => ({
+    id: 'c'.repeat(24),
+    accountId: 'd'.repeat(24),
+    displayName: 'Sample Fixture',
+    title: 'Associate Professor of Medicine',
+    profileLinks: verified('https://www.dept.example.edu/p/1001'),
+    ...over,
+  });
+  const shell = (over: Record<string, unknown> = {}) => ({
+    id: 's'.repeat(24),
+    displayName: 'Sam Fixture',
+    title: 'Associate Professor',
+    profileLinks: verified(page),
+    ...over,
+  });
+  const decide = (s: Record<string, unknown>, accounts: Record<string, unknown>[]) =>
+    decideShellMerge(
+      s,
+      new Map(),
+      new Map(),
+      [],
+      buildVerifiedPrimaryProfileIndex(accounts as any),
+    );
+
+  it('folds a shell into the one account that holds the same verified profile', () => {
+    expect(decide(shell(), [account()])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])('ignores a link whose health is %s', (status) => {
+    const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
+    expect(decide(shell({ profileLinks: unhealthy }), [account()]).reason).toBe('NO_CANONICAL');
+    expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('ignores a non-primary link', () => {
+    const secondary = verified(page).map((link) => ({ ...link, purpose: 'SECONDARY' }));
+    expect(decide(shell(), [account({ profileLinks: secondary })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('resolves to nobody when two accounts hold the page', () => {
+    const second = account({ id: 'e'.repeat(24), accountId: 'f'.repeat(24) });
+    expect(decide(shell(), [account(), second]).reason).toBe('AMBIGUOUS_MULTIPLE_CANONICAL');
+  });
+
+  it('does not let a vetoed second holder of the page block the fold', () => {
+    const wrongPerson = account({
+      id: 'e'.repeat(24),
+      accountId: 'f'.repeat(24),
+      displayName: 'Sample Otherfamily',
+    });
+    expect(decide(shell(), [account(), wrongPerson])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it('lets the surname veto the page', () => {
+    expect(decide(shell({ displayName: 'Sam Otherfamily' }), [account()]).merge).toBe(false);
+  });
+
+  it('never folds a trainee rank into a faculty appointment on a page alone', () => {
+    expect(decide(shell({ title: 'Postdoctoral Associate' }), [account()]).merge).toBe(false);
   });
 });

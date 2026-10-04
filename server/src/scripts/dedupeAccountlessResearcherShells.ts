@@ -13,6 +13,7 @@ import {
   bareNetid,
   buildCanonicalNameIndex,
   buildCanonicalNetidIndex,
+  buildVerifiedPrimaryProfileIndex,
   decideShellMerge,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
@@ -232,6 +233,8 @@ export async function dedupeAccountlessResearcherShells(options: {
         accountId: 1,
         'identifiers.orcid': 1,
         'identifiers.netid': 1,
+        profileLinks: 1,
+        'profile.title': 1,
       },
     },
   ).toArray();
@@ -242,6 +245,8 @@ export async function dedupeAccountlessResearcherShells(options: {
     accountId: doc.accountId,
     orcid: doc.identifiers?.orcid,
     netid: doc.identifiers?.netid,
+    profileLinks: doc.profileLinks,
+    title: doc.profile?.title,
   }));
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
@@ -259,6 +264,13 @@ export async function dedupeAccountlessResearcherShells(options: {
       id: entry.id,
       accountId: entry.accountId,
       orcid: entry.orcid,
+      netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
+    })),
+  );
+
+  const verifiedProfileIndex = buildVerifiedPrimaryProfileIndex(
+    researcherIdentities.map((entry) => ({
+      ...entry,
       netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
     })),
   );
@@ -296,6 +308,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       canonicalIndex,
       canonicalNetidIndex,
       rosterIdentityCandidatesByShellId.get(shell.id),
+      verifiedProfileIndex,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
