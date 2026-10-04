@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   const applied = { pointed: 0, rematerialized: 0, regated: 0, redirectsResolving: 0 };
   if (apply) {
     for (const tombstone of plan.tombstones) {
-      const result = await ResearchEntity.collection.updateOne(
+      const result = await ResearchEntity.updateOne(
         {
           _id: new mongoose.Types.ObjectId(tombstone.archivedId),
           archived: true,

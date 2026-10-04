@@ -29,6 +29,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:restore-merge-tombstones': 'reverses a merge an operator judged wrong',
   'research-entity:repair-dead-end-tombstones':
     'clears one malformed canonical pointer at a time, refusing to guess a destination; the integrity gate now does the detection',
+  'research-entity:tombstone-same-person-archives':
+    'points an unpointed same-person archive at the one live row its lead reaches, holding any row the lead leaves ambiguous for review',
   'taxonomy:review-term': 'records a curated review of one taxonomy term',
   'programs:accept-formalization-exceptions': 'records reviewed exceptions',
   'launch:review-exceptions': 'records reviewed launch exceptions',
