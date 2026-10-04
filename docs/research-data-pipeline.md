@@ -1927,6 +1927,8 @@ Every returned command carries the `SCRAPER_ENV` of the environment the audit me
 YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into canonical PI `RoleAssignment` rows so public detail pages and visibility computation share the same lead evidence.
 
 Grant-source PI matching must remain conservative because award APIs are funding evidence, not official Yale profile identity evidence.
+The NSF lane also credits an award to each co-PI that NSF records at a `yale.edu` address, since every `coPDPI` entry carries the person's email (#4667).
+Measured on 2026-10-04: 71 co-PI entries carried a Yale address and 39 another address, and the lane's distinct enriched rows rose from about 133 to 161, 18 of them `student_ready` rows gaining their first grant.
 An NIH multi-PI award names several principal investigators and only one contact PI, which is an administrative role, so the NIH lane credits the award to every Yale principal investigator on it (#4629).
 A co-PI is credited only when their most recent contact-PI project in RePORTER is at Yale, because RePORTER's PI entries carry no organization and a co-PI at another institution can share a name with a Yale researcher.
 Measured on 2026-10-04 over FY 2024-2026 with subprojects excluded from the affiliation read: of 321 co-PIs who are never a Yale contact PI in the window, 51 were credited, 178 were refused because their latest contact-PI project is elsewhere, and 92 were refused because they were never a contact PI anywhere, which leaves no affiliation evidence.
