@@ -256,3 +256,88 @@ export function withoutUnbackedLabSelfDescription(
   const recastWordCount = recast.split(/\s+/).filter(Boolean).length;
   return recastWordCount < SERVABLE_FULL_DESCRIPTION_MIN_WORDS ? text : recast;
 }
+
+export interface OwnLabEvidence {
+  /** "<surname> Lab", carrying any lowercase particle ("van Okonkwo Lab"). */
+  surnameLabName: string;
+  /** The lab-named host labels and path segments that carry the evidence, letters only. */
+  labUrlTokens: string[];
+}
+
+function surnamePhrase(person: string): string {
+  const tokens = personTokens(person);
+  const particle = new RegExp(`^${SURNAME_PARTICLE}$`);
+  let start = tokens.length - 1;
+  while (start > 0 && particle.test(tokens[start - 1])) start -= 1;
+  return tokens.slice(start).join(' ');
+}
+
+/**
+ * The lab-named host labels and path segments of a URL, letters only. A bare lab segment
+ * is joined to the one after it ("/lab/<surname>/" yields "lab<surname>"), so a cited
+ * site and a lab row's own site yield the same token for the same lab.
+ */
+export function labNamedUrlTokens(value: unknown): string[] {
+  try {
+    const url = new URL(textValue(value));
+    const parts = [...url.hostname.split('.'), ...url.pathname.split('/')]
+      .map(letters)
+      .filter(Boolean);
+    const bareLab = new RegExp(`^${LAB_TOKEN}$`);
+    return parts.flatMap((part, index) => {
+      if (bareLab.test(part)) return parts[index + 1] ? [`${part}${parts[index + 1]}`] : [];
+      return new RegExp(LAB_TOKEN).test(part) && part.length > 4 ? [part] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function labUrlTokens(value: unknown, person: string): string[] {
+  return urlNamesThisPersonsLab(value, person) ? labNamedUrlTokens(value) : [];
+}
+
+/**
+ * The evidence that this person runs a lab of their own, or null.
+ *
+ * Two kinds count: a cited site whose host or path puts "lab" beside this person's
+ * surname, or a description whose recorded, non-LLM source names "<surname> Lab" for this
+ * person. A field with no recorded source is not evidence, because nothing says who wrote
+ * it, and the full-name form never is (#4707).
+ */
+export function ownLabEvidence(
+  entity: Record<string, any> | null | undefined,
+  person: string,
+): OwnLabEvidence | null {
+  if (!entity || !person) return null;
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ];
+  const tokens = [...new Set(urls.flatMap((url) => labUrlTokens(url, person)))];
+  const officialTextNamesTheLab = DESCRIPTION_FIELDS.some((field) => {
+    const sourceName = textValue(entity.fieldProvenance?.[field]?.sourceName);
+    if (!sourceName || isLlmAuthoredSourceName(sourceName)) return false;
+    return [...textValue(entity[field]).matchAll(namedLabPattern(person, 'g'))].some(
+      (match) => runNamesOnlyThisPerson(match[2], person) && !isFullNameLabForm(match[2], person),
+    );
+  });
+  if (!tokens.length && !officialTextNamesTheLab) return null;
+  return { surnameLabName: `${surnamePhrase(person)} Lab`, labUrlTokens: tokens };
+}
+
+/**
+ * Whether a `LAB` row's own lab name is backed by a recorded, non-LLM description that
+ * names it, read off the row's name. The gate's `unbacked_lab_name` predicate reads this
+ * so a row retyped on that evidence is not held, and re-derived back, on the next pass.
+ */
+export function labNameBackedByOwnOfficialText(entity: Record<string, any>): boolean {
+  const person = textValue(entity.name || entity.displayName).replace(/\s+Lab(?:oratory)?$/i, '');
+  if (!person || person === textValue(entity.name || entity.displayName)) return false;
+  const evidence = ownLabEvidence(
+    { ...entity, websiteUrl: undefined, website: undefined, sourceUrls: undefined },
+    person,
+  );
+  return evidence !== null;
+}

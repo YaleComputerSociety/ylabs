@@ -8,6 +8,7 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { servedDescriptionCitationIsGone } from './descriptionGrounding';
+import { labNameBackedByOwnOfficialText } from '../utils/unbackedLabSelfDescription';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   type ResearchEntityPublicDescriptionRepresentation,
@@ -374,6 +375,7 @@ export function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
   if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
   if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
+  if (labNameBackedByOwnOfficialText(entity)) return false;
   return !citedUrls(entity).some(urlNamesALaboratory);
 }
 
