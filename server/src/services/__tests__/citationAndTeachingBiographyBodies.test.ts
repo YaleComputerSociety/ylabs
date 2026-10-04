@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { isBibliographicCitationSentence } from '../../utils/careerBiographyDescription';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
 const RESEARCH_CARD =
@@ -80,6 +81,13 @@ describe('a press quote is not read as a citation', () => {
       '“The soloist was the finest synthetic tenor singing today: Sam Example, from Exampleton.” - Pat Sample, “The Synthetic Review”';
 
     expect(servedBody(row({ fullDescription: body }))).not.toBe(RESEARCH_CARD);
+  });
+
+  it.each([
+    ['a year in the attribution', '“A singer of rare power and grace.” - Pat Sample, Synthetic Opera Monthly, 2019'],
+    ['an unquoted outlet in the attribution', '“A singer of rare power and grace.” — The Synthetic Review'],
+  ])('does not read a quote with %s as a citation', (_label, sentence) => {
+    expect(isBibliographicCitationSentence(sentence)).toBe(false);
   });
 });
 

@@ -140,6 +140,14 @@ describe('teaching records in the card slot', () => {
     expect(isNonResearchCardSentence(card)).toBe(true);
   });
 
+  it('keeps a faculty career record that goes on to state research', () => {
+    expect(
+      isNonResearchCardSentence(
+        'Dr. Example has held faculty positions at Synthetic College and Sample University, and studies coral settlement.',
+      ),
+    ).toBe(false);
+  });
+
   it('keeps an education-research focus on helping students', () => {
     expect(
       isNonResearchCardSentence(
