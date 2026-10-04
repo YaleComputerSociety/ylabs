@@ -954,7 +954,8 @@ export function repairSubjectlessResearchLead(value: unknown): string {
   return text;
 }
 
-const GREETING_LEAD_PATTERN = /^welcome to\b/i;
+const GREETING_LEAD_PATTERN =
+  /^(?:welcome to\b|(?:here|on this (?:web)?(?:site|page))\b[^.!?]{0,40}?\byou(?:['’]ll| will| can| may)\s+find\b)/i;
 
 // A period ending a greeting sentence can itself belong to a title
 // abbreviation or initial inside the opener ("Welcome to Prof. Xia's lab.",

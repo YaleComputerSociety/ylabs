@@ -470,3 +470,38 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(true);
   });
 });
+
+describe('detectProfileIdentityRisk on accented and compound surnames', () => {
+  const entity = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    sourceUrls: ['https://medicine.yale.edu/profile/jane-mariaperez/'],
+  };
+
+  it('corroborates a lead whose accented compound surname the slug spells compacted', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { fname: 'Jane', lname: 'María-Pérez' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a different given name that shares the compacted surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { fname: 'Mary', lname: 'María-Pérez' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('corroborates an accented two-token name against an unaccented slug', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: { ...entity, sourceUrls: ['https://medicine.yale.edu/profile/jose-nunez/'] },
+        leadMembers: [{ user: { fname: 'José', lname: 'Núñez' } }],
+      }),
+    ).toBe(false);
+  });
+});
