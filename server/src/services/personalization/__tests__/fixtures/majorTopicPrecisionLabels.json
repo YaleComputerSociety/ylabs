@@ -1,0 +1,502 @@
+{
+  "labelledOn": "2026-10-04",
+  "rule": "on-topic when the row's own name, topics and description describe research a student in the major would recognize as their field",
+  "labels": {
+    "Neuroscience": [
+      {
+        "id": "6a8eb2c3c5ed605c3f1b77df",
+        "onTopic": false
+      },
+      {
+        "id": "6abc03a85ce99b05bc588bfa",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea79cc5ed605c3f1a635d",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eab1dc5ed605c3f1abaa3",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eb010c5ed605c3f1b3472",
+        "onTopic": true
+      },
+      {
+        "id": "6aa729dee02abfa3b2bd668a",
+        "onTopic": true
+      },
+      {
+        "id": "6a0f9d9fcf23c0b70f1ab835",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea6a7c5ed605c3f1a4ade",
+        "onTopic": false
+      },
+      {
+        "id": "6a8ea7a4c5ed605c3f1a6439",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e48ba66f3c14bd87247",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eac8ec5ed605c3f1addac",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cdfba66f3c14bd84f0c",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea920c5ed605c3f1a88f6",
+        "onTopic": true
+      },
+      {
+        "id": "6a0f9d52cf23c0b70f1aadc2",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eb3f1c5ed605c3f1b962a",
+        "onTopic": true
+      }
+    ],
+    "Computer Science": [
+      {
+        "id": "6a8eb07cc5ed605c3f1b3f12",
+        "onTopic": true
+      },
+      {
+        "id": "6a058ce4ba66f3c14bd84f63",
+        "onTopic": false
+      },
+      {
+        "id": "6a8eb11ec5ed605c3f1b4e53",
+        "onTopic": true
+      },
+      {
+        "id": "6a0fd6cb55dd7a79f8f88928",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea87dc5ed605c3f1a7963",
+        "onTopic": true
+      },
+      {
+        "id": "6aa72745e02abfa3b2bcfe75",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eaf6ec5ed605c3f1b2419",
+        "onTopic": false
+      },
+      {
+        "id": "6abc05eb5ce99b05bc58b67e",
+        "onTopic": true
+      },
+      {
+        "id": "6a056cbc14107ca43f8a7c73",
+        "onTopic": true
+      },
+      {
+        "id": "6abc05e25ce99b05bc58b5bb",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d03ba66f3c14bd85226",
+        "onTopic": true
+      },
+      {
+        "id": "6a057df813fc60d57ec2a511",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c8d14107ca43f8a73af",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eac9ec5ed605c3f1adf53",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eb47cc5ed605c3f1ba361",
+        "onTopic": true
+      }
+    ],
+    "Philosophy": [
+      {
+        "id": "6a8b74429318b407cb6d91d7",
+        "onTopic": true
+      },
+      {
+        "id": "6a646d6f74a592b4dfa7b1ca",
+        "onTopic": true
+      },
+      {
+        "id": "6a058df3ba66f3c14bd86614",
+        "onTopic": true
+      },
+      {
+        "id": "6aa9e10d22f586d7050324de",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e02ba66f3c14bd86d57",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e27ba66f3c14bd86ff2",
+        "onTopic": true
+      },
+      {
+        "id": "6a0d180c3fa399fefb6e6663",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b743a9318b407cb6d910a",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b74409318b407cb6d91ae",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e2bba66f3c14bd87046",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e43ba66f3c14bd871f7",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e04ba66f3c14bd86d7d",
+        "onTopic": true
+      },
+      {
+        "id": "6a058de7ba66f3c14bd86233",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cedba66f3c14bd85002",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b744a9318b407cb6d92a4",
+        "onTopic": true
+      }
+    ],
+    "Chemistry": [
+      {
+        "id": "6a8eaa5fc5ed605c3f1aa7e2",
+        "onTopic": false
+      },
+      {
+        "id": "6abc05e05ce99b05bc58b598",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b97cce32b8822b1d44cfa",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b97c4e32b8822b1d44c56",
+        "onTopic": true
+      },
+      {
+        "id": "6a8eb1fbc5ed605c3f1b6448",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ba3492fc9821108f8e518",
+        "onTopic": true
+      },
+      {
+        "id": "6a057f10fab31be25f983b14",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d12ba66f3c14bd8533d",
+        "onTopic": true
+      },
+      {
+        "id": "6a057efbfab31be25f98372a",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea7ddc5ed605c3f1a69ba",
+        "onTopic": true
+      },
+      {
+        "id": "6aa7278be02abfa3b2bd0908",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d07ba66f3c14bd85268",
+        "onTopic": true
+      },
+      {
+        "id": "6a0fdf576f010a41088bdb19",
+        "onTopic": true
+      },
+      {
+        "id": "6a058dadba66f3c14bd85e0f",
+        "onTopic": true
+      },
+      {
+        "id": "6aa7278ae02abfa3b2bd08ca",
+        "onTopic": true
+      }
+    ],
+    "Economics": [
+      {
+        "id": "6a8b74549318b407cb6d9371",
+        "onTopic": false
+      },
+      {
+        "id": "6aa72a88e02abfa3b2bd85ee",
+        "onTopic": true
+      },
+      {
+        "id": "6a8a0886556325ebe27e1105",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e09ba66f3c14bd86dd1",
+        "onTopic": true
+      },
+      {
+        "id": "6a058dafba66f3c14bd85e3c",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b980ce32b8822b1d452c6",
+        "onTopic": true
+      },
+      {
+        "id": "6abc06095ce99b05bc58b87e",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c7214107ca43f8a6ec3",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c8414107ca43f8a7239",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c6e14107ca43f8a6e2b",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c6b14107ca43f8a6dc5",
+        "onTopic": true
+      },
+      {
+        "id": "6abc042e5ce99b05bc5895b9",
+        "onTopic": true
+      },
+      {
+        "id": "6a8b9801e32b8822b1d451d0",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cf3ba66f3c14bd850e0",
+        "onTopic": true
+      },
+      {
+        "id": "6a056c9b14107ca43f8a7683",
+        "onTopic": true
+      }
+    ],
+    "Political Science": [
+      {
+        "id": "6aa727e8e02abfa3b2bd168e",
+        "onTopic": false
+      },
+      {
+        "id": "6a8ea64ec5ed605c3f1a422e",
+        "onTopic": false
+      },
+      {
+        "id": "6aa72a1de02abfa3b2bd733c",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d2eba66f3c14bd85518",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d78ba66f3c14bd85a56",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d01ba66f3c14bd851fd",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d76ba66f3c14bd85a39",
+        "onTopic": true
+      },
+      {
+        "id": "6a22d4dccc8d8ec7dea212fc",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e23ba66f3c14bd86fb4",
+        "onTopic": true
+      },
+      {
+        "id": "6aa72acfe02abfa3b2bd9108",
+        "onTopic": true
+      },
+      {
+        "id": "6a22d4d7cc8d8ec7dea21274",
+        "onTopic": true
+      },
+      {
+        "id": "6a058dc0ba66f3c14bd85f6b",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d35ba66f3c14bd85596",
+        "onTopic": true
+      },
+      {
+        "id": "6a22d4dbcc8d8ec7dea212ec",
+        "onTopic": true
+      },
+      {
+        "id": "6aa72ad5e02abfa3b2bd91db",
+        "onTopic": true
+      }
+    ],
+    "History": [
+      {
+        "id": "6a22d4d2cc8d8ec7dea211ec",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d97ba66f3c14bd85c80",
+        "onTopic": true
+      },
+      {
+        "id": "6aaa143d29f6a48cf264869a",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d81ba66f3c14bd85aef",
+        "onTopic": true
+      },
+      {
+        "id": "6a646cdb74a592b4dfa79e7a",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e19ba66f3c14bd86ef3",
+        "onTopic": true
+      },
+      {
+        "id": "6aa9e0e922f586d7050321b6",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cd6ba66f3c14bd84e5f",
+        "onTopic": true
+      },
+      {
+        "id": "6a058ce3ba66f3c14bd84f54",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cd3ba66f3c14bd84e0b",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cd1ba66f3c14bd84de6",
+        "onTopic": true
+      },
+      {
+        "id": "6a058e31ba66f3c14bd870aa",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d5eba66f3c14bd85875",
+        "onTopic": true
+      },
+      {
+        "id": "6a058d08ba66f3c14bd85283",
+        "onTopic": true
+      },
+      {
+        "id": "6a646cdf74a592b4dfa79f16",
+        "onTopic": true
+      }
+    ],
+    "Music": [
+      {
+        "id": "6aaae5fea098c4143455d1f8",
+        "onTopic": true
+      },
+      {
+        "id": "6aa9e0eb22f586d7050321d7",
+        "onTopic": true
+      },
+      {
+        "id": "6aa72999e02abfa3b2bd5d1f",
+        "onTopic": true
+      },
+      {
+        "id": "6aaae601a098c4143455d260",
+        "onTopic": true
+      },
+      {
+        "id": "6aaae5fda098c4143455d1a7",
+        "onTopic": true
+      },
+      {
+        "id": "6a058ce0ba66f3c14bd84f25",
+        "onTopic": true
+      },
+      {
+        "id": "6a058ce8ba66f3c14bd84fad",
+        "onTopic": true
+      },
+      {
+        "id": "6a058cd5ba66f3c14bd84e31",
+        "onTopic": true
+      },
+      {
+        "id": "6aaae60aa098c4143455d423",
+        "onTopic": true
+      },
+      {
+        "id": "6aaae5fea098c4143455d1de",
+        "onTopic": true
+      },
+      {
+        "id": "6aaae610a098c4143455d4b2",
+        "onTopic": true
+      },
+      {
+        "id": "6a058ce7ba66f3c14bd84fa7",
+        "onTopic": true
+      },
+      {
+        "id": "6a8ea69cc5ed605c3f1a49cc",
+        "onTopic": false
+      },
+      {
+        "id": "6a058d14ba66f3c14bd85358",
+        "onTopic": true
+      },
+      {
+        "id": "6aa727d0e02abfa3b2bd1374",
+        "onTopic": true
+      }
+    ]
+  }
+}

@@ -237,6 +237,23 @@ A script that resyncs a batch goes through `syncResearchEntitiesWithOutcome` (`s
 `services/__tests__/indexSyncResultIsRead.test.ts` fails on any call to `syncEntity`, `syncEntities`, or that helper whose value is discarded, so a new caller cannot silently report a resync the index never received.
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
+## Major-to-topic map (#4745)
+
+`services/personalization/majorTopicMap.ts` maps each Yale College major, in the Yalies `major` string form, to exact served `researchAreas` values and fallback `departments`, for a future "matches your major" browse stream that filters on those values.
+Nothing reads it yet; it is the reviewed input the serving change needs.
+`resolveMajorTopicMapping` accepts the Yalies short names (`YALIES_ABBREVIATED_MAJOR_NAMES`), the "(Int.)" intensive tracks, and the catalog's spelling, because names are compared after folding `&`, `and`, commas, and apostrophes.
+`Undeclared`, the visiting program, and the Special Divisional Major map to nothing with a `noSignalReason`, so those students get the global order.
+Graduate curricula are not mapped: Yalies publishes no list of `curriculum` values, and enumerating them would mean paging through the directory.
+
+The map is topic-first because department matching misses most relevant rows: on 2026-10-04 history matched 45 served rows by department and 100 with its topics added.
+A value is admitted only when it describes the field rather than a method medicine also uses: `Artificial Intelligence`, `Machine Learning`, `Algorithms`, `Data Science`, `Chemistry`, `Bioethics`, `Ethics`, `Public Policy`, `Global Health`, `Brain`, and the bare `Neuroscience` and `Philosophy` tags were removed after a precision sample found them carrying clinical rows into the sciences and humanities.
+Every mapped value must hold at least 5 served rows in `servedFacetValues.snapshot.json`, so ordinary corpus churn does not empty it; the snapshot keeps values with 3 or more.
+Refresh the snapshot with `yarn --cwd server personalization:refresh-served-facet-snapshot`, a read of the index that writes only that file, then rerun `services/personalization/__tests__/majorTopicMap.test.ts`, which fails on any mapped value that fell below 5 rows.
+
+Review rule: a list change re-samples 15 served rows matching the changed major, labels each on-topic or off-topic from the row's own topics, department and description, and records the labels by row id in `__tests__/fixtures/majorTopicPrecisionLabels.json`.
+The test holds every sampled major at 0.8 precision or better.
+Majors under 24 matching served rows, mostly languages and small humanities programs, rely on their department and cannot fill a page on their own.
+
 ## A-Z ordering (#3945)
 
 The public `name` sort does not sort on the stored `name`.
