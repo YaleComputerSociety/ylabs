@@ -226,6 +226,7 @@
     "research-entity:grant-corpus-synthesis": "tsx src/scripts/grantCorpusSynthesis.ts",
     "scraper-llm:description-ab": "tsx src/scripts/descriptionPromptAbHarness.ts",
     "research-entity:fra-profile-synthesis": "tsx src/scripts/fraProfileSynthesis.ts",
+    "research-entity:profile-honors": "tsx src/scripts/profileHonors.ts",
     "scraper-llm:fra-synthesis-ab": "tsx src/scripts/fraResearchSynthesisAbHarness.ts",
     "observations:retire-grafted-directory-urls": "tsx src/scripts/retireGraftedDirectoryUrls.ts",
     "observations:repair-moved-profile-path-citations": "tsx src/scripts/repairMovedProfilePathCitations.ts",

@@ -67,6 +67,7 @@ export const RETIRED_SOURCE_NAMES: string[] = [
  */
 export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
   'fra-profile-research-synthesis': 'yarn --cwd server research-entity:fra-profile-synthesis',
+  'official-profile-honors': 'yarn --cwd server research-entity:profile-honors',
   'grant-corpus-synthesis-llm': 'yarn --cwd server research-entity:grant-corpus-synthesis',
   'lab-site-declared-lead-llm': 'yarn --cwd server observations:retarget-foreign-lab-websites',
   'lab-site-search-discovery': 'yarn --cwd server data:find-lab-websites',

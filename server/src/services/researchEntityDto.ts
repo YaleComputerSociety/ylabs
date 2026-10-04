@@ -480,6 +480,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'recentGrants',
   'recentGrantCount',
   'fundingAgencies',
+  'leadHonors',
   'lastObservedAt',
   'waysIn',
   'profileResearchAreas',
@@ -494,7 +495,7 @@ export interface PublicResearchEntityDtoOptions {
   leadMemberNames?: readonly string[];
 }
 
-const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants']);
+const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
 const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn']);
 

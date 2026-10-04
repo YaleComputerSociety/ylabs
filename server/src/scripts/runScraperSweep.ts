@@ -246,6 +246,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming {
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
     | 'inferred-pi-lead-reclaim'
+    | 'profile-honors'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'search-index-check'
@@ -1547,6 +1548,16 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => ['--all', '--apply'],
     isEnabled: () => true,
     parseResult: parseInferredPiLeadReclaimResult,
+  },
+  {
+    // Ordered after the lead reclaim so a lead linked this sweep has its profile page read
+    // this sweep. Writes only a row whose honors changed, so a settled corpus plans nothing
+    // beyond the page reads (#4771).
+    name: 'profile-honors',
+    command: 'research-entity:profile-honors',
+    artifactName: 'development-profile-honors.json',
+    buildArgs: () => ['--apply'],
+    isEnabled: () => true,
   },
   {
     name: 'visibility-gate',

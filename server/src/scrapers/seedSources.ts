@@ -341,6 +341,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'official-profile-honors',
+    displayName: 'Official profile honors',
+    description:
+      "Reads major fellowships, prizes and academy memberships from the lead's own official Yale profile page against a fixed catalog, deterministically. An honor counts only from a sentence stating the person received, won, held or was elected to it, or from an item under an honors heading; advising, judging, nomination and journal-title mentions are refused. A year is kept only when it sits beside the honor.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
     name: 'fra-profile-research-synthesis',
     displayName: 'Faculty research-area profile synthesis LLM',
     description:

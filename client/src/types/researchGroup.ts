@@ -47,6 +47,13 @@ export interface PastUndergradAdvisee {
   count?: number;
 }
 
+export interface LeadHonor {
+  key?: string;
+  label?: string;
+  kind?: 'fellowship' | 'prize' | 'membership';
+  year?: number;
+}
+
 export interface RecentGrant {
   id?: string;
   agency?: string;
@@ -108,6 +115,7 @@ export interface ResearchGroup {
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
+  leadHonors?: LeadHonor[];
   contactEmail?: string;
   contactName?: string;
   contactRole?: string;
