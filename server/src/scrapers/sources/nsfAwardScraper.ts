@@ -62,6 +62,13 @@ const FETCH_TIMEOUT_MS = 30_000;
 const PAGE_SIZE = 25; // NSF API max
 const MAX_PAGES = 200; // safety cap (5000 awards) — well above current ~400
 const DEFAULT_LOOKBACK_YEARS = 5;
+const NSF_FIRST_OFFSET = 1;
+// NSF pagination is unstable: a page can repeat an award and drop another, so the
+// window is re-paged and distinct awards unioned until it is complete.
+const MAX_WINDOW_PASSES = 6;
+// NSF's metadata.totalCount is one more than the records it ever serves: measured
+// across four Yale windows, the offset equal to totalCount returned no record.
+const NSF_TOTAL_COUNT_OVERSTATEMENT = 1;
 const MAX_GRANTS_PER_PI = 10;
 
 // Quote-wrapped exact-phrase match. Without quotes the API does a fuzzy
@@ -523,54 +530,61 @@ export class NsfAwardScraper implements IScraper {
 
     // 1. Page through all Yale awards.
     const awards: NsfAward[] = [];
-    // NSF pagination is unstable: a page can repeat an award and drop another, so
-    // only distinct awards count toward the reported total.
     const seenAwardIds = new Set<string>();
-    let offset = 0;
     let totalCount: number | undefined;
     let pagesRead = 0;
+    let passesRead = 0;
     let windowEnded = false;
     let failedPage: { offset: number; error: string } | undefined;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const outcome = await fetchGrantWindowPage(
-        () => fetcher(offset, dateStart, ctx.options.useCache, this.name),
-        { label: `NSF page at offset ${offset}`, sleep: this.deps.sleep, log: ctx.log },
-      );
-      if (outcome.status === 'failed') {
-        failedPage = { offset, error: outcome.error };
-        break;
-      }
-      const payload = outcome.value;
-      pagesRead++;
-      if (totalCount === undefined && payload.totalCount !== undefined) {
-        totalCount = payload.totalCount;
-        ctx.log(`NSF reports totalCount=${totalCount} for Yale University`);
-      }
-      if (payload.awards.length === 0) {
-        windowEnded = true;
-        break;
-      }
-      for (const a of payload.awards) {
-        if (awards.length >= limit) break;
-        if (a.id !== undefined) {
-          if (seenAwardIds.has(a.id)) continue;
-          seenAwardIds.add(a.id);
+    const servableCount = () =>
+      totalCount === undefined ? undefined : totalCount - NSF_TOTAL_COUNT_OVERSTATEMENT;
+    for (let pass = 0; pass < MAX_WINDOW_PASSES; pass++) {
+      passesRead++;
+      windowEnded = false;
+      let offset = NSF_FIRST_OFFSET;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const outcome = await fetchGrantWindowPage(
+          () => fetcher(offset, dateStart, ctx.options.useCache, this.name),
+          { label: `NSF page at offset ${offset}`, sleep: this.deps.sleep, log: ctx.log },
+        );
+        if (outcome.status === 'failed') {
+          failedPage = { offset, error: outcome.error };
+          break;
         }
-        awards.push(a);
+        const payload = outcome.value;
+        pagesRead++;
+        if (totalCount === undefined && payload.totalCount !== undefined) {
+          totalCount = payload.totalCount;
+          ctx.log(`NSF reports totalCount=${totalCount} for Yale University`);
+        }
+        if (payload.awards.length === 0) {
+          windowEnded = true;
+          break;
+        }
+        for (const a of payload.awards) {
+          if (awards.length >= limit) break;
+          if (a.id === undefined ? pass > 0 : seenAwardIds.has(a.id)) continue;
+          if (a.id !== undefined) seenAwardIds.add(a.id);
+          awards.push(a);
+        }
+        if (awards.length >= limit) break;
+        if (payload.awards.length < PAGE_SIZE) {
+          windowEnded = true;
+          break;
+        }
+        offset += PAGE_SIZE;
       }
-      if (awards.length >= limit) break;
-      if (payload.awards.length < PAGE_SIZE) {
-        windowEnded = true;
-        break;
-      }
-      offset += PAGE_SIZE;
+      if (failedPage || !windowEnded || awards.length >= limit) break;
+      if (awards.length >= (servableCount() ?? 0)) break;
     }
-    ctx.log(`Fetched ${awards.length} awards across ${pagesRead} page(s)`);
+    ctx.log(
+      `Fetched ${awards.length} distinct awards across ${pagesRead} page(s) in ${passesRead} pass(es)`,
+    );
 
     const windowCounts =
       `fetched ${awards.length} of ` +
       (totalCount !== undefined ? `${totalCount} reported` : 'an unreported total') +
-      ` across ${pagesRead} page(s)`;
+      ` across ${pagesRead} page(s) in ${passesRead} pass(es)`;
     const limitReached = awards.length >= limit;
     const incompleteReason = failedPage
       ? `page at offset ${failedPage.offset} unreadable after retries (${failedPage.error})`
@@ -578,7 +592,7 @@ export class NsfAwardScraper implements IScraper {
         ? undefined
         : !windowEnded
           ? `page cap of ${MAX_PAGES} reached before the window ended`
-          : totalCount !== undefined && awards.length < totalCount
+          : awards.length < (servableCount() ?? 0)
             ? 'fewer awards served than NSF reports'
             : undefined;
     if (incompleteReason) {
