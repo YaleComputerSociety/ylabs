@@ -1,4 +1,5 @@
 import type {
+  EngineBenchmarkChange,
   LaneBenchmarkChange,
   LaneBenchmarkGold,
   LaneBenchmarkRun,
@@ -10,6 +11,11 @@ export const LANE_BENCHMARK_CHANGE_LABEL: Record<LaneBenchmarkChange, string> = 
   'code-changed': 'Output changed with the code',
   'input-leak': 'Output changed with the same code: the frozen input leaked',
   unattributed: 'Output changed, but a replay recorded no code version',
+};
+
+export const ENGINE_BENCHMARK_CHANGE_LABEL: Record<EngineBenchmarkChange, string> = {
+  ...LANE_BENCHMARK_CHANGE_LABEL,
+  'input-incomplete': 'Output changed, but a replay read input the capture did not freeze',
 };
 
 export const formatRate = (value: number | null): string =>

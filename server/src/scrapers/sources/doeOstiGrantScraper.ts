@@ -333,7 +333,7 @@ export class DoeOstiGrantScraper implements IScraper {
     const resolvePi = this.deps.piResolver ?? defaultPiResolver;
     const researchHomeResolver =
       this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
-    const now = this.deps.now ? this.deps.now() : new Date();
+    const now = this.deps.now ? this.deps.now() : (ctx.options.referenceDate ?? new Date());
     const cutoff = new Date(now);
     cutoff.setFullYear(cutoff.getFullYear() - (this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS));
 

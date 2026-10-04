@@ -18,7 +18,6 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
@@ -46,7 +45,7 @@ import {
   type CenterMember,
   centerMemberRelationshipObservationsForEntityKey,
 } from './centersInstitutesScraper';
-import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 
 const SOURCE_KEY = CENTER_AFFILIATION_LLM_SOURCE_NAME;
 const AFFILIATION_READ_ROLE = 'affiliated';
@@ -235,21 +234,12 @@ export function affiliationExtractionToObservations(
 }
 
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
-  // SSRF guard: url is a DB-sourced center websiteUrl — block private/metadata hosts
-  // and validate redirect hops at connect time.
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
-  const agents = ssrfSafeAgents();
-  const res = await retryOnRetryableStatus(() =>
-    axios.get(safeUrlText, {
-      timeout: 15_000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      maxRedirects: 5,
-    }),
-  );
-  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
+  const page = await fetchPageWithPolicy(url, {
+    timeoutMs: 15_000,
+    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    maxRedirects: 5,
+  });
+  return { url: page.url, html: page.html };
 }
 
 async function defaultCallLLM(input: {

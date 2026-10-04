@@ -30,7 +30,6 @@ import axios from 'axios';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
@@ -55,7 +54,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 
 export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
@@ -324,21 +323,12 @@ async function defaultPriorReadFinder(
 }
 
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
-  // SSRF guard: url is a DB-sourced center websiteUrl (or a link discovered on
-  // it) — block private/metadata hosts and validate redirect hops at connect time.
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
-  const agents = ssrfSafeAgents();
-  const res = await retryOnRetryableStatus(() =>
-    axios.get(safeUrlText, {
-      timeout: 15_000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      maxRedirects: 5,
-    }),
-  );
-  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
+  const page = await fetchPageWithPolicy(url, {
+    timeoutMs: 15_000,
+    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    maxRedirects: 5,
+  });
+  return { url: page.url, html: page.html };
 }
 
 async function defaultCallLLM(input: {

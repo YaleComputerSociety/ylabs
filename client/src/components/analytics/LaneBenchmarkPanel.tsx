@@ -1,4 +1,5 @@
 import { formatDateTime, formatNumber } from './analyticsPresentation';
+import EngineBenchmarkRows from './EngineBenchmarkRows';
 import {
   LANE_BENCHMARK_CHANGE_LABEL,
   formatCountDelta,
@@ -163,6 +164,7 @@ const LaneBenchmarkPanel = ({ laneBenchmarks, isLoading, error }: LaneBenchmarkP
           ))
         )}
       </div>
+      {laneBenchmarks.engine ? <EngineBenchmarkRows engine={laneBenchmarks.engine} /> : null}
     </div>
   );
 };

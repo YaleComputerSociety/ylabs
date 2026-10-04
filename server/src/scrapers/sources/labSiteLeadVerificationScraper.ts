@@ -253,7 +253,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     let contradictedLeads = 0;
 
     for (const candidate of candidates) {
-      const observedAt = new Date();
+      const observedAt = context.options.referenceDate ?? new Date();
       const reading = await this.readSite(candidate.website, context.options.useCache);
       const verification =
         reading && reading.html

@@ -54,10 +54,10 @@ const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
-const DEFAULT_FISCAL_YEARS = [
-  new Date().getFullYear() - 2,
-  new Date().getFullYear() - 1,
-  new Date().getFullYear(),
+export const fiscalYearsEndingAt = (date: Date): number[] => [
+  date.getFullYear() - 2,
+  date.getFullYear() - 1,
+  date.getFullYear(),
 ];
 const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // Cap how many pages we'll ever request defensively. 30 pages * 500 = 15k records,
@@ -738,6 +738,44 @@ async function fetchPage({
   return payload;
 }
 
+async function fetchAffiliationPage(
+  batch: number[],
+  offset: number,
+  useCache: boolean,
+): Promise<NihPage> {
+  const cacheKey = `copi-affiliations:profiles=${batch.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
+  if (useCache) {
+    const cached = await getCached<NihPage>('nih-reporter', cacheKey);
+    if (cached) return cached;
+  }
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(
+      REPORTER_ENDPOINT,
+      {
+        criteria: { pi_profile_ids: batch, exclude_subprojects: true },
+        include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
+        offset,
+        limit: PAGE_SIZE,
+      },
+      {
+        timeout: FETCH_TIMEOUT_MS,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      },
+    ),
+  );
+  const results = (res.data?.results as NihGrant[]) || [];
+  const payload: NihPage = {
+    meta: { total: res.data?.meta?.total ?? results.length, offset, limit: PAGE_SIZE },
+    results,
+  };
+  if (useCache) await setCached('nih-reporter', cacheKey, payload);
+  return payload;
+}
+
 async function fetchContactPiAffiliations(
   profileIds: number[],
   ctx: ScraperContext,
@@ -748,27 +786,8 @@ async function fetchContactPiAffiliations(
     let offset = 0;
     let total = Infinity;
     for (let page = 0; offset < total && page < MAX_PAGES; page++) {
-      const res = await retryOnRetryableStatus(() =>
-        axios.post(
-          REPORTER_ENDPOINT,
-          {
-            criteria: { pi_profile_ids: batch, exclude_subprojects: true },
-            include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
-            offset,
-            limit: PAGE_SIZE,
-          },
-          {
-            timeout: FETCH_TIMEOUT_MS,
-            headers: {
-              'User-Agent': USER_AGENT,
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-            },
-          },
-        ),
-      );
-      const results = (res.data?.results as NihGrant[]) || [];
-      total = res.data?.meta?.total ?? results.length;
+      const { meta, results } = await fetchAffiliationPage(batch, offset, ctx.options.useCache);
+      total = meta.total;
       projects.push(...results);
       if (results.length === 0) break;
       offset += results.length;
@@ -801,7 +820,8 @@ export class NihReporterScraper implements IScraper {
   constructor(private readonly opts: NihReporterScraperOptions = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
+    const fiscalYears =
+      this.opts.fiscalYears || fiscalYearsEndingAt(ctx.options.referenceDate ?? new Date());
     const researchHomeResolver =
       this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;

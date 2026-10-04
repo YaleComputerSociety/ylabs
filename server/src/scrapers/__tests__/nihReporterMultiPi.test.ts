@@ -9,6 +9,12 @@ import {
   type ContactPiAffiliation,
   type NihGrant,
 } from '../sources/nihReporterScraper';
+import {
+  beginBenchmarkCapture,
+  beginBenchmarkReplay,
+  finishBenchmarkCaptureWithCoverage,
+  finishBenchmarkReplay,
+} from '../snapshotBenchmarkMode';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const CONTACT = 101;
@@ -45,14 +51,14 @@ const project = (profileId: number, fiscalYear: number, orgName: string): NihGra
   principal_investigators: [{ profile_id: profileId, is_contact_pi: true }],
 });
 
-function makeContext() {
+function makeContext({ useCache = false }: { useCache?: boolean } = {}) {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'test-run',
     sourceId: 'test-source',
     sourceName: 'nih-reporter',
     sourceWeight: 0.9,
-    options: { dryRun: true, useCache: false, release: false },
+    options: { dryRun: true, useCache, release: false },
     emit: async (obs) => {
       emitted.push(...(Array.isArray(obs) ? obs : [obs]));
     },
@@ -209,6 +215,52 @@ describe('NihReporterScraper multi-PI run', () => {
     for (const criteria of affiliationCriteria) {
       expect(criteria).toMatchObject({ exclude_subprojects: true });
     }
+  });
+
+  it('replays the co-PI affiliation lookup from the benchmark capture without the network', async () => {
+    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+      const request = body as any;
+      const offset = request.offset || 0;
+      const results = request.criteria.pi_profile_ids
+        ? [project(YALE_CO_PI, 2024, 'YALE UNIVERSITY')]
+        : [multiPiGrant];
+      return {
+        data: {
+          meta: { total: results.length, offset, limit: 500 },
+          results: offset === 0 ? results : [],
+        },
+      } as any;
+    });
+    const scraper = () =>
+      new NihReporterScraper({
+        fiscalYears: [2026],
+        resolveResearcherId,
+        loadResearcherProfileTitle: async () => undefined,
+        researchHomeResolver: async (researcherId) => ({
+          status: 'canonical',
+          slug: `row-${researcherId}`,
+        }),
+      });
+
+    beginBenchmarkCapture();
+    const captured = makeContext({ useCache: true });
+    const captureResult = await scraper().run(captured.ctx);
+    const { pages, unfrozenRequestCount } = finishBenchmarkCaptureWithCoverage();
+    expect(captureResult.notes).toMatch(/1 credited/);
+    expect(unfrozenRequestCount).toBe(0);
+
+    vi.restoreAllMocks();
+    beginBenchmarkReplay(pages);
+    const replayed = makeContext({ useCache: true });
+    const replayResult = await scraper().run(replayed.ctx);
+    const replay = finishBenchmarkReplay();
+
+    expect(replay.networkBlocks).toBe(0);
+    expect(replay.pagesMissed).toBe(0);
+    expect(replayResult.notes).toMatch(/1 credited/);
+    expect(replayed.emitted.filter((o) => o.field === 'recentGrants')).toHaveLength(
+      captured.emitted.filter((o) => o.field === 'recentGrants').length,
+    );
   });
 
   it('emits one award once when two credited PIs share a row', async () => {

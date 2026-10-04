@@ -13,8 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Lanes whose output is a function of the pages they fetch, through `getCached`,
  * `fetchPageWithPolicy` or the Scrapling renderer, and the model responses they receive over the
- * default axios instance (#3526, #3587, #3590). The two center LLM lanes stay out, because their
- * raw `axios.get` page fetch is frozen by none of those.
+ * default axios instance (#3526, #3587, #3590).
  */
 export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'dept-faculty-roster',
@@ -26,6 +25,24 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'centers-institutes-index',
   'student-grants-database',
   'yale-college-fellowships-office',
+  'center-affiliation-llm',
+  'center-director-llm',
+  'research-area-source-extractor',
+  'nih-reporter',
+  'nsf-award-search',
+  'doe-osti',
+  'neh-funded-projects',
+  'bbs-research-track',
+  'department-research-areas',
+  'department-undergrad-research',
+  'lab-site-lead-verification',
+  'official-research-home-roster',
+  'yale-directory',
+  'yale-health-sciences-summer-programs',
+  'yale-research-official',
+  'yale-reu-programs',
+  'yse-centers-index',
+  'yse-faculty-directory',
 ]);
 
 export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
