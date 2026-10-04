@@ -7,6 +7,7 @@ vi.mock('../../services/meiliSyncService', () => ({
 }));
 
 import { ResearchEntity } from '../../models/researchEntity';
+import { syncEntity } from '../../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../../services/researchEntityBrowseRankService';
 import { __testing } from '../../services/researchEntityBrowseRank';
 import { runSourceLinkHealthBackfill } from '../backfillSourceLinkHealth';
@@ -65,6 +66,15 @@ describe('source-link-health backfill keeps browse rank current', () => {
 
     await runWithVerdict('HEALTHY', 200);
     expect(await storedBrowseRankScore()).toBe(liveScore);
+  }, 120000);
+
+  it('counts a row whose new browse rank did not reach Meilisearch', async () => {
+    vi.mocked(syncEntity).mockResolvedValueOnce(false);
+
+    const result = await runWithVerdict('UNAVAILABLE', 404);
+
+    expect(result.updated).toBe(1);
+    expect(result.indexSyncFailures).toBe(1);
   }, 120000);
 
   it('leaves browse rank untouched in a dry run', async () => {
