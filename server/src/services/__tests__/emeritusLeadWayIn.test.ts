@@ -176,13 +176,11 @@ describe('decideEmeritusWayIn', () => {
 });
 
 describe('signalIsWithheldWayIn', () => {
-  it.each(['CONTACT_INSTRUCTIONS_EXIST', 'REACH_OUT_PLAUSIBLE', 'APPLICATION_FORM_EXISTS'])(
-    'withholds %s only when the way in is withheld',
-    (type) => {
-      expect(signalIsWithheldWayIn({ type }, { wayInWithheld: true })).toBe(true);
-      expect(signalIsWithheldWayIn({ type }, { wayInWithheld: false })).toBe(false);
-    },
-  );
+  it('withholds the join-page signal only when the way in is withheld', () => {
+    const type = 'APPLICATION_FORM_EXISTS';
+    expect(signalIsWithheldWayIn({ type }, { wayInWithheld: true })).toBe(true);
+    expect(signalIsWithheldWayIn({ type }, { wayInWithheld: false })).toBe(false);
+  });
 
   it('keeps evidence signals that are not a way in', () => {
     expect(signalIsWithheldWayIn({ type: 'CURRENT_UNDERGRADS' }, { wayInWithheld: true })).toBe(

@@ -1825,7 +1825,7 @@ describe('LabDetail page', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           sourceUrl: FACULTY_AFFILIATED_PROFILE_URL,
         },
@@ -1898,7 +1898,7 @@ describe('LabDetail page', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           confidenceScore: 0.7,
           sourceUrl: FACULTY_PROFILE_URL,
@@ -1949,7 +1949,7 @@ describe('LabDetail page', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           sourceUrl: FACULTY_PROFILE_URL,
         },
@@ -2297,7 +2297,7 @@ describe('LabDetail page', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           sourceUrl: OFFICIAL_PROFILE_URL,
         },

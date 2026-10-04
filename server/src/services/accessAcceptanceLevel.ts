@@ -11,13 +11,7 @@ export const ACCESS_ACCEPTANCE_LEVELS: readonly AccessAcceptanceLevel[] = [
 
 export const ACCEPTANCE_VERIFIED_CONFIDENCE_FLOOR = 0.7;
 
-export const NEGATIVE_ACCESS_SIGNAL_TYPES: ReadonlySet<string> = new Set([
-  'NOT_CURRENTLY_AVAILABLE',
-]);
-
-export const POSITIVE_ACCESS_SIGNAL_TYPES: ReadonlySet<string> = new Set(
-  accessSignalTypes.filter((type) => !NEGATIVE_ACCESS_SIGNAL_TYPES.has(type)),
-);
+const ACCESS_SIGNAL_TYPE_SET: ReadonlySet<string> = new Set(accessSignalTypes);
 
 export const ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY =
   'signal:REACH_OUT_PLAUSIBLE:ORGANIZATIONAL_HOME';
@@ -40,23 +34,8 @@ export function signalConfidenceScore(signal: AccessSignalConfidenceInput): numb
   return 0;
 }
 
-// REACH_OUT_PLAUSIBLE is a catch-all outreach-plausibility type: a bare
-// derivationKey (e.g. the legacy research-entity-cache-backfill provenance
-// recovery) carries no guarantee it is backed by real invitation language, so
-// it must not lift the acceptance tier on its own. Fail closed: require a
-// real, source-backed excerpt. See #1343.
-function hasSourceBackedExcerpt(signal: AccessSignalConfidenceInput): boolean {
-  return typeof signal.excerpt === 'string' && signal.excerpt.trim().length > 0;
-}
-
 export function signalCountsTowardAcceptance(signal: AccessSignalConfidenceInput): boolean {
-  if (typeof signal.type !== 'string' || !POSITIVE_ACCESS_SIGNAL_TYPES.has(signal.type)) {
-    return false;
-  }
-  if (signal.type === 'REACH_OUT_PLAUSIBLE') {
-    return hasSourceBackedExcerpt(signal);
-  }
-  return true;
+  return typeof signal.type === 'string' && ACCESS_SIGNAL_TYPE_SET.has(signal.type);
 }
 
 export function canonicalAcceptanceLevelFromSignals(

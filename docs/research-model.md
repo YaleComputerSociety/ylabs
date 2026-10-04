@@ -7,7 +7,8 @@ Where an older note, issue, or skill still describes `Person`, `ResearchGroup`/`
 
 Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier is being retired in favor of factual, non-gating signals shown as plain badges.
 Slice 1 has landed: the `accessAcceptanceLevel` grade, the browse trust filter it fed, and access-based browse ranking are removed - signals no longer score or rank access, and visibility is unchanged.
-The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Evidence" / best-next-step framing still exist in runtime and are retired in later slices; update those sections only when their removal lands, not ahead of it.
+The `REACH_OUT_PLAUSIBLE` style plausibility signals were removed in #4637.
+The "Ways in" / "Evidence" / best-next-step framing still exists in runtime and is retired in later slices; update those sections only when their removal lands, not ahead of it.
 
 ## What This Solves
 
@@ -117,7 +118,7 @@ The continuous canonical materializer write path (`entityMaterializer.ts`) is th
 One extensible, source-attributed, typed fact about a research entity.
 [`server/src/models/signal.ts`](../server/src/models/signal.ts) generalizes and absorbs the retired `AccessSignal` and `UndergraduateLogisticsClaim` models.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
-Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
+Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
 The five undergraduate-logistics claim types that also lived here are retired (#3088), so `signalTypes` is now exactly `accessSignalTypes`.
 `LAB_MANAGER_LISTED`, `PROGRAM_MANAGER_LISTED`, `APPLICATION_ONLY`, `NO_EVIDENCE` and the `RECURRING_PROGRAM` signal type were dropped from the enum because no lane ever wrote one; `RECURRING_PROGRAM` remains a program category (#4585).
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
@@ -350,6 +351,10 @@ Resolved 2026-09-23 by the `OrgUnit` attribution (#2214).
 A `Signal` may now target an `OrgUnit` through `orgUnitId`, and exactly one of `researchEntityId` and `orgUnitId` is set.
 `department-undergrad-research` reads a department's own course page and emits an `orgUnit` observation only when a sentence on that page names the route and names credit or a catalog code; the materializer turns it into a `COURSE_CREDIT_PATHWAY` signal on the department, and `getResearchGroupDetail` inherits it at read time as `departmentCourseCreditRoutes`, attributed to the department by name.
 Nothing is ever written onto an entity, so the department-to-all-entities fan-out is impossible by construction rather than by policy.
+
+Retired 2026-10-04 by owner decision (#4637).
+The materializer no longer turns the department observation into a `COURSE_CREDIT_PATHWAY` signal, the type left `accessSignalTypes`, and the research detail payload no longer carries `departmentCourseCreditRoutes`.
+The lane still records its `orgUnit` observations, so course credit can return as a sourced department fact if a lane collects it at real coverage.
 The sentence must also state how a student takes the route, so a deadline, a drop warning, a grade threshold or a statement that credit is not given is refused even when it names the route and its course (`statesHowToTakeCourseCreditRoute`, #4045).
 The lane emits one reading per department per run, and when every page configured for a department was read and none states an admissible route it emits `routeStated: false`, which archives the department's signal, so a department with no admissible quote serves no department context rather than a wrong one.
 A fetch failure or an `--only` run that skips one of the department's pages withdraws nothing.
@@ -362,7 +367,7 @@ Under the organizational/program dead-end gate (issue #1359), a lead-exempt enti
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
 
 `EntryPathway` and `PostedOpportunity` were removed (#363), along with the separate public practical-routes search endpoint/page and the `/api/opportunities/:id` detail surface.
-Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
+Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, `APPLICATION_FORM_EXISTS`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
 `NO_EVIDENCE` remains a computed state, not a stored fact, unless a source explicitly supports it.
 Course credit, fellowship funding, and thesis advising remain formalization outcomes after home and mentor fit, not access evidence by themselves, unless a source describes a structured hosted or mentor-matching program that is its own `ResearchEntity`.
 
@@ -444,7 +449,7 @@ Pathway-based fellowship matching was removed with `EntryPathway`, and fellowshi
 ## Access Signals
 
 Undergraduate-access evidence is stored as `Signal` rows in the `signals` collection (see [`Signal`](#signal-signals) above for the authoritative field shape); the standalone `AccessSignal` model was folded into it.
-Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
+Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
 
 Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive access `Signal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 
@@ -480,7 +485,8 @@ Course-credit evidence is formalization-specific, not entry-specific. The Course
 Lab-microsite LLM evidence is now shaped as observations first.
 It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`.
 It no longer emits the `acceptingUndergrads` companion boolean.
-`accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, and `NOT_CURRENTLY_AVAILABLE` signals from those evidence observations.
+`accessMaterializer.ts` derives `APPLICATION_FORM_EXISTS` join-page signals from those evidence observations, and only when an undergraduate verdict is "yes".
+Since #4637 it derives no `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST` or `NOT_CURRENTLY_AVAILABLE` signal: a lab's "no" is never served and only stops a join-page claim from being minted.
 A `joinPageUrl` backs `APPLICATION_FORM_EXISTS` only when `joinPageUrlRefusal` in `server/src/scrapers/undergradJoinPageAdmission.ts` admits it: not a study-recruitment page, not a path that names only a graduate, postdoctoral or admissions audience, not a bare site root, and not a department or center programme page unless it sits under the row's own website or is its own department's undergraduate research or research-assistant programme (#4430).
 That exception is an owner decision: a page such as a department's undergraduate research-assistant programme stays a way in on that department's faculty rows, matched by the row's `departments` against the host the department roster reads for that one department, so a center's training page on a shared medical-campus host stays refused on every row but the center's own.
 The microsite lane also reads the join page the model names, fetching it when its crawl skipped it, and refuses one that does not resolve, one in another entity's section of a shared school or center host, one that recruits no one, and one that recruits only non-undergraduates.
@@ -550,9 +556,8 @@ Examples:
 
 - `POSTED_OPENING` signal + open application URL -> Apply
 - `CREDIT_FORMALIZATION_POSSIBLE` -> Ask about credit after mentor/home fit
-- `FELLOWSHIP_COMPATIBLE` -> Ask about funding after mentor/home fit
 - structured mentor-matching fellowship (its own `ResearchEntity`) -> Apply to structured research program
-- `REACH_OUT_PLAUSIBLE` + official profile link-out -> Review the official profile
+- official profile link-out -> Review the official profile
 - lead identity under review -> Review source context
 - no evidence -> Save or check back later
 

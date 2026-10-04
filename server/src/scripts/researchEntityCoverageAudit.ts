@@ -15,7 +15,6 @@ import {
 import { sourceCoverageRegistry } from '../scrapers/sourceCoverageRegistry';
 import {
   buildCoverageAuditRow,
-  extractSuspiciousConstraintQuotes,
   selectCoverageAuditRows,
   type CoverageAuditFacts,
   type CoverageObservationFlags,
@@ -83,7 +82,6 @@ const SUMMARY_ONLY_COVERAGE_ISSUES = [
   'NO_MEMBERS',
   'NO_PATHWAYS',
   'NO_PUBLIC_CONTACT_ROUTE',
-  'SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED',
   'NO_RESEARCH_AREAS',
   'MISSING_WEBSITE_URL',
 ] as const;
@@ -213,16 +211,6 @@ function stringId(value: unknown): string {
 }
 
 function buildObservationFlags(observations: ObservationHint[]): CoverageObservationFlags {
-  const suspiciousConstraintQuotes = extractSuspiciousConstraintQuotes(
-    observations
-      .filter((obs) =>
-        ['undergradEvidenceQuote', 'undergradConstraintQuote', 'contactInstructionsQuote'].includes(
-          obs.field,
-        ),
-      )
-      .map((obs) => (typeof obs.value === 'string' ? obs.value : '')),
-  );
-
   return {
     hasMicrositeObservation: observations.some(
       (obs) => obs.sourceName === 'lab-microsite-undergrad-llm',
@@ -230,7 +218,6 @@ function buildObservationFlags(observations: ObservationHint[]): CoverageObserva
     hasInferredPiObservation: observations.some(
       (obs) => obs.sourceName === 'dept-faculty-roster' && obs.field === 'inferredPiUserKey',
     ),
-    suspiciousConstraintQuotes,
   };
 }
 

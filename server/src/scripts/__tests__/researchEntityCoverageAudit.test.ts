@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCoverageAuditRow,
   buildCoverageIssues,
-  extractSuspiciousConstraintQuotes,
   selectCoverageAuditRows,
   summarizeIssueCounts,
   type CoverageAuditFacts,
@@ -36,27 +35,10 @@ function baseFacts(): CoverageAuditFacts {
     observationFlags: {
       hasMicrositeObservation: true,
       hasInferredPiObservation: true,
-      suspiciousConstraintQuotes: ["I regrettably don't have bandwidth to respond to all of them."],
     },
     signalTypes: [],
   };
 }
-
-describe('extractSuspiciousConstraintQuotes', () => {
-  it('keeps only quotes that look like unclassified constraints', () => {
-    const quotes = extractSuspiciousConstraintQuotes([
-      '',
-      'Please do not email me about openings.',
-      'Undergraduates are welcome to apply.',
-      "I regrettably don't have bandwidth to respond to all of them.",
-    ]);
-
-    expect(quotes).toEqual([
-      'Please do not email me about openings.',
-      "I regrettably don't have bandwidth to respond to all of them.",
-    ]);
-  });
-});
 
 describe('buildCoverageIssues', () => {
   it('flags sparse detail pages with missing actionable artifacts', () => {
@@ -68,17 +50,7 @@ describe('buildCoverageIssues', () => {
     expect(issues).toContain('NO_ACTIONABLE_ACCESS');
     expect(issues).toContain('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');
     expect(issues).toContain('INFERRED_PI_WITHOUT_MEMBERSHIP');
-    expect(issues).toContain('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
     expect(issues).toContain('BLANK_DETAIL_RISK');
-  });
-
-  it('does not flag unclassified constraints when a negative access signal exists', () => {
-    const facts = {
-      ...baseFacts(),
-      signalTypes: ['CONTACT_INSTRUCTIONS_EXIST', 'NOT_CURRENTLY_AVAILABLE'],
-    };
-
-    expect(buildCoverageIssues(facts)).not.toContain('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
   });
 });
 
@@ -107,7 +79,6 @@ describe('summarizeIssueCounts', () => {
       observationFlags: {
         hasMicrositeObservation: true,
         hasInferredPiObservation: false,
-        suspiciousConstraintQuotes: [],
       },
       signalTypes: ['REACH_OUT_PLAUSIBLE'],
     });
@@ -136,7 +107,6 @@ describe('selectCoverageAuditRows', () => {
     observationFlags: {
       hasMicrositeObservation: false,
       hasInferredPiObservation: false,
-      suspiciousConstraintQuotes: [],
     },
   });
   const cleanRow = buildCoverageAuditRow({
@@ -154,7 +124,6 @@ describe('selectCoverageAuditRows', () => {
     observationFlags: {
       hasMicrositeObservation: false,
       hasInferredPiObservation: false,
-      suspiciousConstraintQuotes: [],
     },
   });
 
