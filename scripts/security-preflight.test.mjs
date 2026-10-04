@@ -1058,9 +1058,23 @@ test('test-and-build is an aggregate that fails unless every other CI job succee
     'always()',
     'without always() a failed job skips the gate, and a skipped required context reads as passing',
   );
-  const verdict = gate.steps.map((step) => step.run ?? '').join('\n');
-  assert.match(verdict, /\[ "\$result" = success \] \|\| exit 1/);
   assert.equal(gate.steps[0].env.RESULTS, "${{ join(needs.*.result, ' ') }}");
+  const verdictFor = (results) =>
+    gate.steps.every(
+      (step) =>
+        spawnSync('bash', ['-e', '-c', step.run], {
+          env: { ...process.env, RESULTS: results },
+          encoding: 'utf8',
+        }).status === 0,
+    );
+  assert.equal(verdictFor('success success'), true);
+  for (const results of ['success failure', 'success cancelled', 'skipped success']) {
+    assert.equal(
+      verdictFor(results),
+      false,
+      `test-and-build must fail when the job results are ${results}`,
+    );
+  }
 });
 
 const everyWorkflowFile = () => {
