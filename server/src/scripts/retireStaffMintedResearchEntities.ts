@@ -12,13 +12,18 @@ import { archivedEntityUpdate, LIVE_ENTITY_FILTER } from '../models/entityArchiv
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   STAFF_MINTED_ENTITY_ARCHIVE_REASON,
   STAFF_MINTED_ENTITY_REASON_PRECEDENCE,
   isPersonProfileIdentityUrl,
+  officialProfileUrlSpellings,
+  soleLeadIdentityFor,
+  type SoleLeadRecord,
   planStaffMintedEntityRetirement,
   summarizeStaffMintedEntityReasons,
   summarizeStaffMintedEntityRefusals,
@@ -209,6 +214,31 @@ export function entriesInReasonScope<T extends { reason: StaffMintedEntityReason
   return entries.filter((entry) => reasons.includes(entry.reason));
 }
 
+async function addLiveTitlesByDestination(
+  titlesByDestination: Map<string, Set<string>>,
+  pageUrls: readonly string[],
+): Promise<void> {
+  const spellings = [...new Set(pageUrls.flatMap(officialProfileUrlSpellings))];
+  if (spellings.length === 0) return;
+  for (const observation of await Observation.find({
+    field: 'title',
+    entityType: 'user',
+    sourceUrl: { $in: spellings },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+  })
+    .select('sourceUrl value')
+    .lean()) {
+    const url = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
+    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
+    if (!url || !value) continue;
+    const destination = normalizeOfficialProfileDestination(url);
+    const held = titlesByDestination.get(destination) || new Set<string>();
+    held.add(value);
+    titlesByDestination.set(destination, held);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseRetireStaffMintedEntitiesArgs(process.argv.slice(2));
   // Resolved before the database is opened, so an unwritable report path fails the
@@ -241,29 +271,14 @@ async function main(): Promise<void> {
   }
 
   const identityUrls = [...new Set(identityUrlById.values())];
-  const titlesByUrl = new Map<string, Set<string>>();
+  const titlesByDestination = new Map<string, Set<string>>();
   // Every live title, from every lane, rather than the most recent one: the verdict
   // is unanimity across them, so the set matters and recency does not. Live only is
   // the pair every other retirement pass carries when it reads a stored value as
   // current, because a superseded or rolled-back title is a claim the lane has
   // withdrawn. On Development it changes no verdict and moves 33 identity pages into
   // `no-stored-title`, which refuses.
-  for (const observation of await Observation.find({
-    field: 'title',
-    entityType: 'user',
-    sourceUrl: { $in: identityUrls },
-    superseded: { $ne: true },
-    'rollback.rolledBackAt': { $exists: false },
-  })
-    .select('sourceUrl value')
-    .lean()) {
-    const url = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
-    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
-    if (!url || !value) continue;
-    const held = titlesByUrl.get(url) || new Set<string>();
-    held.add(value);
-    titlesByUrl.set(url, held);
-  }
+  await addLiveTitlesByDestination(titlesByDestination, identityUrls);
 
   // Which people the identity page itself names, so a role edge attaching that
   // person can be told from one attaching somebody else. `profileLinks` is the join,
@@ -302,17 +317,75 @@ async function main(): Promise<void> {
     roleEdgePersonIdsById.set(entityId, held);
   }
 
+  const mintUrlById = new Map<string, unknown>();
+  for (const row of rows) {
+    const id = serializedDocumentId(row._id);
+    if (id && !identityUrlById.has(id)) {
+      mintUrlById.set(id, provenanceOf(row as { fieldProvenance?: unknown }, 'slug')?.sourceUrl);
+    }
+  }
+  const soleLeadIds = new Set<string>();
+  for (const [id, mintUrl] of mintUrlById) {
+    const people = new Set(roleEdgePersonIdsById.get(id) || []);
+    if (people.size === 1 && typeof mintUrl === 'string' && isSharedPeopleRosterUrl(mintUrl)) {
+      soleLeadIds.add([...people][0]);
+    }
+  }
+  const leadById = new Map<string, SoleLeadRecord>();
+  for (const person of soleLeadIds.size
+    ? await Researcher.find({
+        _id: { $in: [...soleLeadIds].map((id) => new mongoose.Types.ObjectId(id)) },
+        archived: { $ne: true },
+      })
+        .select('_id profileLinks profile.title')
+        .lean()
+    : []) {
+    const personId = serializedDocumentId(person._id);
+    if (!personId) continue;
+    leadById.set(personId, {
+      profileLinks: person.profileLinks,
+      title: (person as { profile?: { title?: unknown } }).profile?.title,
+    });
+  }
+  const leadPageUrls = [...leadById.values()].flatMap((lead) =>
+    (Array.isArray(lead.profileLinks) ? (lead.profileLinks as Array<{ url?: unknown }>) : [])
+      .map((link) => link?.url)
+      .filter((url): url is string => typeof url === 'string' && url !== ''),
+  );
+  await addLiveTitlesByDestination(titlesByDestination, leadPageUrls);
+  let identitiesReadFromSoleLead = 0;
+  const identityFor = (id: string): { url?: string; titles: string[]; personIds: string[] } => {
+    const url = identityUrlById.get(id);
+    if (url) {
+      return {
+        url,
+        titles: [...(titlesByDestination.get(normalizeOfficialProfileDestination(url)) || [])],
+        personIds: identityPersonIdsByUrl.get(url) || [],
+      };
+    }
+    const borrowed = soleLeadIdentityFor({
+      mintUrl: mintUrlById.get(id),
+      rolePersonIds: roleEdgePersonIdsById.get(id) || [],
+      leadById,
+      observedTitlesByDestination: titlesByDestination,
+    });
+    if (!borrowed) return { titles: [], personIds: [] };
+    identitiesReadFromSoleLead += 1;
+    return borrowed;
+  };
+
   const candidates: StaffMintedEntityCandidate[] = rows.flatMap((row) => {
     const id = serializedDocumentId(row._id);
     if (!id) return [];
-    const identityProfileUrl = identityUrlById.get(id);
+    const identity = identityFor(id);
+    const identityProfileUrl = identity.url;
     return [
       {
         id,
         entityType: typeof row.entityType === 'string' ? row.entityType : undefined,
         tier: typeof row.studentVisibilityTier === 'string' ? row.studentVisibilityTier : undefined,
         identityProfileUrl,
-        storedTitles: identityProfileUrl ? [...(titlesByUrl.get(identityProfileUrl) || [])] : [],
+        storedTitles: identity.titles,
         manuallyLockedFields: Array.isArray(row.manuallyLockedFields)
           ? (row.manuallyLockedFields as string[])
           : [],
@@ -330,9 +403,7 @@ async function main(): Promise<void> {
           row as { fieldProvenance?: unknown; websiteUrl?: unknown; website?: unknown },
           identityProfileUrl,
         ),
-        identityPersonIds: identityProfileUrl
-          ? identityPersonIdsByUrl.get(identityProfileUrl) || []
-          : [],
+        identityPersonIds: identity.personIds,
         roleEdgePersonIds: roleEdgePersonIdsById.get(id) || [],
       },
     ];
@@ -343,6 +414,7 @@ async function main(): Promise<void> {
 
   const report: Record<string, unknown> = {
     script: SCRIPT_NAME,
+    identitiesReadFromSoleLead,
     mode: args.apply ? 'apply' : 'dry-run',
     liveRows: rows.length,
     rowsWithAPersonProfileIdentity: identityUrlById.size,
