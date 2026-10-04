@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   carryUnchangedGoldLabels,
+  emptySuccessorRefusal,
   goldCarryRefusal,
   parseCaptureArgs,
   scopeOfStoredBenchmark,
@@ -157,5 +158,16 @@ describe('carrying gold labels into a recapture', () => {
     expect(
       goldCarryRefusal({ benchmarkId: 'example-old', goldLabels: [] }, 0, false),
     ).toBeUndefined();
+  });
+});
+
+describe('emptySuccessorRefusal', () => {
+  it('refuses a recapture that plans nothing where the old capture planned values', () => {
+    expect(emptySuccessorRefusal('example-old', 2, 0)).toMatch(/would measure nothing/);
+  });
+
+  it('allows a recapture that plans values, or one replacing a benchmark that planned none', () => {
+    expect(emptySuccessorRefusal('example-old', 2, 1)).toBeUndefined();
+    expect(emptySuccessorRefusal('example-old', 0, 0)).toBeUndefined();
   });
 });

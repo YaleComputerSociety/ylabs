@@ -139,6 +139,20 @@ export function carryUnchangedGoldLabels(
   return { carried, dropped: labels.length - carried.length };
 }
 
+/**
+ * A successor that plans nothing where the benchmark it replaces planned values measures
+ * nothing, so storing it would retire a benchmark's signal rather than refresh it. The lane
+ * no longer reaches that scope, which needs a new benchmark rather than a recapture.
+ */
+export function emptySuccessorRefusal(
+  supersededId: string,
+  supersededPlanned: number | undefined,
+  recapturedPlanned: number,
+): string | undefined {
+  if (recapturedPlanned > 0 || (supersededPlanned ?? 0) === 0) return undefined;
+  return `The recapture of ${supersededId} planned no values where it planned ${supersededPlanned}, so it would measure nothing; capture a new scope instead`;
+}
+
 export function goldCarryRefusal(
   superseded: Pick<StoredBenchmarkScope, 'benchmarkId' | 'goldLabels'>,
   carriedCount: number,
@@ -350,6 +364,14 @@ async function main(): Promise<void> {
       (typeof observation.entityKey === 'string' && observation.entityKey) ||
       slugById.get(String(observation.entityId ?? ''));
     if (slug) slugs.add(slug);
+  }
+  if (args.recapture) {
+    const emptyRefusal = emptySuccessorRefusal(
+      args.recapture,
+      supersededPlannedObservationCount,
+      run.observations.length,
+    );
+    if (emptyRefusal) throw new Error(emptyRefusal);
   }
   const labels = await freezeLabels([...slugs]);
   let goldCarry: { carried: GoldLabel[]; dropped: number } | undefined;
