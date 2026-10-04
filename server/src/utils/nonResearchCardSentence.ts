@@ -23,7 +23,7 @@ const teachingAppointmentRecordPattern =
   /^(?:(?:Dr|Prof)\.\s+)?[^.;:]{0,80}?\b(?:has|had)\s+(?:previously\s+|also\s+)?held\s+(?:\w+\s+){0,2}(?:teaching|visiting|faculty|academic)\s+(?:appointments?|positions?|posts?)\b/i;
 
 const studentDevelopmentFocusPattern =
-  /\b(?:work|teaching|practice|pedagogy)\s+(?:focuses|focused|centers|centres)\s+on\s+(?:developing|training|nurturing|cultivating|helping|guiding|coaching|preparing)\s+(?:(?:his|her|their|the)\s+)?(?:students|actors|singers|performers|musicians|dancers|artists)['’]?/i;
+  /\b(?:work|teaching|practice|pedagogy)\s+(?:focuses|focused|centers|centres)\s+on\s+(?:developing|training|nurturing|cultivating|helping|guiding|coaching|preparing)\s+(?:(?:his|her|their|the)\s+)?(?:students|actors|singers|performers|musicians|dancers|artists)['’]?\s+(?:(?:own|individual|artistic|vocal|musical)\s+)?(?:techniques?|skills?|voices?|styles?|craft|artistry|musicianship)\b/i;
 
 const strayLeadingPunctuationPattern = /^[)\]}>,;:.!?%/|\\*&+=-]/;
 

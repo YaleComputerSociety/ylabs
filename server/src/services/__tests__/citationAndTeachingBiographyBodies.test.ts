@@ -82,3 +82,43 @@ describe('research prose is not read as a citation', () => {
     expect(servedBody(row({ fullDescription: body }))).toBe(body);
   });
 });
+
+describe('research prose after a citation is not read as a bibliography entry', () => {
+  it('keeps a lab statement that follows a quoted title', () => {
+    const body =
+      '"Coral Settlement Cues on Reef Tiles." Synthetic Reef Journal, 2024. The lab investigates how coral larvae choose reef substrates and how warming shifts those choices.';
+
+    const served = servedBody(row({ fullDescription: body }));
+    expect(served).not.toBe(RESEARCH_CARD);
+    expect(served).toContain('how coral larvae choose reef substrates');
+  });
+
+  it('keeps a body that opens on a quoted phrase in prose', () => {
+    const body =
+      '"Deep time thinking" shapes how the lab studies reef recovery after warming events.';
+
+    const served = servedBody(row({ fullDescription: body }));
+    expect(served).not.toBe(RESEARCH_CARD);
+    expect(served).toContain('studies reef recovery after warming events');
+  });
+
+  it('keeps a body that opens on recent papers from the lab', () => {
+    const body =
+      'Recent papers from the lab examine how coral larvae settle on reef substrates under warming.';
+
+    const served = servedBody(row({ fullDescription: body }));
+    expect(served).not.toBe(RESEARCH_CARD);
+    expect(served).toContain('examine how coral larvae settle on reef substrates');
+  });
+});
+
+describe('a research statement after leading citations keeps its continuation', () => {
+  it('keeps the prose that follows the statement', () => {
+    const continuation = 'The approach pairs field assays with survival models.';
+    const body = `Scholar, S., & Example, E. (2007). Settlement of coral larvae on reef tiles. Journal of Synthetic Reef Studies, 5(4), 103-108. Scholar, S. (2010). Larval survival on artificial tiles. Example Ecology, 7(2), 11-19. Her research focuses on coral larval settlement. ${continuation}`;
+
+    const served = servedBody(row({ fullDescription: body }));
+    expect(served).toContain('research focuses on coral larval settlement');
+    expect(served).toContain(continuation);
+  });
+});

@@ -304,13 +304,13 @@ const BIBLIOGRAPHIC_CITATION_SENTENCE: readonly RegExp[] = [
   /\b\d{1,4}\s?\(\d{1,4}\)\s?[,:]\s?\d{1,5}\s?[-–]\s?\d{1,5}\b/,
   /\((?:[A-Z][\p{L}.]+(?:[\s,]+[A-Z][\p{L}.]+){0,3})\s*:\s*[^():]{2,60},\s*(?:19|20)\d{2}\)/u,
   /^\(\s*with\s+[A-Z]/,
-  /^["“][^"”]{8,250}["”](?:\s*\(with\s[^)]+\))?[^"“”]{0,80}?(?:\b(?:19|20)\d{2}\b|\b(?:Paper|Slides|Journal|Review|Quarterly|Press)\b|[.,]?\s*$)/,
+  /^["“][^"”]{8,250}(?:[.?!]["”]|["”]\s*\(with\s[^)]+\)|["”][^"“”]{0,80}?\b(?:(?:19|20)\d{2}|Paper|Slides|Journal|Review|Quarterly|Press)\b)/,
   /\b(?:articles?|essays?|papers?|work|writing|research)\s+(?:has|have)\s+(?:also\s+)?appeared\s+in\b/i,
   new RegExp(
     `^${BIBLIOGRAPHY_LINK_LABEL}(?:\\s+${BIBLIOGRAPHY_LINK_LABEL})*$`,
     'i',
   ),
-  /^(?:Here\s+(?:are|is)\s+)?(?:a\s+few\s+|some\s+)?(?:of\s+(?:my|his|her|their)\s+)?(?:recent|selected|representative)\s+(?:papers|publications|articles)\b/i,
+  /^(?:Here\s+(?:are|is)\s+)?(?:a\s+few\s+|some\s+)?(?:of\s+(?:my|his|her|their)\s+)?(?:recent|selected|representative)\s+(?:papers|publications|articles)(?:\s+include)?\s*(?::|\.?\s*$)/i,
   /^(?:Revision\s+requested|Revise\s+and\s+resubmit|R&R|Forthcoming|(?:Conditionally\s+)?[Aa]ccepted|Under\s+review|Working\s+paper)\b/,
 ];
 
@@ -354,7 +354,9 @@ export function researchStatementSentences(
         !isCurriculumVitaeRecordSentence(sentence)),
   );
   if (firstStatement < 0) return [];
-  const firstCitation = sentences.findIndex(isBibliographicCitationSentence);
+  const firstCitation = sentences.findIndex(
+    (sentence, index) => index > firstStatement && isBibliographicCitationSentence(sentence),
+  );
   const beforePublicationList = (index: number) => firstCitation < 0 || index < firstCitation;
   return sentences.filter(
     (sentence, index) =>
@@ -400,15 +402,18 @@ export function isCurriculumVitaeShapedBody(value: unknown): boolean {
 }
 
 /**
- * A body that is a bibliography entry and nothing else: it opens on a citation and
- * states no research of its own, so its title words read as topics while telling a
- * student nothing about the work.
+ * A body that is a bibliography entry and nothing else: it opens and closes on a
+ * citation and states no research of its own, so its title words read as topics while
+ * telling a student nothing about the work.
  */
 export function isBibliographicCitationBody(value: unknown): boolean {
   const text = textValue(value);
   if (!text) return false;
-  const [opening] = splitDescriptionSentences(text);
+  const sentences = splitDescriptionSentences(text);
+  const opening = sentences[0];
+  const closing = sentences[sentences.length - 1];
   if (!opening || !isBibliographicCitationSentence(opening)) return false;
+  if (!isBibliographicCitationSentence(closing)) return false;
   return researchStatementSentences(text, { activityAnchors: true }).length === 0;
 }
 

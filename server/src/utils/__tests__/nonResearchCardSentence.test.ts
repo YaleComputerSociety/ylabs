@@ -140,6 +140,14 @@ describe('teaching records in the card slot', () => {
     expect(isNonResearchCardSentence(card)).toBe(true);
   });
 
+  it('keeps an education-research focus on helping students', () => {
+    expect(
+      isNonResearchCardSentence(
+        'Her work focuses on helping students with dyslexia learn to read through structured phonics.',
+      ),
+    ).toBe(false);
+  });
+
   it('keeps a focus on developing research methods', () => {
     expect(
       isNonResearchCardSentence('Her work focuses on developing new imaging methods for coral reefs.'),
