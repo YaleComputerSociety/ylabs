@@ -1097,7 +1097,7 @@ describe('person-bio demotion for fullDescription', () => {
     const resolved = resolveField(
       'fullDescription',
       [
-        obs(CURATED_BIO, 'manual-admin-edit', 0.43),
+        obs(CURATED_BIO, 'manual-pi-edit', 0.43),
         obs(RESEARCH_PROSE, 'lab-microsite-undergrad-llm', 0.41),
       ],
       { now: D('2026-02-08') },
@@ -1230,7 +1230,7 @@ describe('undergrad-access lane demotion for fullDescription', () => {
       'fullDescription',
       [
         obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
-        obs(ACCESS_SUMMARY, 'manual-admin-edit', 0.55, D('2025-06-01')),
+        obs(ACCESS_SUMMARY, 'manual-pi-edit', 0.55, D('2025-06-01')),
         obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
       ],
       { now: D('2026-02-25') },
@@ -1431,7 +1431,7 @@ describe('quality demotion for served prose a lane-specific rule does not descri
     const resolved = resolveField(
       'fullDescription',
       [
-        obs('fullDescription', CURATED_APPOINTMENT, 'manual-admin-edit', 1),
+        obs('fullDescription', CURATED_APPOINTMENT, 'manual-pi-edit', 1),
         obs(
           'fullDescription',
           'The Guan Lab develops statistical and machine learning methods for high-dimensional scientific applications and genomics.',

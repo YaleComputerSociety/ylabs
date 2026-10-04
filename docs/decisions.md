@@ -5,6 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: Evidence Is Input To The Description, And One Writer Writes Every Description (#4788)
+
+A served description answers one question for a student: what does this lab or researcher study.
+Most served bodies were page text copied verbatim from a source, and a 45-row random sample of `student_ready` Development rows found about 13 that do not answer that question: career biographies, publication and grant listings, source narration, and page chrome or promotional copy.
+The live `manual-admin-edit` `fullDescription` observations were worse than copying, because several narrate their sources in agent voice and every one outranked every scraper lane through the non-decaying curated precedence.
+Decision (owner, 2026-10-04): evidence is input to the description, not the description.
+One writer, the `coverage-synthesis-llm` lane run by `research-entity:coverage-synthesis`, synthesizes every live research row's `fullDescription` from that row's live evidence as 1 to 3 sentences answering what it studies.
+The writer is checked against its evidence by the existing `coverageSynthesisDecision` gates, plus three deterministic arms: a past-career sentence is stripped and a body that is nothing else is refused, a body that narrates its sources is refused, and a body over 90 words is refused.
+The resolver serves a servable written body over every copied value, and the copied values stay ranked behind it as the fallback for a row the writer refused or has not reached.
+A PI's own edit is not copied page text, so it is the one source the written body does not outrank.
+`manual-admin-edit` loses its curated precedence on description fields only: it decays and is reordered there like any other source, and it keeps the curated precedence on every other field.
+An admin description is ordinary evidence the writer reads, unless it narrates its sources.
+The card line is derived from the written body through the existing card derivation, so there is no second card writer.
+This keeps the evidence contract: the written body is itself an observation, re-derived when its evidence or its prompt changes and retired when its evidence no longer supports it, so no field is written directly and nothing needs a lock.
+A thin but accurate body still serves (#4766), and every accuracy gate still applies.
+A read-only pilot of the prompt passed every gate on 31 of 31 rows, and a 10-row dry run of the lane passed on 10 of 10 with no body over 72 words.
+This is a stored-data change: it reaches students only after the lane has run over every live Development row and the rows are materialized, regated and reindexed.
+
 ## 2026-10-04: Google Analytics Is Removed, And First-Party `analytics_events` Remain (#4754)
 
 The Google Analytics 4 tag is removed from every page and every environment (owner decision, part of the privacy notice in #4157).

@@ -1264,6 +1264,20 @@ Do not add an eleventh source-type predicate to `researchEntityDescriptionText.t
 Across the served corpus the existing ten fire once in total, while fluent, well-formed, research-adjacent prose that names no subject passes all of them.
 Source type is also the wrong axis: most served descriptions containing "Our Mission" name a real subject and are good, so demoting the category discards more good prose than bad.
 
+#### Evidence is input to the description: one writer writes every body (#4788)
+
+`research-entity:coverage-synthesis` writes every live research row's `fullDescription` from the row's live evidence, and `docs/research-data-pipeline.md` ("The written description") owns the contract.
+Four rules to keep when touching it:
+
+- A servable written body (`coverage-synthesis-llm`) outranks every copied `fullDescription` in `confidenceResolver` (`preferWrittenDescriptionGroups`), and copied values stay ranked behind it as the fallback, so never drop them.
+Only `manual-pi-edit` is not outranked.
+- `manual-admin-edit` is ordinary evidence on description fields (`ADMIN_EDIT_ORDINARY_FIELDS`) and keeps its curated precedence everywhere else; do not re-add it to description precedence.
+- The writer never reads its own output and skips an admin description only when it narrates its sources (`isWriterEvidenceObservation`), so a re-run cannot launder its last body into the next one.
+- The card follows the written body through the existing card derivation (`writtenBodyCardBasis`); do not add a second card writer.
+
+A new refusal arm goes after the older arms so their counts keep their meaning, with one exception that is deliberate: `source-narration` runs before `quality-bar`, because the quality bar blanks the same shape through the serve sanitizer and would report it as a generic quality verdict.
+`isSourcePageNarrationDescription` also covers possessive and next-source narration ("Her Yale profile lists ...", "The site presents ...", "the official next source for students to review"); its qualifier words are a closed list, because an open slot reads "the tumor's expression profile identifies" as narration.
+
 #### FACULTY_RESEARCH_AREA descriptions are a synthesis problem, not an extraction problem
 
 An FRA usually has no lab site, so its only source is the professor's official Yale profile page, and the main prose block there is a biography.

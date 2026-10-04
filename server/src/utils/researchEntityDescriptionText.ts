@@ -383,10 +383,45 @@ export function isDirectoryIndexChromeText(value: unknown): boolean {
  * guard does not fire on a third-party attribution, so without this the copy
  * reaches the page (#2063 batch review).
  */
+const SOURCE_DOCUMENT_QUALIFIER =
+  '(?:yale|official|faculty|department|departmental|school|of|medicine|public|health|ysm|online|web|university|personal|directory|people|lab|group)';
+const SOURCE_DOCUMENT_NOUN = '(?:profile|page|web\\s?site|site|listing|entry|bio|biography)';
+const SOURCE_NARRATION_VERB =
+  '(?:lists|describes|links|identifies|presents|names|highlights|summarizes|summarises|notes|mentions|indicates)';
+const SOURCE_LISTING_VERB = '(?:lists|describes|mentions|summarizes|summarises)';
+const SOURCE_LISTING_NOUN = '(?:profile|page|web\\s?site|listing|bio|biography|entry)';
+const SOURCE_QUALIFIER_RUN_MAX = 6;
+const sourceQualifierRun = (min: number) =>
+  `(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){${min},${SOURCE_QUALIFIER_RUN_MAX}}`;
+
+/**
+ * The possessive and next-source shapes of the same failure (#4788): "Her Yale profile
+ * lists ...", "X's Yale School of Medicine profile describes ...", "The site presents ...",
+ * "the official next source for students to review".
+ *
+ * The qualifier words between the determiner and the noun are a closed list, because an
+ * open slot reads research prose as narration: "the tumor's expression profile identifies
+ * subtypes" and "the binding site presents a pocket" both have a determiner, a noun and a
+ * narration verb. A bare `the`/`this` lead is anchored to a sentence start for the same
+ * reason, while a possessive pronoun or name may sit anywhere. A bare noun after a `'s`
+ * possessor takes only a listing verb, because "a patient's profile indicates risk" is
+ * research prose. The run cap fits "Yale School of Public Health".
+ */
 const SOURCE_PAGE_NARRATION_PATTERNS = [
   /\b(?:the\s+|this\s+)?(?:faculty|directory|profile|department|departmental|listing|web)?\s*page\s+(?:lists|shows|displays|contains|includes|features|mentions|names|indicates|describes)\b/i,
   /\bthis\s+(?:page|site|directory|listing)\s+(?:lists|shows|displays|contains)\b/i,
   /\bthe\s+(?:directory|listing|roster|index)\s+(?:lists|shows|contains|names)\b/i,
+  new RegExp(
+    `\\b(?:(?:her|his|their)\\s+${sourceQualifierRun(0)}|[\\w.-]+['’]s\\s+${sourceQualifierRun(1)})${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
+    'i',
+  ),
+  new RegExp(`\\b[\\w.-]+['’]s\\s+${SOURCE_LISTING_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`, 'i'),
+  new RegExp(
+    `(?:^|[.!?]\\s+)(?:the|this|that)\\s+${sourceQualifierRun(0)}${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
+    'i',
+  ),
+  /\b(?:official\s+next|next\s+official)\s+source\b/i,
+  /\bfor\s+(?:interested\s+)?students\s+to\s+(?:review|consult|check|read|visit)\b/i,
 ];
 
 export function isSourcePageNarrationDescription(value: unknown): boolean {
