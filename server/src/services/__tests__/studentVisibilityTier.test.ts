@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LLM_AUTHORED_SOURCE_NAMES } from '../../scrapers/seedSources';
 
 import {
   BLANK_PUBLIC_DESCRIPTION_REASON,
@@ -3164,7 +3165,17 @@ describe('a stored card that repeats a useful body', () => {
 });
 
 describe('a thin but accurate body', () => {
-  const visibility = (fullDescription: string, shortDescription: string) =>
+  const OFFICIAL_SOURCE = 'ysm-faculty-directory';
+  const LLM_SOURCE = 'lab-microsite-description-llm';
+  const TOPIC_ECHO_TEMPLATE_BODY =
+    'Research focuses on topics including glaciology, ice sheet dynamics, and sea level rise.';
+  const SOUND_CARD =
+    'Studies how ice sheets respond to ocean warming and what that means for sea level rise.';
+  const visibility = (
+    fullDescription: string,
+    shortDescription: string,
+    bodySourceName: string | null = OFFICIAL_SOURCE,
+  ) =>
     computeResearchEntityStudentVisibility({
       entity: {
         _id: 'thin-body-fixture',
@@ -3176,26 +3187,61 @@ describe('a thin but accurate body', () => {
         shortDescription,
         researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
         sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+        ...(bodySourceName
+          ? { fieldProvenance: { fullDescription: { sourceName: bodySourceName } } }
+          : {}),
       },
       leadMembers: [
         { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
       ],
     });
 
-  it('does not hold a row whose short accurate body restates its topics', () => {
+  it('does not hold a row whose short accurate official body restates its topics', () => {
     const result = visibility(
       "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
-      'Studies how ice sheets respond to ocean warming and what that means for sea level rise.',
+      SOUND_CARD,
+    );
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves an official topic-echo template body', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('holds a language-model template body that only echoes its topics', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, LLM_SOURCE);
+    expect(result.reasons).toContain('thin_description');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('holds a language-model echo body from every lane the registry marks as a model', () => {
+    for (const sourceName of LLM_AUTHORED_SOURCE_NAMES) {
+      expect(visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, sourceName).tier).not.toBe(
+        'student_ready',
+      );
+    }
+  });
+
+  it('holds a thin echo body that carries no provenance', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, null);
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('serves a full language-model body whatever the echo relaxation', () => {
+    const result = visibility(
+      'Robin Fixture studies how ice sheets respond to a warming ocean, combining satellite altimetry with ice flow models to project how fast glaciers retreat and how much they add to sea level rise over the coming century.',
+      SOUND_CARD,
+      LLM_SOURCE,
     );
     expect(result.reasons).not.toContain('thin_description');
     expect(result.tier).toBe('student_ready');
   });
 
   it('still holds a thin body that is a page fragment', () => {
-    const result = visibility(
-      'Studies glaciology, including research areas:.',
-      'Studies how ice sheets respond to ocean warming and what that means for sea level rise.',
-    );
+    const result = visibility('Studies glaciology, including research areas:.', SOUND_CARD);
     expect(result.reasons).toContain('thin_description');
   });
 

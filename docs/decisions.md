@@ -18,6 +18,21 @@ The collection is environment-local and is read with `yarn --cwd server auth:log
 It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
 Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
 
+## 2026-10-04: The Echo Rule Holds A Language-Model Body And Not An Official One (#4756)
+
+The #1664 echo rule holds a research body that adds fewer than about 4 words beyond the row's own topics.
+#4481 closed on keeping it as it was, #4704 then relaxed it at the gate and the served page for every thin but accurate body, and this decision narrows that relaxation to a body an official or human source wrote (maintainer decision).
+An official or human body is one whose `fieldProvenance.fullDescription.sourceName` is present and is not a language-model lane, such as a faculty directory profile, a lab's own page with no model in between, or an operator edit.
+A body a language model wrote keeps the echo rule whatever its grounding grade, because a GROUNDED grade does not tell the "Research focuses on topics including A, B, C" template apart from a body that says something.
+A body with no provenance also keeps the strict verdict, so an unattributed body cannot earn the exemption by its absence.
+The language-model set is `isLlmAuthoredSourceName`, which a test pins to every seed source whose display name says LLM, so a new model lane is held without an edit here.
+Write paths already read the strict verdict and are unchanged.
+
+The maintainer's read-only measurement on Development found 50 rows held by the echo rule alone: 2 official or human bodies, both accurate; 18 model bodies graded GROUNDED or REWORDED, mostly the template, of which only 6 add anything beyond the chips; and 30 model bodies ungraded or UNSUPPORTED.
+Re-measured with same-moment dry-run gate plans over all 4,233 research rows on 2026-10-04, 44 rows were served only because of the #4704 relaxation: 42 carried a body from a language-model lane and 2 a faculty directory body.
+Under this rule served rows are +2 against the strict rule, against +44 under #4704, and no other row moves.
+The cost is the handful of model bodies that do add a little beyond their chips; they return when a description lane writes a fuller body, through the normal gate.
+
 ## 2026-10-04: A Multi-Purpose Fund Is Served When Its Own Page Names Research As An Eligible Use (#4675)
 
 A fund that pays for research among other uses, such as study, language, internships or travel, is research-relevant when its own page text (description, eligibility or summary) names research as an eligible use (owner decision).
