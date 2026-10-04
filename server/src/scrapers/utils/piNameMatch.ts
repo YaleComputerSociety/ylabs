@@ -311,7 +311,7 @@ function storedSpellingPattern(foldedKey: string): string {
 /**
  * The key is folded (accents stripped, an apostrophe read as a token break) but the query
  * runs against the stored `displayName`, which keeps both. Matching the folded key literally
- * found nobody for `Crémer`, `D'Aquila` or `Yalçın`, so the resolver answered `absent` for a
+ * found nobody for an accented or apostrophe surname, so the resolver answered `absent` for a
  * researcher it had just minted and the next pass minted the same person again: 9 accented
  * or apostrophe surnames had accumulated 3 to 15 identical records each on Development.
  */
