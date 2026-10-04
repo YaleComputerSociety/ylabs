@@ -131,6 +131,11 @@ const ResearchHomeComparison = ({
   const [columns, setColumns] = useState<ComparisonColumn[]>(() =>
     uniqueEntities.map((base) => ({ status: 'loading', base })),
   );
+  const [columnsEntities, setColumnsEntities] = useState(uniqueEntities);
+  if (columnsEntities !== uniqueEntities) {
+    setColumnsEntities(uniqueEntities);
+    setColumns(uniqueEntities.map((base) => ({ status: 'loading', base })));
+  }
   const [includedNoteIds, setIncludedNoteIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -145,8 +150,6 @@ const ResearchHomeComparison = ({
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-
-    setColumns(uniqueEntities.map((base) => ({ status: 'loading', base })));
 
     uniqueEntities.forEach((base) => {
       axios

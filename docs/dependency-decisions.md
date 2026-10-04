@@ -132,7 +132,8 @@ That range was requested only by `minimatch` 3, which only the ESLint 9 toolchai
 The `^5.0.5` override still matches and stays.
 
 ESLint 10's `@eslint/js` recommended set adds `no-useless-assignment` and `preserve-caught-error`, and both findings were fixed in source: dead initializers before a `try` are gone, and a rethrown error now carries the caught one as its `cause`.
-The `eslint-plugin-react-hooks` recommended config is adopted whole, except `react-hooks/refs` and `react-hooks/set-state-in-effect`, which stay at `warn` because they flag loader effects and latest-value refs that are correct without the React Compiler; #4379 clears them and restores `error`.
+The `eslint-plugin-react-hooks` recommended config is adopted whole.
+`react-hooks/refs` and `react-hooks/set-state-in-effect` were held at `warn` until #4620 and #4621 cleared their findings, so every rule in the set is now at `error`.
 
 ## 2026-09-30: Dead overrides, a spent advisory ignore and `ts-node` are removed (#4037)
 

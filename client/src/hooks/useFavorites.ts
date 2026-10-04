@@ -2,7 +2,7 @@
  * Favorites state + optimistic toggle for saved collections.
  * Keeps load/update endpoints local so the supported kinds share orchestration.
  */
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import useLatestRequest from './useLatestRequest';
 import { showWarningDialog } from '../utils/warningDialog';
@@ -12,6 +12,7 @@ import {
   type ResearchEntityType,
   type ResearchSaveSurface,
 } from '../utils/researchAnalytics';
+import useLoadEffect from './useLoadEffect';
 
 type FavoritesKind = 'researchPlans' | 'watchedPrograms';
 
@@ -108,9 +109,7 @@ export const useFavorites = (
     }
   }, [enabled, kind, config.load, config.responseKey, latestLoad]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  useLoadEffect(reload);
 
   const setFavorite = useCallback(
     async (id: string, favorite: boolean, surface: ResearchSaveSurface = defaultSurface) => {

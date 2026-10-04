@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useWatchedDeadlineSummary from '../useWatchedDeadlineSummary';
@@ -78,5 +78,43 @@ describe('useWatchedDeadlineSummary', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.approachingCount).toBe(0);
     expect(result.current.hasWatchedPrograms).toBe(false);
+  });
+
+  it('stays idle when a request settles after it is disabled', async () => {
+    let settle: () => void = () => undefined;
+    const responses = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    mockedAxios.get.mockImplementation(async (url: string) => {
+      await responses;
+      if (url === '/users/watchedPrograms') {
+        return { data: { watchedPrograms: [{ _id: 'p1', title: 'STARS', deadline: farFuture }] } };
+      }
+      return { data: { watchedProgramPlans: {} } };
+    });
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useWatchedDeadlineSummary(enabled),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
+
+    const deferredLoads: VoidFunction[] = [];
+    const microtaskSpy = vi
+      .spyOn(globalThis, 'queueMicrotask')
+      .mockImplementation((callback) => deferredLoads.push(callback));
+    rerender({ enabled: false });
+    microtaskSpy.mockRestore();
+
+    await act(async () => {
+      settle();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current).toMatchObject({ hasWatchedPrograms: false, isLoading: false });
+
+    await act(async () => {
+      deferredLoads.forEach((load) => load());
+    });
+    expect(result.current).toMatchObject({ hasWatchedPrograms: false, isLoading: false });
   });
 });

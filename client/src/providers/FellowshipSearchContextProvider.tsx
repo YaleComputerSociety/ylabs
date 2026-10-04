@@ -4,7 +4,16 @@
  * State transitions live in reducers/fellowshipSearchReducer.ts; this component
  * owns side effects and maps reducer state/dispatch onto the context API.
  */
-import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from 'react';
+import {
+  FC,
+  useEffect,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  ReactNode,
+} from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../utils/axios';
 
@@ -181,23 +190,25 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortBy,
     sortOrder,
   });
-  filtersRef.current = {
-    queryString,
-    exactSpelling,
-    selectedProgramCategory,
-    selectedProgramKind,
-    selectedEntryMode,
-    selectedStudentFacingCategory,
-    selectedYearOfStudy,
-    selectedTermOfAward,
-    selectedPurpose,
-    selectedSubjects,
-    selectedRegions,
-    selectedCitizenship,
-    selectedStudentVisibilityTier,
-    sortBy,
-    sortOrder,
-  };
+  useLayoutEffect(() => {
+    filtersRef.current = {
+      queryString,
+      exactSpelling,
+      selectedProgramCategory,
+      selectedProgramKind,
+      selectedEntryMode,
+      selectedStudentFacingCategory,
+      selectedYearOfStudy,
+      selectedTermOfAward,
+      selectedPurpose,
+      selectedSubjects,
+      selectedRegions,
+      selectedCitizenship,
+      selectedStudentVisibilityTier,
+      sortBy,
+      sortOrder,
+    };
+  });
 
   const lastSearchedUrlRef = useRef<string | null>(null);
 

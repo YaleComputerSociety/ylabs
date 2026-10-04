@@ -20,6 +20,7 @@ import { showAlert, confirmAction } from '../utils/appDialogs';
 import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import useLatestRequest from '../hooks/useLatestRequest';
+import useLoadEffect from '../hooks/useLoadEffect';
 import useDebouncedCallback from '../hooks/useDebouncedCallback';
 import UserContext from '../contexts/UserContext';
 import {
@@ -452,28 +453,29 @@ const Analytics = () => {
   );
 
   const fetchSelectedUser = useCallback(
-    async (netid: string) => {
+    (netid: string) => {
       const request = selectedUserRequest.begin();
-      setIsSelectedUserLoading(true);
-      setSelectedUserError(null);
-      try {
-        const response = await axios.get<AnalyticsUserDrilldownResponse>(
-          `/analytics/users/${encodeURIComponent(netid)}`,
-          { withCredentials: true, signal: request.signal },
-        );
-        if (!request.isCurrent()) return;
-        setSelectedUser({
-          ...response.data,
-          events: response.data.events || [],
+      return axios
+        .get<AnalyticsUserDrilldownResponse>(`/analytics/users/${encodeURIComponent(netid)}`, {
+          withCredentials: true,
+          signal: request.signal,
+        })
+        .then((response) => {
+          if (!request.isCurrent()) return;
+          setSelectedUser({
+            ...response.data,
+            events: response.data.events || [],
+          });
+        })
+        .catch(() => {
+          if (!request.isCurrent()) return;
+          console.error('Error fetching user drilldown.');
+          setSelectedUser(null);
+          setSelectedUserError('Failed to load NetID activity');
+        })
+        .finally(() => {
+          if (request.isCurrent()) setIsSelectedUserLoading(false);
         });
-      } catch {
-        if (!request.isCurrent()) return;
-        console.error('Error fetching user drilldown.');
-        setSelectedUser(null);
-        setSelectedUserError('Failed to load NetID activity');
-      } finally {
-        if (request.isCurrent()) setIsSelectedUserLoading(false);
-      }
     },
     [selectedUserRequest],
   );
@@ -553,36 +555,12 @@ const Analytics = () => {
     void fetchAnalytics();
   }, [fetchAnalytics]);
 
-  useEffect(() => {
-    if (data) {
-      void fetchUserActivity();
-      void fetchAdminAccess();
-    }
-  }, [data, fetchAdminAccess, fetchUserActivity]);
-
-  useEffect(() => {
-    if (data) {
-      void fetchAuditEvents();
-    }
-  }, [data, fetchAuditEvents]);
-
-  useEffect(() => {
-    if (data) {
-      void fetchImpactAnalytics();
-    }
-  }, [data, fetchImpactAnalytics]);
-
-  useEffect(() => {
-    if (data) {
-      void fetchCorpusQuality();
-    }
-  }, [data, fetchCorpusQuality]);
-
-  useEffect(() => {
-    if (data) {
-      void fetchLaneBenchmarks();
-    }
-  }, [data, fetchLaneBenchmarks]);
+  useLoadEffect(fetchUserActivity, data);
+  useLoadEffect(fetchAdminAccess, data);
+  useLoadEffect(fetchAuditEvents, data);
+  useLoadEffect(fetchImpactAnalytics, data);
+  useLoadEffect(fetchCorpusQuality, data);
+  useLoadEffect(fetchLaneBenchmarks, data);
 
   useEffect(() => {
     if (selectedNetid) {

@@ -985,8 +985,7 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
     'ci.yml must run yarn lint so a lint error fails the required check (ylabs#3070)',
   );
 
-  // Warnings stay advisory: --max-warnings would make the standing React
-  // Compiler warnings blocking (#4379), and #3070 deliberately declined that.
+  // Warnings stay advisory: #3070 deliberately declined --max-warnings.
   assert.doesNotMatch(ciWorkflow, /^\s*run:[^\n]*yarn lint[^\n]*--max-warnings/m);
   assert.doesNotMatch(packageJson.scripts.lint, /--max-warnings/);
 
@@ -5402,15 +5401,13 @@ test('client CAS return state is path-only before redirect query construction', 
   assert.match(returnPathSource, /path\.startsWith\('\/\/'\)/);
   assert.match(
     signInButtonSource,
-    /setRedirectParam\(returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''\)/,
+    /const redirectParam = returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''/,
   );
+  assert.match(signInButtonSource, /const returnPath = normalizeReturnPath\(/);
+  assert.match(signInButtonSource, /savedPath: sessionStorage\.getItem\('logoutReturnPath'\)/);
   assert.match(
     signInButtonSource,
-    /const savedPath = sessionStorage\.getItem\('logoutReturnPath'\)/,
-  );
-  assert.match(
-    signInButtonSource,
-    /if \(savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
+    /if \(mountReturn\.savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
   );
   assert.match(signInButtonSource, /localStorage\.removeItem\('logoutReturnPath'\)/);
   assert.doesNotMatch(signInButtonSource, /localStorage\.getItem\('logoutReturnPath'\)/);

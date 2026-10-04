@@ -46,9 +46,12 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 13. recursive moderate dependency audits
 14. `yarn build`
 
-`yarn lint` became a gate in #3070, and it gates on **errors only**: `yarn lint` passes no `--max-warnings`, so ESLint's unlimited default applies and the standing `react-hooks/refs` and `react-hooks/set-state-in-effect` warnings do not fail CI.
-Those two React Compiler rules are set to `warn` in `eslint.config.js` until #4379 clears them.
-Do not add `--max-warnings` without first clearing those warnings, and expect a lint error to fail the required check before any suite runs.
+`yarn lint` became a gate in #3070, and it gates on **errors only**: `yarn lint` passes no `--max-warnings`, so ESLint's unlimited default applies and a warning does not fail CI.
+Every `react-hooks` recommended rule, including `react-hooks/refs` and `react-hooks/set-state-in-effect`, is at `error` since #4620 and #4621, so a new latest-value ref read during render or a synchronous `setState` in an effect body fails lint.
+Use `client/src/hooks/useLoadEffect.ts` for a loader effect and `client/src/hooks/useMediaQuery.ts` for a media query rather than suppressing either rule.
+The one recorded suppression of `react-hooks/set-state-in-effect` is the URL-to-state reconcile in `client/src/pages/research.tsx`, which must run in effect order with the paging effects and carries its rationale beside the `eslint-disable-next-line`.
+Any new suppression of either rule needs the same written rationale on the line above it.
+Expect a lint error to fail the required check before any suite runs.
 `yarn verify` runs steps 2-12; keep it in sync with this list if `ci.yml` changes.
 `scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, and the guard step's position between lint and the full suite, so a step reordering that contradicts this list fails step 12.
 

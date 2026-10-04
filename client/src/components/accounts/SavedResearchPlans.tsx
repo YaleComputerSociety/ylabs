@@ -35,6 +35,7 @@ import {
   researchPlanStageOrder,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number | null) => void;
@@ -202,9 +203,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     }
   }, [planRequest, markNotePersisted]);
 
-  useEffect(() => {
-    void loadPlans();
-  }, [loadPlans]);
+  useLoadEffect(loadPlans);
 
   const retryLoad = () => {
     void reloadFavorites();
