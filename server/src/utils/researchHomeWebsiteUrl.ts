@@ -1378,6 +1378,36 @@ export function customYaleResearchHomeSubdomainRefusal(
   return trailingLabels.every(sharedTrailingHostLabel) ? null : 'unshared-trailing-label';
 }
 
+const SCHOOL_SECTION_SEGMENT =
+  /^(?:research|our-research|opportunities(?:-[0-9]+)?|employment-opportunities|jobs|careers|about|about-us|who-we-are|programs?|departments?|centers?|faculty|education|academics|admissions|undergraduate|graduate|resources|initiatives|overview|home|contact|index\.html?)$/i;
+
+/**
+ * A school or department host's own section page (`medicine.yale.edu/research/`,
+ * `www.art.yale.edu/opportunities`): every path segment is a generic section word, so
+ * the page belongs to the school rather than to one lab or person. Unlike the
+ * non-blocking `yale-path-vocabulary` arm, this shape is never a research home, which is
+ * why it blocks a write and clears a stored value. Measured on Development before this
+ * arm: 7 rows carried such a website, every one a different lead's row, and none of the
+ * pages named its row's lab or person. `www.<school>` is covered here because the
+ * `department-opportunities-path` arm reads the bare subdomain and missed it.
+ */
+function isSchoolSectionPage(url: URL): boolean {
+  const hostShape = customYaleResearchHomeSubdomainRefusal(url);
+  if (hostShape !== 'school-or-department-subdomain' && hostShape !== 'www-plus-school') {
+    return false;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.length > 0 && segments.every((segment) => SCHOOL_SECTION_SEGMENT.test(segment));
+}
+
+export function isSchoolSectionPageUrl(value: unknown): boolean {
+  try {
+    return isSchoolSectionPage(new URL(textValue(value)));
+  } catch {
+    return false;
+  }
+}
+
 export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   return customYaleResearchHomeSubdomainRefusal(url) === null;
 }
@@ -1447,6 +1477,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'institutional-publicity-page'
   | 'institutional-advancement'
   | 'department-opportunities-path'
+  | 'school-section-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1497,6 +1528,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   // script. 6 live rows carried one, 5 of them served (#3461).
   'institutional-advancement',
   'department-opportunities-path',
+  'school-section-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1624,6 +1656,7 @@ export function researchHomeWebsiteUrlDecision(
     ) {
       return refuse('department-opportunities-path');
     }
+    if (isSchoolSectionPage(url)) return refuse('school-section-page');
     const isDirectPersonalSite =
       /(?:^|\.)campuspress\.yale\.edu$/i.test(url.hostname) ||
       /github\.io$/i.test(url.hostname) ||
