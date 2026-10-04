@@ -148,16 +148,6 @@ describe('recastUnbackedLabSelfDescription', () => {
     ).toBe('Wren Okonkwo-Vale studies estuaries.');
   });
 
-  it('recasts a lab identity sentence onto the research program the person leads', () => {
-    expect(
-      recast(
-        'The Okonkwo-Vale Lab is a coastal geology lab studying estuaries. Its research spans marsh erosion.',
-      ),
-    ).toBe(
-      'Wren Okonkwo-Vale leads a coastal geology research program studying estuaries. This research spans marsh erosion.',
-    );
-  });
-
   it('recasts the full-name form on a row with no provenance at all', () => {
     expect(recast('The Wren Okonkwo-Vale Lab studies estuaries.', { fieldProvenance: {} })).toBe(
       'Wren Okonkwo-Vale studies estuaries.',

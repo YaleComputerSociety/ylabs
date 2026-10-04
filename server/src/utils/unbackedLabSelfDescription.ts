@@ -208,15 +208,7 @@ export function recastUnbackedLabSelfDescription(
     new RegExp(`(^|[.!?]\\s+)(${escapeRegExp(person)})${LEADER_APPOSITIVE.source}`, 'g'),
     '$1$2',
   );
-  next = next.replace(
-    new RegExp(
-      `(^|[.!?]\\s+)(${escapeRegExp(person)}) is (an?) ((?:[\\p{L}-]+\\s+){0,4}?)(?:research\\s+)?(?:lab|laboratory|program)\\b`,
-      'gu',
-    ),
-    '$1$2 leads $3 $4research program',
-  );
   if (ANOTHER_NAMED_LAB.test(next)) return next;
-  next = next.replace(/(^|[.!?]\s+)Its research\b/g, '$1This research');
   next = next.replace(/\b[Tt]he lab['’]s\b/g, possessive(person));
   next = next.replace(
     /(^|[.!?]\s+)The lab\b(?=\s+[a-z])/g,
