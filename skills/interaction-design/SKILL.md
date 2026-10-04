@@ -125,7 +125,7 @@ These are open, and they are open because only a student can close them.
 Do not invent an answer and encode it.
 
 - **Does search lead, or does browse?**
-`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box that is disabled until you type ("Enter a topic or name to enable Search"), above a grid that is already populated.
+`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
 The page tells the student to search and simultaneously demonstrates that browsing works.
 One of those should lead.
 - **What does a student scan first on a card?**

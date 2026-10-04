@@ -205,7 +205,7 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 ## Default `/research` ordering
 
 With no query, `/research` sorts by `browseRankScore:desc` then `browseTiebreakKey:asc`.
-The path is `researchGroupService.searchResearchGroupsViaMeili`, and a filter-only browse (facets, no query) takes the same path, because the client's "Recommended" option sends no `sortBy`.
+The path is `researchGroupService.searchResearchGroupsViaMeili`, and a filter-only browse (facets, no query) takes the same path, because the client's relevance option ("Most complete profiles" without a query, "Best match" with one) sends no `sortBy`.
 `browseTiebreakKey` is a fixed hash of the row id computed when the index document is built (`utils/researchEntityBrowseTiebreakKey.ts`), so ties keep one order across calls, pages, and sweeps (#4547).
 The tiebreak used to be `lastObservedAt`, but a sweep stamps nearly every row on the same day: on 2026-10-03, 3,407 of 3,464 `student_ready` Development rows carried the same observation day, so browse served the sweep's write order and reshuffled pages mid-sweep.
 An index whose settings predate `browseTiebreakKey` degrades the tiebreak alone back to `lastObservedAt` and marks the result degraded; it drops `browseRankScore` only when that is also unsortable.
