@@ -127,9 +127,9 @@ describe('merging accounts minted with an email local part as their netid (#4773
   }
 
   it('recognizes a local part only when it is not netid-shaped', () => {
-    expect(
-      isLocalPartAccount({ netid: 'alpha.fixture', email: 'alpha.fixture@yale.edu' }),
-    ).toBe(true);
+    expect(isLocalPartAccount({ netid: 'alpha.fixture', email: 'alpha.fixture@yale.edu' })).toBe(
+      true,
+    );
     expect(isLocalPartAccount({ netid: 'as1001', email: 'as1001@yale.edu' })).toBe(false);
     expect(isLocalPartAccount({ netid: 'alpha.fixture', email: 'other.person@yale.edu' })).toBe(
       false,
