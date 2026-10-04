@@ -1948,6 +1948,13 @@ describe('program card derivation cuts an over-long lead sentence at a clause bo
     expect(deriveProgramCardShortDescription(full)).not.toMatch(/especially abroad\.$/);
   });
 
+  it('does not cut a head whose only verb sits inside a comma-opened relative clause', () => {
+    const full =
+      'The fixture fellowship, which is awarded each year to a graduating senior in the fixture sciences who has shown exceptional promise in laboratory research, provides a stipend for a full year of independent laboratory research and travel to partner institutions in the fixture region and abroad.';
+    expect(programCardShortDescriptionQuality(full, full).flags).toEqual(['too-long']);
+    expect(deriveProgramCardShortDescription(full)).toBe('');
+  });
+
   it('does not cut a sentence the bar refuses for anything besides its length', () => {
     const firstPerson =
       'We provide a limited number of fixture fellowships to support research projects in the field of fixture studies that augment our understanding of this field and its history and that advance the value of equality and dignity for people in the United States and around the world.';

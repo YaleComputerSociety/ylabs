@@ -2128,8 +2128,16 @@ const PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS: readonly RegExp[] = [
 const isProgramCardAdministrativeNote = (value: string): boolean =>
   PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS.some((pattern) => pattern.test(value));
 
-const PROGRAM_CARD_CLAUSE_BOUNDARY =
-  /;\s|,\s+(?:which|who|whose|where|including|such\s+as|as\s+well\s+as|especially|particularly|with\s+(?:a|an|the)\s+(?:focus|emphasis)\b|(?:undertaken|administered|offered|sponsored|supported|funded|focused|led)\b)|\s+(?:including|such\s+as|as\s+well\s+as|who|that|during|throughout)\s|\s\(/gi;
+const PROGRAM_CARD_COMMA_CLAUSE_OPENER =
+  '(?:which|who|whose|where|including|such\\s+as|as\\s+well\\s+as|especially|particularly|with\\s+(?:a|an|the)\\s+(?:focus|emphasis)\\b|(?:undertaken|administered|offered|sponsored|supported|funded|focused|led)\\b)';
+const PROGRAM_CARD_CLAUSE_BOUNDARY = new RegExp(
+  `;\\s|,\\s+${PROGRAM_CARD_COMMA_CLAUSE_OPENER}|\\s+(?:including|such\\s+as|as\\s+well\\s+as|who|that|during|throughout)\\s|\\s\\(`,
+  'gi',
+);
+const PROGRAM_CARD_SUBORDINATE_SEGMENT = new RegExp(
+  `,\\s+${PROGRAM_CARD_COMMA_CLAUSE_OPENER}[^,]*|\\([^)]*\\)`,
+  'gi',
+);
 const PROGRAM_CARD_DANGLING_TAIL =
   /\b(?:a|an|the|and|or|but|nor|of|to|for|with|in|on|at|by|from|into|that|which|who|whose|as|than|its|their|our|this|these|those|so|such|now|ensures?|believes?|means|shows?|requires?|asks?|states?|notes?|finds?|knows?|hopes?|expects?)$/i;
 const PROGRAM_CARD_FINITE_VERB =
@@ -2154,7 +2162,8 @@ const cutProgramCardSentenceAtClauseBoundary = (sentence: string): string => {
     if (!head || PROGRAM_CARD_DANGLING_TAIL.test(head) || endsOnAShortTrailingPhrase(head))
       continue;
     if (wordCount(head) < MIN_PROGRAM_CARD_CLAUSE_WORDS) continue;
-    if (!PROGRAM_CARD_FINITE_VERB.test(head)) continue;
+    if (!PROGRAM_CARD_FINITE_VERB.test(head.replace(PROGRAM_CARD_SUBORDINATE_SEGMENT, '')))
+      continue;
     cuts.push(`${head}.`);
   }
   return cuts.reverse().find((cut) => !isPastCardLengthCeiling(cut)) ?? '';
@@ -2229,11 +2238,6 @@ export function programCardShortDescriptionQuality(
  * Unlike `deriveShortDescriptionFromFullDescription`, this does not require a
  * "Studies X" lab-research framing - programs are described by what they
  * offer, not what they study (issue #1425).
- *
- * When no sentence fits whole, a lead sentence refused only for its length is
- * cut at a clause boundary into a complete line under the cap. Only the lead
- * is cut, because it is the sentence that defines the program; a cut later
- * sentence measured as eligibility or logistics rather than an offer (#4747).
  */
 export function deriveProgramCardShortDescription(fullDescription: unknown): string {
   const full = textValue(fullDescription);
@@ -2270,9 +2274,7 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
  * program therefore keeps its stored line: `full-not-useful` asks whether a
  * derived card is grounded, which is not a defect in a source-asserted summary.
  * The exception is a line that announces a deadline, which says nothing the
- * card's deadline does not, so it fails closed to empty (#3904). A stored line
- * that opens on an administrative note falls to its own next usable sentence,
- * and to empty when it has none (#4747).
+ * card's deadline does not, so it fails closed to empty (#3904).
  */
 export function programLikeCardShortDescription(input: {
   shortDescription: unknown;
