@@ -7,6 +7,7 @@ import {
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
+  isUnbackedLabNameShell,
   isStudentReadySoftSignalReason,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
@@ -3204,5 +3205,30 @@ describe('a thin but accurate body', () => {
       'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
     );
     expect(result.tier).not.toBe('student_ready');
+  });
+});
+
+describe('a lab name backed only by a school section page', () => {
+  const labRow = (websiteUrl: string) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name: 'Fixture Lab',
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+  });
+
+  it('is unbacked when the only website is a school section page', () => {
+    expect(isUnbackedLabNameShell(labRow('https://www.art.yale.edu/opportunities'))).toBe(true);
+    expect(isUnbackedLabNameShell(labRow('https://medicine.yale.edu/pediatrics/'))).toBe(true);
+  });
+
+  it.each([
+    'https://fixture.yale.edu/',
+    'https://fixture.research.yale.edu/',
+    'https://campuspress.yale.edu/rfixture/',
+    'https://medicine.yale.edu/lab/fixture/',
+    'https://example.org/',
+  ])('is backed by a lab or person site: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow(url))).toBe(false);
   });
 });

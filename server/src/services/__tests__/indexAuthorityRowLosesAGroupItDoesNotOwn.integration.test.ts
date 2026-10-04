@@ -114,6 +114,10 @@ describe('an address-authority row is still a duplicate in a group formed by a u
       sourceUrls: input.sourceUrls,
       fieldProvenance: {
         websiteUrl: { sourceName: input.websiteUrlSourceName, sourceUrl: input.websiteUrl },
+        // The lane that listed the lab recorded its name and type together, so the
+        // lab name is backed whatever page the row's website points at.
+        name: { sourceName: input.websiteUrlSourceName, sourceUrl: input.websiteUrl },
+        entityType: { sourceName: input.websiteUrlSourceName, sourceUrl: input.websiteUrl },
         shortDescription: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
         fullDescription: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
         displayName: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
