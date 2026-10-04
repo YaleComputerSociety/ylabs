@@ -116,9 +116,26 @@ describe('staffMintedEntityReasonFor', () => {
   });
 
   it('spares a title that names students as the population it serves', () => {
-    expect(
-      staffMintedEntityReasonFor('Associate Director, PhD Graduate Student Affairs'),
-    ).not.toBe('student_title');
+    for (const title of [
+      'Associate Director, PhD Graduate Student Affairs',
+      'Associate Dean for Medical Student Affairs',
+      'Chair, Graduate Student Committee',
+      'Director of Medical Student Education',
+      'Graduate Student Advisor',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).not.toBe('student_title');
+    }
+  });
+
+  it('archives no row whose only title administers students', () => {
+    for (const title of [
+      'Associate Dean for Medical Student Affairs',
+      'Chair, Graduate Student Committee',
+      'Director of Medical Student Education',
+    ]) {
+      const plan = planStaffMintedEntityRetirement([candidate({ storedTitles: [title] })]);
+      expect(plan.toArchive).toEqual([]);
+    }
   });
 });
 

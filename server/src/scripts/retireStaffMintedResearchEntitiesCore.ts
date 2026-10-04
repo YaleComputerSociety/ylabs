@@ -42,7 +42,8 @@ import {
   looksLikeNonResearchTitle,
   statesAnyFacultyAppointment,
 } from '../scrapers/sources/yaleDirectoryScraper';
-import { namesARankItServesRatherThanHolds } from '../scrapers/utils/titleResearchOwnership';
+import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
+import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
@@ -132,13 +133,22 @@ export function isPersonProfileIdentityUrl(value: unknown): boolean {
   return !isSharedPeopleRosterUrl(value);
 }
 
+const ADMINISTRATIVE_HEAD_NOUN =
+  /\b(?:director|dean|chair|chief|head|manager|coordinator|advis(?:e|o)r)s?\b/i;
+
+function statesOnlyThatItsHolderIsAStudent(title: string | undefined | null): boolean {
+  if (!isStudentTitle(title)) return false;
+  if (titleResearchOwnership(title) === 'owns_research') return false;
+  return !ADMINISTRATIVE_HEAD_NOUN.test(stripInvisibleFormatCharacters(String(title)));
+}
+
 export function staffMintedEntityReasonFor(
   title: string | undefined | null,
 ): StaffMintedEntityReason | undefined {
   if (statesAnyFacultyAppointment(title)) return undefined;
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
-  if (isStudentTitle(title) && !namesARankItServesRatherThanHolds(title)) return 'student_title';
+  if (statesOnlyThatItsHolderIsAStudent(title)) return 'student_title';
   return undefined;
 }
 
