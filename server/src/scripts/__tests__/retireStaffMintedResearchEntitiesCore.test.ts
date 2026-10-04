@@ -417,3 +417,39 @@ describe('soleLeadIdentityFor', () => {
     ).toEqual([]);
   });
 });
+
+describe('administrative staff titles', () => {
+  it('names an office over an administrative object, and nothing that names research', () => {
+    for (const title of [
+      'Senior Associate Director, Career Services',
+      'Director of Financial Aid',
+      'Assistant Director of Admissions',
+      'Chief Communications and Marketing Officer',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBe('administrative_staff_title');
+    }
+    for (const title of [
+      'Director of Research Administration',
+      'Director, Center for Fixture Science',
+      'Professor and Director of Academic Affairs',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).not.toBe('administrative_staff_title');
+    }
+  });
+
+  it('archives an administrative row only when its own description states no research', () => {
+    const office = (descriptionStatesResearch?: boolean) =>
+      planStaffMintedEntityRetirement([
+        candidate({ storedTitles: ['Director of Financial Aid'], descriptionStatesResearch }),
+      ]);
+    expect(office(false).toArchive.map((entry) => entry.reason)).toEqual([
+      'administrative_staff_title',
+    ]);
+    expect(office(true).refused).toEqual([
+      { id: 'a'.repeat(24), reason: 'description-states-research' },
+    ]);
+    expect(office(undefined).refused).toEqual([
+      { id: 'a'.repeat(24), reason: 'description-states-research' },
+    ]);
+  });
+});
