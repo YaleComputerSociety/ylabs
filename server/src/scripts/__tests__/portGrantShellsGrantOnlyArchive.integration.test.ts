@@ -111,6 +111,42 @@ describe('the grant-only archive is bounded by the cap and reads URL-less eviden
     expect(delta.grantOnlyDeferredByCap).toBe(1);
   });
 
+  it('a dry run counts a plan on a shell the enrichment folds once, not again as a port', async () => {
+    const grantRowId = await seedGrantOnlyRow('nih-pi-synthetic-one');
+    const labId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: labId,
+      slug: 'synthetic-enrichment-lab',
+      name: 'Synthetic Enrichment Lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+    const personId = new mongoose.Types.ObjectId();
+    for (const targetId of [grantRowId, labId]) {
+      await RoleAssignment.collection.insertOne({
+        personId,
+        role: LEAD_ROLE_CANONICAL_VALUES[0],
+        target: { kind: 'RESEARCH_ENTITY', id: targetId },
+        archived: false,
+      });
+    }
+    await mongoose.connection.db!.collection('research_plans').insertOne({
+      accountId: new mongoose.Types.ObjectId(),
+      target: { kind: 'RESEARCH_ENTITY', id: grantRowId },
+      stage: 'EXPLORING',
+      privateNotes: '',
+      checklist: [],
+      deadlines: [],
+      archived: false,
+    });
+
+    const { delta } = await runGrantShellPort({ dryRun: true, confirmed: false, maxPorts: 10 });
+
+    expect(delta.grantOnlyEnrichedIntoExistingRow).toBe(1);
+    expect(delta.researchPlanCarry.plansOnDuplicates).toBe(1);
+    expect(delta.researchPlansThatWouldMove).toBe(1);
+  });
+
   it('a row carrying URL-less evidence from a non-grant lane is not archived', async () => {
     await seedGrantOnlyRow('nih-pi-synthetic-one');
     const corroboratedId = await seedGrantOnlyRow('nih-pi-synthetic-two');

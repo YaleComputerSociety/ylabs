@@ -121,7 +121,7 @@ type GrantOnlyArchivalDelta = Pick<
   | 'grantOnlyEnrichedIntoExistingRow'
   | 'grantOnlyEnrichmentDeferred'
   | 'grantOnlyDeferredByCap'
-> & { grantOnlyResearchPlanCarry: ResearchPlanCarryReport };
+> & { grantOnlyResearchPlanCarry: ResearchPlanCarryReport; foldedRowIds: Set<string> };
 
 export const GRANT_OR_ORCID_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
   ...GRANT_SOURCE_NAMES,
@@ -305,9 +305,11 @@ async function archiveGrantOnlyRows(
       enrichmentsToApply.length -
       toArchive.length,
     grantOnlyResearchPlanCarry: emptyResearchPlanCarryReport(),
+    foldedRowIds: new Set(),
   };
   if (dryRun) {
     delta.grantOnlyEnrichedIntoExistingRow = enrichmentsToApply.length;
+    delta.foldedRowIds = new Set(enrichmentsToApply.map(({ id }) => id));
     delta.grantOnlyResearchPlanCarry = await previewResearchPlanCarryForMergeGroups(
       enrichmentsToApply.map(({ id, enrichmentTargetId }) => ({
         canonicalEntityId: enrichmentTargetId,
@@ -654,14 +656,14 @@ export async function runGrantShellPort(options: Options): Promise<{
   delta: GrantShellPortDelta;
   outcome: GrantShellPortOutcome;
 }> {
-  const { grantOnlyResearchPlanCarry, ...grantOnlyDelta } = await archiveGrantOnlyRows(
-    options.dryRun,
-    options.maxArchives ?? options.maxPorts,
-  );
-  const shellDocs = (await ResearchEntity.find({
-    slug: GRANT_SHELL_PORT_SLUG_RE,
-    archived: { $ne: true },
-  }).lean()) as unknown as Array<Record<string, any>>;
+  const { grantOnlyResearchPlanCarry, foldedRowIds, ...grantOnlyDelta } =
+    await archiveGrantOnlyRows(options.dryRun, options.maxArchives ?? options.maxPorts);
+  const shellDocs = (
+    (await ResearchEntity.find({
+      slug: GRANT_SHELL_PORT_SLUG_RE,
+      archived: { $ne: true },
+    }).lean()) as unknown as Array<Record<string, any>>
+  ).filter((doc) => !foldedRowIds.has(idText(doc._id)));
   const shellDocById = new Map(shellDocs.map((doc) => [idText(doc._id), doc]));
   const grantOnlyShellIds = await grantOnlyRowIds(shellDocs);
   const portInput = await loadPortInput(shellDocs);
