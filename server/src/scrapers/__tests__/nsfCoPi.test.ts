@@ -21,7 +21,7 @@ const award = (id: string, coPDPI: string[]): NsfAward => ({
   fundsObligatedAmt: '300000',
 });
 
-const YALE_CO_PI = 'Blair Yalecopi blair.yalecopi@yale.edu';
+const YALE_CO_PI = 'Blair Yalecopi test.copi@yale.edu';
 const SUBDOMAIN_CO_PI = 'Casey Subdomain casey.subdomain@med.yale.edu';
 const OUTSIDE_CO_PI = 'Devon Namesake devon.namesake@elsewhere.edu';
 const UNADDRESSED_CO_PI = 'Emery Noaddress';
@@ -54,16 +54,16 @@ describe('NSF co-PI entries', () => {
     expect(parseCoPiEntry(YALE_CO_PI)).toEqual({
       firstName: 'Blair',
       lastName: 'Yalecopi',
-      email: 'blair.yalecopi@yale.edu',
+      email: 'test.copi@yale.edu',
     });
     expect(parseCoPiEntry(UNADDRESSED_CO_PI)?.email).toBe('');
   });
 
   it('recognises a Yale address including a subdomain, and nothing that only resembles one', () => {
-    expect(isYaleEmail('x@yale.edu')).toBe(true);
-    expect(isYaleEmail('x@med.yale.edu')).toBe(true);
-    expect(isYaleEmail('x@notyale.edu')).toBe(false);
-    expect(isYaleEmail('x@yale.edu.example.com')).toBe(false);
+    expect(isYaleEmail('test@yale.edu')).toBe(true);
+    expect(isYaleEmail('test@med.yale.edu')).toBe(true);
+    expect(isYaleEmail('test@notyale.edu')).toBe(false);
+    expect(isYaleEmail('test@yale.edu.example.com')).toBe(false);
   });
 
   it('groups only Yale-addressed co-PIs and counts the rest by reason', () => {
