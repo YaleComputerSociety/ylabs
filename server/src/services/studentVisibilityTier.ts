@@ -7,6 +7,7 @@ import {
 } from '../utils/leadTitlePendingPolicy';
 import {
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -768,7 +769,11 @@ const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
 const isStudiesResearchAreaEchoField = (record: Record<string, any>, field: string): boolean => {
   if (field !== 'fullDescription' && field !== 'shortDescription') return false;
   const otherBody = record.profileSynthesisDescription;
-  if (field === 'fullDescription' && !(typeof otherBody === 'string' && otherBody.trim())) {
+  if (
+    field === 'fullDescription' &&
+    !(typeof otherBody === 'string' && otherBody.trim()) &&
+    !isStudiesSentenceNestingTopicsUnderTheFirst(record[field])
+  ) {
     return false;
   }
   const value = record[field];

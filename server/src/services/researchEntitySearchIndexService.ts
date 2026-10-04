@@ -5,6 +5,7 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -514,7 +515,8 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     const hasOtherBody =
       typeof out.profileSynthesisDescription === 'string' &&
       out.profileSynthesisDescription.trim().length > 0;
-    if (hasOtherBody && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
+    const blanksEcho = hasOtherBody || isStudiesSentenceNestingTopicsUnderTheFirst(cleaned);
+    if (blanksEcho && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
       cleaned = '';
     }
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';

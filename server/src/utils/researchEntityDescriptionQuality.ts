@@ -15,6 +15,7 @@ import {
   isResearchInterestsSentence,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
@@ -1683,6 +1684,7 @@ export function isOwnTopicsStudiesSentence(quality: FieldQuality): boolean {
   const { text, flags } = quality;
   if (!text || !flags.includes('research-area-echo')) return false;
   if (!OWN_TOPICS_STUDIES_SENTENCE_PATTERN.test(text)) return false;
+  if (isStudiesSentenceNestingTopicsUnderTheFirst(text)) return false;
   if (wordCount(text) < MIN_OWN_TOPICS_STUDIES_WORDS) return false;
   if (!flags.every((flag) => flag === 'research-area-echo' || THIN_BODY_FLAGS.has(flag))) {
     return false;

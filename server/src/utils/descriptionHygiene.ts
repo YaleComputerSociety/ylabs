@@ -2220,6 +2220,12 @@ export function isStudiesResearchAreaEchoDescription(
   return Boolean(reading && reading.namedChips.length > 0 && reading.unmatchedItems.length === 0);
 }
 
+const STUDIES_SENTENCE_NESTING_TOPICS_PATTERN = /^\s*Studies\s[^.!?]*?\bincluding\s/i;
+
+export function isStudiesSentenceNestingTopicsUnderTheFirst(text: unknown): boolean {
+  return typeof text === 'string' && STUDIES_SENTENCE_NESTING_TOPICS_PATTERN.test(text);
+}
+
 export interface StudiesResearchAreaEnumerationReading {
   namedChips: string[];
   unmatchedItems: string[];

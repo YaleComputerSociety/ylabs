@@ -3232,22 +3232,86 @@ describe('a thin but accurate body', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('holds a language-model template body that only echoes its topics', () => {
+  it('serves a thin accurate language-model template body that only echoes its topics', () => {
     const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, LLM_SOURCE);
-    expect(result.reasons).toContain('thin_description');
-    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
   });
 
-  it('holds a language-model echo body from every lane the registry marks as a model', () => {
+  it('serves a thin accurate echo body from every lane the registry marks as a model', () => {
     for (const sourceName of LLM_AUTHORED_SOURCE_NAMES) {
-      expect(visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, sourceName).tier).not.toBe(
+      expect(visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, sourceName).tier).toBe(
         'student_ready',
       );
     }
   });
 
-  it('holds a thin echo body that carries no provenance', () => {
+  it('serves a thin accurate echo body that carries no provenance', () => {
     const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, null);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves the pipeline "Studies <topics>." sentence as the only body', () => {
+    const studiesSentence = 'Studies glaciology, ice sheet dynamics, and sea level rise.';
+    const result = visibility(studiesSentence, studiesSentence, LLM_SOURCE);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('still holds a thin language-model line that states no research', () => {
+    const result = visibility(
+      'Robin Fixture is an associate professor in the department of earth sciences.',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin language-model line that is a topic label list', () => {
+    const result = visibility(
+      'Research Interests Glaciology; Ice Sheet Dynamics; Sea Level Rise',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('still holds a thin language-model line whose subject is another organization', () => {
+    const offSubjectLine =
+      'The Section of Glacier Surgery is interested in health systems research and clinical outcomes.';
+    const result = visibility(offSubjectLine, offSubjectLine, LLM_SOURCE);
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin accurate line on a row whose cited profile is another person', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'thin-body-misattributed-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: TOPIC_ECHO_TEMPLATE_BODY,
+        shortDescription: SOUND_CARD,
+        researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
+        sourceUrls: ['https://medicine.yale.edu/profile/quinlan-otherperson/'],
+        fieldProvenance: { fullDescription: { sourceName: LLM_SOURCE } },
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin language-model page fragment', () => {
+    const result = visibility(
+      'Studies glaciology, including research areas:.',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
     expect(result.reasons).toContain('thin_description');
   });
 

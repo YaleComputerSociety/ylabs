@@ -255,7 +255,7 @@ describe('researchEntityPublicDescription', () => {
       ).toBe(true);
     });
 
-    it('still holds a "Studies <areas>" echo a language-model lane wrote (#4763)', () => {
+    it('serves a "Studies <areas>" echo a language-model lane wrote, as thin but accurate', () => {
       expect(
         researchEntityServesPublicDetail({
           kind: 'individual',
@@ -266,7 +266,7 @@ describe('researchEntityPublicDescription', () => {
           sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
           fieldProvenance: { fullDescription: { sourceName: 'lab-microsite-description-llm' } },
         }),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it('still refuses a "Studies <areas>" echo that is a page fragment', () => {

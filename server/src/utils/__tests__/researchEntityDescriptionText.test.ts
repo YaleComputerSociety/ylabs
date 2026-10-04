@@ -2663,6 +2663,16 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
     expect(served.shortDescription).toBe('');
   });
 
+  it('blanks an only-body echo that nests the other topics under the first', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription:
+        'Studies economic theory, including financial economics, and macroeconomics.',
+      shortDescription: '',
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+    });
+    expect(served.fullDescription).toBe('');
+  });
+
   it('blanks a profileSynthesisDescription echo of profileResearchAreas', () => {
     const served = sanitizeServedResearchEntityCopyFields({
       profileSynthesisDescription: 'Studies economic theory and macroeconomics.',

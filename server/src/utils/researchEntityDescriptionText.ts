@@ -5,6 +5,7 @@ import {
   isInstitutionalCenterBlurbText,
   isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
@@ -3167,7 +3168,10 @@ export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
   HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
     const body = cleanedBodies[index];
     if (!body) return;
-    const keepsOnlyBody = field === 'fullDescription' && !hasNonEchoBody;
+    const keepsOnlyBody =
+      field === 'fullDescription' &&
+      !hasNonEchoBody &&
+      !isStudiesSentenceNestingTopicsUnderTheFirst(body.cleaned);
     const cleaned = body.echo && !keepsOnlyBody ? '' : body.cleaned;
     if (cleaned !== next[field]) {
       next[field] = cleaned;
