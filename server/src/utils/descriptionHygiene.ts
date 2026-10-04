@@ -1532,20 +1532,41 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
       ),
     ),
   );
-  if (isResearchAreaTemplateLeakText(cleaned)) return '';
-  if (isResearchAreaEchoDescription(cleaned)) return '';
-  if (isInstitutionalCenterBlurbText(cleaned)) return '';
-  if (isCtaNewsTickerDumpText(cleaned)) return '';
-  if (isStudiesTemplateGlueMalformed(cleaned)) return '';
-  if (isFirstPersonResearchVoiceText(cleaned)) return '';
-  if (isAdministrativeTitleEnumerationText(cleaned)) return '';
-  if (isNonSelfContainedShortDescription(cleaned)) return '';
-  if (containsHtmlTagMarkup(cleaned)) return '';
-  if (isCitationAuthorListDumpText(cleaned)) return '';
-  if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
-  if (isNonResearchCardSentence(cleaned)) return '';
-  if (truncationEllipsisTailPattern.test(cleaned)) return '';
-  return clampShortDescriptionToWholeSentences(cleaned);
+  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) {
+    return isRefusedCardText(cleaned) ? '' : cleaned;
+  }
+  if (isWholeTextDumpText(cleaned)) return '';
+  const clamped = clampShortDescriptionToWholeSentences(cleaned);
+  return isRefusedCardSentenceText(cleaned) && (!clamped || isRefusedCardSentenceText(clamped))
+    ? ''
+    : clamped;
+}
+
+function isRefusedCardText(text: string): boolean {
+  return isWholeTextDumpText(text) || isRefusedCardSentenceText(text);
+}
+
+function isWholeTextDumpText(text: string): boolean {
+  return (
+    isInstitutionalCenterBlurbText(text) ||
+    isCtaNewsTickerDumpText(text) ||
+    isCitationAuthorListDumpText(text)
+  );
+}
+
+function isRefusedCardSentenceText(text: string): boolean {
+  return (
+    isResearchAreaTemplateLeakText(text) ||
+    isResearchAreaEchoDescription(text) ||
+    isStudiesTemplateGlueMalformed(text) ||
+    isFirstPersonResearchVoiceText(text) ||
+    isAdministrativeTitleEnumerationText(text) ||
+    isNonSelfContainedShortDescription(text) ||
+    containsHtmlTagMarkup(text) ||
+    isContentlessResearchProjectsBoilerplateText(text) ||
+    isNonResearchCardSentence(text) ||
+    truncationEllipsisTailPattern.test(text)
+  );
 }
 
 const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
@@ -1590,8 +1611,45 @@ export function clampShortDescriptionToWholeSentences(
       value,
       MAX_CARD_SHORT_DESCRIPTION_LENGTH,
       MAX_CARD_SHORT_DESCRIPTION_WORDS,
-    )
+    ) ||
+    leadingSentenceCutAtClauseWithinCeiling(value)
   );
+}
+
+const CARD_CLAUSE_BOUNDARY_PATTERN =
+  /;\s|,\s+(?:including|with\s+(?:a|an|particular)\s+(?:focus|emphasis|interest)|particularly|especially|as\s+well\s+as|and\s+(?=[a-z]+s\b))|\s+(?:including|such\s+as|that|which|using|focusing\s+on|by\s+(?:using|applying|analyzing|integrating|combining)|to\s+(?:identify|understand|improve|determine|develop|inform|reduce|prevent))\s|:\s|\s\(/gi;
+const CARD_CLAUSE_DANGLING_TAIL_PATTERN =
+  /\b(?:a|an|the|and|or|of|to|for|with|in|on|at|by|from|into|that|which|who|as|its|their|such)$/i;
+const MIN_CARD_CLAUSE_WORDS = 10;
+
+/**
+ * The last resort for a card whose only leading sentence is past the hard ceiling:
+ * the longest head of that sentence ending at a clause boundary that fits. Dropping
+ * the card instead served a blank card on 22 student-ready rows whose whole body
+ * is one long research sentence.
+ */
+function leadingSentenceCutAtClauseWithinCeiling(value: string): string {
+  const [lead] = partitionSentencesForFiltering(value);
+  const sentence = normalizeHygieneWhitespace(lead || '');
+  if (!sentence) return '';
+  const heads: string[] = [];
+  for (const match of sentence.matchAll(CARD_CLAUSE_BOUNDARY_PATTERN)) {
+    const head = sentence
+      .slice(0, match.index)
+      .replace(/[\s,;:]+$/, '')
+      .trim();
+    if (!head || CARD_CLAUSE_DANGLING_TAIL_PATTERN.test(head)) continue;
+    if (countHygieneWords(head) < MIN_CARD_CLAUSE_WORDS) continue;
+    if ((head.match(/\(/g) || []).length !== (head.match(/\)/g) || []).length) continue;
+    const card = /[.!?]$/.test(head) ? head : `${head}.`;
+    if (
+      card.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+      countHygieneWords(card) > MAX_CARD_SHORT_DESCRIPTION_WORDS
+    )
+      break;
+    heads.push(card);
+  }
+  return heads.at(-1) ?? '';
 }
 
 function countHygieneWords(value: string): number {
