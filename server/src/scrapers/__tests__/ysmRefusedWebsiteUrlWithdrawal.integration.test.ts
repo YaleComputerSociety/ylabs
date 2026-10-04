@@ -28,6 +28,7 @@ import { materializeEntity } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 import {
   facultyToResearchEntityObservations,
+  skippedProfileRefusedWebsiteObservations,
   type YsmFacultyProfile,
 } from '../sources/ysmFacultyDirectoryScraper';
 
@@ -79,6 +80,22 @@ async function rivalAssertsLab() {
     observedAt: new Date('2026-08-01T00:00:00Z'),
     superseded: false,
   });
+}
+
+async function skipProfile(observedAt: Date) {
+  await appendObservations(
+    skippedProfileRefusedWebsiteObservations(PROFILE).map((observation) => ({
+      ...observation,
+      observedAt,
+    })),
+    {
+      scrapeRunId: new mongoose.Types.ObjectId().toString(),
+      sourceId: new mongoose.Types.ObjectId().toString(),
+      sourceName: LANE,
+      sourceWeight: 0.8,
+      dryRun: false,
+    },
+  );
 }
 
 const resolve = () => materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
@@ -199,5 +216,34 @@ describe('a ysm read that refuses its lab link withdraws the lane own earlier we
     expect(row).toBeTruthy();
     expect(row?.refusedWebsiteUrl).toBeUndefined();
     expect(row?.fieldProvenance?.refusedWebsiteUrl).toBeUndefined();
+  }, 120000);
+
+  it('withdraws the lane own earlier websiteUrl once a later read skips the profile on its title (#4596)', async () => {
+    await readProfile({ refused: false, observedAt: new Date('2026-08-20T00:00:00Z') });
+    await resolve();
+    expect(await storedWebsiteUrl()).toBe(LAB_URL);
+
+    await skipProfile(new Date('2026-09-20T00:00:00Z'));
+    await resolve();
+    expect(await storedWebsiteUrl()).toBeFalsy();
+
+    const second = await resolve();
+    expect(second.resolved.websiteUrl).toBeUndefined();
+    expect(await storedWebsiteUrl()).toBeFalsy();
+  }, 120000);
+
+  it('keeps the link after a title skip when another lane still asserts it (#4596)', async () => {
+    await readProfile({ refused: false, observedAt: new Date('2026-08-20T00:00:00Z') });
+    await rivalAssertsLab();
+    await skipProfile(new Date('2026-09-20T00:00:00Z'));
+    await resolve();
+    await resolve();
+    expect(await storedWebsiteUrl()).toBe(LAB_URL);
+  }, 120000);
+
+  it('mints no row from a title skip alone (#4596)', async () => {
+    await skipProfile(new Date('2026-09-20T00:00:00Z'));
+    await resolve();
+    expect(await ResearchEntity.countDocuments({ slug: ENTITY_KEY })).toBe(0);
   }, 120000);
 });
