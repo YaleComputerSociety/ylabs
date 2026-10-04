@@ -123,6 +123,7 @@ describe('staffMintedEntityReasonFor', () => {
   it('spares a ruled rank named beside a rank the owner has not ruled on', () => {
     for (const title of [
       'Research Associate; Resident',
+      'Resident; Hospital Resident',
       'Postdoctoral Associate and Research Fellow',
       'Clinical Fellow and Trainee',
     ]) {

@@ -42,6 +42,7 @@ import {
 } from '../scrapers/sources/yaleDirectoryScraper';
 import {
   namesARankItServesRatherThanHolds,
+  type TitleRankSpan,
   titleRankSpans,
   titleResearchOwnership,
 } from '../scrapers/utils/titleResearchOwnership';
@@ -160,10 +161,10 @@ const OWNER_RULED_NON_HOSTING_RANK =
   /^(?:post-?doc(?:toral)?|research (?:associate|assistant)|visiting (?:fellow|scholar|researcher)|clinical fellow|staff affiliate|postgraduate associate)$/i;
 
 // The lattice reads a resident as one rank span whatever its setting, and the owner ruled
-// on the hospital resident only, so the span counts as ruled only beside that wording.
-const isOwnerRuledNonHostingSpan = (spanText: string, title: string): boolean =>
-  OWNER_RULED_NON_HOSTING_RANK.test(spanText) ||
-  (/^resident$/i.test(spanText) && /\bhospital resident\b/i.test(title));
+// on the hospital resident only, so the span counts as ruled only when that word leads it.
+const isOwnerRuledNonHostingSpan = (span: TitleRankSpan, title: string): boolean =>
+  OWNER_RULED_NON_HOSTING_RANK.test(span.text) ||
+  (/^resident$/i.test(span.text) && /\bhospital\s+$/i.test(title.slice(0, span.start)));
 
 /**
  * A rank that cannot host a student's research, on two witnesses that must agree: the
@@ -179,7 +180,7 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
   if (!clean.trim()) return false;
   if (titleResearchOwnership(clean) !== 'works_in_another_group') return false;
   if (!isSubordinateResearchRank(clean)) return false;
-  if (!titleRankSpans(clean).every((span) => isOwnerRuledNonHostingSpan(span.text, clean))) {
+  if (!titleRankSpans(clean).every((span) => isOwnerRuledNonHostingSpan(span, clean))) {
     return false;
   }
   if (namesARankItServesRatherThanHolds(clean)) return false;
