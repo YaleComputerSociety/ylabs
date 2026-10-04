@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeResearchEntityBrowseRank, __testing } from '../researchEntityBrowseRank';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
 
 // A "complete" entity: source-backed full description + official URL.
 const completeEntity = () => ({
@@ -223,24 +224,28 @@ describe('computeResearchEntityBrowseRank', () => {
       expect(rank({ ...completeEntity(), methods: ['   '] })).toBe(base);
     });
 
-    it('rewards a grant that is still running', () => {
-      const base = rank(completeEntity());
-      const running = rank({
-        ...completeEntity(),
-        recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(200) }],
-        recentGrantCount: 1,
-      });
-      expect(running - base).toBe(__testing.ENRICHMENT_POINTS.currentGrant);
+    const runningGrant = () => ({
+      ...completeEntity(),
+      recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(200) }],
+      recentGrantCount: 1,
+    });
+    const endedGrant = () => ({
+      ...completeEntity(),
+      recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(-30) }],
+      recentGrantCount: 1,
     });
 
-    it('earns nothing for a grant that has ended', () => {
-      const base = rank(completeEntity());
-      const ended = rank({
-        ...completeEntity(),
-        recentGrants: [{ id: 'g1', agency: 'NIH', endDate: daysFromNow(-30) }],
-        recentGrantCount: 1,
-      });
-      expect(ended).toBe(base);
+    it('weighs a current grant at zero until grant coverage is even across schools', () => {
+      expect(__testing.ENRICHMENT_POINTS.currentGrant).toBe(0);
+      expect(rank(runningGrant())).toBe(rank(completeEntity()));
+    });
+
+    it('still detects a served current grant so the term can be re-enabled', () => {
+      const served = (entity: Record<string, any>) =>
+        toPublicResearchEntityDto(entity, { leadMemberNames: [] });
+      expect(__testing.servesACurrentGrant(served(runningGrant()))).toBe(true);
+      expect(__testing.servesACurrentGrant(served(endedGrant()))).toBe(false);
+      expect(__testing.servesACurrentGrant(served(completeEntity()))).toBe(false);
     });
 
     it('adds the same enrichment points to a lab and a faculty research row', () => {

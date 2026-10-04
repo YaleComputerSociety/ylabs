@@ -101,7 +101,9 @@ const entityTypeRankAdjustment = (
 const ENRICHMENT_POINTS = {
   website: 8,
   methods: 5,
-  currentGrant: 5,
+  // Zero until grant coverage is even across schools: served grant evidence is mostly
+  // NIH, so any positive weight orders browse by our coverage gaps (#4622, #4546).
+  currentGrant: 0,
 } as const;
 
 const servedEnrichmentPoints = (
@@ -165,6 +167,7 @@ export function computeResearchEntityBrowseRank({
 export const __testing = {
   ENTITY_TYPE_RANK_ADJUSTMENT,
   ENRICHMENT_POINTS,
+  servesACurrentGrant,
   UMBRELLA_GATED_TYPES,
   descriptionPoints,
   leadPoints,
