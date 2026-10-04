@@ -174,4 +174,16 @@ describe('extractProfileHonors', () => {
       keys(page('<p>He received a Harry Frank Guggenheim Foundation Research Award.</p>')),
     ).toEqual([]);
   });
+  it('does not read another university institute for advanced study as the Princeton one', () => {
+    expect(
+      keys(
+        page(
+          '<h3>Awards</h3><ul><li>Institute for Advanced Study (IAS) Research Fellowship, University of Synthetica</li></ul>',
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      keys(page('<p>He was a member of the Institute for Advanced Study in Princeton.</p>')),
+    ).toEqual(['ias']);
+  });
 });
