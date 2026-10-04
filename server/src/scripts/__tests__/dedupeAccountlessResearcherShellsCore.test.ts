@@ -463,6 +463,12 @@ describe('decideShellMerge verified-profile arm', () => {
     expect(decide(shell({ displayName: 'Sam Otherfamily' }), [account()]).merge).toBe(false);
   });
 
+  it('reads the surname past a trailing period, a credential and a generational suffix', () => {
+    for (const displayName of ['Dean Sam Fixture.', 'Sam Fixture, ScM', 'Sam Fixture Jr.']) {
+      expect(decide(shell({ displayName }), [account()]).merge).toBe(true);
+    }
+  });
+
   it('never folds a trainee rank into a faculty appointment on a page alone', () => {
     expect(decide(shell({ title: 'Postdoctoral Associate' }), [account()]).merge).toBe(false);
   });
