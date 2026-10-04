@@ -57,7 +57,7 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     () => ReturnType<typeof refusalFor>
   > = {
     rejected_source_url: () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' }),
-    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, { sharedEvidenceUrl: true }),
+    shared_evidence_url: () => refusalFor(RESEARCH_PROSE, { descriptionSourceForeignCiters: 2 }),
     institution_landing_url: () => refusalFor(RESEARCH_PROSE, { institutionLandingUrl: true }),
     another_persons_lab: () =>
       refusalFor(
@@ -81,6 +81,10 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     navigation_chrome: () =>
       refusalFor(
         'Main Menu Sub Menu home publications Research people alum/theses Outreach contact links Welcome to the laboratory, which studies microglia.',
+      ),
+    profile_template_chrome: () =>
+      refusalFor(
+        'Medical Research Interests Blood Platelets; Liver Diseases ORCID 0000-0000-0000-0000 Research at a Glance Yale Co-Authors Frequent collaborators of a fixture person.',
       ),
     career_timeline: () =>
       refusalFor(
@@ -158,7 +162,7 @@ describe('a description guard refusal is recorded as refused, never empty (#3739
     };
     const attestation = descriptionSlotAttestation({
       ...wholeRead,
-      guardRefusal: refusalFor(RESEARCH_PROSE, { sharedEvidenceUrl: true }).refusal,
+      guardRefusal: refusalFor(RESEARCH_PROSE, { descriptionSourceForeignCiters: 2 }).refusal,
     });
 
     expect(

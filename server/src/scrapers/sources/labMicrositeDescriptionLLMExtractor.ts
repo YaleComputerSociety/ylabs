@@ -51,11 +51,15 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
 import {
+  evidenceUrlCiterCounts,
+  evidenceUrlsOf,
   institutionalEvidenceHosts,
   isInstitutionSectionLandingUrl,
   isSharedEvidenceUrl,
+  normalizeEvidenceUrl,
   sharedEvidenceUrls,
 } from '../utils/sharedEvidenceUrls';
+import { DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS } from '../descriptionSourceOwnership';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import {
   describesResearchHome,
@@ -154,6 +158,10 @@ export interface CandidateDescriptionLab {
   schools?: string[];
   departments?: string[];
   fullDescription?: string;
+  /** The page the stored `fullDescription` is credited to, if any. */
+  fullDescriptionSourceUrl?: string;
+  /** The row's own stored citations, unlike `sourceUrls`, which holds expanded candidates. */
+  evidenceUrls?: string[];
   sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
@@ -171,6 +179,7 @@ export interface CandidateDescriptionLabDoc {
   school?: string;
   schools?: string[];
   departments?: string[];
+  fieldProvenance?: { fullDescription?: { sourceUrl?: unknown } };
   sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
@@ -222,6 +231,25 @@ export interface PageAttributionIdentityCorpus {
    */
   sharedUrls?: ReadonlySet<string>;
   institutionalHosts?: ReadonlySet<string>;
+  /**
+   * How many rows cite each normalized URL. The description is held to the engine's
+   * ownership bar, which `sharedUrls` is stricter than (#3740).
+   */
+  evidenceCiterCounts?: ReadonlyMap<string, number>;
+}
+
+const EMPTY_CITER_COUNTS: ReadonlyMap<string, number> = new Map();
+
+export function foreignEvidenceCiters(
+  url: string,
+  ownEvidenceUrls: readonly string[],
+  citerCounts: ReadonlyMap<string, number>,
+): number {
+  const normalized = normalizeEvidenceUrl(url);
+  if (!normalized) return 0;
+  const citers = citerCounts.get(normalized) ?? 0;
+  const ownCitation = ownEvidenceUrls.map(normalizeEvidenceUrl).includes(normalized) ? 1 : 0;
+  return Math.max(0, citers - ownCitation);
 }
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
@@ -250,6 +278,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     leadPersonNameByEntityId,
     sharedUrls: sharedEvidenceUrls(evidenceRows),
     institutionalHosts: institutionalEvidenceHosts(evidenceRows),
+    evidenceCiterCounts: evidenceUrlCiterCounts(evidenceRows),
   };
 }
 
@@ -786,6 +815,9 @@ export function candidateDescriptionLabsFromDocs(
       departments: doc.departments,
       fullDescription:
         textValue((doc as { fullDescription?: unknown }).fullDescription) || undefined,
+      fullDescriptionSourceUrl:
+        textValue(doc.fieldProvenance?.fullDescription?.sourceUrl) || undefined,
+      evidenceUrls: evidenceUrlsOf(doc),
       sourceLinkHealth: doc.sourceLinkHealth,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
@@ -970,6 +1002,19 @@ export function opensOnNavigationChrome(value: unknown): boolean {
   const boundary =
     terminator === -1 ? NAVIGATION_LEAD_CHARS : Math.min(terminator, NAVIGATION_LEAD_CHARS);
   return match.index < boundary;
+}
+
+/**
+ * A medical school profile template's own widgets, which a title-only profile flattens
+ * into its only text: a MeSH chip run under "Medical Research Interests", an ORCID, and
+ * the "Research at a Glance" co-author panel. Never a description of anyone (#4048).
+ */
+const PROFILE_TEMPLATE_CHROME =
+  /^(?:(?:research\s+)?overview\s+)?medical\s+research\s+interests\b|\b(?:research\s+at\s+a\s+glance|yale\s+co-authors|frequent\s+collaborators\s+of)\b/i;
+
+export function isProfileTemplateChrome(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return Boolean(text) && PROFILE_TEMPLATE_CHROME.test(text);
 }
 
 const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
@@ -1234,6 +1279,7 @@ export type DescriptionGuardRefusal =
   | 'bibliography_entry'
   | 'interest_chip_list'
   | 'navigation_chrome'
+  | 'profile_template_chrome'
   | 'another_organization_body'
   | 'unopposed_crawled_prose';
 
@@ -1253,6 +1299,7 @@ function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuar
   if (isBibliographyCitationEntryText(fullDescription)) return 'bibliography_entry';
   if (isInterestChipListText(fullDescription)) return 'interest_chip_list';
   if (opensOnNavigationChrome(fullDescription)) return 'navigation_chrome';
+  if (isProfileTemplateChrome(fullDescription)) return 'profile_template_chrome';
   return null;
 }
 
@@ -1298,9 +1345,16 @@ export function describeDescriptionExtraction(
   // describes both, and `candidateUrlsForDoc` has already name matched it to this
   // entity. What the refusal is left with is the institutional shape: a school landing
   // page, a section index, a programme page, a shared core facility.
-  if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
+  // Held to the ingest bar in `descriptionSourceOwnership`, which a second citer does
+  // not meet; refusing earlier withheld bodies the store admits (#3740).
+  if (
+    (context.descriptionSourceForeignCiters ?? 0) >= DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS &&
+    !isPersonProfileOrDirectoryUrl(context.sourceUrl)
+  ) {
     return refusedBy('shared_evidence_url');
   }
+  const pageNameIsShared =
+    context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl);
   if (context.institutionLandingUrl === true) return refusedBy('institution_landing_url');
   const labName = usefulLabName(extraction.name);
   const pageAttribution = classifyExtractedPageAttribution(labName, context);
@@ -1353,7 +1407,7 @@ export function describeDescriptionExtraction(
   const methods = uniqueStrings(extraction.methods || []).slice(0, 12);
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
 
-  if (labName && pageAttribution === 'THIS_ENTITY') {
+  if (labName && pageAttribution === 'THIS_ENTITY' && !pageNameIsShared) {
     observations.push(...labNameObservations(labName, base, context));
   }
   return { observations };
@@ -1476,6 +1530,12 @@ export interface ExtractedPageIdentityContext {
    * `sharedEvidenceUrls` over the corpus before any page is fetched.
    */
   sharedEvidenceUrl?: boolean;
+  /**
+   * How many rows other than this one cite `sourceUrl`. The description is refused
+   * from `DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS` on; `sharedEvidenceUrl` still governs
+   * the name a page may assert (#3740).
+   */
+  descriptionSourceForeignCiters?: number;
   /**
    * Whether `sourceUrl` is an institutional host's own whole-organisation landing
    * page. Distinct from `sharedEvidenceUrl` because the lane reaches such a page by
@@ -1718,6 +1778,7 @@ export async function defaultLabFinder(
       schools: 1,
       departments: 1,
       fullDescription: 1,
+      'fieldProvenance.fullDescription.sourceUrl': 1,
       sourceLinkHealth: 1,
     },
   ).lean();
@@ -2159,25 +2220,51 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // page names no groundable methods, fall back to deriving them from the
         // entity's already-stored description so research homes without method
         // language on the page still surface techniques.
-        let methods = citedPageExtraction
+        const methods = citedPageExtraction
           ? groundMethods(citedPageExtraction.methods, pageText)
           : [];
-        if (methods.length === 0 && storedDescription.length >= 120) {
-          const descExtraction = await this.callLLM({
-            model: this.model,
-            apiKey: this.apiKey as string,
-            labName: lab.name,
-            sourceUrl: page.url,
-            pageText: storedDescription,
-          });
-          methods = groundMethods(descExtraction.methods, storedDescription);
-        }
+        // Methods read from the stored description are credited to the page that
+        // description is credited to, never to the page just fetched, which on a
+        // title-only profile holds none of them (#4048).
+        const storedDescriptionSourceUrl = textValue(lab.fullDescriptionSourceUrl);
+        const storedDescriptionMethods =
+          methods.length === 0 && storedDescription.length >= 120 && storedDescriptionSourceUrl
+            ? groundMethods(
+                (
+                  await this.callLLM({
+                    model: this.model,
+                    apiKey: this.apiKey as string,
+                    labName: lab.name,
+                    sourceUrl: storedDescriptionSourceUrl,
+                    pageText: storedDescription,
+                  })
+                ).methods,
+                storedDescription,
+              )
+            : [];
+        const storedDescriptionMethodsObservation: ObservationInput | null =
+          storedDescriptionMethods.length > 0
+            ? {
+                entityType: 'researchEntity',
+                entityId: serializedDocumentId(lab._id),
+                entityKey: lab.slug,
+                sourceUrl: storedDescriptionSourceUrl,
+                confidenceOverride: /\/profile\//i.test(storedDescriptionSourceUrl) ? 0.55 : 0.82,
+                field: 'methods',
+                value: storedDescriptionMethods,
+              }
+            : null;
 
         const identity = {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
           sharedEvidenceUrl: isSharedEvidenceUrl(page.url, identityCorpus.sharedUrls ?? EMPTY_SET),
+          descriptionSourceForeignCiters: foreignEvidenceCiters(
+            page.url,
+            lab.evidenceUrls ?? evidenceUrlsOf(lab),
+            identityCorpus.evidenceCiterCounts ?? EMPTY_CITER_COUNTS,
+          ),
           institutionLandingUrl: isInstitutionSectionLandingUrl(
             page.url,
             identityCorpus.institutionalHosts ?? EMPTY_SET,
@@ -2269,16 +2356,19 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             slotAttestation,
           );
           const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
-          if (methods.length > 0 && !foreignLabPage) {
-            const methodsObservation: ObservationInput = {
-              entityType: 'researchEntity',
-              entityId: identity.entityId,
-              entityKey: identity.entityKey,
-              sourceUrl: identity.sourceUrl,
-              confidenceOverride: /\/profile\//i.test(page.url) ? 0.55 : 0.82,
-              field: 'methods',
-              value: methods,
-            };
+          const methodsObservation: ObservationInput | null =
+            methods.length > 0
+              ? {
+                  entityType: 'researchEntity',
+                  entityId: identity.entityId,
+                  entityKey: identity.entityKey,
+                  sourceUrl: identity.sourceUrl,
+                  confidenceOverride: /\/profile\//i.test(page.url) ? 0.55 : 0.82,
+                  field: 'methods',
+                  value: methods,
+                }
+              : storedDescriptionMethodsObservation;
+          if (methodsObservation && !foreignLabPage) {
             await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
             observationCount += 1 + nameObservations.length;
             entitiesObserved += 1;
@@ -2295,6 +2385,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const { observations: withCard, cardCallFailed } = await this.withSynthesizedCard([
           ...observations,
           ...pageStatedNameObservations,
+          ...(storedDescriptionMethodsObservation ? [storedDescriptionMethodsObservation] : []),
         ]);
         // This lane's OWN last description, not `lab.fullDescription`: the materialized field can
         // hold another lane's winning prose, and the bound asks whether re-reading produced the

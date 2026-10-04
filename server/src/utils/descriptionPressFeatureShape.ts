@@ -54,8 +54,20 @@ const OPENING_AUTHOR_QUOTED_TITLE =
 
 const OPENING_AUTHOR_INITIALS_LIST = /^(?:[A-Z][\p{L}'’-]+,\s+(?:[A-Z]\.\s*){1,3},\s+){2,}/u;
 
+const OPENING_BARE_TITLE_THEN_AUTHOR_INITIALS_LIST =
+  /^[^.!?"“”]{3,200}?\s(?:[A-Z][\p{L}'’-]+,\s+(?:[A-Z]\.\s*){1,3},\s+){2,}[^"“]{0,80}["“]/u;
+
+const OPENING_YEAR_TAG_AUTHORS_QUOTED_TITLE =
+  /^(?:19|20)\d\d[a-z]?:\s+(?:[A-Z]\.\s*)+[\p{L}'’-]+(?:(?:,|\s+(?:und|and|et|&))\s+(?:[A-Z]\.\s*)+[\p{L}'’-]+)*,\s+["“][^"”]{8,240}["”]/u;
+
+const CITATION_FRAGMENT_IN_PRESS =
+  /^[”"’]?\s*[A-Z][^.!?"“”]{0,200}\((?:in press|forthcoming)\)\.?$/i;
+
 export function isOpeningCitationText(text: string): boolean {
   if (OPENING_AUTHOR_INITIALS_LIST.test(text)) return true;
+  if (OPENING_BARE_TITLE_THEN_AUTHOR_INITIALS_LIST.test(text)) return true;
+  if (OPENING_YEAR_TAG_AUTHORS_QUOTED_TITLE.test(text)) return true;
+  if (CITATION_FRAGMENT_IN_PRESS.test(text)) return true;
   const title = text.match(OPENING_QUOTED_TITLE) ?? text.match(OPENING_AUTHOR_QUOTED_TITLE);
   if (!title) return false;
   const venue = text.slice(title[0].length, title[0].length + CITATION_VENUE_WINDOW);
@@ -71,7 +83,7 @@ export function isPressBlurbText(text: string): boolean {
 }
 
 const NEWS_ANNOUNCEMENT_LEAD =
-  /^(?:(?:many|warm|hearty|big)\s+)?congratulations\s+to\b|^[^.]{0,80}\b(?:is|are)\s+(?:pleased|delighted|proud|thrilled|excited)\s+to\s+announce\b/i;
+  /^(?:(?:many|warm|hearty|big)\s+)?congratulations\s+to\b|^[^.]{0,80}\b(?:is|are)\s+(?:pleased|delighted|proud|thrilled|excited)\s+to\s+announce\b|^(?:many\s+)?thanks\s+to\b[^.]{0,120}\bfor\s+(?:naming|selecting|choosing|including|listing|featuring)\b/i;
 
 export function isNewsAnnouncementText(text: string): boolean {
   return NEWS_ANNOUNCEMENT_LEAD.test(text);
