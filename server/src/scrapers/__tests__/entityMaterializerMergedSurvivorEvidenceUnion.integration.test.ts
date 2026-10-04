@@ -273,7 +273,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       'example-lead-lab',
       'websiteUrl',
       'https://examplelead-lab.yale.edu/',
-      'nih-reporter',
+      'department-directory',
       { confidence: 0.4 },
     );
     await seedObservation(

@@ -76,7 +76,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
   const seedField = async (
     field: string,
     value: unknown,
-    sourceName = 'nih-reporter',
+    sourceName = 'department-directory',
     confidence = 0.95,
   ) => {
     await Observation.create({
@@ -86,7 +86,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       value,
       sourceId: new mongoose.Types.ObjectId(),
       sourceName,
-      sourceUrl: 'https://reporter.nih.gov/project-details/00000000',
+      sourceUrl: 'https://example.yale.edu/department/faculty/',
       confidence,
       observedAt: new Date('2026-01-01T00:00:00Z'),
       superseded: false,

@@ -144,7 +144,7 @@ describe('a shared academic host organization name never survives on one of its 
 
   it('keeps the row own name once the graft assertion is retired', async () => {
     await seedRowServingTheGraft();
-    await seedNameObservation(OWN_LAB_NAME, 'nih-reporter', 0.9, 'https://reporter.nih.gov/x');
+    await seedNameObservation(OWN_LAB_NAME, 'department-directory', 0.9);
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
