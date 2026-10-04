@@ -3251,3 +3251,35 @@ describe('a lab name backed only by a school section page', () => {
     expect(isUnbackedLabNameShell(labRow(url))).toBe(false);
   });
 });
+
+describe('a person-scoped biography that states no research', () => {
+  const visibility = (fullDescription: string, shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'biography-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription,
+        shortDescription,
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+  const biography =
+    'Robin Fixture is a graphic designer and public artist. She received a B.A. from Example College in 1962 and an M.F.A. from Example University in 1964. She joined the faculty in 1990 and served as chair of the department. She won the example medal in 2004.';
+
+  it('is held for review, not suppressed', () => {
+    const result = visibility(biography, 'Robin Fixture is a graphic designer and public artist.');
+    expect(result.reasons).toContain('biography_without_research');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('is not held when the card states the research', () => {
+    const result = visibility(biography, 'Studies graphic design and public art.');
+    expect(result.reasons).not.toContain('biography_without_research');
+  });
+});
