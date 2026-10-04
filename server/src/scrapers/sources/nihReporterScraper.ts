@@ -13,7 +13,11 @@
  *
  * Strategy:
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
- *   - Group grants by contact PI name.
+ *   - Group grants by every Yale principal investigator: the contact PI, plus each
+ *     multi-PI co-PI whose most recent contact-PI project in RePORTER is at Yale.
+ *     RePORTER's PI entries carry no organization, so a co-PI with no such evidence
+ *     is never credited, because a same-name match would give a Yale researcher
+ *     another institution's PI's grant (#4629).
  *   - For each PI:
  *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
  *       - Resolve the one existing research row the canonical resolver names for them.
@@ -65,6 +69,7 @@ const MAX_PAGES = 30;
 // faculty lab lead, so their awards are never attributed to a row as its
 // lead's funding (#739).
 const TRAINEE_FELLOWSHIP_ACTIVITY_CODES = new Set(['F30', 'F31', 'F32', 'F33']);
+const AFFILIATION_PROFILE_BATCH = 50;
 
 // ---------------------------------------------------------------------------
 // API response shapes (only the fields we use)
@@ -208,6 +213,105 @@ export function groupGrantsByPi(grants: NihGrant[]): Map<string, NihGrant[]> {
     const list = groups.get(piName) || [];
     list.push(grant);
     groups.set(piName, list);
+  }
+  return groups;
+}
+
+export interface ContactPiAffiliation {
+  fiscalYear: number;
+  atYale: boolean;
+}
+
+export type ContactPiAffiliationLookup = (
+  profileIds: number[],
+) => Promise<Map<number, ContactPiAffiliation>>;
+
+export function principalInvestigatorName(pi: NihPrincipalInvestigator): string {
+  const first = (pi.first_name || '').trim();
+  const last = (pi.last_name || '').trim();
+  if (first || last) return canonicalPiName(`${last}, ${first}`.trim());
+  return pi.full_name ? canonicalPiName(pi.full_name) : '';
+}
+
+const isProfileId = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value);
+
+export function contactPiProfileIds(grants: readonly NihGrant[]): Set<number> {
+  const ids = new Set<number>();
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      if (pi.is_contact_pi && isProfileId(pi.profile_id)) ids.add(pi.profile_id);
+    }
+  }
+  return ids;
+}
+
+export function nonContactPiProfileIds(grants: readonly NihGrant[]): number[] {
+  const contact = contactPiProfileIds(grants);
+  const ids = new Set<number>();
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      if (!pi.is_contact_pi && isProfileId(pi.profile_id) && !contact.has(pi.profile_id)) {
+        ids.add(pi.profile_id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+export function isYaleOrganization(orgName: string | undefined): boolean {
+  const normalized = (orgName || '').trim().toUpperCase();
+  return YALE_ORG_NAMES.includes(normalized);
+}
+
+/**
+ * The latest fiscal year in which each profile is a contact PI, and whether every
+ * contact-PI project that year is at Yale. A tie with another institution reads as
+ * not at Yale, so a split year fails closed.
+ */
+export function latestContactPiAffiliations(
+  projects: readonly NihGrant[],
+  profileIds: ReadonlySet<number>,
+): Map<number, ContactPiAffiliation> {
+  const latest = new Map<number, ContactPiAffiliation>();
+  for (const project of projects) {
+    const fiscalYear = typeof project.fiscal_year === 'number' ? project.fiscal_year : 0;
+    const atYale = isYaleOrganization(project.organization?.org_name);
+    for (const pi of project.principal_investigators || []) {
+      if (!pi.is_contact_pi || !isProfileId(pi.profile_id) || !profileIds.has(pi.profile_id)) {
+        continue;
+      }
+      const held = latest.get(pi.profile_id);
+      if (!held || fiscalYear > held.fiscalYear) {
+        latest.set(pi.profile_id, { fiscalYear, atYale });
+      } else if (fiscalYear === held.fiscalYear && !atYale) {
+        latest.set(pi.profile_id, { fiscalYear, atYale: false });
+      }
+    }
+  }
+  return latest;
+}
+
+export function groupGrantsByCreditedPi(
+  grants: readonly NihGrant[],
+  creditedProfileIds: ReadonlySet<number>,
+): Map<string, NihGrant[]> {
+  const groups = new Map<string, NihGrant[]>();
+  for (const grant of grants) {
+    const names = new Set<string>();
+    const contactName = pickContactPiName(grant);
+    if (contactName) names.add(contactName);
+    for (const pi of grant.principal_investigators || []) {
+      if (pi.is_contact_pi || !isProfileId(pi.profile_id)) continue;
+      if (!creditedProfileIds.has(pi.profile_id)) continue;
+      const name = principalInvestigatorName(pi);
+      if (name) names.add(name);
+    }
+    for (const name of names) {
+      const list = groups.get(name) || [];
+      list.push(grant);
+      groups.set(name, list);
+    }
   }
   return groups;
 }
@@ -545,7 +649,7 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
 
 export function piGrantsToObservations(
   grants: NihGrant[],
-  researcherId: string,
+  researcherId: string | undefined,
   existingRowSlug: string,
 ): ObservationInput[] {
   if (grants.length === 0 || !existingRowSlug) return [];
@@ -574,7 +678,9 @@ export function piGrantsToObservations(
   if (lastObservedAt > 0) {
     out.push({ ...base, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  out.push({ ...base, field: 'inferredPiUserId', value: researcherId, confidenceOverride: 0.9 });
+  if (researcherId) {
+    out.push({ ...base, field: 'inferredPiUserId', value: researcherId, confidenceOverride: 0.9 });
+  }
   return out;
 }
 
@@ -632,6 +738,49 @@ async function fetchPage({
   return payload;
 }
 
+async function fetchContactPiAffiliations(
+  profileIds: number[],
+  ctx: ScraperContext,
+): Promise<Map<number, ContactPiAffiliation>> {
+  const projects: NihGrant[] = [];
+  for (let start = 0; start < profileIds.length; start += AFFILIATION_PROFILE_BATCH) {
+    const batch = profileIds.slice(start, start + AFFILIATION_PROFILE_BATCH);
+    let offset = 0;
+    let total = Infinity;
+    for (let page = 0; offset < total && page < MAX_PAGES; page++) {
+      const res = await retryOnRetryableStatus(() =>
+        axios.post(
+          REPORTER_ENDPOINT,
+          {
+            criteria: { pi_profile_ids: batch, exclude_subprojects: true },
+            include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
+            offset,
+            limit: PAGE_SIZE,
+          },
+          {
+            timeout: FETCH_TIMEOUT_MS,
+            headers: {
+              'User-Agent': USER_AGENT,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+          },
+        ),
+      );
+      const results = (res.data?.results as NihGrant[]) || [];
+      total = res.data?.meta?.total ?? results.length;
+      projects.push(...results);
+      if (results.length === 0) break;
+      offset += results.length;
+    }
+    if (offset < total) {
+      throw new Error(`co-PI affiliation read cut at ${offset} of ${total} projects`);
+    }
+  }
+  ctx.log(`read ${projects.length} project(s) for ${profileIds.length} co-PI profile(s)`);
+  return latestContactPiAffiliations(projects, new Set(profileIds));
+}
+
 // ---------------------------------------------------------------------------
 // Scraper class
 // ---------------------------------------------------------------------------
@@ -642,6 +791,7 @@ export interface NihReporterScraperOptions {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
+  lookupContactPiAffiliations?: ContactPiAffiliationLookup;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -703,9 +853,39 @@ export class NihReporterScraper implements IScraper {
       );
     }
 
-    // 3. Group by PI.
-    const groups = groupGrantsByPi(fundableGrants);
-    ctx.log(`grouped into ${groups.size} unique contact PIs`);
+    // 3. Credit every Yale principal investigator: contact PIs, plus each co-PI whose
+    //    latest contact-PI project is at Yale (#4629).
+    const coPiCandidates = nonContactPiProfileIds(fundableGrants);
+    const lookupAffiliations: ContactPiAffiliationLookup =
+      this.opts.lookupContactPiAffiliations ??
+      ((profileIds) => fetchContactPiAffiliations(profileIds, ctx));
+    let affiliations = new Map<number, ContactPiAffiliation>();
+    let affiliationLookupFailed = false;
+    if (coPiCandidates.length > 0) {
+      try {
+        affiliations = await lookupAffiliations(coPiCandidates);
+      } catch (err: unknown) {
+        affiliationLookupFailed = true;
+        ctx.log(
+          `co-PI affiliation lookup failed; crediting contact PIs only: ${sanitizeLogValue(
+            err instanceof Error ? err.message : err,
+          )}`,
+        );
+      }
+    }
+    const creditedProfileIds = contactPiProfileIds(fundableGrants);
+    const coPi = { credited: 0, elsewhere: 0, noEvidence: 0 };
+    for (const profileId of coPiCandidates) {
+      const affiliation = affiliations.get(profileId);
+      if (!affiliation) coPi.noEvidence++;
+      else if (!affiliation.atYale) coPi.elsewhere++;
+      else {
+        coPi.credited++;
+        creditedProfileIds.add(profileId);
+      }
+    }
+    const groups = groupGrantsByCreditedPi(fundableGrants, creditedProfileIds);
+    ctx.log(`grouped into ${groups.size} credited PIs (${coPi.credited} multi-PI co-PIs)`);
 
     // 4. Honor --limit (caps PIs processed, NOT raw grants).
     const piLimit = limitOption ?? Infinity;
@@ -715,6 +895,7 @@ export class NihReporterScraper implements IScraper {
     let ineligibleLeadTitle = 0;
     let totalObs = 0;
     let processed = 0;
+    const rows = new Map<string, { researcherIds: Set<string>; grants: NihGrant[] }>();
     for (const [piName, grants] of piEntries) {
       processed++;
       const person = await resolveUserForPi(piName, {
@@ -731,26 +912,40 @@ export class NihReporterScraper implements IScraper {
       );
       countGrantAttach(attach, target);
       if (target.status === 'enrich') {
-        const observations = piGrantsToObservations(grants, target.researcherId, target.slug);
-        await ctx.emit(observations);
-        totalObs += observations.length;
+        const row = rows.get(target.slug) ?? { researcherIds: new Set<string>(), grants: [] };
+        row.researcherIds.add(target.researcherId);
+        row.grants.push(...grants);
+        rows.set(target.slug, row);
       }
       if (processed % 100 === 0 || processed === piEntries.length) {
-        ctx.log(
-          `progress: ${processed}/${piEntries.length} PIs (${attach.enriched} rows enriched), ${totalObs} obs`,
-        );
+        ctx.log(`progress: ${processed}/${piEntries.length} PIs (${attach.enriched} enriched)`);
       }
+    }
+
+    for (const [slug, row] of rows) {
+      const soleResearcher = row.researcherIds.size === 1 ? [...row.researcherIds][0] : undefined;
+      const observations = piGrantsToObservations(row.grants, soleResearcher, slug);
+      await ctx.emit(observations);
+      totalObs += observations.length;
     }
 
     const notes =
       `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants; ` +
-      `contact PIs: ${groups.size} (${piEntries.length} processed); ${grantAttachSummary(attach)}; ` +
+      `credited PIs: ${groups.size} (${piEntries.length} processed); ` +
+      `multi-PI co-PIs: ${coPiCandidates.length} not a Yale contact PI in the window, ${coPi.credited} credited ` +
+      `(latest contact-PI project at Yale), ${coPi.elsewhere} refused (latest contact-PI project elsewhere), ` +
+      `${coPi.noEvidence} refused (${
+        affiliationLookupFailed
+          ? 'affiliation lookup failed, so none credited'
+          : 'never a contact PI, so no affiliation evidence'
+      }); ` +
+      `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
       `${ineligibleLeadTitle} held for a non-lead title`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {
       observationCount: totalObs,
-      entitiesObserved: attach.enriched,
+      entitiesObserved: rows.size,
       notes,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
