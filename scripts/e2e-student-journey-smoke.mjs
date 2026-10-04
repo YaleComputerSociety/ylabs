@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   readSearchState,
   SEARCH_INPUT_LABEL,
+  SEARCH_RESULTS_SELECTOR,
   stuckSearchProblems,
   waitForSearchResultsToSettle,
 } from './e2e-smoke-search-state.mjs';
@@ -298,7 +299,7 @@ await step(
         await assertSidebarFits('with a query typed');
         await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
         await laptopPage
-          .locator('section[aria-label="Search results"]')
+          .locator(SEARCH_RESULTS_SELECTOR)
           .getByRole('status')
           .filter({ hasText: /results? for '.+'/i })
           .first()
@@ -317,7 +318,7 @@ await step('search returns a result and the header settles out of loading', asyn
   const searchProblems = stuckSearchProblems(await readSearchState(page));
   assert(searchProblems.length === 0, searchProblems.join(' '));
   const status = await page
-    .locator('section[aria-label="Search results"]')
+    .locator(SEARCH_RESULTS_SELECTOR)
     .getByRole('status')
     .first()
     .innerText();

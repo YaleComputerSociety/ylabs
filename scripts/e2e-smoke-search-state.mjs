@@ -1,6 +1,6 @@
 export const IDLE_SEARCH_BUTTON_NAME = 'Search';
 export const SEARCH_INPUT_LABEL = 'Search y/labs';
-const SEARCH_RESULTS_SELECTOR = 'section[aria-label="Search results"]';
+export const SEARCH_RESULTS_SELECTOR = 'section[aria-label="Search results"]';
 
 export const accessibleNameFromAriaSnapshot = (snapshot) => {
   const match = /^-\s+button\s+"((?:[^"\\]|\\.)*)"/.exec(String(snapshot ?? '').trim());
@@ -9,7 +9,7 @@ export const accessibleNameFromAriaSnapshot = (snapshot) => {
 
 export const stuckSearchProblems = ({ buttonName, buttonDisabled, resultsBusy }) => {
   const problems = [];
-  if ((buttonName ?? '').trim().toLowerCase() !== IDLE_SEARCH_BUTTON_NAME.toLowerCase()) {
+  if (buttonName !== IDLE_SEARCH_BUTTON_NAME) {
     problems.push(
       `Search button is stuck in its loading state: its accessible name is ${JSON.stringify(buttonName)}, not "${IDLE_SEARCH_BUTTON_NAME}".`,
     );
