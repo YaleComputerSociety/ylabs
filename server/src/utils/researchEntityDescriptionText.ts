@@ -8,6 +8,7 @@ import {
   isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
+  stripLeadingProfileHeaderChrome,
 } from './descriptionHygiene';
 import { withoutUnbackedLabSelfDescription } from './unbackedLabSelfDescription';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
@@ -2317,6 +2318,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       const withoutRetiredVocabulary = stripRetiredResearchHomeVocabulary(next[field]);
       if (withoutRetiredVocabulary !== next[field]) {
         next[field] = withoutRetiredVocabulary;
+        changed = true;
+      }
+      const withoutProfileHeader = stripLeadingProfileHeaderChrome(next[field]);
+      if (withoutProfileHeader !== next[field]) {
+        next[field] = withoutProfileHeader;
         changed = true;
       }
       if ((HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) {

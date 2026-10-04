@@ -477,9 +477,40 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
 ];
 
 export function stripCatalogChrome(text: string): string {
-  let out = String(text || '');
+  let out = stripLeadingProfileHeaderChrome(String(text || ''));
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
   return normalizeHygieneWhitespace(out);
+}
+
+const LEADING_BREADCRUMB_TRAIL = /^\s*Home\s*[/›»>]\s*(?:[^/›»>.]{1,40}[/›»>]\s*){1,5}/;
+
+const PROFILE_IMAGE_HEADER_BLOCK =
+  /^\s*((?:[A-Z][\p{L}'’.-]*\s+){1,4}?)Profile Image\b[\s\S]{0,600}?\bContact\s+\1/u;
+
+const DOUBLED_LEADING_NAME = /^((?:[A-Z][\p{L}'’.-]*\s+){1,4}?)\1/u;
+
+const LEADING_NAME_AND_APPOINTMENT_TITLE =
+  /^([A-Z][\p{L}'’-]+)(?:\s+[A-Z][\p{L}'’.-]*){0,3}\s+[^.]{0,80}?\b(?:Lecturer|Professor|Instructor|Lector|Director|Coordinator|Fellow|Artist|Critic)\b[^.]{0,60}?\s+(?=\1\b)/u;
+
+/**
+ * A directory profile's page header pasted ahead of the prose: a breadcrumb trail
+ * ("Home / About Us / Who We Are / ") or an image-and-fields block ("<Name> Profile
+ * Image <titles> <fields> Contact <Name>"). Both are recognised by their markers alone,
+ * so the strip never judges the prose. Only once a marker has matched is the header's
+ * own residue, the person's name printed twice and then their appointment title before
+ * the name opens the first sentence, removed too.
+ */
+export function stripLeadingProfileHeaderChrome(text: string): string {
+  const value = String(text || '');
+  const withoutMarker = value
+    .replace(PROFILE_IMAGE_HEADER_BLOCK, '')
+    .replace(LEADING_BREADCRUMB_TRAIL, '');
+  if (withoutMarker === value) return value;
+  const withoutResidue = withoutMarker
+    .trimStart()
+    .replace(DOUBLED_LEADING_NAME, '$1')
+    .replace(LEADING_NAME_AND_APPOINTMENT_TITLE, '');
+  return normalizeHygieneWhitespace(withoutResidue);
 }
 
 const staleMonthYearDeadlinePattern =
