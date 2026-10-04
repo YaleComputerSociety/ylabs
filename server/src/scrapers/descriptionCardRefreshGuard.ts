@@ -7,8 +7,8 @@ export interface DescriptionPair {
 }
 
 /**
- * Whether a description pair would give this row a complete card, judged the way the
- * student visibility gate judges it rather than by the raw text alone.
+ * Whether a description pair would give this row a complete card, judged by the strict
+ * verdict on the served representation rather than by the raw text alone.
  */
 export type DescriptionCardJudge = (
   subject: Pick<ObservationInput, 'entityType' | 'entityId' | 'entityKey'>,
