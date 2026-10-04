@@ -599,6 +599,7 @@ The retirement is engine behaviour rather than a script: `acceptingUndergrads` i
 The one-off `observations:retire-accepting-undergrads` was deleted once that made it unable to act (#3633).
 
 The `accessAcceptanceLevel` grade was retired by the 2026-08-25 "Simple Directory First" pivot: access plausibility no longer feeds ranking, filtering, or a trust tier, and the read-time `accessSummary` payload is no longer produced.
+Its last code, the unread grading helpers in `accessAcceptanceLevel.ts`, was removed in #4581; the hosted-undergraduates predicate it also held now lives in `services/hostedUndergraduates.ts`.
 
 Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`.
 

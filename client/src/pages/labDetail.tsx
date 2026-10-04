@@ -51,7 +51,6 @@ import {
   isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
-  normalizeSourceUrl,
   prefersOrgEngagementOutreach,
   ResearchDetailSource,
   resolveDecisionProfileUrl,
@@ -1079,20 +1078,6 @@ const LabDetail = () => {
     }
     const sourceUrl = safeHttpUrl(href);
     if (!sourceUrl) return;
-    const planningContext = group.planningContext;
-    const isQualifiedAction =
-      planningContext && normalizeSourceUrl(planningContext.url) === normalizeSourceUrl(sourceUrl);
-    if (isQualifiedAction) {
-      void trackResearchEvent({
-        eventType: 'research_qualified_action',
-        entityType: 'research_entity',
-        entityId: group._id,
-        payload: { actionCategory: planningContext.category },
-        dedupeKey: createResearchAnalyticsInteractionId('action'),
-      });
-      return;
-    }
-
     const sourceText = `${anchor?.textContent || ''} ${sourceUrl}`.toLowerCase();
     const sourceCategory =
       sourceText.includes('publication') || sourceText.includes('doi.org')

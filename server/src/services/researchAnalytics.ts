@@ -20,12 +20,6 @@ import { Fellowship, ResearchEntity } from '../models/index';
 import { Account } from '../models/account';
 import { logEvent } from './analyticsService';
 import type { AnalyticsWriteOutcome, LogEventParams } from './analyticsService';
-import {
-  listPlanningContextsForResearchEntities,
-  PLANNING_CONTEXT_CATEGORIES,
-  type PlanningContextCategory,
-  type PublicPlanningContext,
-} from './planningContextService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { routeParam } from '../utils/routeParams';
 
@@ -44,7 +38,6 @@ export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.RESEARCH_SAVE,
   AnalyticsEventType.RESEARCH_COMPARE,
   AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
 
 export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
@@ -56,7 +49,6 @@ export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.RESEARCH_SAVE,
   AnalyticsEventType.RESEARCH_COMPARE,
   AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
 
 export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'degraded', 'error'] as const;
@@ -248,11 +240,6 @@ export const sanitizeResearchPayload = (
       out.field = oneOf(input.field, RESEARCH_PLAN_FIELDS) ?? 'stage';
       break;
     }
-    case AnalyticsEventType.RESEARCH_QUALIFIED_ACTION: {
-      const actionCategory = oneOf(input.actionCategory, PLANNING_CONTEXT_CATEGORIES);
-      if (actionCategory) out.actionCategory = actionCategory;
-      break;
-    }
     case AnalyticsEventType.CONTACT_ROUTE_CLICK: {
       const method = oneOf(input.contactMethod ?? input.method, CONTACT_METHODS) ?? 'other';
       out.contactMethod = method;
@@ -415,14 +402,9 @@ export interface EmitResearchEventInput {
   dedupeKey?: unknown;
 }
 
-type PlanningContextResolver = (
-  ids: Array<string | mongoose.Types.ObjectId>,
-) => Promise<Map<string, PublicPlanningContext>>;
-
 export const emitResearchEvent = async (
   input: EmitResearchEventInput,
   log: ResearchLogFn = logEvent,
-  resolvePlanningContexts: PlanningContextResolver = listPlanningContextsForResearchEntities,
 ): Promise<ResearchEventOutcome> => {
   if (!isResearchEventType(input.eventType) || !isNonEmptyString(input.user?.netId)) {
     return 'rejected';
@@ -440,22 +422,7 @@ export const emitResearchEvent = async (
   )
     return 'rejected';
 
-  let payload = input.payload;
-  if (input.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION) {
-    if (input.entityType !== 'research_entity' || !isNonEmptyString(input.entityId))
-      return 'rejected';
-    const contexts = await resolvePlanningContexts([input.entityId.trim()]);
-    const context = contexts.get(input.entityId.trim());
-    if (!context) return 'rejected';
-    const requestedCategory = (input.payload as { actionCategory?: unknown } | undefined)
-      ?.actionCategory;
-    if (
-      requestedCategory !== undefined &&
-      requestedCategory !== (context.category as PlanningContextCategory)
-    )
-      return 'rejected';
-    payload = { actionCategory: context.category };
-  }
+  const payload = input.payload;
 
   return log(
     buildResearchEvent({

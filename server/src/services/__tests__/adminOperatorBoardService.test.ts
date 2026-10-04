@@ -1258,23 +1258,27 @@ describe('adminOperatorBoardService', () => {
       artifactPath,
       scanned: 75,
       piBlockers: 65,
-      actionBlockers: 10,
       exactPiMatches: 0,
-      sourceBackedRouteCandidates: 0,
       missingOfficialProfileUrl: 61,
       ambiguousOrMismatchedUserMatch: 21,
-      sourceObservationsWithoutUndergradAccess: 4,
-      untrustedExternalRouteEvidence: 5,
     });
-    expect(deriveLaunchAcquisitionGate(artifact)).toMatchObject({
+    const gate = deriveLaunchAcquisitionGate(artifact);
+    expect(gate).toMatchObject({
       status: 'blocked',
-      note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+      note: 'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
       scanned: 75,
       piBlockers: 65,
-      actionBlockers: 10,
       exactPiMatches: 0,
-      sourceBackedRouteCandidates: 0,
     });
+    for (const retired of [
+      'actionBlockers',
+      'sourceBackedRouteCandidates',
+      'sourceObservationsWithoutUndergradAccess',
+      'untrustedExternalRouteEvidence',
+    ]) {
+      expect(artifact).not.toHaveProperty(retired);
+      expect(gate).not.toHaveProperty(retired);
+    }
   });
 
   it('reports an artifact built without an observation store as manual, not blocked', () => {

@@ -304,8 +304,6 @@ const pathwayHit = {
   evidenceStrength: 'SOURCE_BACKED',
   studentFacingLabel: 'Plan careful outreach',
   explanation: 'Review the lab profile before contacting anyone.',
-  bestNextStep: 'Read the source profile first.',
-  bestNextStepCategory: 'plan-outreach',
   confidence: 0.72,
   sourceUrls: ['https://example.edu/ai-safety'],
   researchEntity: {
@@ -2786,7 +2784,6 @@ describe('Research page', () => {
     const postedPathway = {
       ...pathwayHit,
       pathwayType: 'POSTED_ROLE',
-      bestNextStepCategory: 'apply',
       compensation: 'STIPEND',
       evidence: [
         {

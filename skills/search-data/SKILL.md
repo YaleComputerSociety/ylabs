@@ -504,7 +504,7 @@ Served output was unchanged: 31,570 of 31,570 comparisons over 4,510 Development
 Three residuals are the next levers and none of them is this one.
 The roster read is four sequential round trips, two `role_assignments` reads and then `researchers` and `accounts`, and browse discards the last of those because it serves lead names only.
 The row query loads whole documents, where `fieldProvenance` is 37% and `recentGrants` 26% of a stored row's 14.9KB and the served card reads both, while the fields no served surface reads are 25% of the row, so a field allowlist there is worth about a quarter of its bytes rather than all of them.
-And `listPlanningContextsForResearchEntities` returns an empty map for every input, so the planning-context enrichment every list path awaits is inert.
+The planning-context enrichment every list path used to await returned an empty map for every input and was removed in #4581.
 
 ### The two legs are merged by rank, not by score (#3797)
 

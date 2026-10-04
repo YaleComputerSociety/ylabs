@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   accessSignalFind: vi.fn(),
   contactRouteFind: vi.fn(),
   postedOpportunityFind: vi.fn(),
-  listPlanningContextsForResearchEntities: vi.fn(),
   getPublicUndergraduateLogistics: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
   hasAdminAuthorityForUser: vi.fn(),
@@ -90,10 +89,6 @@ vi.mock('../../models/signal', () => ({
   Signal: {
     find: mocks.accessSignalFind,
   },
-}));
-
-vi.mock('../planningContextService', () => ({
-  listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
 }));
 
 vi.mock('../researchSearchQueryEmbedding', () => ({
@@ -186,7 +181,6 @@ beforeEach(() => {
   // reads "no such row" rather than undefined.
   mocks.researchEntityFindOne.mockReturnValue(leanResult(null));
   mocks.researchEntityFind.mockReset();
-  mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
   mocks.roleAssignmentFind.mockReset();
@@ -209,7 +203,6 @@ beforeEach(() => {
   mocks.accessSignalFind.mockReturnValue(queryResult([]));
   mocks.contactRouteFind.mockReturnValue(queryResult([]));
   mocks.postedOpportunityFind.mockReturnValue(queryResult([]));
-  mocks.listPlanningContextsForResearchEntities.mockResolvedValue(new Map());
   mocks.getPublicUndergraduateLogistics.mockResolvedValue({ status: 'ready', claims: [] });
 });
 
@@ -3106,9 +3099,8 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('keeps base research results usable when optional planning context fails', async () => {
+  it('serves search hits with no planning context and no degraded flag from it (#4581)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.search.mockResolvedValueOnce({ hits: [{ id: entityId }], estimatedTotalHits: 1 });
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
@@ -3124,20 +3116,11 @@ describe('searchResearchGroupsViaMeili', () => {
         },
       ]),
     );
-    mocks.listPlanningContextsForResearchEntities.mockRejectedValueOnce(
-      new Error('optional store unavailable'),
-    );
-
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
     expect(result.researchEntities).toHaveLength(1);
     expect(result.researchEntities[0]).not.toHaveProperty('planningContext');
-    expect(result.degraded).toBe(true);
-    expect(consoleError).toHaveBeenCalledWith(
-      'Optional research planning-context enrichment failed:',
-      expect.any(String),
-    );
-    consoleError.mockRestore();
+    expect(result.degraded).not.toBe(true);
   });
 
   it('drops object-shaped Meili hit ids before Mongo visibility filtering', async () => {

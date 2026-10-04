@@ -46,7 +46,7 @@ See [Search and data](../skills/search-data/SKILL.md) for the depth ceiling and 
 Blank browse requests sort by `browseRankScore:desc` and then `lastObservedAt:desc`.
 Non-empty ordinary queries use Meilisearch hybrid search with the `default` embedder, while short aliases such as `ai` and `ml` use keyword-only topic attributes.
 The service then treats MongoDB as authoritative by loading the returned IDs from `research_entities` with visibility checks.
-It enriches the bounded page with listing presence, access summaries, and planning context before returning public DTOs.
+It enriches the bounded page with listing presence and lead display names before returning public DTOs; the planning-context enrichment was removed in #4581.
 
 ### Boundedness and cost drivers
 

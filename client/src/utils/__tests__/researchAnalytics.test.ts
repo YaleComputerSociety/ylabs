@@ -97,7 +97,6 @@ describe('research journey analytics client', () => {
     ['research_save', { operation: 'save', surface: 'profile' }],
     ['research_compare', { entityCountBucket: '2' }],
     ['research_plan_update', { field: 'note_presence' }],
-    ['research_qualified_action', { actionCategory: 'official_application' }],
   ] as const)('sends %s as an entity-scoped event', async (eventType, payload) => {
     post.mockResolvedValue({ status: 202 });
 

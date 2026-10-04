@@ -14,7 +14,7 @@ import {
   BROWSE_RANK_SCORER_VERSION,
   computeResearchEntityBrowseRank,
 } from './researchEntityBrowseRank';
-import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';

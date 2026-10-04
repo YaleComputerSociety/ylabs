@@ -351,13 +351,9 @@ interface OperatorBoard {
       note: string;
       scanned?: number;
       piBlockers?: number;
-      actionBlockers?: number;
       exactPiMatches?: number;
-      sourceBackedRouteCandidates?: number;
       missingOfficialProfileUrl?: number;
       ambiguousOrMismatchedUserMatch?: number;
-      sourceObservationsWithoutUndergradAccess?: number;
-      untrustedExternalRouteEvidence?: number;
       artifactAgeHours?: number;
     };
     productionCopy?: {
@@ -1538,19 +1534,9 @@ const AdminOperatorBoard = () => {
                   PI blockers: {board.gates.launchAcquisition.piBlockers}
                 </p>
               )}
-              {typeof board.gates.launchAcquisition.actionBlockers === 'number' && (
-                <p className="mt-1 text-xs text-muted">
-                  Action blockers: {board.gates.launchAcquisition.actionBlockers}
-                </p>
-              )}
               {typeof board.gates.launchAcquisition.exactPiMatches === 'number' && (
                 <p className="mt-1 text-xs text-emerald-700">
                   Exact PI matches: {board.gates.launchAcquisition.exactPiMatches}
-                </p>
-              )}
-              {typeof board.gates.launchAcquisition.sourceBackedRouteCandidates === 'number' && (
-                <p className="mt-1 text-xs text-emerald-700">
-                  Route candidates: {board.gates.launchAcquisition.sourceBackedRouteCandidates}
                 </p>
               )}
               {typeof board.gates.launchAcquisition.missingOfficialProfileUrl === 'number' && (
