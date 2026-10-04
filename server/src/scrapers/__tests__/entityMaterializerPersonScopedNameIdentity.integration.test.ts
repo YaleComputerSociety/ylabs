@@ -32,6 +32,7 @@ type PersistedEntity = {
   displayName?: string;
   confidenceByField?: Record<string, number>;
   fieldProvenance?: Record<string, unknown>;
+  siteDeclaredOwnNames?: string[];
 };
 
 const persisted = () =>
@@ -143,6 +144,43 @@ describe('materializeEntity refuses a name that identifies nothing or names some
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
     expect((await persisted()).displayName ?? '').toBe('');
+  });
+
+  it("adopts a unit name the row's own site declares under its Principal Investigator", async () => {
+    const unit = 'Fixture Computation Unit';
+    const entity = await seedPersonScopedEntity({
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Duchamp Lab',
+    });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({
+      field: 'name',
+      value: 'Rafferty Duchamp Faculty Research',
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: 'https://medicine.example.edu/profile/rafferty-duchamp/',
+      confidence: 0.8,
+    });
+    await seedObservation({
+      field: 'name',
+      value: unit,
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: 'https://medicine.example.edu/profile/rafferty-duchamp/',
+      confidence: 0.96,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+    expect((await persisted()).name).toBe('Rafferty Duchamp Faculty Research');
+
+    await seedObservation({
+      field: 'name',
+      value: `Yale ${unit}`,
+      sourceUrl: 'https://fixtureunit.example.org/',
+    });
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(unit);
+    expect((await persisted()).siteDeclaredOwnNames).toEqual([`Yale ${unit}`]);
   });
 
   it('never leaves a record nameless: a grafted name with no surviving candidate is kept', async () => {

@@ -95,10 +95,12 @@ import {
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
+  isPrincipalInvestigatorLedUnitName,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
   nameIsOnlyTheLeadPersonsName,
   namesASelfDeclaredLaboratory,
+  pageStatesPersonAsPrincipalInvestigator,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
   researchHomeIdentityTokens,
@@ -1321,15 +1323,30 @@ function extractedFullDescription(
   );
 }
 
+/**
+ * The page's own umbrella-headed name when the page credits the record's lead as its
+ * Principal Investigator, so the unit is the lead's own lab. Only then may the page's
+ * name vouch for a body whose subject it is: elsewhere the two come from the same page,
+ * always agree, and prove nothing.
+ */
+function ledUnitName(labName: string, context: ExtractedPageIdentityContext): string | undefined {
+  return isPrincipalInvestigatorLedUnitName(labName) &&
+    context.pageStatesLeadAsPrincipalInvestigator
+    ? labName
+    : undefined;
+}
+
 function bodyDescribesAnotherOrganization(
   fullDescription: string,
   context: ExtractedPageIdentityContext,
+  ledUnitName?: string,
 ): boolean {
   return (
     isPersonScopedResearchEntity(context) &&
     personScopedResearchEntityBodyDescribesAnotherOrganization({
       description: fullDescription,
       slug: context.entityKey,
+      name: ledUnitName,
     })
   );
 }
@@ -1397,7 +1414,7 @@ export function describeDescriptionExtraction(
   // this context, and the page's name must not stand in for it: the subject and the
   // page name come from the same page, so they always agree and the check would
   // always clear itself.
-  if (bodyDescribesAnotherOrganization(fullDescription, context)) {
+  if (bodyDescribesAnotherOrganization(fullDescription, context, ledUnitName(labName, context))) {
     return refusedBy('another_organization_body');
   }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
@@ -1540,15 +1557,28 @@ export function pageStatedLabNameObservations(
     return [];
   }
   if (context.institutionLandingUrl === true) return [];
-  if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
   const labName = usefulLabName(extraction.name);
+  const unitName = ledUnitName(labName, context);
+  // The model reads a led unit's page as "organization" on some runs and "named_entity"
+  // on others, measured three of four on one unchanged page; the page's own Principal
+  // Investigator credit is what decides whose unit it is.
+  const acceptedSubjects = unitName ? ['named_entity', 'organization'] : ['named_entity'];
+  if (typeof extraction.subject === 'string' && !acceptedSubjects.includes(extraction.subject)) {
+    return [];
+  }
   if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
-  if (!namesASelfDeclaredLaboratory(labName) && !isLabTypedRowsPersonalPage(labName, context)) {
+  if (
+    !namesASelfDeclaredLaboratory(labName) &&
+    !unitName &&
+    !isLabTypedRowsPersonalPage(labName, context)
+  ) {
     return [];
   }
   if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
-  if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
+  if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context, unitName)) {
+    return [];
+  }
   return labNameObservations(
     labName,
     {
@@ -1627,6 +1657,13 @@ export interface ExtractedPageIdentityContext {
    * would make this arm blind rather than wrong.
    */
   recordCitedUrls?: unknown;
+  /**
+   * Whether the page the name was read from names `personName` as its Principal
+   * Investigator (`pageStatesPersonAsPrincipalInvestigator`). An umbrella-headed name
+   * on such a page is the person's own lab ("Computational Psychiatry Unit"), so it may
+   * name the record.
+   */
+  pageStatesLeadAsPrincipalInvestigator?: boolean;
 }
 
 /**
@@ -1684,7 +1721,9 @@ function classifyExtractedPageAttribution(
   if (isPersonCmsProfileUrl(context.sourceUrl)) return 'AFFILIATED_ORGANIZATION';
   if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
   if (!labName) return 'THIS_ENTITY';
-  if (isUmbrellaOrganizationName(labName)) return 'AFFILIATED_ORGANIZATION';
+  if (isUmbrellaOrganizationName(labName) && !ledUnitName(labName, context)) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
   // A shared academic host's own organization name, refused before the eponym arms:
   // the graft arrives from a faculty directory page while naming a host the record
   // cites elsewhere, so neither the page path nor a surname roster can see it (#2360).
@@ -2332,6 +2371,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               }
             : null;
 
+        const leadPersonName = identityCorpus.leadPersonNameByEntityId.get(
+          serializedDocumentId(lab._id) || '',
+        );
         const identity = {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
@@ -2350,10 +2392,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityType: lab.entityType,
           kind: lab.kind,
           knownPersonSurnames: identityCorpus.knownPersonSurnames,
-          personName: identityCorpus.leadPersonNameByEntityId.get(
-            serializedDocumentId(lab._id) || '',
-          ),
+          personName: leadPersonName,
           recordCitedUrls: lab.sourceUrls,
+          pageStatesLeadAsPrincipalInvestigator: pageStatesPersonAsPrincipalInvestigator(
+            primaryPageText,
+            leadPersonName,
+          ),
         };
 
         const officialOutcome = officialProse?.fullDescription

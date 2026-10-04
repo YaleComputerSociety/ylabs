@@ -3255,6 +3255,7 @@ export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
       personName: leadPersonName,
       websiteUrl: next.fieldProvenance?.[field]?.sourceUrl || next.websiteUrl || next.website || '',
       recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
+      siteDeclaredOwnNames: next.siteDeclaredOwnNames,
     });
 
   // `name` is substituted and never cleared, because it is the heading every serve path

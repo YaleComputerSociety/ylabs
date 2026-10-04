@@ -103,6 +103,7 @@ import {
   resolveFieldRanked,
   ResolverObservation,
   ResolvedField,
+  siteDeclaredOwnNamesFromObservations,
   sourceRanksOnlyAsFieldFallback,
 } from './confidenceResolver';
 import {
@@ -6982,6 +6983,9 @@ function enforceResearchEntityNameAuthority(input: {
   // citation survives that refusal and is what the shared-host name arm reads
   // (#2360).
   const recordCitedUrls = [recordWebsiteUrl, set.sourceUrls ?? entityDoc?.sourceUrls];
+  const siteDeclaredOwnNames = [
+    ...new Set(siteDeclaredOwnNamesFromObservations(input.resolverObs)),
+  ].sort();
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
     // An external platform's brand names no research home, and it is refused here
@@ -7013,9 +7017,18 @@ function enforceResearchEntityNameAuthority(input: {
       websiteUrl,
       knownPersonSurnames: input.nameIdentityAuthority.knownPersonSurnames,
       recordCitedUrls,
+      siteDeclaredOwnNames,
     });
 
   let fieldsWritten = 0;
+  const storedSiteDeclaredOwnNames: unknown[] = Array.isArray(entityDoc?.siteDeclaredOwnNames)
+    ? entityDoc.siteDeclaredOwnNames
+    : [];
+  if (siteDeclaredOwnNames.join('\n') !== storedSiteDeclaredOwnNames.join('\n')) {
+    if (siteDeclaredOwnNames.length > 0) set.siteDeclaredOwnNames = siteDeclaredOwnNames;
+    else unset.siteDeclaredOwnNames = '';
+    fieldsWritten++;
+  }
   for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
     if (input.manuallyLockedFields.includes(field)) continue;
     const servedValue = set[field] ?? entityDoc?.[field];

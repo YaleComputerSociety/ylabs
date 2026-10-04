@@ -172,6 +172,25 @@ export const MICROSITE_NAME_SOURCES = new Set([
   'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
 ]);
+
+/**
+ * The names a row's own site gives itself, as the microsite lanes assert them. Those
+ * lanes emit an umbrella-headed name only from a page that names the row's person as
+ * its Principal Investigator, so this list is what the name authority's
+ * `siteDeclaredOwnNames` reads.
+ */
+export function siteDeclaredOwnNamesFromObservations(
+  observations: readonly { field?: unknown; sourceName?: unknown; value?: unknown }[],
+): string[] {
+  return observations
+    .filter(
+      (observation) =>
+        ENTITY_NAME_FIELDS.has(String(observation.field)) &&
+        MICROSITE_NAME_SOURCES.has(String(observation.sourceName)) &&
+        typeof observation.value === 'string',
+    )
+    .map((observation) => String(observation.value));
+}
 const RESEARCH_HOME_HEAD_NOUN_RE =
   /\b(labs?|laborator(?:y|ies)|cent(?:er|re)s?|institutes?|programs?|programmes?|initiatives?|groups?|projects?|collaboratives?|consorti(?:um|a)|networks?|clinics?|cores?|facilit(?:y|ies)|observator(?:y|ies)|studios?|workshops?)\b/i;
 const FACULTY_RESEARCH_NAME_RE = /\bfaculty\s+research\s*$/i;
