@@ -106,9 +106,7 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
     await resolve('synthetic-tidepool-lab');
     await resolve('synthetic-kelp-lab');
     const full = await liveKeys('synthetic-tidepool-lab');
-    expect(full).toEqual(
-      expect.arrayContaining(['signal:PAST_UNDERGRADS', 'signal:REACH_OUT_PLAUSIBLE']),
-    );
+    expect(full).toEqual(expect.arrayContaining(['signal:PAST_UNDERGRADS']));
 
     await Observation.updateMany(
       { _id: { $in: [access._id, advisees._id] } },
@@ -117,9 +115,7 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
     await resolve('synthetic-tidepool-lab');
     const remaining = await liveKeys('synthetic-tidepool-lab');
     expect(remaining).toContain('signal:CURRENT_UNDERGRADS');
-    expect(remaining).not.toContain('signal:REACH_OUT_PLAUSIBLE');
     expect(remaining).not.toContain('signal:PAST_UNDERGRADS');
-    expect(remaining).not.toContain('signal:FELLOWSHIP_COMPATIBLE');
     const archived = await Signal.findOne({
       derivationKey: 'signal:PAST_UNDERGRADS',
       archived: true,
@@ -150,34 +146,23 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
   it('keeps a signal whose cited evidence is live under a key this pass did not read', async () => {
     await seedLab('synthetic-tidepool-lab');
     await resolve('synthetic-tidepool-lab');
-    const reachOut = await Signal.findOne({
-      derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
+    const pastUndergrads = await Signal.findOne({
+      derivationKey: 'signal:PAST_UNDERGRADS',
     }).lean<any>();
-    const foreign = await seed('synthetic-unminted-key', 'undergradAccessEvidence', {
-      openToUndergrads: 'yes',
-      evidenceSource: 'explicit_text',
-      evidenceQuote: 'Undergraduates are welcome to join the lab.',
-    });
+    const foreign = await seed('synthetic-unminted-key', 'pastUndergradAdvisees', [
+      { name: 'Synthetic Advisee', year: 2024 },
+    ]);
     await Signal.updateOne(
-      { _id: reachOut._id },
+      { _id: pastUndergrads._id },
       { $set: { 'source.evidenceIds': [foreign._id] } },
     );
     await Observation.updateMany(
-      { entityKey: 'synthetic-tidepool-lab', field: 'undergradAccessEvidence' },
+      { entityKey: 'synthetic-tidepool-lab', field: 'pastUndergradAdvisees' },
       { $set: { superseded: true } },
     );
-    await seed(
-      'synthetic-tidepool-lab',
-      'undergradAccessEvidence',
-      {
-        openToUndergrads: 'no',
-        evidenceSource: 'explicit_text',
-        evidenceQuote: 'The lab is not taking undergraduates this year.',
-      },
-      '2026-09-15',
-    );
+    await seed('synthetic-tidepool-lab', 'pastUndergradAdvisees', [], '2026-09-15');
     await resolve('synthetic-tidepool-lab');
-    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:REACH_OUT_PLAUSIBLE');
+    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:PAST_UNDERGRADS');
   }, 120000);
 
   it('leaves the two types another change owns live even when no longer derived', async () => {

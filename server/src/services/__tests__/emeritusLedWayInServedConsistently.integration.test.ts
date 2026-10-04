@@ -36,11 +36,7 @@ const RUNNING_AWARD = {
   endDate: new Date(Date.now() + 400 * 86_400_000),
   role: 'pi',
 };
-const WAY_IN_TYPES = [
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'REACH_OUT_PLAUSIBLE',
-  'APPLICATION_FORM_EXISTS',
-];
+const WAY_IN_TYPES = ['APPLICATION_FORM_EXISTS'];
 const RECENT = new Date(Date.now() - 20 * 86_400_000);
 
 interface LeadSeed {
@@ -287,7 +283,7 @@ describe('an emeritus-led row is labelled and claims no way in without current a
     });
     expect(
       detail?.accessSignals.filter((signal: any) => WAY_IN_TYPES.includes(signal.signalType)),
-    ).toHaveLength(3);
+    ).toHaveLength(1);
     const emeritusByName = Object.fromEntries(
       (detail?.members ?? []).map((member: any) => [member.user.displayName, member.user.emeritus]),
     );

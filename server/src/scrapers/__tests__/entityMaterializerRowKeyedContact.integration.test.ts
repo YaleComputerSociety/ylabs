@@ -29,7 +29,6 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
-import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from '../rowKeyedContactEvidence';
 
 const SURVIVOR = 'example-survivor-lab';
 const LOSER = 'ysm-example-merged-loser';
@@ -119,7 +118,7 @@ describe('a contact reaches a row only from evidence keyed to that row (#3609)',
   const contactSignalsOf = (id: mongoose.Types.ObjectId) =>
     Signal.find({
       researchEntityId: id,
-      derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+      derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS',
     }).lean();
 
   it.each([SURVIVOR, LOSER])(
@@ -177,7 +176,7 @@ describe('a contact reaches a row only from evidence keyed to that row (#3609)',
   });
 
   it.each([SURVIVOR, LOSER])(
-    "keeps the survivor's own contact and its signal, entered through %s",
+    "keeps the survivor's own contact and mints no contact signal from it, entered through %s",
     async (entryKey) => {
       const survivor = await seedMerge(false);
       await seedContact(SURVIVOR);
@@ -186,10 +185,7 @@ describe('a contact reaches a row only from evidence keyed to that row (#3609)',
       await materializeEntity('researchEntity', { entityKey: entryKey });
 
       expect(await storedContactOf(survivor._id)).toEqual(CONTACT);
-      const signals = await contactSignalsOf(survivor._id);
-      expect(signals).toHaveLength(1);
-      const evidence = await Observation.findById(signals[0].source?.evidenceIds?.[0]).lean();
-      expect(evidence?.entityKey).toBe(SURVIVOR);
+      expect(await contactSignalsOf(survivor._id)).toHaveLength(0);
     },
   );
 });

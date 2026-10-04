@@ -31,39 +31,19 @@ describe('accessAcceptanceLevel', () => {
     ).toBe('likely');
   });
 
-  it('does not count a bare-key REACH_OUT_PLAUSIBLE without a source-backed excerpt (#1343)', () => {
-    expect(
-      canonicalAcceptanceLevelFromSignals([
-        {
-          type: 'REACH_OUT_PLAUSIBLE',
-          confidenceScore: 0.5,
-          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-        },
-      ]),
-    ).toBe('none');
-    expect(
-      canonicalAcceptanceLevelFromSignals([
-        {
-          type: 'REACH_OUT_PLAUSIBLE',
-          confidenceScore: 0.5,
-          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-          excerpt: '   ',
-        },
-      ]),
-    ).toBe('none');
-  });
-
-  it('still counts an excerpt-backed REACH_OUT_PLAUSIBLE toward the likely tier (#1343)', () => {
-    expect(
-      canonicalAcceptanceLevelFromSignals([
-        {
-          type: 'REACH_OUT_PLAUSIBLE',
-          confidenceScore: 0.5,
-          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-          excerpt: 'Undergraduates interested in joining the lab should reach out by email.',
-        },
-      ]),
-    ).toBe('likely');
+  it('counts no retired access type toward acceptance (#4637)', () => {
+    for (const type of [
+      'REACH_OUT_PLAUSIBLE',
+      'CONTACT_INSTRUCTIONS_EXIST',
+      'FELLOWSHIP_COMPATIBLE',
+      'COURSE_CREDIT_PATHWAY',
+    ]) {
+      expect(
+        canonicalAcceptanceLevelFromSignals([
+          { type, confidenceScore: 0.9, excerpt: 'Undergraduates should reach out by email.' },
+        ]),
+      ).toBe('none');
+    }
   });
 });
 

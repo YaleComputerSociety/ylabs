@@ -22,7 +22,7 @@ const LOSER = 'example-access-merged-loser';
 const WEBSITE = 'https://examplelab.example.edu/';
 const JOIN_EXCERPT = 'A join, opportunities, or application page was found.';
 const COUNT_EXCERPT = '2 current undergraduate(s) listed';
-const INSTRUCTIONS_EXCERPT = 'Email the lab manager with a short note about your interests.';
+const PAST_EXCERPT = 'Two undergraduate alumni are listed on the lab roster.';
 
 interface SeedOptions {
   evidenceKey?: string;
@@ -106,9 +106,9 @@ const seed = async ({
       ),
       signal('CURRENT_UNDERGRADS', 'signal:CURRENT_UNDERGRADS', COUNT_EXCERPT, count._id),
       signal(
-        'CONTACT_INSTRUCTIONS_EXIST',
-        'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE',
-        INSTRUCTIONS_EXCERPT,
+        'PAST_UNDERGRADS',
+        'signal:PAST_UNDERGRADS',
+        PAST_EXCERPT,
         new mongoose.Types.ObjectId(),
       ),
     ]);
@@ -144,35 +144,31 @@ describe('an access signal the row evidence no longer derives is not served (#44
   it('serves both signals while the row evidence still derives them', async () => {
     await seed();
 
-    expect(await servedExcerpts()).toEqual(
-      [COUNT_EXCERPT, JOIN_EXCERPT, INSTRUCTIONS_EXCERPT].sort(),
-    );
+    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, JOIN_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('serves signals whose evidence sits on a row merged into this one', async () => {
     await seed({ evidenceKey: LOSER });
 
-    expect(await servedExcerpts()).toEqual(
-      [COUNT_EXCERPT, JOIN_EXCERPT, INSTRUCTIONS_EXCERPT].sort(),
-    );
+    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, JOIN_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('withholds the current-undergraduate signal once a later read counts zero', async () => {
     await seed({ undergradCount: 0 });
 
-    expect(await servedExcerpts()).toEqual([JOIN_EXCERPT, INSTRUCTIONS_EXCERPT].sort());
+    expect(await servedExcerpts()).toEqual([JOIN_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('withholds a current-undergraduate signal held only by the retired cache backfill', async () => {
     await seed({ countSourceName: 'research-entity-cache-backfill' });
 
-    expect(await servedExcerpts()).toEqual([JOIN_EXCERPT, INSTRUCTIONS_EXCERPT].sort());
+    expect(await servedExcerpts()).toEqual([JOIN_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('withholds the join-page signal when its only join page is a study-recruitment page', async () => {
     await seed({ joinPageUrl: `${WEBSITE}participate/` });
 
-    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, INSTRUCTIONS_EXCERPT].sort());
+    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('withholds the join-page signal once its evidence is superseded', async () => {
@@ -181,7 +177,7 @@ describe('an access signal the row evidence no longer derives is not served (#44
       .db!.collection('observations')
       .updateMany({ field: 'joinPageUrl' }, { $set: { superseded: true } });
 
-    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, INSTRUCTIONS_EXCERPT].sort());
+    expect(await servedExcerpts()).toEqual([COUNT_EXCERPT, PAST_EXCERPT].sort());
   });
 
   it('keeps the withheld signals stored, because they are history', async () => {

@@ -200,12 +200,8 @@ export const getEvidenceSignalLabel = (value?: string): string => {
       return 'Current undergraduate participation';
     case 'FACULTY_SUPERVISION':
       return 'Faculty supervision evidence';
-    case 'FELLOWSHIP_COMPATIBLE':
-      return 'Fellowship-compatible evidence';
     case 'CREDIT_FORMALIZATION_POSSIBLE':
       return 'Credit may be possible later';
-    case 'REACH_OUT_PLAUSIBLE':
-      return 'Profile/contact evidence';
     default:
       return titleizeValue(value) || 'Source evidence';
   }

@@ -16,6 +16,18 @@ No record combined an ended Yale employment with no current one and a current no
 So no ORCID relocation lane is built.
 A relocated lead is recorded by an operator with `yarn --cwd server research-entity:record-departure` (#3477), and an off-Yale source is reconsidered only with a measurement that finds asserted relocations it can confirm.
 
+## 2026-10-04: Five Access Signal Types Are Retired; A Lab's "No" Is Never Served (#4637)
+
+Owner decision: `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, `FELLOWSHIP_COMPATIBLE` and `COURSE_CREDIT_PATHWAY` are retired.
+Reaching out is the universal action, so a signal that only says contact is plausible, or that a contact is listed, tells a student nothing they would not do anyway.
+In a hand-labelled sample of 60 non-boilerplate lab-microsite `REACH_OUT_PLAUSIBLE` and contact excerpts, about 14 were real undergraduate invitations.
+A lab's own "not taking undergraduates" is never served, because it can deter an email that may still succeed.
+It survives only as the lane's verdict observation, and a join-page claim is minted only beside a "yes" verdict, so such a lab is never offered a "See how to get involved" button.
+`FELLOWSHIP_COMPATIBLE` restated `PAST_UNDERGRADS` from the same field.
+Course credit is retired with the rest; the department lane still records its observations, so it can return as a sourced department fact if a lane collects it at real coverage.
+The kept types are `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and `APPLICATION_FORM_EXISTS`, plus the dormant independent-study and posted-opening producers.
+Stored rows of the retired types are archived by `archive:legacy-access-signals`, and the type list no longer admits them, so no reader counts or serves one in the meantime.
+
 ## 2026-10-04: The Absence Of A Signal No Lane Collects Is Never A Reason (#4574)
 
 A gate reason, a repair task, or an operator-board blocker may record only the absence of something a lane collects.

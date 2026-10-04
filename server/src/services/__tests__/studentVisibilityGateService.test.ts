@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { accessSignalTypes } from '../../models/researchAccessTypes';
 
 const mocks = vi.hoisted(() => ({
   queueFind: vi.fn(),
@@ -20,7 +21,6 @@ import {
   isBlockingVisibilityReason,
   isStudentVisibilityGatePlanMateriallyChanged,
   normalizeStudentVisibilityGateObjectId,
-  reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
   RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
@@ -30,7 +30,6 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
-import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -1780,113 +1779,16 @@ describe('evaluateStudentVisibilityGateLeadResolution', () => {
   });
 });
 
-describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
-  const officialPageEntity = {
-    websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
-    sourceUrls: [],
-  };
-  const validReachOutSignal = {
-    type: 'REACH_OUT_PLAUSIBLE',
-    archived: false,
-    source: { url: '', evidenceIds: ['64f000000000000000000abc'], name: 'dept-faculty-roster' },
-  };
-
-  it('counts a validly-persisted REACH_OUT_PLAUSIBLE that has no http source.url', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: officialPageEntity,
-      }),
-    ).toBe(true);
-  });
-
-  it('credits a REACH_OUT_PLAUSIBLE signal as access evidence without recording a reason for it (#4574)', () => {
-    const entity = {
-      entityType: 'LAB',
-      name: 'Doe Lab',
-      websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
-      fullDescription:
-        'The Doe Lab studies catalytic reaction mechanisms with an official source-backed research description that is long enough to pass the source-backed description quality bar for this gate.',
-      shortDescription: 'Catalysis research in the Doe Lab at Yale.',
-      descriptionSource: 'official-scrape',
-    };
-    const leadMembers = [
-      { role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } },
-    ];
-
-    const withoutSignal = computeResearchEntityStudentVisibility({
-      entity,
-      leadMembers,
-      accessSignalCount: 0,
-    });
-    expect(withoutSignal.reasons).not.toContain('missing_action_evidence');
-    expect(withoutSignal.reasons).not.toContain('concrete_next_step');
-
-    const credited = reachOutPlausibleSignalCreditsActionEvidence({
-      signal: validReachOutSignal,
-      entity,
-    })
-      ? 1
-      : 0;
-    const withSignal = computeResearchEntityStudentVisibility({
-      entity,
-      leadMembers,
-      accessSignalCount: credited,
-    });
-    expect(credited).toBe(1);
-    expect(withSignal.reasons).not.toContain('missing_action_evidence');
-    expect(withSignal.reasons).not.toContain('concrete_next_step');
-    // Crediting evidence never changes the tier by itself (issue #1802):
-    // both computations land on the same tier here regardless of the signal.
-    expect(withSignal.tier).toBe(withoutSignal.tier);
-  });
-
-  it('keeps weaker or unbacked signals blocked (fail-safe)', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, type: 'NOT_CURRENTLY_AVAILABLE' },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, source: { url: '', evidenceIds: [], name: '' } },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, archived: true },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: { websiteUrl: 'https://reporter.nih.gov/project-details/1', sourceUrls: [] },
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: { websiteUrl: '', sourceUrls: [] },
-      }),
-    ).toBe(false);
-  });
-
-  it('does not double-count a REACH_OUT_PLAUSIBLE that already carries an http source.url', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: {
-          ...validReachOutSignal,
-          source: {
-            ...validReachOutSignal.source,
-            url: 'https://chemistry.yale.edu/profile/ab123',
-          },
-        },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
+describe('the access types the gate counts (#4637)', () => {
+  it('counts only the kept access types, never a retired plausibility type', () => {
+    expect([...accessSignalTypes].sort()).toEqual([
+      'APPLICATION_FORM_EXISTS',
+      'CREDIT_FORMALIZATION_POSSIBLE',
+      'CURRENT_UNDERGRADS',
+      'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+      'PAST_UNDERGRADS',
+      'POSTED_OPENING',
+    ]);
   });
 });
 

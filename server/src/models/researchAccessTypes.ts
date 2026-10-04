@@ -48,15 +48,10 @@ export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number]
 export const accessSignalTypes = [
   'POSTED_OPENING',
   'CREDIT_FORMALIZATION_POSSIBLE',
-  'COURSE_CREDIT_PATHWAY',
   'PAST_UNDERGRADS',
   'CURRENT_UNDERGRADS',
   'FACULTY_SUPERVISES_STUDENT_PROJECTS',
-  'FELLOWSHIP_COMPATIBLE',
-  'REACH_OUT_PLAUSIBLE',
   'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'NOT_CURRENTLY_AVAILABLE',
 ] as const;
 
 export type AccessSignalType = (typeof accessSignalTypes)[number];
@@ -73,7 +68,9 @@ export type AccessSignalConfidence = (typeof accessSignalConfidences)[number];
  * read path queries them. See docs/decisions.md for the measurement.
  * `LAB_MANAGER_LISTED`, `PROGRAM_MANAGER_LISTED`, `APPLICATION_ONLY`, `NO_EVIDENCE`
  * and the `RECURRING_PROGRAM` signal type were dropped the same way (#4585); none
- * was ever written.
+ * was ever written. `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST`,
+ * `NOT_CURRENTLY_AVAILABLE`, `FELLOWSHIP_COMPATIBLE` and `COURSE_CREDIT_PATHWAY`
+ * followed by owner decision (#4637); their stored rows are archived.
  */
 export const signalTypes = accessSignalTypes;
 

@@ -76,7 +76,6 @@ import {
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepartmentLabel';
 import { useConfig } from '../hooks/useConfig';
-import { DepartmentResearchContextSection } from '../components/research/DepartmentResearchContextSection';
 import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
@@ -962,7 +961,6 @@ const LabDetail = () => {
       withheldCount: 0,
     },
     accessSignals = [],
-    departmentCourseCreditRoutes = [],
     entityRelationships = [],
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
@@ -1173,8 +1171,6 @@ const LabDetail = () => {
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
           />
-
-          <DepartmentResearchContextSection routes={departmentCourseCreditRoutes} />
 
           {showDedicatedPrincipalInvestigatorSection && (
             <section>

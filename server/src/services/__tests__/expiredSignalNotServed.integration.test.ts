@@ -14,7 +14,6 @@ vi.mock('../meiliSyncService', () => ({
   deleteFromIndex: meiliMocks.deleteFromIndex,
 }));
 
-import { listDepartmentCourseCreditRoutes } from '../departmentResearchContextService';
 import { getResearchGroupDetail } from '../researchGroupService';
 
 /**
@@ -133,33 +132,5 @@ describe('a signal past its expiry is not served (#4628)', () => {
 
     expect(excerpts.some((excerpt) => excerpt.includes('closed'))).toBe(false);
     expect(excerpts.some((excerpt) => excerpt.includes('open'))).toBe(true);
-  });
-
-  it('withholds an inherited department signal past its expiry', async () => {
-    const db = mongoose.connection.db!;
-    const orgUnitId = new mongoose.Types.ObjectId();
-    await db
-      .collection('org_units')
-      .insertOne({ _id: orgUnitId, name: DEPARTMENT, archived: false });
-    const courseCreditSignal = (expiresAt: Date | undefined) => ({
-      _id: new mongoose.Types.ObjectId(),
-      orgUnitId,
-      type: 'COURSE_CREDIT_PATHWAY',
-      archived: false,
-      observedAt: new Date(Date.now() - DAY_MS),
-      value: {
-        schemaVersion: 1,
-        evidenceQuote: 'Undergraduates may earn course credit for supervised research.',
-        supportingQuoteCount: 1,
-      },
-      source: { url: 'https://example.edu/fixture-department/undergraduate-research/' },
-      ...(expiresAt ? { expiresAt } : {}),
-    });
-
-    await db.collection('signals').insertOne(courseCreditSignal(new Date(Date.now() - DAY_MS)));
-    expect(await listDepartmentCourseCreditRoutes([DEPARTMENT])).toHaveLength(0);
-
-    await db.collection('signals').insertOne(courseCreditSignal(undefined));
-    expect(await listDepartmentCourseCreditRoutes([DEPARTMENT])).toHaveLength(1);
   });
 });
