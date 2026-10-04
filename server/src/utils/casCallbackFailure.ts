@@ -7,8 +7,6 @@ export const CAS_SIGN_IN_TROUBLE_MESSAGE =
 
 export const CAS_VALIDATION_TIMEOUT_MS = 10_000;
 const MAX_CAUSE_DEPTH = 8;
-const CAS1_REJECTION_MESSAGE = 'Authentication rejected';
-const CAS1_MALFORMED_ANSWER_MESSAGE = 'The response from the server was bad';
 const REPORTABLE_LABEL = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 export class UnusableCasIdentityError extends Error {
@@ -22,6 +20,27 @@ export class CasValidationTimeoutError extends Error {
   constructor() {
     super('CAS ticket validation timed out');
     this.name = 'CasValidationTimeoutError';
+  }
+}
+
+export class CasTicketRejectedError extends Error {
+  constructor() {
+    super('CAS refused the ticket');
+    this.name = 'CasTicketRejectedError';
+  }
+}
+
+export class CasMalformedResponseError extends Error {
+  constructor() {
+    super('CAS answered the ticket validation with an unrecognised response');
+    this.name = 'CasMalformedResponseError';
+  }
+}
+
+export class CasUnreachableError extends Error {
+  constructor(detail: string, options?: { cause?: unknown }) {
+    super(`CAS ticket validation did not complete: ${detail}`, options);
+    this.name = 'CasUnreachableError';
   }
 }
 
@@ -49,13 +68,12 @@ const causeChain = (error: unknown): unknown[] => {
 };
 
 const isCasRejection = (error: unknown): boolean =>
-  error instanceof UnusableCasIdentityError ||
-  (error instanceof Error && error.message === CAS1_REJECTION_MESSAGE);
+  error instanceof UnusableCasIdentityError || error instanceof CasTicketRejectedError;
 
 const isCasUnreachable = (error: unknown): boolean =>
   error instanceof CasValidationTimeoutError ||
-  (error instanceof Error && error.message === CAS1_MALFORMED_ANSWER_MESSAGE) ||
-  (error as { isAxiosError?: unknown } | null)?.isAxiosError === true;
+  error instanceof CasMalformedResponseError ||
+  error instanceof CasUnreachableError;
 
 export const classifyCasCallbackError = (error: unknown): CasCallbackFailure => {
   const chain = causeChain(error);
@@ -78,7 +96,7 @@ const reportableLabelsOf = (error: unknown): string[] => {
 };
 
 // The original error is never reported: a duplicate-key message quotes the
-// netid and an axios error carries the validation URL with the ticket in it.
+// netid and a transport error can carry the validation URL with the ticket in it.
 export const reportableCasLoginError = (
   failure: Exclude<CasCallbackFailure, 'rejected'>,
   error: unknown,

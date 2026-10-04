@@ -63,24 +63,37 @@ Reached without a `ticket`, it is the start leg: it mints a single-use random va
 The session keeps only the five most recent pending values, so a login started in one tab still completes after a later start in another tab, and the oldest pending login is dropped once a sixth is started.
 Reached with a `ticket`, it is the callback leg: the returned value must equal one of the pending values, which is then removed, so the same callback cannot be completed twice.
 A missing or mismatched value is refused with `401` before the ticket is ever presented to CAS, and nothing about the caller's session is written, so an existing sign-in survives the refusal untouched.
-The value has to ride inside the request URL rather than beside it, because `passport-cas` derives the CAS `service` parameter from `req.originalUrl` and recomputes it when it validates the ticket, and CAS refuses a ticket whose two service URLs differ.
+The value has to ride inside the request URL rather than beside it, because the strategy derives the CAS `service` parameter from `req.originalUrl` and recomputes it when it validates the ticket, and CAS refuses a ticket whose two service URLs differ.
 That byte-level equality is the fragile part of the arrangement, so `server/src/__tests__/casLoginCallbackSessionState.test.ts` asserts it directly against a loopback CAS stand-in that, like CAS, issues a ticket for one service URL and validates it against no other.
 The return path is unchanged: `safeRedirectTarget` still decides where a completed login lands.
 
 The callback leg separates a CAS rejection from our own failure, because a student whose login broke on our side must not be told they are unauthorized (#3672).
-`classifyCasCallbackError` in `server/src/utils/casCallbackFailure.ts` walks the error's cause chain, since `passport-cas` wraps every failure, ours included, in a `VError`.
-Only CAS answering `no` to the ticket, or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
-A CAS that cannot be reached, answers with something malformed, or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds), and a database that cannot be reached, answer `503`; any other exception answers `500`.
+`classifyCasCallbackError` in `server/src/utils/casCallbackFailure.ts` classifies by error type with `instanceof` along the cause chain, never by message text, so no wording change in a dependency can move a failure between buckets.
+Only CAS answering `no` to the ticket (`CasTicketRejectedError`), or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
+A CAS that cannot be reached or answers a non-success status (`CasUnreachableError`), answers with something that is neither `yes` nor `no` (`CasMalformedResponseError`), or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds, `CasValidationTimeoutError`), and a database that cannot be reached, answer `503`; any other exception answers `500`.
+The error classes live in `casCallbackFailure.ts` beside the classifier and the strategy imports them from there, so both always hold the same class even when a test reloads one module.
 Both carry the same student-facing message asking them to try again, never redirect to the `error` page, and are reported through `captureServerError`.
 Unlike the error handler's database `503`, neither sets `Retry-After`, because the callback is a top-level browser navigation that ignores it.
-The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and an axios error carries the validation URL with the ticket in it.
+The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and a transport error can carry the validation URL with the ticket in it.
 A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
-The validation request itself is bounded by the same `CAS_VALIDATION_TIMEOUT_MS`, because the pinned `passport-cas` calls `axios.get` with no timeout and axios defaults to none (#4190).
-`boundCasServerRequests` in `server/src/utils/casValidationRequestBound.ts` adds a request interceptor, scoped to URLs under `SSOBASEURL`, that sets a timeout and an `AbortSignal.timeout` deadline, so a CAS that accepts the connection and never answers has its socket released at the deadline instead of holding one open per retry, and the late verdict never reaches the login write.
-It installs on the axios instance `passport-cas` itself requires, resolved through `casStrategyHttpClient`, because the server's ESM `import axios` and the strategy's CommonJS `require('axios')` load two different instances.
+The validation request itself is bounded by the same `CAS_VALIDATION_TIMEOUT_MS`, through an `AbortSignal.timeout` on its `fetch`, so a CAS that accepts the connection and never answers has its socket released at the deadline instead of holding one open per retry, and the late verdict never reaches the login write (#4190).
 The value is the route deadline on purpose: a CAS 1.0 validation is one small GET that answers well under a second, a shorter bound would only change which timer reports the same `503`, and a longer one would keep a socket open after the student was already asked to retry.
-Keep both bounds when #4036 replaces the package, so the bound never depends on a dependency's defaults.
+Keep both bounds, the route timer and the request signal, so neither depends on the other firing.
 `server/src/__tests__/casLoginCallbackFailures.test.ts` drives all four outcomes through the mounted app against a stub CAS.
+
+### The CAS strategy
+
+`CasStrategy` in `server/src/utils/casStrategy.ts` is the in-repo CAS 1.0 Passport strategy; it replaced the `passport-cas` git dependency (#4036).
+It extends `passport.Strategy`, so it needs no dependency beyond `passport` itself.
+`casServiceUrl` is the one function that builds the `service` URL, for the login redirect and for validation alike, so the two legs agree byte for byte.
+It takes the path and query from `req.originalUrl`, drops only `ticket`, and puts them under `SERVER_BASE_URL`, so the request can never choose the service host; the request's own origin is the fallback only where `SERVER_BASE_URL` is unset, which `resolveAuthConfig` refuses in deployed runtimes.
+The login redirect carries `service` and nothing else, so the caller's `redirect` and `error` parameters are never sent to CAS.
+`casValidateUrl` writes `ticket` and `service` with `URLSearchParams`, so a ticket containing `&` or `=` cannot add or override a parameter; the published `@coursetable/passport-cas` 0.1.4 interpolates both unencoded, which is why it was not adopted.
+CAS 1.0 `/validate` answers `yes` and the netid on two lines, or `no`, so `parseCas1ValidationResponse` needs no XML parser.
+The validation `fetch` refuses redirects, and it is the one reviewed exemption for this file in `scripts/unguardedOutboundFetchScan.mjs`, because its host is the operator-configured `SSOBASEURL` that deployed runtimes require to be public `https`.
+`presentedCasTicket` is the single test for whether a request is a callback, read by the strategy, by `casLogin`, and by `authLimiter`, so the three can never disagree about which requests spend a validation; only one non-empty string counts, so a repeated `ticket` is treated as a start.
+`server/src/utils/__tests__/casStrategy.test.ts` covers the encoding, the `yes`, `no`, and malformed answers, a non-success status, an unreachable CAS, the timeout, and service-URL equality across the two legs against a loopback stub CAS.
+`.yarnrc.yml` sets `approvedGitRepositories: []`, and `scripts/security-preflight.test.mjs` fails if any lockfile resolves a dependency from a git source.
 
 Dev login bypass:
 
