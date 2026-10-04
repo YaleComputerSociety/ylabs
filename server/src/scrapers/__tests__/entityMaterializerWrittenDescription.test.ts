@@ -254,6 +254,27 @@ describe('a written body never serves a chip echo or itself as its card (#4788 f
     expect(result.set.shortDescription).not.toBe(ONE_SENTENCE_BODY);
   });
 
+  it.each([
+    ['a stored chip echo', LONG_ONE_SENTENCE_BODY, CHIP_ECHO],
+    ['a stored body-as-card', ONE_SENTENCE_BODY, ONE_SENTENCE_BODY],
+  ])('clears %s when every fallback and both syntheses fail', async (_label, body, storedCard) => {
+    let calls = 0;
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({
+        body,
+        storedCard,
+        synthesize: async () => {
+          calls += 1;
+          return calls === 1 ? CHIP_ECHO : body;
+        },
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result.set.shortDescription).toBeUndefined();
+    expect(result.unset.shortDescription).toBe('');
+  });
+
   it('keeps a stored card already grounded in the written body without synthesizing', async () => {
     let calls = 0;
     const result = await projectFromLog(

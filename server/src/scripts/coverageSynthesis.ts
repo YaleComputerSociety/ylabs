@@ -100,7 +100,8 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
-  const projection = 'slug name entityType researchAreas recentGrants manuallyLockedFields';
+  const projection =
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME),
@@ -158,6 +159,26 @@ interface CardRederivationReport {
   error?: boolean;
 }
 
+async function cardAfterMaterialize(
+  materialized: Awaited<ReturnType<typeof materializeEntity>>,
+  storedCard: unknown,
+  applied: boolean,
+): Promise<unknown> {
+  if (!applied) {
+    if (Object.hasOwn(materialized.plannedSet ?? {}, 'shortDescription')) {
+      return materialized.plannedSet?.shortDescription;
+    }
+    return Object.hasOwn(materialized.plannedUnset ?? {}, 'shortDescription')
+      ? undefined
+      : storedCard;
+  }
+  if (typeof materialized.entityId !== 'string') return storedCard;
+  const fresh = (await ResearchEntity.findById(materialized.entityId)
+    .select('shortDescription')
+    .lean()) as { shortDescription?: unknown } | null;
+  return fresh?.shortDescription;
+}
+
 async function rederiveWrittenBodyCards(
   entities: EntityRow[],
   args: ReturnType<typeof parseCoverageSynthesisArgs>,
@@ -177,7 +198,9 @@ async function rederiveWrittenBodyCards(
         { entityKey: entity.slug },
         { ...options, dryRun: !args.apply },
       );
-      report.cardPlanned = Object.hasOwn(materialized.plannedSet ?? {}, 'shortDescription');
+      report.cardPlanned =
+        (await cardAfterMaterialize(materialized, entity.shortDescription, args.apply)) !==
+        entity.shortDescription;
       if (args.apply && typeof materialized.entityId === 'string') {
         materializedEntityIds.push(materialized.entityId);
       }

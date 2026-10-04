@@ -7984,6 +7984,18 @@ export async function projectFromLog(
         fieldsWritten++;
       } else if (choice.kind === 'derived' || choice.kind === 'synthesized') {
         groundedShortDescription = choice.card;
+      } else if (
+        choice.kind === 'none' &&
+        textValue(entityDoc?.shortDescription) &&
+        isRefusedWrittenBodyCard(
+          textValue(entityDoc?.shortDescription),
+          fullDescription,
+          set.researchAreas ?? entityDoc?.researchAreas,
+        )
+      ) {
+        unset.shortDescription = '';
+        unset['fieldProvenance.shortDescription'] = '';
+        fieldsWritten++;
       }
     } else {
       groundedShortDescription = await resolveMaterializedShortDescription({
