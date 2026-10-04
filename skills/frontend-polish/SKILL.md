@@ -83,6 +83,7 @@ The student-journey smoke holds the first programs search until the loading tile
 The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
 `ResearchProfileSkeleton` exports the profile's page, grid and column classes, and `labDetail.tsx` uses the same constants, because a reused container that changes width scored 0.093 at 1440px (#4268).
+Loading copy takes the loaded copy's shape and a control whose label swaps while it loads stacks both labels in one grid cell, because at 375px a two-line loading summary and a narrower "Searching…" button moved the `/research` results when a search resolved (#4796).
 The student-journey smoke holds the research search and the profile request until their loading states paint, then fails at a content shift of 0.01 or more, a handoff link under 44px, or a profile loading state under half the viewport.
 - A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
 Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.

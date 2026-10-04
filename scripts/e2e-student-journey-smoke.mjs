@@ -217,7 +217,7 @@ const submitSearch = async (query) => {
   await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
-    .waitForFunction(() => !document.body.innerText.includes('Searching y/labs for'), undefined, {
+    .waitForFunction(() => !document.body.innerText.includes('Searching for '), undefined, {
       timeout: 20000,
     })
     .catch(() => undefined);
