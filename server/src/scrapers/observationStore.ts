@@ -409,6 +409,7 @@ const storedCiterKey = (row: { entityId?: unknown; entityKey?: unknown }): strin
 interface ForeignDescriptionCiters {
   byUrl: Map<string, Map<string, string>>;
   canonicalKey: (key: string) => string;
+  nameOf: (key: string) => string | undefined;
 }
 
 /**
@@ -428,7 +429,11 @@ async function loadForeignDescriptionCiters(
 ): Promise<ForeignDescriptionCiters> {
   const urls = ownershipGuardedCitedUrls(inputs);
   const byUrl = new Map<string, Map<string, string>>();
-  const unresolved: ForeignDescriptionCiters = { byUrl, canonicalKey: (key) => key };
+  const unresolved: ForeignDescriptionCiters = {
+    byUrl,
+    canonicalKey: (key) => key,
+    nameOf: () => undefined,
+  };
   if (urls.length === 0) return unresolved;
 
   // Filtered by HOST and normalized in JS, never matched on the normalized string.
@@ -490,7 +495,7 @@ async function loadForeignDescriptionCiters(
     for (const key of keys) citers.set(canonicalKey(key), nameByKey.get(key) ?? '');
     byUrl.set(url, citers);
   }
-  return { byUrl, canonicalKey };
+  return { byUrl, canonicalKey, nameOf: (key) => nameByKey.get(key) };
 }
 
 const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
@@ -605,7 +610,8 @@ export async function appendObservations(
     const foreignNames = citers
       ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
       : [];
-    if (refusesDescriptionOnSharedPage({ ...obs, ownName: citers?.get(own) }, foreignNames))
+    const ownName = citers?.get(own) ?? foreignCiters.nameOf(storedCiterKey(obs));
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName }, foreignNames))
       ownershipRejected.push(obs);
     else ownedInputs.push(obs);
   }
