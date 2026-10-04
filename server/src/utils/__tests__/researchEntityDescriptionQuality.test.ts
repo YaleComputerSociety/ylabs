@@ -2747,3 +2747,20 @@ describe('fullDescriptionQuality appointment line that names research topics (#4
     ).toContain('appointment-only');
   });
 });
+
+describe('describesResearchFocus reads a page stating its work in the progressive (#4809)', () => {
+  it.each([
+    'In the Fixture Laboratory, we are developing intelligent, multifunctional materials that let soft robots adapt.',
+    'We are currently investigating how germline cells control protein translation.',
+    'Our laboratory is investigating the cellular mechanisms of cortical function.',
+    'The Fixture Center focuses research, teaching, and outreach on how resources become products.',
+  ])('accepts %s', (text) => {
+    expect(describesResearchFocus(text)).toBe(true);
+  });
+
+  it('still refuses a team description with no research verb', () => {
+    expect(describesResearchFocus('We are a friendly team located on the third floor.')).toBe(
+      false,
+    );
+  });
+});
