@@ -43,6 +43,7 @@ export interface ResearchEntityPiDedupeRow {
     fundingAgencies?: string[];
     piRoleCorroborated?: boolean;
     identitySourceUrl?: string;
+    leadPersonIds?: string[];
   }>;
 }
 
@@ -1100,6 +1101,7 @@ const PERSON_LEAD_NAME_STOPWORDS = new Set([
   'institute',
   'program',
   'faculty',
+  'yale',
 ]);
 
 /**
@@ -1447,25 +1449,39 @@ export function clusterHasConflictingLeadFirstNames(
  * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA} types (a CENTER
  * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
  */
-export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
-  rows: OfficialLabUrlDedupeRow[],
-): ResearchEntityPiDedupeGroup[] {
-  const groups: ResearchEntityPiDedupeGroup[] = [];
-  for (const row of rows) {
-    const key = specificProfileLabUrlIdentityKey(row.url);
-    if (!key) continue;
-    const entities = row.entities.filter((entity) => entity.id);
-    if (entities.length <= 1) continue;
-    if (entities.some((entity) => isFundingShellSlug(entity.slug))) continue;
-    if (
-      !entities.every((entity) =>
-        SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES.has(entity.entityType || ''),
-      )
-    ) {
-      continue;
-    }
-    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
-      const group = buildGroupFromCluster(
+export type ProfileLabUrlCandidateRefusal =
+  | 'no_identity_key'
+  | 'single_entity'
+  | 'funding_shell'
+  | 'entity_type_outside_lane'
+  | 'duplicate_adds_lead'
+  | LeadPersonClusterRefusal;
+
+export interface ProfileLabUrlCandidateRefusalRow {
+  url: string;
+  reason: ProfileLabUrlCandidateRefusal;
+}
+
+function planSpecificProfileLabUrlRow(row: OfficialLabUrlDedupeRow): {
+  groups: ResearchEntityPiDedupeGroup[];
+  refusal?: ProfileLabUrlCandidateRefusal;
+} {
+  const key = specificProfileLabUrlIdentityKey(row.url);
+  if (!key) return { groups: [], refusal: 'no_identity_key' };
+  const entities = row.entities.filter((entity) => entity.id);
+  if (entities.length <= 1) return { groups: [], refusal: 'single_entity' };
+  if (entities.some((entity) => isFundingShellSlug(entity.slug))) {
+    return { groups: [], refusal: 'funding_shell' };
+  }
+  if (
+    !entities.every((entity) => SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES.has(entity.entityType || ''))
+  ) {
+    return { groups: [], refusal: 'entity_type_outside_lane' };
+  }
+  const { clusters, refusal } = clusterEntitiesBySharedLeadPersonIdentityWithRefusal(entities);
+  const built = clusters
+    .map((cluster) =>
+      buildGroupFromCluster(
         {
           userId: `profile-lab-url:${key}`,
           normalizedName: `profile-lab-url:${key}`,
@@ -1473,21 +1489,110 @@ export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
         },
         cluster,
         specificProfileLabUrlCanonicalScore,
-      );
-      if (group) groups.push(group);
-    }
-  }
-  return dedupePlanGroupsByEntitySet(groups);
+      ),
+    )
+    .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  const groups = built.filter((group) => !mergeHandsSurvivorAnotherLead(group, byId));
+  if (refusal) return { groups, refusal };
+  return built.length > 0 && groups.length === 0
+    ? { groups, refusal: 'duplicate_adds_lead' }
+    : { groups };
 }
 
-function personLeadNameTokens(name: string | undefined): string[] {
+// The lane runs unattended, and a loser's lead the survivor does not hold is moved onto
+// the survivor by the merge, so an accountless shell of the survivor's own lead would be
+// served as a second lead. A survivor with no lead edge yet takes the loser's leads.
+function mergeHandsSurvivorAnotherLead(
+  group: ResearchEntityPiDedupeGroup,
+  byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
+): boolean {
+  const survivorLeads = new Set(byId.get(group.canonicalEntityId)?.leadPersonIds || []);
+  if (survivorLeads.size === 0) return false;
+  return group.duplicateEntityIds.some((id) =>
+    (byId.get(id)?.leadPersonIds || []).some((lead) => !survivorLeads.has(lead)),
+  );
+}
+
+export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
+  rows: OfficialLabUrlDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  return dedupePlanGroupsByEntitySet(
+    rows.flatMap((row) => planSpecificProfileLabUrlRow(row).groups),
+  );
+}
+
+/**
+ * Every candidate URL the lane planned nothing for, with the one rule that refused it,
+ * so a dry run says why a shared lab page stays two rows rather than reporting only the
+ * groups it would merge (#4791).
+ */
+export function explainSpecificProfileLabUrlRefusals(
+  rows: OfficialLabUrlDedupeRow[],
+): ProfileLabUrlCandidateRefusalRow[] {
+  return rows.flatMap((row) => {
+    const { groups, refusal } = planSpecificProfileLabUrlRow(row);
+    return groups.length === 0 && refusal ? [{ url: row.url, reason: refusal }] : [];
+  });
+}
+
+const NAME_CREDENTIAL_AFTER_COMMA =
+  /,\s*(?:ph\.?\s?d|m\.?\s?d|m\.?p\.?h|b\.?s|b\.?a|m\.?sc?|m\.?b\.?a|m\.?a|d\.?v\.?m|r\.?n|d\.?o|d\.?d\.?s|sc\.?d|ed\.?d|j\.?d|jr|sr|ii|iii|iv)\.?(?=[\s,]|$)/gi;
+
+const PARENTHETICAL = /\(([^)]*)\)/g;
+
+const MIN_ALIAS_SURNAME_LENGTH = 3;
+
+function foldedPersonName(name: string | undefined): string {
   return (name || '')
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, ' ')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(NAME_CREDENTIAL_AFTER_COMMA, ' ')
+    .toLowerCase();
+}
+
+function nameTokens(text: string): string[] {
+  return text
     .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .filter((token) => !PERSON_LEAD_NAME_STOPWORDS.has(token));
+}
+
+function personLeadNameTokens(name: string | undefined): string[] {
+  return nameTokens(foldedPersonName(name).replace(PARENTHETICAL, ' '));
+}
+
+// "Quantitative Imaging Data Lab (QUID Lab)" is also listed as "QUID Lab".
+function personLeadNameAliasTokens(name: string | undefined): string[][] {
+  return Array.from(foldedPersonName(name).matchAll(PARENTHETICAL))
+    .map((match) => nameTokens(match[1]))
+    .filter(
+      (tokens) => tokens.length > 0 && tokens[tokens.length - 1].length >= MIN_ALIAS_SURNAME_LENGTH,
+    );
+}
+
+function firstNameTokenCompatible(token: string, others: ReadonlySet<string>): boolean {
+  if (others.has(token)) return true;
+  for (const other of others) {
+    if (token.length === 1 && other.startsWith(token)) return true;
+    if (other.length === 1 && token.startsWith(other)) return true;
+  }
+  return false;
+}
+
+function leadNameTokensAgree(tokensA: string[], tokensB: string[]): boolean {
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+  if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) return false;
+  const firstNamesA = new Set(tokensA.slice(0, -1));
+  const firstNamesB = new Set(tokensB.slice(0, -1));
+  if (firstNamesA.size === 0 || firstNamesB.size === 0) return true;
+  const [smaller, larger] =
+    firstNamesA.size <= firstNamesB.size ? [firstNamesA, firstNamesB] : [firstNamesB, firstNamesA];
+  for (const token of smaller) {
+    if (!firstNameTokenCompatible(token, larger)) return false;
+  }
+  return true;
 }
 
 /**
@@ -1502,31 +1607,39 @@ export function entitiesShareLeadPersonName(
   a: ResearchEntityPiDedupeRow['entities'][number],
   b: ResearchEntityPiDedupeRow['entities'][number],
 ): boolean {
-  const tokensA = personLeadNameTokens(a.name);
-  const tokensB = personLeadNameTokens(b.name);
-  if (tokensA.length === 0 || tokensB.length === 0) return false;
-  if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) return false;
-
-  const firstNamesA = new Set(tokensA.slice(0, -1));
-  const firstNamesB = new Set(tokensB.slice(0, -1));
-  if (firstNamesA.size === 0 || firstNamesB.size === 0) return true;
-  const [smaller, larger] =
-    firstNamesA.size <= firstNamesB.size ? [firstNamesA, firstNamesB] : [firstNamesB, firstNamesA];
-  for (const token of smaller) {
-    if (!larger.has(token)) return false;
-  }
-  return true;
+  const variantsA = [personLeadNameTokens(a.name), ...personLeadNameAliasTokens(a.name)];
+  const variantsB = [personLeadNameTokens(b.name), ...personLeadNameAliasTokens(b.name)];
+  return variantsA.some((tokensA) =>
+    variantsB.some((tokensB) => leadNameTokensAgree(tokensA, tokensB)),
+  );
 }
 
+const leadPersonSetKey = (entity: ResearchEntityPiDedupeRow['entities'][number]): string =>
+  Array.from(new Set(entity.leadPersonIds || []))
+    .sort()
+    .join(',');
+
+// A topical lab name ("BEACON Lab") yields no surname to compare a person slug
+// against, so the slug check alone refused every such pair. Holding exactly the same
+// leads as another row is the identity the slug check stands in for, and it still
+// refuses a member's row that adds its own lead beside the lab's (#4791).
 function dropClusterMembersWhoseSlugNamesAnotherPerson(
   cluster: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'] {
   const identitySurname = sharedNameSurname(cluster);
   return cluster.filter((entity) => {
     const personSurname = slugPersonSurname(entity.slug);
-    return !personSurname || personSurname === identitySurname;
+    if (!personSurname || personSurname === identitySurname) return true;
+    const leads = leadPersonSetKey(entity);
+    return (
+      leads !== '' &&
+      cluster.some((other) => other.id !== entity.id && leadPersonSetKey(other) === leads)
+    );
   });
 }
+
+export type LeadPersonClusterRefusal =
+  'lead_names_disagree' | 'conflicting_lead_first_names' | 'slug_names_another_person';
 
 /**
  * Every URL-keyed lane merges on the same claim - these rows are one person's
@@ -1539,6 +1652,15 @@ function dropClusterMembersWhoseSlugNamesAnotherPerson(
 function clusterEntitiesBySharedLeadPersonIdentity(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'][] {
+  return clusterEntitiesBySharedLeadPersonIdentityWithRefusal(entities).clusters;
+}
+
+function clusterEntitiesBySharedLeadPersonIdentityWithRefusal(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): {
+  clusters: ResearchEntityPiDedupeRow['entities'][];
+  refusal?: LeadPersonClusterRefusal;
+} {
   const parent = new Map<string, string>();
   const byId = new Map(entities.map((entity) => [entity.id, entity]));
   for (const entity of entities) parent.set(entity.id, entity.id);
@@ -1568,11 +1690,16 @@ function clusterEntitiesBySharedLeadPersonIdentity(
     const root = find(id);
     components.set(root, [...(components.get(root) || []), byId.get(id)!]);
   }
-  return Array.from(components.values())
-    .filter((cluster) => cluster.length > 1)
-    .filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster))
+  const unioned = Array.from(components.values()).filter((cluster) => cluster.length > 1);
+  if (unioned.length === 0) return { clusters: [], refusal: 'lead_names_disagree' };
+  const unconflicted = unioned.filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster));
+  if (unconflicted.length === 0) {
+    return { clusters: [], refusal: 'conflicting_lead_first_names' };
+  }
+  const clusters = unconflicted
     .map(dropClusterMembersWhoseSlugNamesAnotherPerson)
     .filter((cluster) => cluster.length > 1);
+  return clusters.length > 0 ? { clusters } : { clusters, refusal: 'slug_names_another_person' };
 }
 
 /**

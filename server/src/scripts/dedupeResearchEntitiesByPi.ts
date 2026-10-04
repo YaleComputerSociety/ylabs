@@ -25,6 +25,7 @@ import {
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
@@ -35,6 +36,7 @@ import {
   planStrandedFundingObservationRelink,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
+  type ProfileLabUrlCandidateRefusalRow,
   type OrgNameDedupeEntity,
   type ResearchEntityPiDedupeRow,
   type SameNameDifferentPersonQuarantine,
@@ -80,7 +82,10 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import {
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEAD_ROLE_LEGACY_LABELS,
+} from '../models/canonicalRoleMapping';
 import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -497,6 +502,15 @@ export interface UrlIdentityDedupeStageDelta {
   canonicalEntitiesResynced: number;
   canonicalIndexSyncFailures: number;
   maxApply: number;
+  refusedCandidatesByReason?: Record<string, number>;
+}
+
+export function countProfileLabUrlRefusalsByReason(
+  refusals: readonly ProfileLabUrlCandidateRefusalRow[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const refusal of refusals) counts[refusal.reason] = (counts[refusal.reason] ?? 0) + 1;
+  return counts;
 }
 
 /**
@@ -539,6 +553,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   canonicalEntitiesResynced: number;
   canonicalIndexSyncFailures: number;
   maxApply: number;
+  refusedCandidatesByReason?: Record<string, number>;
 }): UrlIdentityDedupeStageDelta {
   const deferrals = countResearchEntityDedupeApplyDeferrals(input.applied);
   const sumApplied = (read: (result: (typeof input.applied)[number]) => unknown): number =>
@@ -559,6 +574,9 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     canonicalEntitiesResynced: input.canonicalEntitiesResynced,
     canonicalIndexSyncFailures: input.canonicalIndexSyncFailures,
     maxApply: input.maxApply,
+    ...(input.refusedCandidatesByReason
+      ? { refusedCandidatesByReason: input.refusedCandidatesByReason }
+      : {}),
   };
 }
 
@@ -1453,10 +1471,46 @@ async function loadSpecificProfileLabUrlCandidateRows(
     }
   }
 
-  return Array.from(byKey.values())
+  const candidates = Array.from(byKey.values())
     .filter((row) => row.entities.length > 1)
     .sort((a, b) => a.url.localeCompare(b.url))
     .slice(0, limit);
+  return attachLeadPersonIds(candidates);
+}
+
+async function attachLeadPersonIds(
+  rows: OfficialLabUrlDedupeRow[],
+): Promise<OfficialLabUrlDedupeRow[]> {
+  const entityIds = Array.from(
+    new Set(rows.flatMap((row) => row.entities.map((entity) => entity.id))),
+  )
+    .map((id) => objectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  if (entityIds.length === 0) return rows;
+  const edges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+    role: { $in: [...LEAD_ROLE_CANONICAL_VALUES] },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+    personId: { $exists: true, $ne: null },
+  })
+    .select('target.id personId')
+    .lean()) as unknown as Array<{ target?: { id?: unknown }; personId?: unknown }>;
+  const leadsByEntity = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const entityId = String(edge.target?.id ?? '');
+    const leads = leadsByEntity.get(entityId) ?? new Set<string>();
+    leads.add(String(edge.personId));
+    leadsByEntity.set(entityId, leads);
+  }
+  return rows.map((row) => ({
+    ...row,
+    entities: row.entities.map((entity) => ({
+      ...entity,
+      leadPersonIds: Array.from(leadsByEntity.get(entity.id) ?? []).sort(),
+    })),
+  }));
 }
 
 async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEntity[]> {
@@ -2875,6 +2929,9 @@ async function main() {
         : websiteUrlOnly
           ? websiteUrlRows
           : piRows;
+  const profileLabUrlRefusals = profileLabUrlOnly
+    ? explainSpecificProfileLabUrlRefusals(profileLabUrlRows)
+    : [];
   const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
     ? buildSameNameDifferentPersonQuarantine(piRows)
     : [];
@@ -3068,6 +3125,12 @@ async function main() {
     ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+    ...(profileLabUrlOnly
+      ? {
+          refusedCandidatesByReason: countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),
+          refusedCandidates: profileLabUrlRefusals,
+        }
+      : {}),
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
@@ -3106,6 +3169,12 @@ async function main() {
             canonicalEntitiesResynced,
             canonicalIndexSyncFailures,
             maxApply,
+            ...(profileLabUrlOnly
+              ? {
+                  refusedCandidatesByReason:
+                    countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),
+                }
+              : {}),
           }),
         }
       : {}),
