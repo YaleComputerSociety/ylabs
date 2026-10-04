@@ -6,17 +6,13 @@ import {
   MAX_COVERAGE_SNIPPET_CHARS,
   type CoverageSnippet,
 } from '../scrapers/coverageSynthesis';
+import { GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
 
 export const GRANT_CORPUS_SYNTHESIS_SOURCE_NAME = 'grant-corpus-synthesis-llm';
 
 export const GRANT_CORPUS_DESCRIPTION_CONFIDENCE = 0.45;
 
-export const GRANT_SOURCE_NAMES = new Set([
-  'nih-reporter',
-  'nsf-award-search',
-  'neh-funded-projects',
-  'doe-osti',
-]);
+export const GRANT_SOURCE_NAMES: ReadonlySet<string> = new Set(GRANT_LANE_SOURCE_NAMES);
 
 export const DEFAULT_GRANT_CORPUS_SYNTHESIS_LIMIT = 25;
 

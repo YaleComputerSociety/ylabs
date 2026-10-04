@@ -31,7 +31,7 @@ describe('grant-lane source names', () => {
     expect([...NON_ORGANIZATION_ASSERTING_LANES]).toEqual([...GRANT_LANE_SOURCE_NAMES]);
   });
 
-  it('leaves no grant-source list elsewhere naming an unregistered scraper', () => {
-    expect(unregistered(GRANT_SOURCE_NAMES)).toEqual([]);
+  it('is the list grant corpus synthesis reads its evidence from', () => {
+    expect([...GRANT_SOURCE_NAMES].sort()).toEqual([...GRANT_LANE_SOURCE_NAMES].sort());
   });
 });
