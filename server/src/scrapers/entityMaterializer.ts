@@ -140,7 +140,10 @@ import {
   planStoredTextNormalization,
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
-import { planFellowshipClassification } from './fellowshipClassificationDerivation';
+import {
+  FELLOWSHIP_DESCRIPTION_FIELDS,
+  planFellowshipClassification,
+} from './fellowshipClassificationDerivation';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   FUND_AUTHORITY_FIELDS,
@@ -659,7 +662,6 @@ const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'shortDescription',
   'description',
 ]);
-const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
 export const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
 const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
 
