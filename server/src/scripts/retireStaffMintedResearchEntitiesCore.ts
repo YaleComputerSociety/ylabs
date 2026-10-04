@@ -328,3 +328,48 @@ export function summarizeStaffMintedEntityRefusals(
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;
 }
+
+export interface SoleLeadRecord {
+  profileLinks?: unknown;
+  title?: unknown;
+}
+
+/**
+ * The identity a row minted from a shared roster listing borrows from the one person on it.
+ * A listing names many people, so it cannot say whose title applies; the sole person with a
+ * live edge on the row can, through their own single verified primary page. That page's live
+ * titles decide, and the person's stored title stands in only when the page has none. Two or
+ * more people on the row, or a lead with no single verified primary page, leaves no identity.
+ */
+export function soleLeadIdentityFor(input: {
+  mintUrl: unknown;
+  rolePersonIds: readonly string[];
+  leadById: ReadonlyMap<string, SoleLeadRecord>;
+  observedTitlesByUrl: ReadonlyMap<string, ReadonlySet<string>>;
+}): { url: string; titles: string[]; personIds: string[] } | undefined {
+  if (typeof input.mintUrl !== 'string' || !isSharedPeopleRosterUrl(input.mintUrl))
+    return undefined;
+  const people = [...new Set(input.rolePersonIds)];
+  if (people.length !== 1) return undefined;
+  const lead = input.leadById.get(people[0]);
+  const links = Array.isArray(lead?.profileLinks) ? (lead.profileLinks as unknown[]) : [];
+  const primary = links.filter((link): link is Record<string, unknown> => {
+    if (!link || typeof link !== 'object') return false;
+    const record = link as Record<string, unknown>;
+    return (
+      record.kind === 'YALE_OFFICIAL' &&
+      record.purpose === 'PRIMARY_IDENTITY' &&
+      Boolean(record.verifiedAt) &&
+      isPersonProfileIdentityUrl(record.url)
+    );
+  });
+  if (primary.length !== 1) return undefined;
+  const url = String(primary[0].url);
+  const observed = [...(input.observedTitlesByUrl.get(url) ?? [])];
+  const stored = typeof lead?.title === 'string' ? lead.title.trim() : '';
+  return {
+    url,
+    titles: observed.length > 0 ? observed : stored ? [stored] : [],
+    personIds: people,
+  };
+}

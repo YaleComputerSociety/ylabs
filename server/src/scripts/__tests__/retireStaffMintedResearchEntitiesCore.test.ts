@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isPersonProfileIdentityUrl,
   planStaffMintedEntityRetirement,
+  soleLeadIdentityFor,
   staffMintedEntityReasonFor,
   summarizeStaffMintedEntityRefusals,
   type StaffMintedEntityCandidate,
@@ -323,5 +324,72 @@ describe('planStaffMintedEntityRetirement', () => {
   it('records a row that is not served as planned but not served', () => {
     const plan = planStaffMintedEntityRetirement([candidate({ tier: 'needs_review' })]);
     expect(plan.toArchive[0].wasServed).toBe(false);
+  });
+});
+
+describe('soleLeadIdentityFor', () => {
+  const roster = 'https://dept.example.edu/people/faculty';
+  const page = 'https://dept.example.edu/profile/p-3001/';
+  const verified = {
+    kind: 'YALE_OFFICIAL',
+    purpose: 'PRIMARY_IDENTITY',
+    url: page,
+    verifiedAt: new Date(),
+  };
+  const lead = (over: Record<string, unknown> = {}) =>
+    new Map([
+      ['p'.repeat(24), { profileLinks: [verified], title: 'Research Associate 3', ...over }],
+    ]);
+  const borrow = (over: Record<string, unknown> = {}) =>
+    soleLeadIdentityFor({
+      mintUrl: roster,
+      rolePersonIds: ['p'.repeat(24)],
+      leadById: lead(),
+      observedTitlesByUrl: new Map(),
+      ...over,
+    });
+
+  it('borrows the sole lead page and stored title for a row minted from a shared listing', () => {
+    expect(borrow()).toEqual({
+      url: page,
+      titles: ['Research Associate 3'],
+      personIds: ['p'.repeat(24)],
+    });
+  });
+
+  it('prefers the live titles observed on the lead page over the stored title', () => {
+    expect(
+      borrow({ observedTitlesByUrl: new Map([[page, new Set(['Professor of Fixtures'])]]) })!
+        .titles,
+    ).toEqual(['Professor of Fixtures']);
+  });
+
+  it('borrows nothing for two people, an unverified page, or a mint citation that is not a shared listing', () => {
+    expect(borrow({ rolePersonIds: ['p'.repeat(24), 'q'.repeat(24)] })).toBeUndefined();
+    expect(
+      borrow({ leadById: lead({ profileLinks: [{ ...verified, verifiedAt: undefined }] }) }),
+    ).toBeUndefined();
+    expect(borrow({ mintUrl: page })).toBeUndefined();
+  });
+
+  it('feeds the same unanimity and yields as an observed title', () => {
+    const borrowed = borrow()!;
+    const plan = planStaffMintedEntityRetirement([
+      candidate({
+        identityProfileUrl: borrowed.url,
+        storedTitles: borrowed.titles,
+        identityPersonIds: borrowed.personIds,
+        roleEdgePersonIds: borrowed.personIds,
+      }),
+    ]);
+    expect(plan.toArchive.map((entry) => entry.reason)).toEqual(['non_hosting_trainee_title']);
+    const professor = borrow({
+      leadById: lead({ title: 'Associate Professor and Research Associate' }),
+    })!;
+    expect(
+      planStaffMintedEntityRetirement([
+        candidate({ identityProfileUrl: professor.url, storedTitles: professor.titles }),
+      ]).toArchive,
+    ).toEqual([]);
   });
 });

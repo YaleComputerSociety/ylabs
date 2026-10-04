@@ -2011,6 +2011,11 @@ A postdoc who also holds a lecturer or professor appointment keeps the row, beca
 Clinical fellows, residents, staff affiliates, postgraduate associates and research fellows await a ruling and stay out of the population, alone or beside a ruled rank.
 The pass reports the class as `non_hosting_trainee_title`.
 
+A row minted from a shared roster listing (`isSharedPeopleRosterUrl`) has no page about one person, so it used to refuse as `no-identity-profile-url` whatever its lead's rank.
+When exactly one person holds a live edge on such a row and that person has exactly one verified official primary page, the pass borrows that page as the identity (`soleLeadIdentityFor`): the page's live title observations decide, and the person's stored `profile.title` stands in only when the page has none.
+Every floor then applies unchanged, so the same unanimity, faculty yield, foreign-website and foreign-role-edge refusals hold.
+Measured on Development on 2026-10-04, the fallback reaches 877 rows and plans 54 archives: 30 administrative staff, 3 support staff, and 21 trainee ranks, 2 of them served.
+
 Student titles need no such ordering, because they have their own predicate (#4654).
 `isStudentTitle` matches a stated enrollment in, or graduation from, a degree programme (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `Master's Student`, a bare `IDE Alumni`), and no `FACULTY_KEYWORDS` entry spells any of them, so the hyphen problem cannot arise.
 The pass reports them as `student_title`, after the same whole-title faculty yield, and only when `titleResearchOwnership` does not read the title as owning research and the title names no administrative head noun (director, dean, chair, chief, head, manager, coordinator, advisor) anywhere, so a dean or director who serves students is never archived as one.
