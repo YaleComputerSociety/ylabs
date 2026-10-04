@@ -441,6 +441,24 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
       expect(emitted.some((obs) => obs.field === 'sourceContentHash')).toBe(false);
     });
+
+    it('does not count a failed shortening retry as a failed card call (#4809)', async () => {
+      const longGroundedCard =
+        'Studies the biology of aging and the ways that metabolism shapes lifespan across species, using a range of experimental systems from yeast to zebrafish that continue to expand while training the next generation of scientists in the lab.';
+      const loadStored = vi
+        .spyOn(contentHashGate, 'loadStoredLaneDescription')
+        .mockResolvedValue(researchProse);
+      const callCardLLM = vi
+        .fn<CardSynthesisLLMFn>()
+        .mockResolvedValueOnce(longGroundedCard)
+        .mockRejectedValueOnce(new Error('429 rate limited'));
+      const { ctx, emitted } = makeContext();
+      await cardlessScraper(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledTimes(2);
+      expect(emitted.find((obs) => obs.field === 'shortDescription')?.value).toBe(longGroundedCard);
+      expect(loadStored).toHaveBeenCalled();
+    });
   });
 
   it('description extractor: card model change re-extracts the same unchanged page', async () => {

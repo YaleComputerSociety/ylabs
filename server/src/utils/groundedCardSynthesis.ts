@@ -644,7 +644,7 @@ export interface CardSynthesisLLMInput {
 /**
  * Whether a card line shows whole on the browse card, which ends at the last
  * whole sentence within 200 characters and otherwise cuts mid-sentence with "…".
- * A one-sentence line past that limit is what put "…" on 1,645 of 3,367 served
+ * A one-sentence line past that limit is what put "…" on 1,649 of 3,367 served
  * Development cards on 2026-10-04 (#4809).
  */
 export function cardLineFitsBrowseCard(card: unknown): boolean {

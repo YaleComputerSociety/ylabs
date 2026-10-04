@@ -1978,7 +1978,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         try {
           return await this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel });
         } catch (error) {
-          cardCallFailed = true;
+          if (!llmInput.previousAttempt) cardCallFailed = true;
           throw error;
         }
       },

@@ -66,19 +66,47 @@ describe('card lines that show whole on the browse card (#4809)', () => {
     ).toBe(LONG_CARD);
   });
 
-  it('replaces a stored card the browse card cuts only with a line that shows whole', async () => {
+  it('reconsiders a stored card the browse card cuts without card synthesis on a routine pass', async () => {
+    const synthesize = vi.fn().mockResolvedValue(FITTING_CARD);
+
+    expect(
+      await resolveMaterializedShortDescription({
+        fullDescription: LONG_LEAD_FULL,
+        currentShortDescription: LONG_CARD,
+        synthesize,
+      }),
+    ).toBeNull();
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  it('replaces a stored card the browse card cuts only with a line that shows whole when resynthesis is asked for', async () => {
     const replaced = await resolveMaterializedShortDescription({
       fullDescription: LONG_LEAD_FULL,
       currentShortDescription: LONG_CARD,
+      resynthesizeCutCards: true,
       synthesize: () => Promise.resolve(FITTING_CARD),
     });
     const kept = await resolveMaterializedShortDescription({
       fullDescription: LONG_LEAD_FULL,
       currentShortDescription: LONG_CARD,
+      resynthesizeCutCards: true,
       synthesize: () => Promise.resolve(''),
     });
 
     expect(replaced).toBe(FITTING_CARD);
     expect(kept).toBeNull();
+  });
+
+  it('still synthesizes a first card when the stored card is empty', async () => {
+    const synthesize = vi.fn().mockResolvedValue(FITTING_CARD);
+
+    expect(
+      await resolveMaterializedShortDescription({
+        fullDescription: LONG_LEAD_FULL,
+        currentShortDescription: '',
+        synthesize,
+      }),
+    ).toBe(FITTING_CARD);
+    expect(synthesize).toHaveBeenCalledTimes(1);
   });
 });

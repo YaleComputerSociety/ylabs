@@ -20,6 +20,7 @@ export interface RematerializeResearchEntitiesArgs {
   foreignContact: boolean;
   unbackedResearchAreas: boolean;
   accessSignals: boolean;
+  resynthesizeCutCards: boolean;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -134,6 +135,7 @@ export function parseRematerializeResearchEntitiesArgs(
     foreignContact: false,
     unbackedResearchAreas: false,
     accessSignals: false,
+    resynthesizeCutCards: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -171,6 +173,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--access-signals') {
       args.accessSignals = true;
+      continue;
+    }
+    if (arg === '--resynthesize-cut-cards') {
+      args.resynthesizeCutCards = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {

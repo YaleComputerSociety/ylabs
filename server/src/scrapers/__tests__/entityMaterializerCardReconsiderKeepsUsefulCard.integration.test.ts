@@ -42,6 +42,12 @@ const DISTINCT_ONCOLOGY_BODY =
 const SCRAPED_CARD_WITH_PARENTHETICAL_EXAMPLE =
   'Clinical research in solid tumors, focusing on early-phase trials and the development of novel therapies (e.g., enzyme inhibitors, immunotherapy) and the tumor DNA dynamics measured in patients during treatment.';
 
+const LONG_LEAD_BODY =
+  'The lab investigates how regulatory T cells, T cell anergy, and tolerogenic antigen-presenting cells shape immune responses in cancer, autoimmunity, transplantation, and reproductive health using genetic, biochemical, chemical biology, sequencing, and translational models. Ongoing projects test new ways to restore tolerance in patients.';
+
+const FITTING_SYNTHESIZED_CARD =
+  'Investigates how regulatory T cells and tolerogenic antigen-presenting cells shape immune responses in cancer and autoimmunity.';
+
 const LAB_KEY = 'card-reconsider-keeps-useful-card-fixture';
 
 type PersistedEntity = Record<string, unknown> & {
@@ -169,5 +175,49 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
     }
     expect(cardLineFitsBrowseCard(served.servedCard)).toBe(true);
     expect(served.servedCard).not.toBe(SCRAPED_CARD_WITH_PARENTHETICAL_EXAMPLE);
+  });
+
+  describe('a stored card the browse card cuts (#4809)', () => {
+    const storedCutCard = deriveShortDescriptionFromFullDescription(LONG_LEAD_BODY);
+    const materializeCounting = (options: { resynthesizeCutCards?: boolean }) => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+      return {
+        synthesizeCardDescription,
+        run: () =>
+          materializeEntity(
+            'researchEntity',
+            { entityKey: LAB_KEY },
+            { synthesizeCardDescription, ...options },
+          ),
+      };
+    };
+
+    beforeEach(async () => {
+      expect(cardLineFitsBrowseCard(storedCutCard)).toBe(false);
+      await seedLab(storedCutCard);
+      await seedObservation('fullDescription', LONG_LEAD_BODY);
+    });
+
+    it('is left alone by a routine materialize, which makes no card synthesis call', async () => {
+      const { synthesizeCardDescription, run } = materializeCounting({});
+
+      await run();
+
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(storedCutCard);
+    });
+
+    it('is replaced by a synthesized line that fits when resynthesis is asked for', async () => {
+      const { synthesizeCardDescription, run } = materializeCounting({
+        resynthesizeCutCards: true,
+      });
+
+      await run();
+
+      expect(synthesizeCardDescription).toHaveBeenCalled();
+      const stored = (await persisted())?.shortDescription;
+      expect(stored).toBe(FITTING_SYNTHESIZED_CARD);
+      expect(cardLineFitsBrowseCard(stored)).toBe(true);
+    });
   });
 });

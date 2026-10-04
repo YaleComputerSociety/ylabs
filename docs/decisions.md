@@ -19,6 +19,8 @@ Card synthesis asks for at most 190 characters and retries once with its own lon
 The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
 `lab-microsite-description-llm` keys its content hash on that file's hash, so editing it would have invalidated every stored hash for the lane and re-run its LLM extraction over every row on the next sweep, about 2,500 calls, to change only the card.
 The stored cards change through a targeted rematerialize of the cut rows instead.
+A routine materialize reconsiders a cut card with the deterministic derivation only, because a synthesis that yields no fitting line writes nothing and would repeat its LLM calls on every later materialize of the row.
+Card synthesis for a cut card is opt-in through `--resynthesize-cut-cards`: `yarn --cwd server research-entity:rematerialize --slugs=<rows whose browse card is cut> --resynthesize-cut-cards --apply --confirm-rematerialize`.
 
 ## 2026-10-04: Evidence Is Input To The Description, And One Writer Writes Every Description (#4788)
 
