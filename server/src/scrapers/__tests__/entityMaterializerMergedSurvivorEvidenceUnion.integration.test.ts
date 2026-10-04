@@ -590,6 +590,37 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     });
   });
 
+  it('keeps the survivor own body against relinked loser prose filed under the survivor id (#4741)', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await seedObservation(
+      'example-lead-lab',
+      'fullDescription',
+      'The lab studies how hippocampal circuits encode spatial memory in behaving animals, combining two-photon imaging with closed-loop behavioral tasks to test how place cells stabilize.',
+      'ysm-faculty-directory',
+      { sourceUrl: 'https://examplelead-lab.yale.edu/' },
+    );
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityId: survivor._id,
+      entityKey: 'ysm-faculty-example-lead',
+      field: 'fullDescription',
+      value:
+        'The lab studies kidney epithelial ion transport and how its failure drives cyst growth in polycystic kidney disease, using patient-derived organoids and mouse models to test targeted therapies.',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: 'https://examplelead.yale.edu/',
+      confidence: 0.95,
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+      superseded: false,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const stored = await ResearchEntity.findById(survivor._id).lean<{ fullDescription?: string }>();
+
+    expect(stored?.fullDescription ?? '').toContain('hippocampal');
+    expect(stored?.fullDescription ?? '').not.toContain('kidney');
+  });
+
   it('does not pair a loser body with the survivor own card', async () => {
     const survivor = await seedMerge('ysm-faculty-example-lead');
     await seedObservation(

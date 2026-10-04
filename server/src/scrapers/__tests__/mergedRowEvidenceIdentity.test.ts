@@ -32,6 +32,26 @@ describe('mergedRowEvidenceIdentity', () => {
     ).toBeUndefined();
   });
 
+  it('attributes relinked prose filed under the row id and a merged-in key to that merged-in row (#4741)', () => {
+    const relinked = { entityId: rowId, entityKey: 'synthetic-merged-row' };
+    expect(evidenceMemberOf(identity, { ...relinked, field: 'shortDescription' })).toBe(
+      evidenceMemberOf(identity, { entityId: mergedInId }),
+    );
+    expect(mergedInMemberOf(identity, { ...relinked, field: 'fullDescription' })?.slug).toBe(
+      'synthetic-merged-row',
+    );
+  });
+
+  it('keeps a relinked identity field such as the name with the row (#4741)', () => {
+    expect(
+      evidenceMemberOf(identity, {
+        entityId: rowId,
+        entityKey: 'synthetic-merged-row',
+        field: 'name',
+      }),
+    ).toBe(identity.rowMember);
+  });
+
   it('reports which merged-in row an observation came from and nothing for the row itself', () => {
     expect(mergedInMemberOf(identity, { entityKey: 'synthetic-merged-row' })?.slug).toBe(
       'synthetic-merged-row',

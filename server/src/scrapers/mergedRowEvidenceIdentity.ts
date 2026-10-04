@@ -10,7 +10,22 @@ export interface MergedRowEvidenceSubject {
 export interface MergedRowEvidenceObservation {
   entityId?: unknown;
   entityKey?: unknown;
+  field?: unknown;
 }
+
+/**
+ * The prose fields whose origin a merge's `entityId` relink must not change. #3584 lets a
+ * merged-in row's prose only fill a survivor that holds none, but the merge relink re-points
+ * an observation's `entityId` at the survivor, so another page's card and body read as the
+ * survivor's own and out-voted it (#4741). Only prose is scoped: for the name and website the
+ * relinked observation is usually the lab page's own identity evidence, and attributing it to
+ * the merged-in row measurably lost better names.
+ */
+export const RELINK_ORIGIN_ATTRIBUTED_FIELDS: ReadonlySet<string> = new Set([
+  'description',
+  'shortDescription',
+  'fullDescription',
+]);
 
 export type MergedInRowRef = Pick<MergedInResearchEntityRow, '_id' | 'slug'>;
 
@@ -61,14 +76,27 @@ export function mergedRowEvidenceIdentity(
 /**
  * The member row an observation was filed under. An observation anchored to an id belongs to
  * that id alone, so a shared or re-minted slug cannot borrow another row's evidence (#1131).
+ * A prose observation anchored to the row's own id under a merged-in row's key is the one
+ * exception: the key names the page it was read from, and that row is already merged into
+ * this one, so attributing it there changes only its precedence, never its reach (#4741).
  */
 export function evidenceMemberOf(
   identity: MergedRowEvidenceIdentity,
   observation: MergedRowEvidenceObservation,
 ): string | undefined {
   const entityId = serializedDocumentId(observation.entityId);
-  if (entityId) return identity.memberByEntityId.get(entityId);
   const entityKey = slugText(observation.entityKey);
+  if (entityId) {
+    const idMember = identity.memberByEntityId.get(entityId);
+    if (
+      idMember !== identity.rowMember ||
+      !entityKey ||
+      !RELINK_ORIGIN_ATTRIBUTED_FIELDS.has(String(observation.field ?? ''))
+    ) {
+      return idMember;
+    }
+    return identity.memberByEntityKey.get(entityKey) ?? idMember;
+  }
   return entityKey ? identity.memberByEntityKey.get(entityKey) : undefined;
 }
 
