@@ -242,4 +242,20 @@ describe('lockedNeverBackedProvenanceFields', () => {
     });
     expect(fields).toEqual(['shortDescription']);
   });
+
+  it('names a locked field whose entry credits a grant lane for a field grants may not assert, even with an observation id', async () => {
+    const sourceObservedField = vi.fn(async () => true);
+    const grant = { sourceName: 'nih-reporter', observationId: 'synthetic-observation' };
+    const fields = await lockedNeverBackedProvenanceFields({
+      stored: {
+        _id: 'synthetic-id',
+        slug: 'synthetic-row',
+        manuallyLockedFields: ['name', 'recentGrants'],
+        fieldProvenance: { name: grant, recentGrants: grant, slug: grant },
+      },
+      sourceObservedField,
+    });
+    expect(fields).toEqual(['name']);
+    expect(sourceObservedField).not.toHaveBeenCalled();
+  });
 });

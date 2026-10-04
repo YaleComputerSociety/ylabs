@@ -105,7 +105,8 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
 
 /**
  * The locked fields whose provenance names a lane that never observed the field on this
- * row, which the retirement stage above deliberately leaves to the lock release path.
+ * row, or a grant lane for a field grants cannot assert, which the retirement stage above
+ * deliberately leaves to the lock release path.
  */
 export async function lockedNeverBackedProvenanceFields(input: {
   stored: Record<string, unknown> | null | undefined;
@@ -123,6 +124,10 @@ export async function lockedNeverBackedProvenanceFields(input: {
   const fields: string[] = [];
   for (const [field, entry] of fieldProvenanceEntries(input.stored.fieldProvenance)) {
     if (!locked.includes(field)) continue;
+    if (fieldProvenanceEntryNamesALaneThatCannotAssertTheField(field, entry)) {
+      fields.push(field);
+      continue;
+    }
     if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
     const sourceName = textValue((entry as { sourceName?: unknown }).sourceName);
     if (await lookup({ ...identity, field, sourceName })) continue;
