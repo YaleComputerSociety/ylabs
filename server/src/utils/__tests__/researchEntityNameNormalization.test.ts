@@ -11,6 +11,7 @@ import {
   stripLeadingMicrositeBannerPrefix,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
+  stripResearchHomeNameCaptionWrapper,
 } from '../researchEntityNameNormalization';
 
 describe('normalizeResearchEntityNameDashes', () => {
@@ -278,6 +279,29 @@ describe('stripLeadingMicrositeBannerPrefix', () => {
   it('does not strip to a remainder that names no research home', () => {
     expect(stripLeadingMicrositeBannerPrefix('CNCL @ Yale Publications and Teaching')).toBe(
       'CNCL @ Yale Publications and Teaching',
+    );
+  });
+});
+
+describe('stripResearchHomeNameCaptionWrapper', () => {
+  it('cleans the person half of a heading composed from a headshot caption', () => {
+    expect(stripResearchHomeNameCaptionWrapper('Photo of Robin Fixture. Faculty Research')).toBe(
+      'Robin Fixture Faculty Research',
+    );
+    expect(
+      stripResearchHomeNameCaptionWrapper('Photo of Dean Robin Fixture. Faculty Research'),
+    ).toBe('Robin Fixture Faculty Research');
+    expect(stripResearchHomeNameCaptionWrapper('Portrait of Robin Fixture. Lab')).toBe(
+      'Robin Fixture Lab',
+    );
+  });
+
+  it('leaves a heading with no caption lead-in, including a generational suffix', () => {
+    expect(stripResearchHomeNameCaptionWrapper('Robin Fixture, Jr. Faculty Research')).toBe(
+      'Robin Fixture, Jr. Faculty Research',
+    );
+    expect(stripResearchHomeNameCaptionWrapper('Photonics of Matter Lab')).toBe(
+      'Photonics of Matter Lab',
     );
   });
 });

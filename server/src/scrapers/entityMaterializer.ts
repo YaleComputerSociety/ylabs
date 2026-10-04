@@ -67,6 +67,7 @@ import {
   collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  stripResearchHomeNameCaptionWrapper,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
@@ -234,7 +235,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
 import {
   parseRosterMemberIdentityEvidence,
@@ -1583,7 +1584,9 @@ export function materializedFieldValue(
     return normalizeResearchEntityNameSmartQuotes(
       normalizeResearchEntityNameDashes(
         collapseDuplicateResearchHomeSuffix(
-          stripResearchHomeNamePersonCredentials(stripTrailingResearchHomeDescription(value)),
+          stripResearchHomeNamePersonCredentials(
+            stripResearchHomeNameCaptionWrapper(stripTrailingResearchHomeDescription(value)),
+          ),
         ),
       ),
     );
@@ -1593,7 +1596,7 @@ export function materializedFieldValue(
     (field === 'fname' || field === 'lname' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return sanitizePersonName(value) ?? normalizePersonNameCasing(value);
+    return servedUserNameField(field, value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
     return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);
@@ -3895,6 +3898,11 @@ function isLikelyYaleEmailLocalPart(value: string): boolean {
   return value.includes('.') && /^[a-z0-9._-]+$/i.test(value);
 }
 
+function servedUserNameField(field: string, value: string): string {
+  const sanitized = field === 'fname' ? sanitizePersonGivenName(value) : sanitizePersonName(value);
+  return sanitized ?? normalizePersonNameCasing(value);
+}
+
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -5834,6 +5842,10 @@ export async function joinUserIdentityToExistingResearcher(
   }));
   const resolved = resolveAllFields(resolverObs, { now });
   const resolvedValue = (field: string): unknown => resolved[field]?.value;
+  const servedUserName = (field: string): string => {
+    const value = textValue(resolvedValue(field));
+    return value && servedUserNameField(field, value);
+  };
 
   const netid =
     normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
@@ -5841,11 +5853,8 @@ export async function joinUserIdentityToExistingResearcher(
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
-    textValue(resolvedValue('displayName')) ||
-      [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
-        .filter(Boolean)
-        .join(' ')
-        .trim(),
+    servedUserName('displayName') ||
+      [servedUserName('fname'), servedUserName('lname')].filter(Boolean).join(' ').trim(),
   );
   const title = textValue(resolvedValue('title')) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
