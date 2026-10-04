@@ -248,8 +248,10 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
  * heuristic), so a corrupted title never lands in storage nor renders from
  * stale data (#708, #740, #1257).
  */
+const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
+
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
-  const text = normalizeTitleWhitespace(value);
+  const text = normalizeTitleWhitespace(value).replace(FIELD_LABEL_PREFIX, '');
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
