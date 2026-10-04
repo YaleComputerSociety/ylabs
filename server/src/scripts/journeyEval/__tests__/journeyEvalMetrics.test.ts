@@ -581,6 +581,29 @@ describe('checkMeshDescriptorOnlyRowsRankBelowOwnEvidence', () => {
     expect(result.status).toBe('pass');
   });
 
+  it('judges the queries that served descriptor-only rows when another served none (#4538)', () => {
+    const exercised = {
+      query: 'neoplasms',
+      topClasses: ['ownEvidence', 'ownEvidence', 'meshDescriptorOnly'] as const,
+      meshDescriptorOnlyServed: 5,
+    };
+    const unexercised = {
+      query: 'robotics',
+      topClasses: ['ownEvidence'] as const,
+      meshDescriptorOnlyServed: 0,
+    };
+    expect(
+      checkMeshDescriptorOnlyRowsRankBelowOwnEvidence([exercised, unexercised], still, still),
+    ).toMatchObject({ status: 'pass', detail: { unexercisedQueries: ['robotics'] } });
+    expect(
+      checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+        [{ ...exercised, topClasses: ['meshDescriptorOnly', 'ownEvidence'] as const }, unexercised],
+        still,
+        still,
+      ).status,
+    ).toBe('fail');
+  });
+
   it('is inconclusive when no descriptor-only row was served', () => {
     const result = checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
       [{ query: 'robotics', topClasses: ['ownEvidence'], meshDescriptorOnlyServed: 0 }],

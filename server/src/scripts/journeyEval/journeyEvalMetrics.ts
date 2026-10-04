@@ -836,12 +836,20 @@ export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
       meshDescriptorOnlyOutrankingOwnEvidence: outranking,
     };
   });
-  const detail = { queries: perQuery };
-  if (perQuery.some((query) => query.meshDescriptorOnlyServed === 0)) {
+  const detail = {
+    queries: perQuery,
+    unexercisedQueries: perQuery
+      .filter((query) => query.meshDescriptorOnlyServed === 0)
+      .map((query) => query.query),
+  };
+  // A query whose descriptor-only rows rank below the served window exercised nothing, which is
+  // also what a correct demotion looks like, so it must not make the queries that did serve
+  // such rows inconclusive (#4538). Only an all-empty population is a green signal over nothing.
+  if (perQuery.every((query) => query.meshDescriptorOnlyServed === 0)) {
     return buildInconclusiveInvariant(
       id,
       title,
-      'A query served no MeSH-descriptor-only row, so the ordering it asserts was never exercised',
+      'No query served a MeSH-descriptor-only row, so the ordering it asserts was never exercised',
       detail,
     );
   }

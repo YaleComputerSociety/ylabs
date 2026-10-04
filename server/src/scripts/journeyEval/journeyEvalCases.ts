@@ -10,6 +10,7 @@ import {
   buildResearchEntitySearchIndexDocument,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 } from '../../services/researchEntitySearchIndexService';
+import { normalizeResearchSearchQuery } from '../../services/researchGroupService';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import {
   attributeTopicDrops,
@@ -887,7 +888,12 @@ const institutionWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
-const MESH_DESCRIPTOR_PROBE_QUERIES = ['robotics', 'machine learning'];
+const MESH_DESCRIPTOR_PROBE_QUERIES = [
+  'robotics',
+  'machine learning',
+  'neoplasms',
+  'signal transduction',
+];
 const MESH_DESCRIPTOR_TOP_DEPTH = 10;
 const MESH_DESCRIPTOR_POOL_DEPTH = 50;
 const OWN_EVIDENCE_INDEX_FIELDS = [
@@ -939,7 +945,7 @@ const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
         .map(rowKey)
         .filter(Boolean);
       const storedRows = await context.readStoredRows(keys);
-      const queryKeys = meshDescriptorWordKeys(query);
+      const queryKeys = normalizeResearchSearchQuery(query).tokens.flatMap(meshDescriptorWordKeys);
       const classes = keys.map((key) => classifyQueryEvidence(storedRows.get(key), queryKeys));
       rankings.push({
         query,
