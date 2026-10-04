@@ -1555,9 +1555,9 @@ const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
  * style and, unlike a pronoun, infers nothing about the person: this corpus stores no
  * pronoun and a name does not imply one.
  *
- * A lab keeps its own name throughout ("the Pollard Lab"), never the stripped
- * surname. `stripFacultyResearchAreaNameTemplateSuffix` reduces "Pollard Lab" to
- * "Pollard", so the surname form is only ever right for a person.
+ * A lab is introduced by its own name ("the Pollard Lab") and then referred to as
+ * "the lab", never the stripped surname. `stripFacultyResearchAreaNameTemplateSuffix`
+ * reduces "Pollard Lab" to "Pollard", so the surname form is only ever right for a person.
  */
 interface LeadSubjectForms {
   first: string;

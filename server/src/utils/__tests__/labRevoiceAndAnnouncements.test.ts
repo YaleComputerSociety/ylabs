@@ -33,4 +33,18 @@ describe('a body that is a news column', () => {
       'The group develops methods for tidal modeling and gave an invited talk on them at an example workshop.';
     expect(fullDescriptionQuality(body).flags).not.toContain('source-news-fragment');
   });
+
+  it('is not a news fragment when one sentence both announces acceptance and a preprint', () => {
+    const body =
+      'The group develops methods for tidal modeling of estuaries and coasts. Our paper was accepted at an example conference and is now available on arXiv.';
+    expect(fullDescriptionQuality(body).flags).not.toContain('source-news-fragment');
+  });
+
+  it('is not a news fragment when the profile states its research focus', () => {
+    const body =
+      'Her research focuses on tidal modeling of estuaries and coastal wetlands. She has delivered a keynote address at an example meeting. She also gave an invited talk at an example workshop.';
+    expect(fullDescriptionQuality(body, undefined, 'FACULTY_RESEARCH_AREA').flags).not.toContain(
+      'source-news-fragment',
+    );
+  });
 });
