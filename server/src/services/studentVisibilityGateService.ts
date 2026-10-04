@@ -4,6 +4,12 @@ import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
 import { selectDuplicateProgramCopies } from './programDuplicateIdentity';
 import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+} from './programApplicability';
+import {
   deriveUpcomingDuplicateWindows,
   sameUpcomingDuplicateWindow,
   storedUpcomingDuplicateWindow,
@@ -245,6 +251,10 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'content_page_risk',
   'duplicate_program',
   'common_application_container',
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  AWARD_SUSPENDED_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
   'exact_url_duplicate_risk',
   'generic_directory_shell',
   'inactive_at_yale',
@@ -2326,7 +2336,7 @@ export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicatePr
   const copies = livePrograms.map((program: any) => ({
     program,
     id: studentVisibilityGateDocumentId(program._id),
-    tier: computeProgramStudentVisibility(program).tier,
+    tier: computeProgramStudentVisibility(program, { now }).tier,
   }));
   const keptCopyById = selectDuplicateProgramCopies(
     copies.map(({ program, id, tier }) => ({
@@ -2343,6 +2353,7 @@ export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicatePr
   const upcomingWindowByKeptId = deriveUpcomingDuplicateWindows(
     copies.map(({ program, id, tier }) => ({
       id,
+      title: program.title,
       deadline: program.deadline,
       applicationOpenDate: program.applicationOpenDate,
       isAcceptingApplications: program.isAcceptingApplications,
@@ -2362,16 +2373,21 @@ async function planProgramGateUpdates(
   if (options.sourceName) match.sourceName = options.sourceName;
   const query = Fellowship.find(match).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
+  const now = new Date();
   const [scopedPrograms, duplicateProgramCopies] = await Promise.all([
     query.lean(),
-    loadDuplicateProgramCopies(new Date()),
+    loadDuplicateProgramCopies(now),
   ]);
   const programs = orderedByGateLabel(scopedPrograms, 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
+    const upcomingDuplicateWindow =
+      duplicateProgramCopies.upcomingWindowByKeptId.get(recordId) ?? null;
     const result = computeProgramStudentVisibility(program, {
       duplicateOfServedCopy: duplicateProgramCopies.keptCopyById.has(recordId),
+      now,
+      upcomingDuplicateWindow,
     });
     return {
       collection: 'programs' as const,
@@ -2390,7 +2406,7 @@ async function planProgramGateUpdates(
       currentUpcomingDuplicateWindow: storedUpcomingDuplicateWindow(
         program.upcomingDuplicateWindow,
       ),
-      upcomingDuplicateWindow: duplicateProgramCopies.upcomingWindowByKeptId.get(recordId) ?? null,
+      upcomingDuplicateWindow,
     };
   });
 }

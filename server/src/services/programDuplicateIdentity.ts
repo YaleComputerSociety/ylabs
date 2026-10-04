@@ -37,6 +37,22 @@ export function programFundTitleKey(title: unknown): string {
   ).replace(/^the /, '');
 }
 
+// One program's terms are listed as sibling records ("<Program> - Fall Term"), each with the
+// program's own description, so a trailing term qualifier does not name another fund.
+const TERM_QUALIFIER =
+  /\s*(?:[-\u2013\u2014:]\s*|\(\s*)(fall|spring|summer|winter)\s+(?:term|semester|session|quarter)\s*\)?\s*$/i;
+
+export function programTermQualifier(title: unknown): string {
+  return (
+    String(title || '')
+      .match(TERM_QUALIFIER)?.[1]
+      ?.toLowerCase() ?? ''
+  );
+}
+
+const titleKeyWithoutTerm = (title: unknown): string =>
+  programFundTitleKey(String(title || '').replace(TERM_QUALIFIER, ''));
+
 function descriptionPhrases(description: string): Set<string> {
   const words = description.split(' ').filter(Boolean);
   const phrases = new Set<string>();
@@ -142,6 +158,44 @@ function titleWordsOneFund(a: unknown, b: unknown): boolean {
   return [...shorter].every((word) => longer.has(word));
 }
 
+const titleWords = (title: unknown): Set<string> =>
+  new Set(titleKeyWithoutAsides(title).split(' ').filter(Boolean));
+
+const isStrictSubset = (smaller: Set<string>, larger: Set<string>): boolean =>
+  smaller.size > 0 && smaller.size < larger.size && [...smaller].every((word) => larger.has(word));
+
+// One lane titles a fund "<Name> Travel Fellowship" and another "<Name> Fellowship" over the
+// same paragraph. A narrower title is joined to a wider one only when it is unambiguous: a
+// narrower title that two incompatible wider titles both contain ("Richter Fellowship" beside
+// each residential college's copy) would chain distinct funds into one, so it joins neither.
+function unambiguousNarrowerTitlePairs(
+  programs: readonly ProgramDuplicateCandidate[],
+  descriptions: readonly FundDescription[],
+): Array<[number, number]> {
+  const words = programs.map((program) => titleWords(program.title));
+  const widerOf = new Map<number, number[]>();
+  forEachPair(
+    programs.map((_, index) => index),
+    (a, b) => {
+      const [narrow, wide] = words[a].size <= words[b].size ? [a, b] : [b, a];
+      if (!isStrictSubset(words[narrow], words[wide])) return;
+      if (!sameFundDescription(descriptions[narrow], descriptions[wide])) return;
+      const wider = widerOf.get(narrow);
+      if (wider) wider.push(wide);
+      else widerOf.set(narrow, [wide]);
+    },
+  );
+  const pairs: Array<[number, number]> = [];
+  for (const [narrow, wider] of widerOf) {
+    let ambiguous = false;
+    forEachPair(wider, (a, b) => {
+      if (!titleWordsOneFund(programs[a].title, programs[b].title)) ambiguous = true;
+    });
+    if (!ambiguous) for (const wide of wider) pairs.push([narrow, wide]);
+  }
+  return pairs;
+}
+
 function programPageIdentity(value: unknown): string {
   if (typeof value !== 'string' || !value.trim()) return '';
   if (recordSpecificApplicationPortalIdentity(value)) return '';
@@ -210,11 +264,12 @@ export function selectDuplicateProgramCopies(
   };
 
   const descriptions = programs.map((program) => fundDescription(program.description));
-  for (const copies of groupIndexes(programs, (program) => [programFundTitleKey(program.title)])) {
+  for (const copies of groupIndexes(programs, (program) => [titleKeyWithoutTerm(program.title)])) {
     forEachPair(copies, (a, b) => {
       if (sameFundDescription(descriptions[a], descriptions[b])) join(a, b);
     });
   }
+  for (const [a, b] of unambiguousNarrowerTitlePairs(programs, descriptions)) join(a, b);
   for (const copies of groupIndexes(programs, fundPageIdentities)) {
     forEachPair(copies, (a, b) => {
       if (titlesNameOneFund(programs[a].title, programs[b].title)) join(a, b);

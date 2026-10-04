@@ -16,6 +16,12 @@ import {
 } from './visibilityRepairQueueService';
 import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+} from './programApplicability';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
 import { gateScorecardArtifactPath, type GateScorecardName } from './gateScorecardArtifacts';
@@ -1924,6 +1930,14 @@ const programReasonActions: Record<string, string> = {
   duplicate_program: 'Redundant copy of a fund already served by another row; keep suppressed.',
   common_application_container:
     'A common application admits to funds served as their own programs; keep suppressed.',
+  [EXTERNAL_AWARD_CYCLE_STALE_REASON]:
+    'Outside program whose office record skipped its only stated cycle; returns when the record states a current one.',
+  [AWARD_SUSPENDED_REASON]:
+    'The record states the award is suspended or discontinued; returns when the page no longer says so.',
+  [PRIZE_FOR_COMPLETED_WORK_REASON]:
+    'A prize for completed work funds nothing a student could apply to do; keep suppressed.',
+  [PROGRAM_LISTING_PAGE_REASON]:
+    'A catalog page listing programs served as their own rows; keep suppressed.',
   graduate_relevant:
     'Graduate-audience research program; surface with a Graduate label, not suppressed.',
   official_source: 'Review for possible promotion if audience and route are student-safe.',

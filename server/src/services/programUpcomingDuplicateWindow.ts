@@ -1,4 +1,5 @@
 import { programDeadlineClosesAt } from '../utils/programDeadlineInstant';
+import { programTermQualifier } from './programDuplicateIdentity';
 
 /**
  * The application window a hidden copy of a fund states for a cycle that is still ahead,
@@ -14,6 +15,7 @@ export interface UpcomingDuplicateWindow {
 
 export interface ProgramWindowCopy {
   id: string;
+  title?: unknown;
   deadline?: unknown;
   applicationOpenDate?: unknown;
   isAcceptingApplications?: unknown;
@@ -51,7 +53,8 @@ const windowOf = (copy: ProgramWindowCopy): UpcomingDuplicateWindow => {
 /**
  * The earliest still-upcoming window among the other copies of the kept copy's fund. A copy
  * the gate would not serve on its own supplies nothing, so a hidden copy's date is served
- * only on the evidence that would have served the copy itself.
+ * only on the evidence that would have served the copy itself. A copy for another term of the
+ * program states that term's window, which the kept copy's title does not name (#4587).
  */
 export function upcomingDuplicateWindowFor(
   kept: ProgramWindowCopy,
@@ -59,11 +62,13 @@ export function upcomingDuplicateWindowFor(
   now: Date,
 ): UpcomingDuplicateWindow | undefined {
   if (programDeadlineIsUpcoming(kept.deadline, now)) return undefined;
+  const keptTerm = programTermQualifier(kept.title);
   const upcoming = copies
     .filter(
       (copy) =>
         copy.id !== kept.id &&
         copy.servableOnItsOwn &&
+        programTermQualifier(copy.title) === keptTerm &&
         programDeadlineIsUpcoming(copy.deadline, now),
     )
     .sort(
