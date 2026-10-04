@@ -13,7 +13,6 @@
  *
  *   yarn --cwd server research-entity:audit-departure-lane
  *   yarn --cwd server research-entity:audit-departure-lane --run <scrapeRunId>
-
  *   yarn --cwd server research-entity:audit-departure-lane --output "$TMPDIR/departure.json"
  *
  * There is deliberately no `--apply`. Suppression removes a research home from the
@@ -281,7 +280,10 @@ async function main(): Promise<void> {
     const evidenceFreshness = plan?.evidenceFreshness;
     const output = {
       mode: 'plan',
-      plannedRunSelection: runSelection ?? { runId, reason: 'operator-named-run' },
+      plannedRunSelection: runSelection ?? {
+        runId,
+        reason: options.runId ? 'operator-named-run' : 'no-roster-run',
+      },
       ...report,
       standingFreezes,
       ...(evidenceFreshness ? { evidenceFreshness } : {}),

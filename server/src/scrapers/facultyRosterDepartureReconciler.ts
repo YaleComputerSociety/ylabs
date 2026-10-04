@@ -894,18 +894,19 @@ export async function readRunDepartmentEvidence(
       (snapshotObservation.observedAt instanceof Date ? snapshotObservation.observedAt : null);
     if (snapshotObservedAt) latestObservedAt = snapshotObservedAt;
 
+    if (
+      rosterDepartmentOutsideDepartureLaneReason(snapshot.deptKey ?? snapshotObservation.entityKey)
+    ) {
+      unresolvedDepartments.push(rawDeptName);
+      continue;
+    }
     const deptName = await resolveGovernedDepartmentName(rawDeptName);
     if (!deptName) {
       unresolvedDepartments.push(rawDeptName);
-      const declaredReason = rosterDepartmentOutsideDepartureLaneReason(
-        snapshot.deptKey ?? snapshotObservation.entityKey,
+      undeclaredUnresolvedDepartments.push(rawDeptName);
+      warn(
+        `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
       );
-      if (!declaredReason) {
-        undeclaredUnresolvedDepartments.push(rawDeptName);
-        warn(
-          `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
-        );
-      }
       continue;
     }
     scrapedDeptNames.add(deptName);
