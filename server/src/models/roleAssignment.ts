@@ -215,3 +215,20 @@ export function roleAssignmentReattachWrite(
 export const RoleAssignment =
   mongoose.models.RoleAssignment ||
   mongoose.model<RoleAssignmentRecord>('RoleAssignment', roleAssignmentSchema, 'role_assignments');
+
+// The `(personId, target, role)` upsert filter matches retired edges too, and the target
+// index orders `HISTORICAL` ahead of `UNKNOWN`, so an unpinned write revives a retired twin
+// beside the live edge and mints a second live edge for the same person and role (#4791).
+export async function pinRoleAssignmentUpsertToLiveEdge(
+  upsertFilter: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const live = (await RoleAssignment.findOne({
+    ...upsertFilter,
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .sort({ _id: 1 })
+    .select('_id')
+    .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+  return live?._id ? { ...upsertFilter, _id: live._id } : upsertFilter;
+}

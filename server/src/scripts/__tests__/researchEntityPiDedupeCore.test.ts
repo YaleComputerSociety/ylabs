@@ -12,6 +12,7 @@ import {
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
   buildNameAgreedSharedPersonResearchEntityDedupePlan,
@@ -29,6 +30,7 @@ import {
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  type OfficialLabUrlDedupeRow,
 } from '../researchEntityPiDedupeCore';
 import { PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
@@ -4445,5 +4447,153 @@ describe('entityMintedByPrimaryAppointmentRoster', () => {
         { id: 'd' },
       ),
     ).toBe(false);
+  });
+});
+
+describe('profile-lab-url lane name agreement and refusals (#4791)', () => {
+  const lab = (
+    id: string,
+    name: string,
+    leadPersonIds: string[] = [],
+    entityType = 'LAB',
+  ): OfficialLabUrlDedupeRow['entities'][number] => ({
+    id,
+    slug: id,
+    name,
+    entityType,
+    leadPersonIds,
+  });
+  const plan = (url: string, entities: OfficialLabUrlDedupeRow['entities']) =>
+    buildSpecificProfileLabUrlResearchEntityDedupePlan([{ url, entities }]);
+  const members = (groups: ReturnType<typeof plan>) =>
+    groups.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds].sort());
+
+  it('merges a topical lab name with its lead profile row when both hold the same leads', () => {
+    const groups = plan('https://medicine.yale.edu/lab/dalton/', [
+      lab('ysm-dalton', 'BEACON Lab Yale Lab', ['person-a']),
+      lab('ysm-faculty-avery-dalton', 'BEACON Lab', ['person-a']),
+    ]);
+    expect(members(groups)).toEqual([['ysm-dalton', 'ysm-faculty-avery-dalton']]);
+  });
+
+  it('still refuses a member row that adds its own lead beside the lab lead', () => {
+    const rows = [
+      {
+        url: 'https://medicine.yale.edu/lab/dalton/',
+        entities: [
+          lab('ysm-dalton', 'BEACON Lab', ['person-a']),
+          lab('ysm-faculty-casey-north', 'BEACON Lab', ['person-a', 'person-b']),
+        ],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows)).toEqual([
+      { url: 'https://medicine.yale.edu/lab/dalton/', reason: 'slug_names_another_person' },
+    ]);
+  });
+
+  it('folds diacritics, a comma credential, a parenthetical alias, and a middle initial', () => {
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/ana-kovacevic/', [
+          lab('ysm-kovacevic', 'Kovacevic Lab'),
+          lab('ysm-faculty-ana-kovacevic', 'Ana Kovačević Lab'),
+        ]),
+      ),
+    ).toEqual([['ysm-faculty-ana-kovacevic', 'ysm-kovacevic']]);
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/sam-rivera/', [
+          lab('ysm-rivera', 'Rivera Lab'),
+          lab('dept-mbb-sam-rivera', 'Sam Rivera, PhD Lab'),
+        ]),
+      ),
+    ).toEqual([['dept-mbb-sam-rivera', 'ysm-rivera']]);
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/rui-tan/', [
+          lab('ysm-quid', 'QUID Lab', ['person-c']),
+          lab('ysm-faculty-rui-tan', 'Quantitative Imaging Data Lab (QUID Lab)', ['person-c']),
+        ]),
+      ),
+    ).toEqual([['ysm-faculty-rui-tan', 'ysm-quid']]);
+    expect(
+      members(
+        plan('https://ysph.yale.edu/profile/pat-moreno/', [
+          lab(
+            'ysm-faculty-pat-moreno',
+            'Pat Quinn Moreno Faculty Research',
+            [],
+            'FACULTY_RESEARCH_AREA',
+          ),
+          lab(
+            'dept-ysph-pat-q-moreno',
+            'Pat Q. Moreno Faculty Research',
+            [],
+            'FACULTY_RESEARCH_AREA',
+          ),
+        ]),
+      ),
+    ).toEqual([['dept-ysph-pat-q-moreno', 'ysm-faculty-pat-moreno']]);
+  });
+
+  it('refuses a merge that would hand the survivor a lead it does not already hold', () => {
+    const rows = [
+      {
+        url: 'https://ysph.yale.edu/profile/pat-moreno/',
+        entities: [
+          lab(
+            'ysm-faculty-pat-moreno',
+            'Pat Quinn Moreno Faculty Research',
+            ['person-g'],
+            'FACULTY_RESEARCH_AREA',
+          ),
+          lab(
+            'dept-ysph-pat-q-moreno',
+            'Pat Q. Moreno Faculty Research',
+            ['person-g', 'person-h'],
+            'FACULTY_RESEARCH_AREA',
+          ),
+        ],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows)).toEqual([
+      { url: 'https://ysph.yale.edu/profile/pat-moreno/', reason: 'duplicate_adds_lead' },
+    ]);
+  });
+
+  it('keeps refusing two different people and names the rule that refused each URL', () => {
+    const rows = [
+      {
+        url: 'https://medicine.yale.edu/lab/north/',
+        entities: [
+          lab('ysm-north', 'North Lab', ['person-d']),
+          lab('dept-ysph-lee-west', 'Lee West Lab', ['person-e']),
+        ],
+      },
+      {
+        url: 'https://medicine.yale.edu/lab/wu/',
+        entities: [lab('ysm-wu', 'Dana Wu Lab'), lab('ysm-faculty-wu-min', 'Min Wu Lab')],
+      },
+      {
+        url: 'https://medicine.yale.edu/profile/kim-park/',
+        entities: [
+          lab('ysm-faculty-kim-park', 'Park Lab', ['person-f']),
+          lab('park-center', 'Park Center', ['person-f'], 'CENTER'),
+        ],
+      },
+      {
+        url: 'https://medicine.yale.edu/lab/park/',
+        entities: [lab('ysm-park', 'Park Lab'), lab('nih-pi-kim-park', 'Kim Park Lab')],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows).map((row) => row.reason)).toEqual([
+      'lead_names_disagree',
+      'lead_names_disagree',
+      'entity_type_outside_lane',
+      'funding_shell',
+    ]);
   });
 });

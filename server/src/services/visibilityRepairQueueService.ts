@@ -1,6 +1,10 @@
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
-import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
+import {
+  pinRoleAssignmentUpsertToLiveEdge,
+  RoleAssignment,
+  roleAssignmentReattachWrite,
+} from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   type ResearchEntityRosterEntry,
@@ -1578,12 +1582,14 @@ const defaultRepairDeps: RepairDeps = {
       : null;
     const personId = (researcher as any)?._id;
     if (!entityObjectId || !personId) return;
-    const { filter, update, options, reattach } = buildVisibilityRepairPiRoleAssignmentUpsert(
+    const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
       personId,
       entityObjectId,
       metadata,
     );
-    await RoleAssignment.updateOne(filter, update, options);
+    const liveFilter = await pinRoleAssignmentUpsertToLiveEdge(filter);
+    const reattach = roleAssignmentReattachWrite(liveFilter, 'UNREVIEWED');
+    await RoleAssignment.updateOne(liveFilter, update, options);
     await RoleAssignment.updateOne(reattach.filter, reattach.update);
   },
   async findResearchEntityMembers(id) {

@@ -3,6 +3,7 @@ import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   isRosterIdentityBasis,
+  pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
   type RoleAssignmentReviewStatus,
@@ -747,13 +748,15 @@ export async function writeCanonicalMembership(
       rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return refused('refused-upsert-shape');
-    const before = await RoleAssignment.findOne(upsert.filter)
+    const filter = await pinRoleAssignmentUpsertToLiveEdge(upsert.filter);
+    const reattach = roleAssignmentReattachWrite(filter, reviewStatus);
+    const before = await RoleAssignment.findOne(filter)
       .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
       .lean();
-    const written = await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
-    await RoleAssignment.updateOne(upsert.reattach.filter, upsert.reattach.update);
+    const written = await RoleAssignment.updateOne(filter, upsert.update, { upsert: true });
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
     if ((written.upsertedCount ?? 0) > 0 || !before) return { outcome: 'created', personId };
-    const after = await RoleAssignment.findOne(upsert.filter)
+    const after = await RoleAssignment.findOne(filter)
       .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
       .lean();
     return {
