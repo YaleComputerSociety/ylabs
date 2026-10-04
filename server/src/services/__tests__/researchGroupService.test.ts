@@ -377,6 +377,23 @@ describe('searchResearchGroupsViaMeili', () => {
     ]);
   });
 
+  it('leaves a MeSH descriptor match the fusion already ranked below own evidence where it was', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const keywordLeg = [{ id: 'own-lab' }];
+    const fused = [
+      { id: 'early-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'own-lab' },
+      { id: 'neighbour-a' },
+      { id: 'neighbour-b' },
+      { id: 'late-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+    ];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(fused, keywordLeg, query).map((hit) => hit.id),
+    ).toEqual(['own-lab', 'early-descriptor', 'neighbour-a', 'neighbour-b', 'late-descriptor']);
+    expect(keepMeshDescriptorMatchesBelowOwnEvidence(fused, [], query)).toBe(fused);
+  });
+
   it('drops the institution name so it cannot outrank the topic', () => {
     for (const query of [
       'machine learning yale',

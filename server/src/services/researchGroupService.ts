@@ -1311,21 +1311,20 @@ export const keepMeshDescriptorMatchesBelowOwnEvidence = <T>(
   if (normalizedQuery.isAliasExpanded || normalizedQuery.tokens.length === 0) return fusedHits;
   const queryWordKeys = normalizedQuery.tokens.flatMap(meshDescriptorWordKeys);
   const restsOnDescriptor = (hit: T) => hitMatchRestsOnMeshDescriptor(hit, queryWordKeys);
-  const descriptorOnly = fusedHits.filter(restsOnDescriptor);
-  if (descriptorOnly.length === 0) return fusedHits;
   const ownEvidenceIds = new Set(
     keywordLegHits.filter((hit) => !restsOnDescriptor(hit)).map(candidateHitId),
   );
-  const rest = fusedHits.filter((hit) => !restsOnDescriptor(hit));
-  const afterLastOwnEvidence =
-    rest.reduce(
-      (last, hit, index) => (ownEvidenceIds.has(candidateHitId(hit)) ? index : last),
-      -1,
-    ) + 1;
+  let lastOwnEvidenceIndex = -1;
+  fusedHits.forEach((hit, index) => {
+    if (ownEvidenceIds.has(candidateHitId(hit))) lastOwnEvidenceIndex = index;
+  });
+  const outrankingOwnEvidence = fusedHits.slice(0, lastOwnEvidenceIndex + 1);
+  const demoted = outrankingOwnEvidence.filter(restsOnDescriptor);
+  if (demoted.length === 0) return fusedHits;
   return [
-    ...rest.slice(0, afterLastOwnEvidence),
-    ...descriptorOnly,
-    ...rest.slice(afterLastOwnEvidence),
+    ...outrankingOwnEvidence.filter((hit) => !restsOnDescriptor(hit)),
+    ...demoted,
+    ...fusedHits.slice(lastOwnEvidenceIndex + 1),
   ];
 };
 
