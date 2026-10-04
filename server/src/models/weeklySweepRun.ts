@@ -4,7 +4,8 @@
  *
  * Per-source, per-stage and per-phase timings are flattened into queryable arrays rather than
  * kept as an opaque summary, so runs can be compared over time; artifact paths and stage
- * deltas are deliberately not stored, to keep a row small.
+ * deltas are deliberately not stored, to keep a row small. A counting stage's `counts` are
+ * the baseline the next run judges that stage against (#4852).
  *
  * Environment-local by policy, listed in scripts/mirrorCollectionPolicy.ts, for the same
  * reason as `corpus_quality_snapshots`: a copied history is both misdated and lost.
@@ -15,6 +16,7 @@ import {
   weeklySweepModes,
   weeklySweepRunStatuses,
   weeklySweepSearchIndexStatuses,
+  weeklySweepStageFailureKinds,
 } from './storedVocabularies';
 
 export const WEEKLY_SWEEP_RUN_COLLECTION = 'weekly_sweep_runs';
@@ -79,7 +81,22 @@ const sourceRunSchema = new mongoose.Schema(
     throttleExhausted: { type: Number, required: false },
     materializationErrors: { type: Number, required: false },
     error: { type: String, required: false },
+    failureTail: { type: String, required: false },
   },
+  { _id: false },
+);
+
+const stageRegressionSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    previous: { type: Number, required: true },
+    current: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
+const unscoredBenchmarkSchema = new mongoose.Schema(
+  { benchmarkId: { type: String, required: true }, reason: { type: String, required: true } },
   { _id: false },
 );
 
@@ -91,6 +108,11 @@ const stageRunSchema = new mongoose.Schema(
     exitCode: { type: Number, required: false },
     ...timing,
     error: { type: String, required: false },
+    failureKind: { type: String, enum: weeklySweepStageFailureKinds, required: false },
+    failureTail: { type: String, required: false },
+    counts: { type: Map, of: Number, required: false },
+    regressions: { type: [stageRegressionSchema], default: undefined },
+    unscored: { type: [unscoredBenchmarkSchema], default: undefined },
   },
   { _id: false },
 );

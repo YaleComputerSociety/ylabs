@@ -24,6 +24,8 @@ import {
   weeklySweepRunStatus,
 } from '../weeklyDevelopmentSweepCore';
 import { sweepSummaryFixture } from './fixtures/weeklySweepSummaryFixture';
+import { FAILURE_TAIL_MAX_CHARS } from '../scraperSweepLogging';
+import { WeeklySweepRun } from '../../models/weeklySweepRun';
 
 const DEVELOPMENT_URL = 'mongodb+srv://user:pass@cluster.example.net/Development';
 
@@ -393,6 +395,81 @@ describe('buildWeeklySweepRunRecord', () => {
     expect(recordFrom({ error: 'y'.repeat(5_000) }).error).toHaveLength(
       WEEKLY_SWEEP_ERROR_TEXT_LIMIT,
     );
+  });
+
+  it('stores why a step failed and the counts a counting stage recorded (#4852)', () => {
+    const summary = sweepSummaryFixture({
+      rows: [
+        {
+          ...sweepSummaryFixture().rows[1],
+          failureTail: `${'z'.repeat(3_000)}\nECONNRESET while fetching`,
+        },
+      ],
+      postRun: {
+        status: 'failed',
+        stages: [
+          {
+            name: 'integrity-gate',
+            status: 'succeeded',
+            exitCode: 1,
+            counts: { duplicatePeople: 4, duplicateAccessSignals: 0 },
+          },
+          {
+            name: 'trust-contract',
+            status: 'failed',
+            exitCode: 1,
+            error: 'trust-contract regressed: violations 9 -> 11',
+            failureKind: 'regression',
+            counts: { violations: 11 },
+            regressions: [{ name: 'violations', previous: 9, current: 11 }],
+          },
+          {
+            name: 'lane-scorecard',
+            status: 'succeeded',
+            exitCode: 1,
+            unscored: [{ benchmarkId: 'synthetic-a', reason: 'replay served none of 3 pages' }],
+          },
+          {
+            name: 'source-link-health',
+            status: 'failed',
+            exitCode: 1,
+            error: 'source-link-health exited with status 1',
+            failureKind: 'crashed',
+            failureTail: 'ResolverUnhealthyError: Resolver looks unhealthy',
+          },
+        ],
+      },
+    });
+    const record = recordFrom({
+      exitCode: 1,
+      outcomes: [{ mode: 'development-full', exitCode: 1, summaryFound: true, summary }],
+    });
+    expect(record.sources[0].failureTail).toHaveLength(FAILURE_TAIL_MAX_CHARS);
+    expect(record.sources[0].failureTail?.endsWith('ECONNRESET while fetching')).toBe(true);
+    expect(record.stages).toEqual([
+      expect.objectContaining({
+        name: 'integrity-gate',
+        status: 'succeeded',
+        counts: { duplicatePeople: 4, duplicateAccessSignals: 0 },
+      }),
+      expect.objectContaining({
+        name: 'trust-contract',
+        failureKind: 'regression',
+        regressions: [{ name: 'violations', previous: 9, current: 11 }],
+      }),
+      expect.objectContaining({
+        name: 'lane-scorecard',
+        unscored: [{ benchmarkId: 'synthetic-a', reason: 'replay served none of 3 pages' }],
+      }),
+      expect.objectContaining({
+        name: 'source-link-health',
+        failureKind: 'crashed',
+        failureTail: 'ResolverUnhealthyError: Resolver looks unhealthy',
+      }),
+    ]);
+    expect(new WeeklySweepRun(record).validateSync()).toBeUndefined();
+    const stored = new WeeklySweepRun(record).toObject({ flattenMaps: true });
+    expect(stored.stages[0].counts).toEqual({ duplicatePeople: 4, duplicateAccessSignals: 0 });
   });
 
   it('measures total wall time against the Render cron limit', () => {

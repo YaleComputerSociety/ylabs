@@ -9,6 +9,8 @@ import {
   type WeeklySweepCorpusSnapshotStatus,
   type WeeklySweepMode,
   type WeeklySweepRunStatus,
+  type WeeklySweepStageFailureKind,
+  weeklySweepStageFailureKinds,
 } from '../models/storedVocabularies';
 import { DEVELOPMENT_DATABASE_NAME } from './databaseCopyPairs';
 import {
@@ -18,6 +20,8 @@ import {
   type SweepThrottleRetrySummary,
 } from './runScraperSweep';
 import type { SweepCodeFreshness } from './sweepCodeFreshness';
+import { FAILURE_TAIL_MAX_CHARS } from './scraperSweepLogging';
+import type { StageCountRegression, StageUnscoredBenchmark } from './sweepStageJudgement';
 
 export const WEEKLY_SWEEP_MODES = weeklySweepModes;
 
@@ -189,6 +193,15 @@ export function capWeeklySweepErrorText(text: string | undefined | null): string
     : text;
 }
 
+export function capWeeklySweepFailureTail(text: string | undefined | null): string | undefined {
+  if (!text) return undefined;
+  return text.length > FAILURE_TAIL_MAX_CHARS
+    ? `...${text.slice(-(FAILURE_TAIL_MAX_CHARS - 3))}`
+    : text;
+}
+
+export const WEEKLY_SWEEP_STAGE_LIST_LIMIT = 50;
+
 export interface WeeklySweepStorageReading {
   ok: boolean;
   usedMb: number;
@@ -261,6 +274,7 @@ export interface WeeklySweepSourceRecord {
   throttleExhausted?: number;
   materializationErrors?: number;
   error?: string;
+  failureTail?: string;
 }
 
 export interface WeeklySweepStageRecord {
@@ -272,6 +286,11 @@ export interface WeeklySweepStageRecord {
   finishedAt?: Date;
   durationMs?: number;
   error?: string;
+  failureKind?: WeeklySweepStageFailureKind;
+  failureTail?: string;
+  counts?: Record<string, number>;
+  regressions?: StageCountRegression[];
+  unscored?: StageUnscoredBenchmark[];
 }
 
 export interface WeeklySweepPhaseRecord {
@@ -407,8 +426,45 @@ function sourceRecords(outcome: WeeklySweepModeOutcome): WeeklySweepSourceRecord
       throttleExhausted: optionalNumber(row.throttleExhausted),
       materializationErrors: optionalNumber(row.materializationErrors),
       error: capWeeklySweepErrorText(optionalString(row.error)),
+      failureTail: capWeeklySweepFailureTail(optionalString(row.failureTail)),
     }),
   );
+}
+
+function stageFailureKind(value: unknown): WeeklySweepStageFailureKind | undefined {
+  return weeklySweepStageFailureKinds.find((kind) => kind === value);
+}
+
+function stageCounts(value: unknown): Record<string, number> | undefined {
+  const entries = Object.entries(asRecord(value))
+    .filter(([, count]) => optionalNumber(count) !== undefined)
+    .slice(0, WEEKLY_SWEEP_STAGE_LIST_LIMIT) as Array<[string, number]>;
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function stageRegressions(value: unknown): StageCountRegression[] | undefined {
+  const regressions = asArray(value)
+    .filter(
+      (entry) =>
+        optionalNumber(entry.previous) !== undefined && optionalNumber(entry.current) !== undefined,
+    )
+    .slice(0, WEEKLY_SWEEP_STAGE_LIST_LIMIT)
+    .map((entry) => ({
+      name: capWeeklySweepErrorText(String(entry.name ?? '')) ?? '',
+      previous: entry.previous as number,
+      current: entry.current as number,
+    }));
+  return regressions.length > 0 ? regressions : undefined;
+}
+
+function stageUnscored(value: unknown): StageUnscoredBenchmark[] | undefined {
+  const unscored = asArray(value)
+    .slice(0, WEEKLY_SWEEP_STAGE_LIST_LIMIT)
+    .map((entry) => ({
+      benchmarkId: String(entry.benchmarkId ?? ''),
+      reason: capWeeklySweepErrorText(String(entry.reason ?? '')) ?? '',
+    }));
+  return unscored.length > 0 ? unscored : undefined;
 }
 
 function stageRecords(outcome: WeeklySweepModeOutcome): WeeklySweepStageRecord[] {
@@ -420,6 +476,11 @@ function stageRecords(outcome: WeeklySweepModeOutcome): WeeklySweepStageRecord[]
       exitCode: optionalNumber(stage.exitCode),
       ...timingOf(stage),
       error: capWeeklySweepErrorText(optionalString(stage.error)),
+      failureKind: stageFailureKind(stage.failureKind),
+      failureTail: capWeeklySweepFailureTail(optionalString(stage.failureTail)),
+      counts: stageCounts(stage.counts),
+      regressions: stageRegressions(stage.regressions),
+      unscored: stageUnscored(stage.unscored),
     }),
   );
 }

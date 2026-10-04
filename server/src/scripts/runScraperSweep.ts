@@ -71,7 +71,22 @@ import {
   stageStepId,
   sweepCheckpointFlagSignature,
 } from './scraperSweepCheckpoint';
-import { SweepRunLogger } from './scraperSweepLogging';
+import { SweepRunLogger, buildFailureTail, formatFailureTailForLog } from './scraperSweepLogging';
+import {
+  formatStageCounts,
+  formatStageRegressions,
+  judgeIntegrityGateResult,
+  judgeLaneScorecardResult,
+  judgeTrustContractResult,
+  stageCountBaselineFromRuns,
+  type StageCountRegression,
+  type StageJudgement,
+  type StageResultJudge,
+  type StageUnscoredBenchmark,
+  type SweepStageCountBaseline,
+} from './sweepStageJudgement';
+import { WeeklySweepRun } from '../models/weeklySweepRun';
+import type { WeeklySweepStageFailureKind } from '../models/storedVocabularies';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
 import { connectScriptMongo } from '../db/connections';
@@ -227,9 +242,18 @@ export interface ScraperSweepRunRow extends SweepStepTiming {
   materializationErrors?: number;
   exitCode?: number;
   error?: string;
+  failureTail?: string;
 }
 
-export interface DevelopmentPostRunStage extends SweepStepTiming {
+export interface PostRunStageDiagnostics {
+  failureKind?: WeeklySweepStageFailureKind;
+  failureTail?: string;
+  counts?: Record<string, number>;
+  regressions?: StageCountRegression[];
+  unscored?: StageUnscoredBenchmark[];
+}
+
+export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDiagnostics {
   name:
     | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
@@ -406,7 +430,7 @@ export function sweepSearchIndexOutcome(
     : { status: 'written' };
 }
 
-export interface FellowshipPostRunStage extends SweepStepTiming {
+export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDiagnostics {
   name:
     | 'program-visibility-gate'
     | 'global-regions-backfill'
@@ -781,13 +805,37 @@ export function validateScraperSweepSourceRows(
   }
 }
 
-async function validateScraperSweepDatabasePreflight(registeredNames: string[]): Promise<void> {
+const STAGE_BASELINE_RUN_LOOKBACK = 12;
+
+export async function loadSweepStageCountBaseline(): Promise<SweepStageCountBaseline> {
+  try {
+    const runs = await WeeklySweepRun.find({ 'stages.counts': { $exists: true } })
+      .select('startedAt stages.name stages.counts')
+      .sort({ startedAt: -1 })
+      .limit(STAGE_BASELINE_RUN_LOOKBACK)
+      .lean();
+    return stageCountBaselineFromRuns(
+      runs as unknown as Parameters<typeof stageCountBaselineFromRuns>[0],
+    );
+  } catch (error) {
+    console.warn(
+      `[post-run] could not read stage counts from weekly_sweep_runs, so counts are recorded without a baseline: ${sanitizeLogValue(error)}`,
+    );
+    return {};
+  }
+}
+
+async function validateScraperSweepDatabasePreflight(
+  registeredNames: string[],
+  readStageBaseline: boolean,
+): Promise<SweepStageCountBaseline> {
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for the scraper sweep');
   await connectScriptMongo(mongoUrl);
   try {
     const sourceRowNames = await Source.find({ name: { $in: registeredNames } }).distinct('name');
     validateScraperSweepSourceRows(registeredNames, sourceRowNames);
+    return readStageBaseline ? await loadSweepStageCountBaseline() : {};
   } finally {
     await mongoose.disconnect();
   }
@@ -946,8 +994,16 @@ export function defaultScraperSweepOutputDirectory(
 
 export interface ScraperSweepChildResult {
   status: number | null;
+  signal?: NodeJS.Signals | null;
   error?: Error;
   timedOut?: boolean;
+}
+
+export function describeChildExit(label: string, child: ScraperSweepChildResult): string {
+  if (child.error) return sanitizeLogValue(child.error);
+  if (child.timedOut) return `${label} timed out and was stopped`;
+  if (child.signal) return `${label} was killed by ${child.signal}`;
+  return `${label} exited with status ${child.status ?? 1}`;
 }
 
 interface ChildRunnerOptions {
@@ -1025,7 +1081,9 @@ function spawnChild(
       );
     }
     child.on('error', (error) => finish({ status: null, error }));
-    child.on('close', (code) => finish({ status: code }));
+    child.on('close', (code, signal) =>
+      finish(signal ? { status: code, signal } : { status: code }),
+    );
   });
 }
 
@@ -1160,6 +1218,7 @@ interface PostRunStageDefinition {
   buildArgs: (options: DevelopmentPostRunStageOptions) => string[];
   isEnabled: (options: DevelopmentPostRunStageOptions) => boolean;
   parseResult?: (artifact: unknown) => PostRunStageDelta;
+  judgeResult?: StageResultJudge;
 }
 
 export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDelta {
@@ -1598,6 +1657,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-lane-scorecard.json',
     buildArgs: () => ['--apply', '--confirm-lane-scorecard'],
     isEnabled: () => true,
+    judgeResult: judgeLaneScorecardResult,
   },
   {
     // Replays resolve, derive and gate against the frozen engine benchmark, so the stored
@@ -1630,6 +1690,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-integrity.json',
     buildArgs: () => ['--include-samples', '--include-claim-gate'],
     isEnabled: () => true,
+    judgeResult: judgeIntegrityGateResult,
   },
   {
     name: 'trust-contract',
@@ -1637,6 +1698,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-trust-contract.json',
     buildArgs: () => ['--collection=all', '--mode=student-ready-only', '--strict'],
     isEnabled: () => true,
+    judgeResult: judgeTrustContractResult,
   },
   {
     name: 'archived-cleanup',
@@ -1702,10 +1764,10 @@ export function buildDevelopmentPostRunStages(
   );
 }
 
-export function parseDevelopmentPostRunStageResult(
+export function parseDevelopmentPostRunStageResult<T = PostRunStageDelta>(
   artifactPath: string,
-  parseResult: (artifact: unknown) => PostRunStageDelta,
-): PostRunStageDelta {
+  parseResult: (artifact: unknown) => T,
+): T {
   let raw: string;
   try {
     raw = fs.readFileSync(artifactPath, 'utf8');
@@ -1725,16 +1787,69 @@ interface SweepRuntimeContext {
   store: SweepCheckpointStore;
   logger: SweepRunLogger;
   now: () => Date;
+  stageBaseline?: SweepStageCountBaseline;
 }
 
-function reconstructDevelopmentStageDelta(
+export function judgeDevelopmentPostRunStageResult(
+  artifactPath: string,
+  judge: StageResultJudge,
+  baseline: Record<string, number> | undefined,
+): StageJudgement {
+  return parseDevelopmentPostRunStageResult(artifactPath, (artifact) => judge(artifact, baseline));
+}
+
+function judgementDiagnostics(judgement: StageJudgement): PostRunStageDiagnostics {
+  return {
+    ...(judgement.counts ? { counts: judgement.counts } : {}),
+    ...(judgement.regressions.length > 0 ? { regressions: judgement.regressions } : {}),
+    ...(judgement.unscored && judgement.unscored.length > 0
+      ? { unscored: judgement.unscored }
+      : {}),
+  };
+}
+
+function reconstructDevelopmentStage(
   planned: PlannedPostRunStage,
-): PostRunStageDelta | undefined {
-  if (!planned.definition.parseResult) return {};
+  baseline: Record<string, number> | undefined,
+): (PostRunStageDelta & PostRunStageDiagnostics) | undefined {
   try {
-    return parseDevelopmentPostRunStageResult(planned.artifactPath, planned.definition.parseResult);
+    const delta = planned.definition.parseResult
+      ? parseDevelopmentPostRunStageResult(planned.artifactPath, planned.definition.parseResult)
+      : {};
+    const judge = planned.definition.judgeResult;
+    if (!judge) return delta;
+    const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
+    return judgement.regressions.length > 0
+      ? undefined
+      : { ...delta, ...judgementDiagnostics(judgement) };
   } catch {
     return undefined;
+  }
+}
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+function reportPostRunStageOutcome(
+  label: string,
+  name: string,
+  error: string | undefined,
+  diagnostics: PostRunStageDiagnostics,
+): void {
+  if (error) {
+    console.error(`[${label}] ${name} failed (${diagnostics.failureKind ?? 'crashed'}): ${error}`);
+    if (diagnostics.failureKind !== 'regression') {
+      console.error(formatFailureTailForLog(diagnostics.failureTail));
+    }
+  } else if (diagnostics.counts) {
+    console.log(`[${label}] ${name} standing counts: ${formatStageCounts(diagnostics.counts)}`);
+  }
+  if (diagnostics.unscored) {
+    console.log(
+      `[${label}] ${name}: ${diagnostics.unscored.length} unscored benchmark(s) need recapture: ${diagnostics.unscored
+        .map((entry) => `${entry.benchmarkId} (${entry.reason})`)
+        .join('; ')}`,
+    );
   }
 }
 
@@ -1750,17 +1865,18 @@ async function runDevelopmentPostRunStages(
   const stages: DevelopmentPostRunStage[] = [];
   for (const planned of planDevelopmentPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
-    const resumedDelta = ctx?.store.isDone(stepId)
-      ? reconstructDevelopmentStageDelta(planned)
+    const baseline = ctx?.stageBaseline?.[planned.name];
+    const resumed = ctx?.store.isDone(stepId)
+      ? reconstructDevelopmentStage(planned, baseline)
       : undefined;
-    if (resumedDelta) {
+    if (resumed) {
       console.log(`\n[post-run] ${planned.name} (resume: already done)`);
       stages.push({
         name: planned.name,
         status: 'succeeded',
         artifactPath: planned.artifactPath,
         exitCode: 0,
-        ...resumedDelta,
+        ...resumed,
       });
       continue;
     }
@@ -1772,6 +1888,10 @@ async function runDevelopmentPostRunStages(
     console.log(`\n[post-run] ${planned.name}`);
     const stageStartedAt = clock();
     const logPath = `${planned.artifactPath}.log`;
+    const judge = planned.definition.judgeResult;
+    // A judged stage passes on a nonzero exit when its artifact holds its counts, so an
+    // artifact left by an earlier attempt must not stand in for one this attempt never wrote.
+    if (judge) fs.rmSync(planned.artifactPath, { force: true });
     ctx?.store.markRunning(stepId, 'stage', ctx.now());
     ctx?.logger.logStart(stepId);
     const child = await childRunner('yarn', planned.args, {
@@ -1780,10 +1900,27 @@ async function runDevelopmentPostRunStages(
       logPath,
     });
     const exitCode = child.status ?? 1;
-    let error =
-      child.error || exitCode !== 0
-        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
-        : undefined;
+    const childDied = Boolean(child.error || child.timedOut || child.signal);
+    let error: string | undefined;
+    let diagnostics: PostRunStageDiagnostics = {};
+    if (judge && !childDied) {
+      try {
+        const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
+        diagnostics = judgementDiagnostics(judgement);
+        if (judgement.regressions.length > 0) {
+          error = formatStageRegressions(planned.name, judgement.regressions);
+          diagnostics.failureKind = 'regression';
+        }
+      } catch (contractError) {
+        error = sanitizeLogValue(
+          `${describeChildExit(planned.name, child)} and its result could not be judged: ${errorMessage(contractError)}`,
+        );
+        diagnostics.failureKind = 'crashed';
+      }
+    } else if (childDied || exitCode !== 0) {
+      error = describeChildExit(planned.name, child);
+      diagnostics.failureKind = 'crashed';
+    }
     let delta: PostRunStageDelta = {};
     if (!error && planned.definition.parseResult) {
       try {
@@ -1793,6 +1930,7 @@ async function runDevelopmentPostRunStages(
         );
       } catch (contractError) {
         error = sanitizeLogValue(contractError);
+        diagnostics.failureKind = 'crashed';
         console.error(`[post-run] ${planned.name} result contract failed: ${error}`);
       }
     }
@@ -1805,6 +1943,11 @@ async function runDevelopmentPostRunStages(
         );
       }
     }
+    if (diagnostics.failureKind === 'crashed') {
+      const failureTail = buildFailureTail({ logPath, artifactPath: planned.artifactPath });
+      if (failureTail) diagnostics.failureTail = failureTail;
+    }
+    reportPostRunStageOutcome('post-run', planned.name, error, diagnostics);
     if (ctx) {
       if (error) {
         ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
@@ -1821,6 +1964,7 @@ async function runDevelopmentPostRunStages(
       exitCode,
       ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
+      ...diagnostics,
       ...delta,
     });
   }
@@ -2049,8 +2193,8 @@ async function runFellowshipPostRunStages(
     });
     const exitCode = child.status ?? 1;
     let error =
-      child.error || exitCode !== 0
-        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
+      child.error || child.timedOut || child.signal || exitCode !== 0
+        ? describeChildExit(planned.name, child)
         : undefined;
     if (!error && planned.artifactPath) {
       const artifactError = fellowshipPostRunArtifactError(planned.artifactPath);
@@ -2059,6 +2203,13 @@ async function runFellowshipPostRunStages(
         console.error(`[fellowship-post-run] ${planned.name} report contract failed: ${error}`);
       }
     }
+    const diagnostics: PostRunStageDiagnostics = {};
+    if (error) {
+      diagnostics.failureKind = 'crashed';
+      const failureTail = buildFailureTail({ logPath, artifactPath: planned.artifactPath });
+      if (failureTail) diagnostics.failureTail = failureTail;
+    }
+    reportPostRunStageOutcome('fellowship-post-run', planned.name, error, diagnostics);
     if (ctx) {
       if (error) {
         ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
@@ -2075,6 +2226,7 @@ async function runFellowshipPostRunStages(
       exitCode,
       ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
+      ...diagnostics,
     });
   }
   return {
@@ -2091,6 +2243,7 @@ export async function runScraperSweep(
     readHeadSha?: (repoRoot: string) => string | null;
     now?: () => Date;
     sweepSources?: ScraperSweepSource[];
+    stageBaseline?: SweepStageCountBaseline;
   } = {},
 ): Promise<ScraperSweepSummary> {
   const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
@@ -2102,7 +2255,11 @@ export async function runScraperSweep(
     .list()
     .map((source) => source.name);
   validateScraperSweepManifest(registeredNames);
-  await validateScraperSweepDatabasePreflight(registeredNames);
+  const storedStageBaseline = await validateScraperSweepDatabasePreflight(
+    registeredNames,
+    !dependencies.stageBaseline && isDevelopmentSweepMode(options.mode),
+  );
+  const stageBaseline = dependencies.stageBaseline ?? storedStageBaseline;
 
   const now = dependencies.now || (() => new Date());
   const startedAt = now();
@@ -2126,7 +2283,7 @@ export async function runScraperSweep(
       : `Starting ${options.mode} sweep (checkpoint ${checkpointPath}, output ${outputDirectory})`,
   );
   const logger = new SweepRunLogger(outputDirectory, now);
-  const ctx: SweepRuntimeContext = { store, logger, now };
+  const ctx: SweepRuntimeContext = { store, logger, now, stageBaseline };
   const sweepCodeSha = store.codeSha;
   console.log(
     sweepCodeSha
@@ -2283,6 +2440,9 @@ export async function runScraperSweep(
     const failStep = (error: string): void => {
       store.markFailed(stepId, 'source', exitCode, now());
       logger.logFailed(stepId, exitCode, logPath);
+      const failureTail = buildFailureTail({ logPath, artifactPath });
+      console.error(`[${index + 1}/${sweepSources.length}] ${source.name} failed: ${error}`);
+      console.error(formatFailureTailForLog(failureTail));
       rows[index] = {
         sourceName: source.name,
         phase: source.phase,
@@ -2291,10 +2451,15 @@ export async function runScraperSweep(
         exitCode,
         ...sourceTiming,
         error,
+        ...(failureTail ? { failureTail } : {}),
       };
     };
-    if (child.error || exitCode !== 0 || !fs.existsSync(artifactPath)) {
-      failStep(sanitizeLogValue(child.error || `scraper exited with status ${exitCode}`));
+    if (child.error || child.timedOut || child.signal || exitCode !== 0) {
+      failStep(describeChildExit('scraper', child));
+      return;
+    }
+    if (!fs.existsSync(artifactPath)) {
+      failStep(`scraper exited with status ${exitCode} but wrote no artifact`);
       return;
     }
 

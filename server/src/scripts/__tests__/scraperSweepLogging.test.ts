@@ -3,9 +3,13 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  FAILURE_TAIL_MAX_CHARS,
   SweepRunLogger,
+  buildFailureTail,
   formatErrorLogEntry,
+  formatFailureTailForLog,
   readLogTail,
+  redactFailureTailLine,
   tailLines,
 } from '../scraperSweepLogging';
 
@@ -97,5 +101,52 @@ describe('scraper sweep logging', () => {
     });
     expect(entry).toContain('(no captured output)');
     expect(entry).toContain('stage:search-rebuild');
+  });
+
+  describe('failure tail (#4852)', () => {
+    it('redacts contact details, netids, person fields and URL paths from a tail line', () => {
+      const line = redactFailureTailLine(
+        '{"name":"Synthetic Person","slug":"zz-synthetic-lab","count":3} netid=zz99 mail zz99@example.edu at https://synthetic.example.edu/profile/zz-synthetic-person?x=1',
+      );
+      expect(line).toContain('"name":"[redacted]"');
+      expect(line).toContain('"slug":"[redacted]"');
+      expect(line).toContain('"count":3');
+      expect(line).toContain('netid=[netid redacted]');
+      expect(line).toContain('[email redacted]');
+      expect(line).toContain('https://synthetic.example.edu/[path redacted]');
+      expect(line).not.toMatch(/Synthetic Person|zz-synthetic|zz99@/);
+    });
+
+    it('keeps the end of a long log within the cap', () => {
+      const logPath = path.join(dir, 'stage.log');
+      fs.writeFileSync(
+        logPath,
+        `${Array.from({ length: 60 }, (_, i) => `line-${i} ${'x'.repeat(120)}`).join('\n')}\nfinal error line\n`,
+      );
+      const tail = buildFailureTail({ logPath });
+      expect(tail!.length).toBeLessThanOrEqual(FAILURE_TAIL_MAX_CHARS);
+      expect(tail!.startsWith('...')).toBe(true);
+      expect(tail!.endsWith('final error line')).toBe(true);
+    });
+
+    it('leads with the scalar fields of a JSON artifact the stage left behind', () => {
+      const logPath = path.join(dir, 'stage.log');
+      const artifactPath = path.join(dir, 'stage.json');
+      fs.writeFileSync(logPath, 'Error: index sync failed\n');
+      fs.writeFileSync(
+        artifactPath,
+        JSON.stringify({
+          mode: 'apply',
+          result: { scanned: 40, errors: 2, samples: [{ slug: 'zz-synthetic-lab' }] },
+        }),
+      );
+      const tail = buildFailureTail({ logPath, artifactPath });
+      expect(tail).toBe(
+        'artifact: {"mode":"apply","result.scanned":40,"result.errors":2}\nError: index sync failed',
+      );
+      expect(buildFailureTail({ logPath: path.join(dir, 'missing.log') })).toBeUndefined();
+      expect(formatFailureTailForLog(undefined)).toBe('  | (no captured output)');
+      expect(formatFailureTailForLog('a\nb')).toBe('  | a\n  | b');
+    });
   });
 });

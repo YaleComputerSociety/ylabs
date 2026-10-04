@@ -137,6 +137,19 @@ function formatElapsed(run: StoredWeeklySweepRun, now: Date): string {
   return `took ${formatDuration(run.durationMs)}${headroom}`;
 }
 
+function formatStandingCounts(
+  counts: Record<string, number | null | undefined> | null | undefined,
+): string {
+  const entries = Object.entries(counts ?? {}).filter(
+    (entry): entry is [string, number] => typeof entry[1] === 'number',
+  );
+  if (entries.length === 0) return '';
+  const nonzero = entries.filter(([, value]) => value > 0);
+  return nonzero.length > 0
+    ? nonzero.map(([name, value]) => `${name}=${value}`).join(', ')
+    : `all ${entries.length} counts zero`;
+}
+
 export function formatWeeklySweepRun(run: StoredWeeklySweepRun, now = new Date()): string {
   const lines = [
     `${formatStarted(run.startedAt)}  ${formatModes(run)}  ${run.status}  code ${run.codeSha ? run.codeSha.slice(0, 9) : 'unknown'}  ${formatElapsed(run, now)}`,
@@ -159,15 +172,48 @@ export function formatWeeklySweepRun(run: StoredWeeklySweepRun, now = new Date()
       `  slowest: ${slowest.map((step) => `${step.label} ${formatDuration(step.durationMs)}`).join(', ')}`,
     );
   }
+  const failedSources = (run.sources ?? []).filter((source) => source?.status === 'failed');
+  const failedStages = (run.stages ?? []).filter((stage) => stage?.status === 'failed');
   const failed = [
-    ...(run.sources ?? [])
-      .filter((source) => source?.status === 'failed')
-      .map((source) => `${source?.sourceName ?? '?'} (exit ${source?.exitCode ?? '?'})`),
-    ...(run.stages ?? [])
-      .filter((stage) => stage?.status === 'failed')
-      .map((stage) => `${stage?.name ?? '?'} (post-run, exit ${stage?.exitCode ?? '?'})`),
+    ...failedSources.map(
+      (source) => `${source?.sourceName ?? '?'} (exit ${source?.exitCode ?? '?'})`,
+    ),
+    ...failedStages.map(
+      (stage) =>
+        `${stage?.name ?? '?'} (post-run, ${stage?.failureKind ? `${stage.failureKind}, ` : ''}exit ${stage?.exitCode ?? '?'})`,
+    ),
   ];
   lines.push(`  failed: ${failed.length > 0 ? failed.join(', ') : 'none'}`);
+  for (const stage of run.stages ?? []) {
+    for (const regression of stage?.regressions ?? []) {
+      lines.push(
+        `  regression: ${stage?.name ?? '?'} ${regression?.name ?? '?'} ${regression?.previous ?? '?'} -> ${regression?.current ?? '?'}`,
+      );
+    }
+  }
+  for (const stage of run.stages ?? []) {
+    const standing = formatStandingCounts(stage?.counts);
+    if (standing) lines.push(`  standing: ${stage?.name ?? '?'} ${standing}`);
+  }
+  for (const stage of run.stages ?? []) {
+    const unscored = stage?.unscored ?? [];
+    if (unscored.length === 0) continue;
+    lines.push(
+      `  needs recapture: ${stage?.name ?? '?'} ${unscored.length} unscored: ${unscored
+        .map((entry) => `${entry?.benchmarkId ?? '?'} (${entry?.reason ?? '?'})`)
+        .join('; ')}`,
+    );
+  }
+  for (const step of [
+    ...failedSources.map((source) => ({ label: source?.sourceName, ...source })),
+    ...failedStages.map((stage) => ({ label: `${stage?.name ?? '?'} (post-run)`, ...stage })),
+  ]) {
+    if (!step.error && !step.failureTail) continue;
+    lines.push(`  why ${step.label ?? '?'}: ${step.error ?? '-'}`);
+    for (const tailLine of (step.failureTail ?? '').split('\n').filter(Boolean)) {
+      lines.push(`    | ${tailLine}`);
+    }
+  }
   for (const refusal of run.refusals ?? []) lines.push(`  refused: ${refusal}`);
   if (run.error) lines.push(`  error: ${run.error}`);
   lines.push(`  corpus snapshot: ${run.corpusSnapshot?.status ?? '-'}`);
