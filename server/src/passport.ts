@@ -14,6 +14,7 @@ import {
 import { isSessionClaimLive, mintSessionClaim, storedSessionClaim } from './utils/sessionClaim';
 import type { AccountProfile } from './models/account';
 import { lookupYalieByNetid } from './services/yaliesService';
+import { loginSignalBucketForLookup, recordLoginSignal } from './services/loginSignalTallyService';
 import { isFacultyTitle } from './utils/facultyTitle';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
@@ -473,6 +474,7 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
   let profile: AccountProfile | undefined;
 
   const lookup = await lookupYalieByNetid(netid);
+  void recordLoginSignal(loginSignalBucketForLookup(lookup));
   if (lookup.kind === 'student') {
     const yalie = lookup.identity;
     userType = yalie.userType;

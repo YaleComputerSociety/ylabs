@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: Login Counts Personalization Signal Coverage In Aggregate Only, Until The Personalization Decision (#4744)
+
+Personalizing default `/research` browse from the Yalies major, or a graduate curriculum, is only worth building if enough signed-in students carry that signal, and that share is unknown.
+A Yale College major is declared late, a major hidden in the source directory is absent from Yalies, and a record marked leave or visitor carries nothing usable.
+Development cannot answer it, because a Development login skips CAS and never calls Yalies.
+Decision: each CAS login classifies its Yalies lookup into exactly one bucket and increments a per-UTC-day counter in `login_signal_tallies`.
+The row holds the date and integer counts only, with no netid, account id, major, curriculum or time finer than the day, so the #4162 rule that login stores no major is unchanged: the major is read inside `yaliesService.ts` and only its bucket label leaves.
+A tally write never blocks or fails a login.
+The collection is environment-local and is read with `yarn --cwd server auth:login-signal-tally --environment=production --from <date> --to <date>`.
+It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
+Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
+
 ## 2026-10-04: A Multi-Purpose Fund Is Served When Its Own Page Names Research As An Eligible Use (#4675)
 
 A fund that pays for research among other uses, such as study, language, internships or travel, is research-relevant when its own page text (description, eligibility or summary) names research as an eligible use (owner decision).

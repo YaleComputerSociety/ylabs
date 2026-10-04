@@ -44,6 +44,15 @@ describe('lookupYalieByNetid', () => {
     expect(lookup.kind === 'student' && lookup.identity).not.toHaveProperty('college');
   });
 
+  it('carries only a signal bucket for the major, never the major itself', async () => {
+    respond([{ ...person, year: 2028, school_code: 'YC', major: 'Synthetic Studies' }]);
+
+    const lookup = await lookupYalieByNetid('fixturenetid');
+
+    expect(lookup).toMatchObject({ kind: 'student', signal: 'undergrad_usable_major' });
+    expect(JSON.stringify(lookup)).not.toContain('Synthetic Studies');
+  });
+
   it('reads a graduate school code as a graduate student', async () => {
     respond([{ ...person, year: 2027, school_code: 'GS' }]);
 
