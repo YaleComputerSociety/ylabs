@@ -125,3 +125,24 @@ describe('isNonResearchCardSentence on fragments and news notes', () => {
     ).toBe(false);
   });
 });
+
+describe('teaching records in the card slot', () => {
+  it.each([
+    [
+      'a past teaching appointment',
+      'Example has previously held teaching appointments at Synthetic College and Sample University, and taught photography at an art school.',
+    ],
+    [
+      'a focus on developing students',
+      "Pat Example's work focuses on developing students’ technique and style through play.",
+    ],
+  ])('refuses %s', (_label, card) => {
+    expect(isNonResearchCardSentence(card)).toBe(true);
+  });
+
+  it('keeps a focus on developing research methods', () => {
+    expect(
+      isNonResearchCardSentence('Her work focuses on developing new imaging methods for coral reefs.'),
+    ).toBe(false);
+  });
+});

@@ -291,8 +291,36 @@ const CV_RECORD_SENTENCE =
 const CV_CITATION_SENTENCE =
   /\b(?:de\s+Gruyter|Brill|Routledge|OUP|CUP|(?!The\b)[A-Z][\p{L}&]+\s+Press)\b[^.]{0,40}\b(?:19|20)\d{2}\b|\([Ee]dd?s?\.\)|\b[Ee]dd?s?\.\s+(?:by\s+)?[A-Z]|\b(?:[Ff]ull|[Cc]omplete|[Dd]ownload|[Ss]ee|[Vv]iew)\s+(?:the\s+)?CV\b|\b[Ss]earch\s+for\s+(?:a|the)\s+new\s+(?:[\p{L}-]+\s+)?(?:chair|dean|director|faculty|professor|head)\b|^(?:[A-Z]\.\s?){1,3}[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+)?\s+and\s+(?:[A-Z]\.\s?){1,3}/u;
 
+// A bibliography entry rather than prose: an author-year citation ("Doe, A., & Roe, B.
+// (2007). Title. Journal, 5(4), 103-108."), an edited volume "(Place: Publisher, 2021)", a
+// coauthor lead "(with ...)", a quoted title followed by its venue or year, and the link
+// labels and status notes a publication list carries between its entries ("Paper.",
+// "Slides.", "2026.", "Revision requested at ...").
+const BIBLIOGRAPHY_LINK_LABEL =
+  '(?:(?:Paper|Slides|Code|Data|Replication\\s+(?:files|package)|(?:Online\\s+)?Appendix|Draft|Link|PDF|Video|Abstract|Preprint|arXiv)|(?:19|20)\\d{2}[a-z]?)\\.?';
+
+const BIBLIOGRAPHIC_CITATION_SENTENCE: readonly RegExp[] = [
+  /^[A-Z][\p{L}'’-]+,\s+(?:[A-Z]\.\s?){1,3},?\s*(?:(?:&|and)\s+[A-Z][\p{L}'’-]+,\s+(?:[A-Z]\.\s?){1,3},?\s*)*\((?:19|20)\d{2}[a-z]?\)/u,
+  /\b\d{1,4}\s?\(\d{1,4}\)\s?[,:]\s?\d{1,5}\s?[-–]\s?\d{1,5}\b/,
+  /\((?:[A-Z][\p{L}.]+(?:[\s,]+[A-Z][\p{L}.]+){0,3})\s*:\s*[^():]{2,60},\s*(?:19|20)\d{2}\)/u,
+  /^\(\s*with\s+[A-Z]/,
+  /^["“][^"”]{8,250}["”](?:\s*\(with\s[^)]+\))?[^"“”]{0,80}?(?:\b(?:19|20)\d{2}\b|\b(?:Paper|Slides|Journal|Review|Quarterly|Press)\b|[.,]?\s*$)/,
+  /\b(?:articles?|essays?|papers?|work|writing|research)\s+(?:has|have)\s+(?:also\s+)?appeared\s+in\b/i,
+  new RegExp(
+    `^${BIBLIOGRAPHY_LINK_LABEL}(?:\\s+${BIBLIOGRAPHY_LINK_LABEL})*$`,
+    'i',
+  ),
+  /^(?:Here\s+(?:are|is)\s+)?(?:a\s+few\s+|some\s+)?(?:of\s+(?:my|his|her|their)\s+)?(?:recent|selected|representative)\s+(?:papers|publications|articles)\b/i,
+  /^(?:Revision\s+requested|Revise\s+and\s+resubmit|R&R|Forthcoming|(?:Conditionally\s+)?[Aa]ccepted|Under\s+review|Working\s+paper)\b/,
+];
+
+export const isBibliographicCitationSentence = (sentence: string): boolean =>
+  BIBLIOGRAPHIC_CITATION_SENTENCE.some((pattern) => pattern.test(sentence));
+
 export const isCurriculumVitaeRecordSentence = (sentence: string): boolean =>
-  CV_RECORD_SENTENCE.test(sentence) || CV_CITATION_SENTENCE.test(sentence);
+  CV_RECORD_SENTENCE.test(sentence) ||
+  CV_CITATION_SENTENCE.test(sentence) ||
+  isBibliographicCitationSentence(sentence);
 
 /**
  * The sentences of a biography that state, in their own subject, what the person
@@ -326,6 +354,8 @@ export function researchStatementSentences(
         !isCurriculumVitaeRecordSentence(sentence)),
   );
   if (firstStatement < 0) return [];
+  const firstCitation = sentences.findIndex(isBibliographicCitationSentence);
+  const beforePublicationList = (index: number) => firstCitation < 0 || index < firstCitation;
   return sentences.filter(
     (sentence, index) =>
       RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
@@ -334,7 +364,9 @@ export function researchStatementSentences(
       RESEARCH_TOPICS_SENTENCE.test(sentence) ||
       (!isCareerFactSentence(sentence) &&
         (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
-          (index > firstStatement && !isCurriculumVitaeRecordSentence(sentence)))),
+          (index > firstStatement &&
+            beforePublicationList(index) &&
+            !isCurriculumVitaeRecordSentence(sentence)))),
   );
 }
 
@@ -345,6 +377,7 @@ const MIN_DATED_TITLES = 3;
 const CV_CAREER_SENTENCE_PATTERN =
   /\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?D|Ph\.?\s?D|doctorate|degree|residency|fellowship|training)\b|\b(?:joined|served\s+as)\b|\bis\s+the\s+author\s+of\b|\b(?:award|prize|medal)\b.{0,60}\b(?:19|20)\d{2}\b|\bwon\s+the\b|\b(?:received|won)\s+the\s+[^.]{0,80}\b(?:Award|Prize|Medal)\b|\belected\s+(?:a\s+)?(?:fellow|member)\b|\bchaired\b|\b(?:keynoter|keynote\s+speaker|panelist)\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b|\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:M\.?F\.?A|D\.?M\.?A|M\.?Arch|D\.?Phil)\b|\b(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?F\.?A|M\.?D|J\.?D|Ph\.?\s?D)\.?\s+(?:in\s+[^.]{0,60}?\s+)?from\b|\b(?:has|have)\s+(?:also\s+)?taught\s+at\b|\b(?:has|have)\s+(?:also\s+)?published\s+(?:in|widely|extensively|numerous)\b|\bconsultant\s+(?:to|for|on)\b|\bFulbright\b|\b(?:editorial|advisory)\s+boards?\b/i;
 const MIN_CV_CAREER_SENTENCES = 2;
+const MIN_CITATION_SENTENCES = 2;
 
 /**
  * A body pasted from a CV: a degree line, a list of dated titles, or several
@@ -356,8 +389,36 @@ export function isCurriculumVitaeShapedBody(value: unknown): boolean {
   if (!text) return false;
   if (DEGREE_LINE_PATTERN.test(text)) return true;
   if ((text.match(DATED_TITLE_PATTERN) || []).length >= MIN_DATED_TITLES) return true;
+  const sentences = splitDescriptionSentences(text);
+  if (sentences.filter(isBibliographicCitationSentence).length >= MIN_CITATION_SENTENCES) {
+    return true;
+  }
   return (
-    splitDescriptionSentences(text).filter((sentence) => CV_CAREER_SENTENCE_PATTERN.test(sentence))
-      .length >= MIN_CV_CAREER_SENTENCES
+    sentences.filter((sentence) => CV_CAREER_SENTENCE_PATTERN.test(sentence)).length >=
+    MIN_CV_CAREER_SENTENCES
   );
+}
+
+/**
+ * A body that is a bibliography entry and nothing else: it opens on a citation and
+ * states no research of its own, so its title words read as topics while telling a
+ * student nothing about the work.
+ */
+export function isBibliographicCitationBody(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const [opening] = splitDescriptionSentences(text);
+  if (!opening || !isBibliographicCitationSentence(opening)) return false;
+  return researchStatementSentences(text, { activityAnchors: true }).length === 0;
+}
+
+// The opening that states a teaching post before any research: "<Name> is Senior
+// Lecturer in <field> at Yale, where he teaches ...". Such a body buries its research
+// statement behind the appointment, so it is narrowed like a career biography.
+const TEACHING_APPOINTMENT_OPENER =
+  /^(?:(?:Dr|Prof)\.?\s+)?[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){0,3},?\s+is\s+(?:an?\s+|the\s+)?(?:[\p{L}'’-]+\s+){0,6}(?:Lecturer|Lector|Instructor|Preceptor|Professor)\b[^.]{0,200}\b(?:where\s+(?:he|she|they)\s+teach(?:es)?|teach(?:es|ing)\s+(?:\w+\s+){0,4}courses?)\b/u;
+
+export function opensOnTeachingAppointment(value: unknown): boolean {
+  const [opening] = splitDescriptionSentences(textValue(value));
+  return Boolean(opening) && TEACHING_APPOINTMENT_OPENER.test(opening);
 }
