@@ -6320,7 +6320,10 @@ export async function loadResearchEntityNameIdentityAuthority(
       researchEntityId,
       prefetchedLeadPersonId,
     ),
-    leadPersonId: await loadResearchEntitySoleLeadPersonId(researchEntityId, prefetchedLeadPersonId),
+    leadPersonId: await loadResearchEntitySoleLeadPersonId(
+      researchEntityId,
+      prefetchedLeadPersonId,
+    ),
     labRowRoster: await loadLabRowRoster(),
   };
 }
