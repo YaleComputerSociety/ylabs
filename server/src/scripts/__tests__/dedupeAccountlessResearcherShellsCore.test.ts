@@ -411,7 +411,13 @@ describe('decideShellMerge verified-profile arm', () => {
     ...over,
   });
   const decide = (s: Record<string, unknown>, accounts: Record<string, unknown>[]) =>
-    decideShellMerge(s, new Map(), new Map(), [], buildVerifiedPrimaryProfileIndex(accounts as any));
+    decideShellMerge(
+      s,
+      new Map(),
+      new Map(),
+      [],
+      buildVerifiedPrimaryProfileIndex(accounts as any),
+    );
 
   it('folds a shell into the one account that holds the same verified profile', () => {
     expect(decide(shell(), [account()])).toEqual({
