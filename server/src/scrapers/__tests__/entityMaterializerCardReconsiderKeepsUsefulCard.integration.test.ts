@@ -22,6 +22,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { researchEntityDescriptionIsCoherent } from '../../services/studentVisibilityTier';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
+import { cardLineFitsBrowseCard } from '../../utils/groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
   isFullDescriptionRestatementOfShortDescription,
@@ -150,7 +151,7 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
     expect(researchEntityDescriptionIsCoherent(row as Record<string, unknown>)).toBe(true);
   });
 
-  it('serves a scraped card with a parenthetical e.g. whole, never cut at "(e.g."', async () => {
+  it('never cuts a scraped card at "(e.g.", and replaces one too long for the browse card with a line that shows whole (#4809)', async () => {
     expect(SCRAPED_CARD_WITH_PARENTHETICAL_EXAMPLE.length).toBeGreaterThan(
       MAX_SHORT_DESCRIPTION_LENGTH,
     );
@@ -166,6 +167,7 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
     for (const card of [row?.shortDescription ?? '', served.servedCard]) {
       expect(card).not.toMatch(/\((?:e\.g|i\.e)\.\s*$/i);
     }
-    expect(served.servedCard).toBe(SCRAPED_CARD_WITH_PARENTHETICAL_EXAMPLE);
+    expect(cardLineFitsBrowseCard(served.servedCard)).toBe(true);
+    expect(served.servedCard).not.toBe(SCRAPED_CARD_WITH_PARENTHETICAL_EXAMPLE);
   });
 });

@@ -22,6 +22,7 @@ import {
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
+import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -636,7 +637,32 @@ export interface CardSynthesisLLMInput {
   apiKey: string;
   fullDescription: string;
   entityName: string;
+  maxCharacters?: number;
+  previousAttempt?: string;
 }
+
+/**
+ * Whether a card line shows whole on the browse card, which ends at the last
+ * whole sentence within 200 characters and otherwise cuts mid-sentence with "…".
+ * A one-sentence line past that limit is what put "…" on 1,645 of 3,367 served
+ * Development cards on 2026-10-04 (#4809).
+ */
+export function cardLineFitsBrowseCard(card: unknown): boolean {
+  return !browseCardIsCutMidSentence(browseCardSummary(textValue(card)));
+}
+
+// Under the 200-character render, so a line that runs a little long still fits.
+export const CARD_SYNTHESIS_MAX_CHARACTERS = 190;
+
+const cardLengthInstruction = (input: CardSynthesisLLMInput): string[] => {
+  if (!input.maxCharacters) return [];
+  const limit = `The sentence must be at most ${input.maxCharacters} characters, so it shows whole on a browse card.`;
+  if (!input.previousAttempt) return [limit];
+  return [
+    limit,
+    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Shorten it to at most ${input.maxCharacters} characters, keeping what is studied and how.`,
+  ];
+};
 
 export type CardSynthesisLLMFn = (input: CardSynthesisLLMInput) => Promise<string>;
 
@@ -662,6 +688,7 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
           content: [
             `Research entity: ${safeName}`,
             'Return JSON {"shortDescription": "..."} with a single card sentence, or {"shortDescription": ""} when the description has no clear research focus.',
+            ...cardLengthInstruction(input),
             'DESCRIPTION:',
             safeSource,
           ].join('\n\n'),
@@ -684,7 +711,12 @@ export interface SynthesizeGroundedCardInput {
   entityName?: string;
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
-  callLLM: (input: { fullDescription: string; entityName: string }) => Promise<string>;
+  callLLM: (input: {
+    fullDescription: string;
+    entityName: string;
+    maxCharacters?: number;
+    previousAttempt?: string;
+  }) => Promise<string>;
 }
 
 export async function synthesizeGroundedCardDescription(
@@ -697,19 +729,33 @@ export async function synthesizeGroundedCardDescription(
     fullQuality.flags.length === 1 && fullQuality.flags.includes('first-person');
   if (!fullQuality.isUseful && !onlyFirstPersonFull) return '';
 
-  let raw: string;
-  try {
-    raw = await input.callLLM({ fullDescription: full, entityName: input.entityName || '' });
-  } catch {
-    return '';
-  }
-  const card = normalizeCardText(raw);
-  if (!card) return '';
-  if (!isSynthesizedCardGroundedInFullDescription(card, full)) return '';
-  return shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
-    .isUseful
-    ? card
-    : '';
+  const acceptable = (card: string): boolean =>
+    Boolean(card) &&
+    isSynthesizedCardGroundedInFullDescription(card, full) &&
+    shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
+      .isUseful;
+  const attempt = async (previousAttempt?: string): Promise<string> => {
+    try {
+      return normalizeCardText(
+        await input.callLLM({
+          fullDescription: full,
+          entityName: input.entityName || '',
+          maxCharacters: CARD_SYNTHESIS_MAX_CHARACTERS,
+          previousAttempt,
+        }),
+      );
+    } catch {
+      return '';
+    }
+  };
+
+  const first = await attempt();
+  if (!acceptable(first)) return '';
+  if (cardLineFitsBrowseCard(first)) return first;
+  // One shortening retry: a grounded line that runs long is still the best line
+  // this body yields, so it is kept when the retry does not fit or does not pass.
+  const shortened = await attempt(first);
+  return acceptable(shortened) && cardLineFitsBrowseCard(shortened) ? shortened : first;
 }
 
 export interface ResolveGroundedCardInput {
@@ -771,31 +817,35 @@ export async function resolveGroundedCardDescription(
     deriveShortDescriptionFromFullDescription(input.fullDescription),
     input.isProgramLike,
   );
-  if (
-    derived &&
+  const derivedPasses =
+    Boolean(derived) &&
     !refused(derived) &&
     shortDescriptionQuality(derived, input.fullDescription, input.researchAreas, {
       entityType: input.entityType,
-    }).isUseful
-  ) {
-    return derived;
-  }
+    }).isUseful;
+  if (derivedPasses && cardLineFitsBrowseCard(derived)) return derived;
+  // A passing line that the browse card would cut mid-sentence is held back while a
+  // line that shows whole is sought, and is still preferred to the topic summary.
   const full = textValue(input.fullDescription);
+  let synthesized = '';
   if (input.synthesize && full) {
-    const synthesized = rejectStudiesLeadOnProgramLike(
+    const candidate = rejectStudiesLeadOnProgramLike(
       await input.synthesize(full),
       input.isProgramLike,
     );
     if (
-      synthesized &&
-      !refused(synthesized) &&
-      shortDescriptionQuality(synthesized, full, input.researchAreas, {
+      candidate &&
+      !refused(candidate) &&
+      shortDescriptionQuality(candidate, full, input.researchAreas, {
         entityType: input.entityType,
       }).isUseful
     ) {
-      return synthesized;
+      synthesized = candidate;
     }
   }
+  if (synthesized && cardLineFitsBrowseCard(synthesized)) return synthesized;
+  if (derivedPasses) return derived;
+  if (synthesized) return synthesized;
   const researchAreasSummary = rejectStudiesLeadOnProgramLike(
     buildResearchAreasCardSummary(input.researchAreas),
     input.isProgramLike,

@@ -56,6 +56,7 @@ import {
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
+  cardLineFitsBrowseCard,
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
   isUngroundedSynthesizedCard,
@@ -626,7 +627,10 @@ export async function resolveMaterializedShortDescription(
     !isBareResearchAreasFallback &&
     Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
+  const currentFitsBrowseCard = cardLineFitsBrowseCard(current);
+  if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
+    return null;
+  }
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
@@ -648,6 +652,16 @@ export async function resolveMaterializedShortDescription(
   const groundedIsBareResearchAreasEcho =
     !!researchAreasCardSummary && grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
+  // A current card reconsidered only because the browse card cuts it is replaced
+  // only by a line that shows whole; trading one cut line for another is churn.
+  if (
+    currentClearsCardBar &&
+    !currentFitsBrowseCard &&
+    !input.reconsiderCurrentShortDescription &&
+    !cardLineFitsBrowseCard(grounded)
+  ) {
+    return null;
+  }
   // Reconsidering is triggered by a body that restates the current card, so a replacement
   // that restates the body too is no upgrade: a single-sentence body derives itself as its
   // card, and served beside its own body that card reads as empty and refuses the row (#3866).
