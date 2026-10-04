@@ -45,7 +45,7 @@ const CAPITALIZED_PRONOUN_SUBJECT = 'He|She|They|His|Her|Their|Him|Hers|Theirs';
  * that right-hand side is always a real sentence start.
  */
 const SENTENCE_BOUNDARY = new RegExp(
-  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
+  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Mx|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
     '(?<=[.!?])\\s+(?=["\'“‘(]?[A-Z])' +
     `|(?<=[.!?])\\s+(?=(?:${CAPITALIZED_PRONOUN_SUBJECT})\\b)`,
 );
@@ -216,5 +216,103 @@ export function isCareerBiographyDescription(value: unknown): boolean {
   return (
     hasPersonSubjectLead(opening) &&
     PERSON_SUBJECT_CAREER_MARKERS.some((marker) => marker.test(opening))
+  );
+}
+
+const RESEARCH_STATEMENT_SUBJECT = [
+  "(?:[Hh]is|[Hh]er|[Tt]heir|[Mm]y|[Oo]ur|(?:[A-Z][A-Za-z.'’-]+\\s+){0,3}[A-Z][A-Za-z.'’-]*?(?:['’]s|s['’]))\\s+(?:(?:current|primary|main|principal|recent|ongoing|academic|other)\\s+)?" +
+    '(?:(?:areas?|fields?)\\s+of\\s+(?:academic\\s+)?(?:research|study|expertise)' +
+    '|(?:teaching\\s+and\\s+)?research(?:\\s+and\\s+teaching)?(?:\\s+(?:interests?|program|agenda))?' +
+    '|scholarship)',
+  'The\\s+(?:(?:primary|main|central|principal)\\s+)?focus\\s+of\\s+(?:his|her|their|my|our)\\s+' +
+    '(?:(?:current|recent)\\s+)?(?:research|scholarship)',
+].join('|');
+
+const RESEARCH_STATEMENT_LEAD_IN =
+  '(?:(?:Most\\s+recently|More\\s+recently|Recently|Currently|Today|In\\s+addition|Additionally|' +
+  'In\\s+(?:the\\s+)?(?:area|field|context)\\s+of\\s+[^,.]{1,80}),?\\s+)?';
+
+const RESEARCH_STATEMENT_SENTENCE = new RegExp(
+  `^${RESEARCH_STATEMENT_LEAD_IN}(?:${RESEARCH_STATEMENT_SUBJECT})\\s+(?:(?:has|have)\\s+)?(?:(?:\\w+ly|long|always)\\s+)?` +
+    '(?:(?:is|are|was|were)(?!\\s+(?:\\w+ly\\s+)?(?:supported|funded|sponsored|published|featured|recognized|cited|' +
+    'covered|highlighted|awarded))|focus(?:es|ed)?|cent(?:er|re)(?:s|d)?|examines?|explores?|investigates?|' +
+    'includes?|spans?|concerns?|addresses?|lie|lies|revolves|engages?|seeks?|aims?)\\b',
+);
+
+const RESEARCHER_WHOSE_FOCUS_SENTENCE =
+  /^(?:He|She|They)\s+(?:is|are)\s+an?\s+(?:[\w-]+\s+){0,3}(?:researcher|scholar|scientist|historian|economist)\s+(?:whose|who)\b[^.]{0,40}\b(?:focus(?:es)?|work|research|stud(?:y|ies))\b|^(?:His|Her|Their)\s+(?:latest|recent|current)\s+(?:writing|work|book|research)\s+(?:is|focuses|examines|explores)\b/;
+
+const RESEARCH_TOPICS_SENTENCE =
+  /^(?:(?:Active|Current|Ongoing|Recent)\s+)*(?:current\s+)?(?:research\s+(?:topics|areas|projects|questions)|projects)\s+(?:are|include)\b/i;
+
+const RESEARCH_ACTIVITY_SENTENCE =
+  /^(?:He|She|They|We|I|(?:His|Her|Their|Our|My)\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research|scholarship)|(?:Dr\.?\s+|Professor\s+)?[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){0,2}(?:['’]s\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research))?)\s+(?:has\s+|have\s+)?(?:(?:also|currently|primarily|mainly|further)\s+)?(?:studies|investigates|examines|explores|analy[sz]es|evaluates|models|develops|focus(?:es|ed)|concerns|addresses|asks|seeks|aims|works\s+(?:on|in)|speciali[sz]es\s+in|combines|employs|applies|uses\s+(?:diverse\s+|a\s+)?(?:research\s+)?(?:methods|methodologies|approaches|techniques)|uses\s+\w+(?:\s+\w+)?\s+to\s+(?:study|understand|examine|investigate))\b/u;
+
+const CV_RECORD_SENTENCE =
+  /\b(?:teach(?:es|ing)?\s+(?:\w+\s+){0,2}(?:courses?|classes|seminars?)|(?:has|have|holds?)\s+(?:an?\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?B\.?A|J\.?D|M\.?D|Ph\.?\s?D)\b|(?:has|have)\s+published\b|author\s+of\b|(?:co-?)?editors?\s+of\b|(?:received|won)\s+(?:the|an?)\s+[^.]{0,60}\b(?:awards?|prizes?|medals?)\b|\b(?:publications|books|works)\s+include\b|\([^()]{0,80}\b(?:19|20)\d{2}\)|\b(?:is|was)\s+an?\s+(?:\w+\s+)?(?:fellow|member)\s+of\b|\b(?:born|educated|elected|appointed|awarded)\b|\btook\s+(?:his|her|their)\s+[A-Z]{2,4}\b|\b(?:chaired|inaugural|keynoter|panelist|most\s+cited)\b|\b(?:he|she|they)\s+(?:also\s+)?published\b|^In\s+(?:19|20)\d{2}\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b|\b(?:is|was)\s+(?:the|a)\s+(?:\w+\s+){0,2}chair\b)/i;
+
+/**
+ * The sentences of a biography that state, in their own subject, what the person
+ * researches: "Her area of academic research is ...", "The focus of his current
+ * research is ...", and the prose that follows such a statement ("She studies how
+ * firms respond ...", "Using spectroscopy, her group has uncovered ..."), less the
+ * career facts and CV records (teaching load, degrees, publication record, editorships,
+ * prizes) mixed into it. A profile that pastes a CV (degree line, book list, awards,
+ * past appointments) usually still carries such sentences, and they are the only
+ * part a student opened the page to read. Returns nothing unless at least one
+ * explicit research statement is present (or, with `activityAnchors`, a research
+ * activity sentence such as "He studies ..." on a body already known to be a CV),
+ * because a subject frame is what makes
+ * lifting sentences out safe: its start is a real sentence start, so a false
+ * boundary inside a book title or degree cannot produce the fragment that
+ * opener-stripping did.
+ */
+export function researchStatementSentences(
+  value: unknown,
+  { activityAnchors = false }: { activityAnchors?: boolean } = {},
+): string[] {
+  const sentences = splitDescriptionSentences(textValue(value));
+  const firstStatement = sentences.findIndex(
+    (sentence) =>
+      RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
+      RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+      (activityAnchors &&
+        RESEARCH_ACTIVITY_SENTENCE.test(sentence) &&
+        !isCareerFactSentence(sentence) &&
+        !CV_RECORD_SENTENCE.test(sentence)),
+  );
+  if (firstStatement < 0) return [];
+  return sentences.filter(
+    (sentence, index) =>
+      RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
+      RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+      RESEARCH_TOPICS_SENTENCE.test(sentence) ||
+      (!isCareerFactSentence(sentence) &&
+        (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
+          (index > firstStatement && !CV_RECORD_SENTENCE.test(sentence)))),
+  );
+}
+
+const DEGREE_LINE_PATTERN =
+  /\b(?:Ph\.?\s?D|M\.?D|J\.?D|M\.?P\.?H|M\.?B\.?A|M\.?A|B\.?A|B\.?S|M\.?S|D\.?Phil)\.?,?\s+(?:in\s+)?[A-Z][\w\s&,]{2,60},\s+[A-Z][\w\s&.]{2,60}(?:University|College|Institute|School)\b[^.]{0,20}\b(?:19|20)\d{2}\b/;
+const DATED_TITLE_PATTERN = /\((?:[^()]*,\s*)?(?:19|20)\d{2}\)/g;
+const MIN_DATED_TITLES = 3;
+const CV_CAREER_SENTENCE_PATTERN =
+  /\b(?:received|earned|completed|obtained)\s+(?:(?:his|her|their|a|an)\s+)?(?:B\.?A|B\.?S|M\.?A|M\.?S|M\.?D|Ph\.?\s?D|doctorate|degree|residency|fellowship|training)\b|\b(?:joined|served\s+as)\b|\bis\s+the\s+author\s+of\b|\b(?:award|prize|medal)\b.{0,60}\b(?:19|20)\d{2}\b|\bwon\s+the\b|\b(?:received|won)\s+the\s+[^.]{0,80}\b(?:Award|Prize|Medal)\b|\belected\s+(?:a\s+)?(?:fellow|member)\b|\bchaired\b|\b(?:keynoter|keynote\s+speaker|panelist)\b|\b(?:His|Her|Their)\s+(?:B\.?A|B\.?S|M\.?A|M\.?D|Ph\.?\s?D)\.?\s+(?:is|was|are)\s+from\b/i;
+const MIN_CV_CAREER_SENTENCES = 2;
+
+/**
+ * A body pasted from a CV: a degree line, a list of dated titles, or several
+ * sentences of degrees, appointments, books and awards. The research it states is
+ * buried among them, so the served body is narrowed to `researchStatementSentences`.
+ */
+export function isCurriculumVitaeShapedBody(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (DEGREE_LINE_PATTERN.test(text)) return true;
+  if ((text.match(DATED_TITLE_PATTERN) || []).length >= MIN_DATED_TITLES) return true;
+  return (
+    splitDescriptionSentences(text).filter((sentence) => CV_CAREER_SENTENCE_PATTERN.test(sentence))
+      .length >= MIN_CV_CAREER_SENTENCES
   );
 }

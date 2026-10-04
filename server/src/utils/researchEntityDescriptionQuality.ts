@@ -23,6 +23,7 @@ import {
   isPracticeBiographyWithoutResearch,
   nonResearchBodyShape,
 } from './descriptionNonResearchBodyShape';
+import { splitDescriptionSentences } from './careerBiographyDescription';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -1574,6 +1575,7 @@ function computeFullDescriptionQuality(
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
   if (text && isGenericStudentProjectRecruitmentTemplate(text)) flags.push('generic-lead');
+  if (text && isPastRoleHistoryOnly(text)) flags.push('role-biography');
   if (text && lacksResearchStatement(text)) {
     if (flags.length === 0) flags.push('synthetic-placeholder');
   }
@@ -1584,6 +1586,26 @@ function computeFullDescriptionQuality(
     isUseful: flags.length === 0,
   };
 }
+
+const PAST_ROLE_SENTENCE_PATTERN =
+  /\b(?:was|were)\s+(?:also\s+)?(?:(?:the|a|an)\s+)?(?:\w+\s+){0,3}(?:director|manager|officer|advisor|adviser|counsel|consultant|analyst|chief|head|president|fellow|staffer|associate|assistant|aide)\b|^(?:Prior\s+to|Before\s+(?:joining|coming))\b|\bserved\s+as\b/i;
+const DEGREE_HOLDING_SENTENCE_PATTERN =
+  /\b(?:has|have|holds|hold|earned|received)\s+(?:an?\s+)?(?:B\.?A\.?|B\.?S\.?|M\.?A\.?|M\.?S\.?|M\.?P\.?A\.?|M\.?P\.?H\.?|M\.?B\.?A\.?|J\.?D\.?|M\.?D\.?|Ph\.?\s?D\.?|degree)/i;
+const SUBJECT_EXPERTISE_PATTERN =
+  /\b(?:expert\s+(?:in|on)|speciali[sz]\w*\s+in|research|scholar\s+of|studies)\b/i;
+
+// A body that is only past appointments and degrees describes a career, not research.
+const isPastRoleHistoryOnly = (text: string): boolean => {
+  if (SUBJECT_EXPERTISE_PATTERN.test(text)) return false;
+  const sentences = splitDescriptionSentences(text);
+  return (
+    sentences.some((sentence) => PAST_ROLE_SENTENCE_PATTERN.test(sentence)) &&
+    sentences.every(
+      (sentence) =>
+        PAST_ROLE_SENTENCE_PATTERN.test(sentence) || DEGREE_HOLDING_SENTENCE_PATTERN.test(sentence),
+    )
+  );
+};
 
 const lacksResearchStatement = (text: string): boolean =>
   !isConciseSpecificResearchDescription(text) &&

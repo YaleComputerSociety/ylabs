@@ -158,8 +158,20 @@ function continuesMiddleInitialName(segment: string, next: string): boolean {
 
 const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
+const GLUED_INITIAL_TAIL = /(?:^|[\s(.])[A-Z]\.$/;
+const GLUED_TITLE_PUNCTUATION = /[?!]$/;
+const TITLE_CONTINUATION_HEAD = /^[:;,)]/;
+const DOTTED_INITIALISM_TAIL = /(?:^|[\s(])(?:[A-Z]\.){2,}\s+$/;
+const LOWERCASE_HEAD = /^[a-z]/;
+
+// A sentence ends at terminal punctuation followed by whitespace, so "U." inside
+// "U.S." and the "?" of a title such as "Where Did It Go?: A History of Maps"
+// are not ends; neither is "U.S. " before a lowercase continuation.
 function isAbbreviationSplit(segment: string, next: string): boolean {
   return (
+    GLUED_INITIAL_TAIL.test(segment) ||
+    (GLUED_TITLE_PUNCTUATION.test(segment) && TITLE_CONTINUATION_HEAD.test(next)) ||
+    (DOTTED_INITIALISM_TAIL.test(segment) && LOWERCASE_HEAD.test(next)) ||
     PROTECTED_ABBREVIATION_TAIL.test(segment) ||
     continuesMiddleInitialName(segment, next) ||
     LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)

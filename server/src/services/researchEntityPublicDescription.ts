@@ -6,11 +6,20 @@ import {
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
+  isCredentialOrAwardLeadBiography,
+  isCredentialOrTitleLeadBiography,
+  isFacultyResearchTextEntity,
+  isLabResearchTextEntity,
+  isPersonBiographyOrAdvisingDescription,
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import {
+  isCurriculumVitaeShapedBody,
+  researchStatementSentences,
+} from '../utils/careerBiographyDescription';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
@@ -146,7 +155,55 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
   leadMembers?: Array<Record<string, any>>;
   leadMemberNames?: readonly string[];
 }): ResearchEntityPublicDescriptionRepresentation {
-  return withMemoizedDescriptionQuality(() => derivePublicDescriptionRepresentation(input));
+  return withMemoizedDescriptionQuality(() => {
+    const narrowedBody = researchSentencesOfCurriculumVitaeBody(input.entity);
+    if (narrowedBody) {
+      const narrowed = derivePublicDescriptionRepresentation({
+        ...input,
+        entity: { ...input.entity, fullDescription: narrowedBody },
+      });
+      if (representationServesCard(narrowed)) return narrowed;
+    }
+    return derivePublicDescriptionRepresentation(input);
+  });
+}
+
+/**
+ * The research sentences of a person-scoped body pasted from a CV or a biography
+ * (degree lines, book lists, awards, past appointments), or '' when the body is not
+ * that shape or states no research. Narrowing happens on the stored text before the
+ * serve chain runs, so the gate, the card and the detail page all read one body.
+ */
+function researchSentencesOfCurriculumVitaeBody(entity: Record<string, any>): string {
+  if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return '';
+  const body = textValue(entity.fullDescription);
+  if (!body) return '';
+  const curriculumVitae = isCurriculumVitaeShapedBody(body);
+  const biography =
+    isCredentialOrAwardLeadBiography(body) ||
+    isCredentialOrTitleLeadBiography(body) ||
+    isPersonBiographyOrAdvisingDescription(body);
+  if (!curriculumVitae && !biography) return '';
+  const research = researchStatementSentences(body, { activityAnchors: curriculumVitae });
+  const narrowed = research.join(' ').trim();
+  return narrowed && narrowed !== body ? narrowed : '';
+}
+
+// A CV body narrowed to its research sentences is served only when the narrowed
+// body and its card still serve. Narrowing can leave a body too thin for a card the
+// whole biography supported, and an accurate row should not leave the directory
+// because its biography was trimmed.
+function representationServesCard(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const cardIsOptional =
+    isProgramLikeResearchEntity(representation.entity) ||
+    isOrganizationalResearchEntity(representation.entity);
+  return (
+    representation.invariant.pass &&
+    representation.quality.full.isUseful &&
+    (representation.invariant.cardDescriptionUseful || cardIsOptional)
+  );
 }
 
 function derivePublicDescriptionRepresentation({
