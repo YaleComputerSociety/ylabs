@@ -251,10 +251,39 @@ export function withoutUnbackedLabSelfDescription(
   field: string,
 ): string {
   const text = typeof value === 'string' ? value : '';
-  const recast = recastUnbackedLabSelfDescription(text, entity, field);
+  const recast = personLeadsTheirCollective(
+    recastUnbackedLabSelfDescription(text, entity, field),
+    entity,
+  );
   if (recast === text || !BODY_FIELDS.has(field)) return recast;
   const recastWordCount = recast.split(/\s+/).filter(Boolean).length;
   return recastWordCount < SERVABLE_FULL_DESCRIPTION_MIN_WORDS ? text : recast;
+}
+
+const COLLECTIVE_NOUN = '(?:lab|laboratory|research group|group|team|research program|program)';
+const PREDICATE_WORD = "(?!(?:an?|the|of|in|for|at|on|with|from|by|to|and)\\s)[\\p{L}'’-]+";
+
+/**
+ * "<person> is a <kind> lab/group/team/program" says a person is a collective. It comes
+ * from a first-person "We are a cancer immunology lab ..." revoiced onto the row's own
+ * person, and from a recast "<Lab> is a ... research program". On a faculty research
+ * row the person leads it, so that is what the sentence says instead.
+ */
+function personLeadsTheirCollective(
+  text: string,
+  entity: Record<string, any> | null | undefined,
+): string {
+  if (!text || !entity) return text;
+  if (textValue(entity.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return text;
+  const person = facultyResearchPersonName(entity);
+  if (!person) return text;
+  return text.replace(
+    new RegExp(
+      `(^|[.!?]\\s+)(${escapeRegExp(person)}) is (an?) ((?:${PREDICATE_WORD}\\s+){0,4})(${COLLECTIVE_NOUN})(?![\\p{L}'’-])`,
+      'gu',
+    ),
+    '$1$2 leads $3 $4$5',
+  );
 }
 
 export interface OwnLabEvidence {

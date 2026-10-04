@@ -271,6 +271,24 @@ describe('served description of a faculty research row', () => {
     );
   });
 
+  it('says the person leads the collective a sentence would otherwise make them', () => {
+    const entity = facultyResearch();
+    expect(
+      withoutUnbackedLabSelfDescription(
+        'Wren Okonkwo-Vale is a multidisciplinary team studying estuaries.',
+        entity,
+        'shortDescription',
+      ),
+    ).toBe('Wren Okonkwo-Vale leads a multidisciplinary team studying estuaries.');
+    expect(
+      withoutUnbackedLabSelfDescription(
+        'Wren Okonkwo-Vale is a professor of geology who studies estuaries.',
+        entity,
+        'shortDescription',
+      ),
+    ).toBe('Wren Okonkwo-Vale is a professor of geology who studies estuaries.');
+  });
+
   it('keeps a body whose recast would fall under the served length floor', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: facultyResearch({
