@@ -332,6 +332,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   const clusterCandidates = foldableShells.filter(
     (entry) => !mergeTargetByShellId.has(entry.id) && !outrankingCanonicalIds.has(entry.id),
   );
+  const clusterCandidateIds = new Set(clusterCandidates.map((entry) => entry.id));
   const liveEdgeCounts = new Map<string, number>(
     (
       (await RoleAssignment.aggregate([
@@ -352,6 +353,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       ...entry,
       liveRoleEdges: liveEdgeCounts.get(entry.id) ?? 0,
     })),
+    researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
   );
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);

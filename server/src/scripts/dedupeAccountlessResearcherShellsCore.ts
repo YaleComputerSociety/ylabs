@@ -551,10 +551,18 @@ const departmentKey = (value: unknown): string =>
         .trim()
     : '';
 
-function nameAndDepartmentKey(member: AccountlessClusterMember): string | undefined {
+function clusterKeys(
+  member: AccountlessClusterMember,
+  heldElsewhere: { pages: ReadonlySet<string>; names: ReadonlySet<string> },
+): string[] {
+  const pageKeys = verifiedPrimaryProfileKeys(member.profileLinks)
+    .filter((key) => !heldElsewhere.pages.has(key))
+    .map((key) => `page::${key}`);
   const name = normalizeResearcherName(member.displayName);
   const department = departmentKey(member.primaryDepartment);
-  return name && department ? `${name}::${department}` : undefined;
+  return name && department && !heldElsewhere.names.has(name)
+    ? [...pageKeys, `name::${name}::${department}`]
+    : pageKeys;
 }
 
 function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
@@ -579,7 +587,11 @@ function clusterRefusal(
   );
   if (verdicts.size > 1) return 'TITLE_CONFLICT';
   const surnames = members.map((member) => clusterSurname(member.displayName)).filter(Boolean);
-  if (surnames.some((surname) => !surnamesCompatible(surname, surnames[0]))) {
+  if (
+    surnames.some((surname, index) =>
+      surnames.slice(index + 1).some((other) => !surnamesCompatible(surname, other)),
+    )
+  ) {
     return 'SURNAME_CONFLICT';
   }
   return undefined;
@@ -625,11 +637,22 @@ export function accountlessClusterSurvivor(
  * cannot fold because nobody outranks anybody. A group is the records that share a
  * healthy verified primary profile, or the same normalized full name together with the
  * same stated primary department. A whole group is refused on any netid, ORCID, title
- * rank or surname disagreement, because one wrong join merges two people for good.
+ * rank or surname disagreement, because one wrong join merges two people for good. A page
+ * or name that any record outside the group also holds joins nobody: the outranking arms
+ * already found it unable to tell those records apart.
  */
 export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
+  nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
 ): AccountlessClusterPlan {
+  const heldElsewhere = {
+    pages: new Set(nonMembers.flatMap((record) => verifiedPrimaryProfileKeys(record.profileLinks))),
+    names: new Set(
+      nonMembers
+        .map((record) => normalizeResearcherName(record.displayName))
+        .filter((name): name is string => Boolean(name)),
+    ),
+  };
   const parent = new Map<string, string>(members.map((member) => [member.id, member.id]));
   const find = (id: string): string => {
     let root = id;
@@ -639,11 +662,7 @@ export function planAccountlessClusterFolds(
   };
   const firstByKey = new Map<string, string>();
   for (const member of members) {
-    const keys = [
-      ...verifiedPrimaryProfileKeys(member.profileLinks).map((key) => `page::${key}`),
-      ...[nameAndDepartmentKey(member)].filter(Boolean).map((key) => `name::${key}`),
-    ];
-    for (const key of keys) {
+    for (const key of clusterKeys(member, heldElsewhere)) {
       const first = firstByKey.get(key);
       if (first) parent.set(find(member.id), find(first));
       else firstByKey.set(key, member.id);

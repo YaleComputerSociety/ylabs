@@ -287,8 +287,9 @@ Measured on Development on 2026-10-04, before the arm required a `HEALTHY` link,
 A group of accountless records with no account-backed member has nobody to outrank, so the four arms cannot fold it, and an ambiguous group stops a PI key from resolving to anybody.
 The same stage therefore folds such a group into a survivor chosen among its own members: the records that share a healthy verified primary profile, or the same normalized full name together with the same stated primary department.
 The survivor is the record with the most live role edges, then the most healthy verified primary links, then the oldest, so the choice is reproducible and never alphabetical.
-The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with credentials after a comma, generational suffixes and trailing periods read past.
-Measured on Development on 2026-10-04: 17 groups, 15 folded (66 records), 2 refused, one on two different ORCIDs and one on a record with no given name.
+A page or name that any record outside the group also holds joins nobody, because the outranking arms already found it unable to tell those records apart.
+The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with every pair of surnames compared, and with credentials after a comma, generational suffixes and trailing periods read past.
+Measured on Development on 2026-10-04, before pages and names held outside the group were excluded: 17 groups, 15 folded (66 records), 2 refused, one on two different ORCIDs and one on a record with no given name; the exclusion cannot fold more, and the count needs re-measuring.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.

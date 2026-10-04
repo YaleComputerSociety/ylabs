@@ -486,11 +486,14 @@ describe('planAccountlessClusterFolds', () => {
   });
 
   it('folds copies sharing a verified page into the copy with the most live edges', () => {
-    const plan = planAccountlessClusterFolds([
-      member('1', { profileLinks: page(1) }),
-      member('2', { profileLinks: page(1), liveRoleEdges: 2 }),
-      member('3', { profileLinks: page(1) }),
-    ]);
+    const plan = planAccountlessClusterFolds(
+      [
+        member('1', { profileLinks: page(1) }),
+        member('2', { profileLinks: page(1), liveRoleEdges: 2 }),
+        member('3', { profileLinks: page(1) }),
+      ],
+      [],
+    );
     expect(plan.foldedGroups).toBe(1);
     expect([...plan.foldTargetById]).toEqual([
       ['1'.padStart(24, '0'), '2'.padStart(24, '0')],
@@ -501,54 +504,100 @@ describe('planAccountlessClusterFolds', () => {
   it('breaks an edge tie on the oldest record', () => {
     const older = '00000001' + '0'.repeat(16);
     const newer = '00000002' + '0'.repeat(16);
-    const plan = planAccountlessClusterFolds([
-      member(newer, { profileLinks: page(2) }),
-      member(older, { profileLinks: page(2) }),
-    ]);
+    const plan = planAccountlessClusterFolds(
+      [member(newer, { profileLinks: page(2) }), member(older, { profileLinks: page(2) })],
+      [],
+    );
     expect(plan.foldTargetById.get(newer)).toBe(older);
   });
 
   it('groups an exact name only together with the same stated department', () => {
-    const together = planAccountlessClusterFolds([
-      member('4', { primaryDepartment: 'Fixture Studies' }),
-      member('5', { primaryDepartment: 'fixture studies' }),
-    ]);
+    const together = planAccountlessClusterFolds(
+      [
+        member('4', { primaryDepartment: 'Fixture Studies' }),
+        member('5', { primaryDepartment: 'fixture studies' }),
+      ],
+      [],
+    );
     expect(together.foldTargetById.size).toBe(1);
-    const apart = planAccountlessClusterFolds([
-      member('6', { primaryDepartment: 'Fixture Studies' }),
-      member('7', { primaryDepartment: 'Other Studies' }),
-      member('8'),
-    ]);
+    const apart = planAccountlessClusterFolds(
+      [
+        member('6', { primaryDepartment: 'Fixture Studies' }),
+        member('7', { primaryDepartment: 'Other Studies' }),
+        member('8'),
+      ],
+      [],
+    );
     expect(apart.groups).toBe(0);
   });
 
   it('reads past a credential, a generational suffix and a trailing period', () => {
-    const plan = planAccountlessClusterFolds([
-      member('9', { profileLinks: page(3), displayName: 'Sam Fixture Jr.' }),
-      member('10', { profileLinks: page(3), displayName: 'Sam Fixture, ScM' }),
-      member('11', { profileLinks: page(3), displayName: 'Sam Fixture.' }),
-    ]);
+    const plan = planAccountlessClusterFolds(
+      [
+        member('9', { profileLinks: page(3), displayName: 'Sam Fixture Jr.' }),
+        member('10', { profileLinks: page(3), displayName: 'Sam Fixture, ScM' }),
+        member('11', { profileLinks: page(3), displayName: 'Sam Fixture.' }),
+      ],
+      [],
+    );
     expect(plan.foldTargetById.size).toBe(2);
   });
 
   it('refuses a whole group on any identifier, rank or surname disagreement', () => {
     expect(
-      planAccountlessClusterFolds([
-        member('14', { profileLinks: page(5), orcid: '0000-0000-0000-0001' }),
-        member('15', { profileLinks: page(5), orcid: '0000-0000-0000-0002' }),
-      ]).refusedGroups.ORCID_CONFLICT,
+      planAccountlessClusterFolds(
+        [
+          member('14', { profileLinks: page(5), orcid: '0000-0000-0000-0001' }),
+          member('15', { profileLinks: page(5), orcid: '0000-0000-0000-0002' }),
+        ],
+        [],
+      ).refusedGroups.ORCID_CONFLICT,
     ).toBe(1);
     expect(
-      planAccountlessClusterFolds([
-        member('16', { profileLinks: page(6), title: 'Professor of Fixtures' }),
-        member('17', { profileLinks: page(6), title: 'Postdoctoral Associate' }),
-      ]).refusedGroups.TITLE_CONFLICT,
+      planAccountlessClusterFolds(
+        [
+          member('16', { profileLinks: page(6), title: 'Professor of Fixtures' }),
+          member('17', { profileLinks: page(6), title: 'Postdoctoral Associate' }),
+        ],
+        [],
+      ).refusedGroups.TITLE_CONFLICT,
     ).toBe(1);
     expect(
-      planAccountlessClusterFolds([
-        member('18', { profileLinks: page(7) }),
-        member('19', { profileLinks: page(7), displayName: 'Sam Otherfamily' }),
-      ]).refusedGroups.SURNAME_CONFLICT,
+      planAccountlessClusterFolds(
+        [
+          member('20', { profileLinks: page(8), displayName: 'Sam Fixture' }),
+          member('21', { profileLinks: page(8), displayName: 'Sam Alpha-Fixture' }),
+          member('22', { profileLinks: page(8), displayName: 'Sam Beta-Fixture' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
     ).toBe(1);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('18', { profileLinks: page(7) }),
+          member('19', { profileLinks: page(7), displayName: 'Sam Otherfamily' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
+    ).toBe(1);
+  });
+
+  it('joins nobody on a page or name a record outside the group also holds', () => {
+    expect(
+      planAccountlessClusterFolds(
+        [member('23', { profileLinks: page(9) }), member('24', { profileLinks: page(9) })],
+        [{ profileLinks: page(9) }],
+      ).groups,
+    ).toBe(0);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('25', { primaryDepartment: 'Fixture Studies' }),
+          member('26', { primaryDepartment: 'Fixture Studies' }),
+        ],
+        [{ displayName: 'Sam Fixture' }],
+      ).groups,
+    ).toBe(0);
   });
 });
