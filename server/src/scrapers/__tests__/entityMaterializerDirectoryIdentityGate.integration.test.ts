@@ -860,7 +860,11 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
       await seedPiAttribution('dept:physics:ada-lovelace');
 
-      const result = await materializeEntity('user', { entityKey: 'dept:physics:ada-lovelace' }, {});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
 
       expect(result.skipped).toBeUndefined();
       expect(result.created).toBe(true);
@@ -874,7 +878,11 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
       await seedPiAttribution('dept:physics:ada-lovelace');
 
-      const result = await materializeEntity('user', { entityKey: 'dept:physics:ada-lovelace' }, {});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
 
       expect(result.skipped).toBe('directory-identity-without-research-signal');
       expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(0);
