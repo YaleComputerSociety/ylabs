@@ -15,6 +15,7 @@ import {
   resolveServedShortDescription,
   resolveServedShortDescriptionOutcome,
   synthesizeGroundedCardDescription,
+  opensOnDependentClause,
 } from '../groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
@@ -937,5 +938,34 @@ describe('resolveServedShortDescription over a research-interests sentence body 
     expect(resolved).toBe(
       'Studies Learning Theory, Optimization, Game Theory, and Mechanism Design.',
     );
+  });
+});
+
+describe('a derived card never opens on a dependent clause', () => {
+  it.each([
+    'And, using these algorithms, the group develops interfaces.',
+    'When direct computation is not feasible, this research uses approximation.',
+    'Before joining the faculty, she was a professor elsewhere.',
+  ])('recognises a dependent opener: %s', (card) => {
+    expect(opensOnDependentClause(card)).toBe(true);
+  });
+
+  it('does not treat a role opener as dependent', () => {
+    expect(
+      opensOnDependentClause('As a physician scientist, her research focuses on malaria.'),
+    ).toBe(false);
+  });
+
+  it('keeps a stored card that opens on a dependent clause', () => {
+    const stored =
+      'While most work studies single glaciers, this research compares ice sheets across regions.';
+    expect(
+      resolveServedShortDescription({
+        shortDescription: stored,
+        fullDescription: `${stored} It combines satellite records with field measurements of meltwater routing and calving.`,
+        researchAreas: [],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(stored);
   });
 });

@@ -359,6 +359,17 @@ export interface ServedShortDescriptionOutcome {
  * own a fallback chain must read `resolveServedShortDescriptionOutcome` instead,
  * so a withheld assertion is not answered with the row's whole body.
  */
+// A card lifted out of a body can open on a clause that leans on the sentence before
+// it ("And, using these ...", "When direct computation is not feasible, ...", "Before
+// joining ..."), which reads as a fragment on its own. Only a card this resolver
+// derives is checked: a stored card is the source's own headline. "As <role>, ..." is
+// not listed because it is a complete opener on its own.
+const DEPENDENT_CLAUSE_OPENER =
+  /^(?:And|But|Or|Nor|So|Yet|Also|Then|Thus|Hence|Therefore|However|Moreover|Furthermore|Additionally|When|Whenever|While|Whereas|Although|Though|Because|Since|If|Unless|Before|After|Until|Once|Which|That|Who|Whose|Whom|Including|Such\s+as|Especially|Particularly)\b/;
+
+export const opensOnDependentClause = (card: string): boolean =>
+  DEPENDENT_CLAUSE_OPENER.test(card.trim());
+
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   return resolveServedShortDescriptionOutcome(input).card;
 }
@@ -436,6 +447,7 @@ export function resolveServedShortDescriptionOutcome(
       );
       if (
         derivedFromChipEcho &&
+        !opensOnDependentClause(derivedFromChipEcho) &&
         shortDescriptionQuality(derivedFromChipEcho, full, researchAreas, {
           entityType: input.entityType,
         }).isUseful
@@ -466,7 +478,9 @@ export function resolveServedShortDescriptionOutcome(
         entityType: input.entityType,
         kind: input.kind,
       });
-      return { card: substitute || cleaned, topicCardWithheld: false };
+      const acceptedSubstitute =
+        substitute && !opensOnDependentClause(substitute) ? substitute : '';
+      return { card: acceptedSubstitute || cleaned, topicCardWithheld: false };
     }
   }
 
@@ -475,6 +489,7 @@ export function resolveServedShortDescriptionOutcome(
   );
   if (
     derived &&
+    !opensOnDependentClause(derived) &&
     shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
   ) {
     return { card: derived, topicCardWithheld: false };
