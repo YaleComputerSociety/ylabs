@@ -213,6 +213,14 @@ Both are gated by the single `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` flag,
 The second stage exists because the first could not reach the defect it was assumed to cover: #2581 reported researchers served twice under a byte-identical custom lab domain, and measurement found that none of the 18 `websiteUrl` identity keys shared by more than one served row matched the path lane's loader at all, so no plan-time refusal was ever consulted.
 When a shared-URL duplicate is not being collapsed, check the loader's key before reading the refusal arms: a lane that never selects a row reports no refusal for it, and 0 candidates reads exactly like 0 defects.
 
+### Rows that share a lead but no URL
+
+Both URL stages need the two rows to share an address, so one lab listed by a school's lab index and by its own domain stayed two rows under one lead, the extra one held at `operator_review` with `duplicate_risk` (#4651).
+`shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement --apply --confirm-research-entity-pi-dedupe --limit=10000 --max-apply=<max>`) reaches them through the lead person.
+`--require-name-agreement` keeps only groups whose members agree on `entityType` and on name after folding diacritics, punctuation and the kind nouns (lab, laboratory, research, faculty, group), because a shared lead alone does not make two rows one entity (#3279): one person can lead a lab and an unrelated project under another name.
+The plain `--shared-person-id` mode stays operator-only.
+The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
+
 It was opt-in from #2070 until #2699, pending Dev validation.
 That validation measured 316 candidate groups on the `profile-lab-url` key, of which 70 planned and 68 merged (74 rows archived) with zero same-name-different-person and zero multi-person quarantines; the remaining 2 groups were deferred by the never-demote guard at best input tier `student_ready`.
 Re-reading the served surface afterwards, Development `studentReadyNotArchived` rose from 3111 to 3116 and the stored 92-slug served baseline was identical before and after, so collapsing URL duplicates raised student-ready coverage and regressed no served row.

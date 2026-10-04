@@ -922,6 +922,59 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
   });
 }
 
+const NAME_AGREEMENT_KIND_WORDS = new Set([
+  'the',
+  'lab',
+  'laboratory',
+  'research',
+  'faculty',
+  'group',
+]);
+
+/**
+ * The comparable form of a research row's name for the name-agreement filter. Diacritics
+ * fold because one roster spells a name with them and another without, and the kind
+ * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees
+ * when the type already agrees.
+ */
+export function nameAgreementKey(value: string | undefined): string {
+  return normalizedWords((value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    .filter((word) => !NAME_AGREEMENT_KIND_WORDS.has(word))
+    .join(' ');
+}
+
+/**
+ * A shared-person group is safe to merge unattended only when its members are the same
+ * kind of thing under the same name. One person can lead a lab and run an unrelated
+ * project under another name, and #3279 measured that a shared lead alone does not make
+ * two rows one entity, so a group whose names or types differ stays a review candidate.
+ */
+export function sharedPersonGroupIsNameAgreed(
+  group: Pick<ResearchEntityPiDedupeGroup, 'canonicalEntityId' | 'duplicateEntityIds'>,
+  entitiesById: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
+): boolean {
+  const members = [group.canonicalEntityId, ...group.duplicateEntityIds].map((id) =>
+    entitiesById.get(id),
+  );
+  if (members.some((member) => !member)) return false;
+  const names = new Set(members.map((member) => nameAgreementKey(member!.name)));
+  const types = new Set(members.map((member) => (member!.entityType || '').toUpperCase()));
+  return names.size === 1 && !names.has('') && types.size === 1 && !types.has('');
+}
+
+export function filterNameAgreedSharedPersonGroups<T extends ResearchEntityPiDedupeGroup>(
+  groups: T[],
+  rows: ResearchEntityPiDedupeRow[],
+): T[] {
+  const entitiesById = new Map<string, ResearchEntityPiDedupeRow['entities'][number]>();
+  for (const row of rows) {
+    for (const entity of row.entities) {
+      if (entity.id && !entitiesById.has(entity.id)) entitiesById.set(entity.id, entity);
+    }
+  }
+  return groups.filter((group) => sharedPersonGroupIsNameAgreed(group, entitiesById));
+}
+
 export function buildMultiPersonEntityQuarantine(
   rows: ResearchEntityPiDedupeRow[],
 ): MultiPersonEntityQuarantine[] {
