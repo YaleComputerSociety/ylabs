@@ -717,7 +717,6 @@ const assertLateSessionKeepsBrowseStable = async (viewport, session) => {
     releaseSessionCheck = resolve;
   });
   try {
-    await shiftContext.route(/google-analytics|googletagmanager/, (route) => route.abort());
     await shiftContext.route('**/api/check', async (route) => {
       await sessionCheckReleased;
       await route.fulfill({ json: session });
@@ -842,7 +841,6 @@ const withSyntheticBrowsePage = async (viewport, fn, { reducedMotion = 'no-prefe
     reducedMotion,
   });
   try {
-    await syntheticContext.route(/google-analytics|googletagmanager/, (route) => route.abort());
     await syntheticContext.route('**/api/check', (route) =>
       route.fulfill({ json: syntheticStudentSession }),
     );

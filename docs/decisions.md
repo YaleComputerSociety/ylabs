@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: Google Analytics Is Removed, And First-Party `analytics_events` Remain (#4754)
+
+The Google Analytics 4 tag is removed from every page and every environment (owner decision, part of the privacy notice in #4157).
+Nothing in this repository read the data it collected.
+It loaded on the initial document before any consent existed, and so sent every visitor's IP address, user agent and a persistent tracking cookie to Google.
+The CSP drops the Google tag and measurement origins with it, so `script-src` is `'self'` alone.
+First-party `analytics_events` remain, under the constraints in `docs/research-journey-analytics.md`, and they still record signed-in students only.
+Google Fonts is a separate decision and is unchanged here.
+`client/src/__tests__/noGoogleAnalyticsGuard.test.ts`, `server/src/middleware/__tests__/securityHeaders.test.ts` and `scripts/security-preflight.test.mjs` fail if the tag or its origins reappear.
+
 ## 2026-10-04: Login Counts Personalization Signal Coverage In Aggregate Only, Until The Personalization Decision (#4744)
 
 Personalizing default `/research` browse from the Yalies major, or a graduate curriculum, is only worth building if enough signed-in students carry that signal, and that share is unknown.
@@ -933,8 +943,8 @@ No surface may label a signed-in count "Visitors", and the panel holding those c
 A client guard asserts both halves: the section names the signed-in population it counts, and no analytics surface renders the bare word "Visitors".
 
 This decision governs the first-party instrument only, and it is not a claim that the product collects nothing from a logged-out visitor.
-A third-party GA4 tag runs on every page load under none of these constraints, documented in the Third-Party Measurement section of `docs/research-journey-analytics.md`, and whether it belongs here at all is still open (#3102).
-Recording the first-party decision does not settle that one, and the two must not be read as one posture.
+A third-party GA4 tag then ran on every page load under none of these constraints, and whether it belonged here at all was left open (#3102).
+The 2026-10-04 entry settles that one: the tag is removed (#4754).
 
 The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
 Until then the correct read of a missing anonymous number is "not collected", not "zero".

@@ -64,17 +64,31 @@ describe('securityHeaders', () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it('keeps CSP script execution restricted to self and the analytics loader', () => {
+  it('keeps CSP script execution restricted to self', () => {
     const scriptDirective = CONTENT_SECURITY_POLICY.split('; ').find((directive) =>
       directive.startsWith('script-src '),
     );
 
-    expect(scriptDirective).toBe("script-src 'self' https://www.googletagmanager.com");
+    expect(scriptDirective).toBe("script-src 'self'");
     expect(CONTENT_SECURITY_POLICY).toContain("base-uri 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'");
     expect(scriptDirective).not.toContain("'unsafe-inline'");
     expect(scriptDirective).not.toContain("'unsafe-eval'");
+  });
+
+  it.each([
+    ['production', 'https://yalelabs.io'],
+    ['development', 'http://localhost:4000'],
+  ])('allows no Google Analytics or Google tag origin in the %s CSP', (nodeEnv, serverBaseUrl) => {
+    process.env.NODE_ENV = nodeEnv;
+    process.env.SERVER_BASE_URL = serverBaseUrl;
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+    const csp = headers.get('Content-Security-Policy') || '';
+
+    expect(csp).not.toMatch(
+      /googletagmanager\.com|google-analytics\.com|analytics\.google\.com|doubleclick\.net/,
+    );
   });
 
   it('keeps form submissions restricted to self and Yale CAS', () => {
@@ -100,7 +114,7 @@ describe('securityHeaders', () => {
       .find((directive) => directive.startsWith('connect-src '));
 
     expect(connectDirective).toBe(
-      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://stats.g.doubleclick.net",
+      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com",
     );
     expect(csp).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
@@ -156,7 +170,7 @@ describe('securityHeaders', () => {
     const imageDirective = csp.split('; ').find((directive) => directive.startsWith('img-src '));
 
     expect(imageDirective).toBe(
-      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io https://www.google-analytics.com https://stats.g.doubleclick.net",
+      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io",
     );
     expect(imageDirective).not.toMatch(/\shttps:(?:\s|$)/);
   });
