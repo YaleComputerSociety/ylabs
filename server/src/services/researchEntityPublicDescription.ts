@@ -23,7 +23,9 @@ import {
   careerBiographyOpening,
   isCareerFactSentence,
   isCurriculumVitaeRecordSentence,
+  isBibliographicCitationBody,
   isCurriculumVitaeShapedBody,
+  opensOnTeachingAppointment,
   opensOnResearchHomeSubject,
   researchStatementSentences,
   splitDescriptionSentences,
@@ -220,7 +222,8 @@ function researchSentencesOfCurriculumVitaeBody(
     careerBiography ||
     readsAs(isCredentialOrAwardLeadBiography) ||
     readsAs(isCredentialOrTitleLeadBiography) ||
-    readsAs(isPersonBiographyOrAdvisingDescription);
+    readsAs(isPersonBiographyOrAdvisingDescription) ||
+    readsAs(opensOnTeachingAppointment);
   if (!curriculumVitae && !biography) return '';
   const research = researchStatementSentences(body, {
     activityAnchors: curriculumVitae || careerBiography,
@@ -571,7 +574,8 @@ function isResearchlessBiographyBody(entity: Record<string, any>, body: string):
     opensOnCareerFact(body) ||
     isCredentialOrAwardLeadBiography(body) ||
     isCredentialOrTitleLeadBiography(body) ||
-    isPersonBiographyOrAdvisingDescription(body);
+    isPersonBiographyOrAdvisingDescription(body) ||
+    isBibliographicCitationBody(body);
   if (!biography) return false;
   // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
   // served and labelled creative practice, never withheld for stating no research.
@@ -587,7 +591,14 @@ function cardServedInPlaceOfAResearchlessBiography(
 ): string {
   const body = textValue(representation.entity.fullDescription);
   if (!isResearchlessBiographyBody(representation.entity, body)) return '';
-  if (splitDescriptionSentences(body).some(isResearchFocusSentenceOutsideTheRecord)) return '';
+  // A citation's title words read as a research focus sentence, but the whole body is one
+  // bibliography entry, so none of its sentences is research prose outside the record.
+  if (
+    !isBibliographicCitationBody(body) &&
+    splitDescriptionSentences(body).some(isResearchFocusSentenceOutsideTheRecord)
+  ) {
+    return '';
+  }
   const card = textValue(representation.servedCard);
   return cardStatesResearchItself(card) ? card : '';
 }

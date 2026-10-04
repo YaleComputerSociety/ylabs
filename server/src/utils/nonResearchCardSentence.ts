@@ -19,6 +19,12 @@ const siteTaglinePattern =
 const presentationRemarkPattern =
   /^(?:(?:Dr|Prof)\.\s+)?[^.;:]{0,80}?\bha(?:s|ve)\s+(?:(?:presented|lectured|spoken)(?:\s+(?:his|her|their|its)\s+(?:work|research))?\s+(?:at|to|widely|internationally|nationally|extensively)\b|given\s+(?:invited\s+)?(?:talks|lectures|presentations|keynotes?)\b)/i;
 
+const teachingAppointmentRecordPattern =
+  /^(?:(?:Dr|Prof)\.\s+)?[^.;:]{0,80}?\b(?:has|had)\s+(?:previously\s+|also\s+)?held\s+(?:\w+\s+){0,2}teaching\s+(?:appointments?|positions?|posts?)\b/i;
+
+const studentDevelopmentFocusPattern =
+  /\b(?:work|teaching|practice|pedagogy)\s+(?:focuses|focused|centers|centres)\s+on\s+(?:developing|training|nurturing|cultivating|helping|guiding|coaching|preparing)\s+(?:(?:his|her|their|the)\s+)?(?:students|actors|singers|performers|musicians|dancers|artists)['’]?\s+(?:(?:own|individual|artistic|vocal|musical)\s+)?(?:techniques?|skills?|voices?|styles?|craft|artistry|musicianship)\b/i;
+
 const strayLeadingPunctuationPattern = /^[)\]}>,;:.!?%/|\\*&+=-]/;
 
 const websiteNewsNotePattern =
@@ -38,6 +44,8 @@ export function isNonResearchCardSentence(text: unknown): boolean {
   if (siteTaglinePattern.test(value)) return true;
   if (presentationRemarkPattern.test(value)) return true;
   if (studiesHonorTemplatePattern.test(value)) return true;
+  if (teachingAppointmentRecordPattern.test(value)) return true;
+  if (studentDevelopmentFocusPattern.test(value)) return true;
   if (namesResearchActivity(value)) return false;
   if (honorNounPattern.test(value)) return true;
   return titleNumberTitlePattern.test(value);
