@@ -131,18 +131,46 @@ function identityScope(observation: LanePageObservation, rowIdentities: Readonly
   return forms[0] ?? '';
 }
 
+export const PAGE_BORROWING_SOURCE_NAMES: ReadonlySet<string> = new Set([
+  'coverage-synthesis-llm',
+  'school-profile-host-backfill',
+]);
+
+export const RETIRED_PAGE_CITING_SOURCE_NAMES: readonly string[] = [
+  'research-entity-cache-backfill',
+  'student-decision-llm',
+];
+
+export type PageBorrowingLane = (sourceName: string) => boolean;
+
+export const borrowsPagesOfOtherLanes: PageBorrowingLane = (sourceName) =>
+  PAGE_BORROWING_SOURCE_NAMES.has(sourceName);
+
+const EVERY_LANE_SCOPE = '';
+
+function laneOf(observation: LanePageObservation): string {
+  return String(observation.sourceName ?? '');
+}
+
 function pageScopeKey(
   observation: LanePageObservation,
   pageUrl: unknown,
   rowIdentities: ReadonlySet<string>,
+  laneScope: string = laneOf(observation),
 ): string | null {
   const page = sourceLinkHealthKey(pageUrl);
   if (!page) return null;
-  return JSON.stringify([
-    String(observation.sourceName ?? ''),
-    identityScope(observation, rowIdentities),
-    page,
-  ]);
+  return JSON.stringify([laneScope, identityScope(observation, rowIdentities), page]);
+}
+
+function verdictLaneScopes(observation: LanePageObservation): string[] {
+  const lane = laneOf(observation);
+  return lane === EVERY_LANE_SCOPE ? [lane] : [lane, EVERY_LANE_SCOPE];
+}
+
+function valueLaneScope(observation: LanePageObservation, borrowsPages: PageBorrowingLane): string {
+  const lane = laneOf(observation);
+  return borrowsPages(lane) ? EVERY_LANE_SCOPE : lane;
 }
 
 function newestPageEvidence(
@@ -159,23 +187,25 @@ function newestPageEvidence(
   for (const observation of observations) {
     if (observation.field !== LANE_PAGE_HEALTH_FIELD) continue;
     const verdict = observation.value as Partial<LanePageHealthVerdict> | null | undefined;
-    const key = pageScopeKey(observation, verdict?.url, rowIdentities);
-    if (!key) continue;
     const at = observedTime(observation.observedAt);
-    const entry = touch(key);
-    if (isConfirmedGonePageVerdict(verdict)) {
-      entry.goneAt = Math.max(entry.goneAt, at);
-      continue;
-    }
-    if (!isLivePageVerdict(verdict)) continue;
-    entry.liveAt = Math.max(entry.liveAt, at);
-    const resolvedKey = pageScopeKey(observation, verdict?.resolvedUrl, rowIdentities);
-    if (resolvedKey) {
-      const resolved = touch(resolvedKey);
-      resolved.liveAt = Math.max(resolved.liveAt, at);
-    }
-    if (at >= (newestResolvedRead.get(key)?.at ?? -1)) {
-      newestResolvedRead.set(key, { at, resolvedKey });
+    for (const laneScope of verdictLaneScopes(observation)) {
+      const key = pageScopeKey(observation, verdict?.url, rowIdentities, laneScope);
+      if (!key) continue;
+      const entry = touch(key);
+      if (isConfirmedGonePageVerdict(verdict)) {
+        entry.goneAt = Math.max(entry.goneAt, at);
+        continue;
+      }
+      if (!isLivePageVerdict(verdict)) continue;
+      entry.liveAt = Math.max(entry.liveAt, at);
+      const resolvedKey = pageScopeKey(observation, verdict?.resolvedUrl, rowIdentities, laneScope);
+      if (resolvedKey) {
+        const resolved = touch(resolvedKey);
+        resolved.liveAt = Math.max(resolved.liveAt, at);
+      }
+      if (at >= (newestResolvedRead.get(key)?.at ?? -1)) {
+        newestResolvedRead.set(key, { at, resolvedKey });
+      }
     }
   }
   for (const [key, read] of newestResolvedRead) {
@@ -193,7 +223,8 @@ export function goneLanePageKeys(
 ): Set<string> {
   const gone = new Set<string>();
   for (const [key, page] of newestPageEvidence(observations, rowIdentities)) {
-    if (page.goneAt > page.liveAt) gone.add((JSON.parse(key) as string[])[2]);
+    const [laneScope, , pageKey] = JSON.parse(key) as string[];
+    if (laneScope !== EVERY_LANE_SCOPE && page.goneAt > page.liveAt) gone.add(pageKey);
   }
   return gone;
 }
@@ -218,6 +249,7 @@ export async function loadLanePageHealthObservations(
 export function withoutGoneLanePageObservations<T extends LanePageObservation>(
   observations: T[],
   rowIdentities: ReadonlySet<string>,
+  borrowsPages: PageBorrowingLane = borrowsPagesOfOtherLanes,
 ): LanePageHealthWithdrawal<T> {
   if (!observations.some((observation) => observation.field === LANE_PAGE_HEALTH_FIELD)) {
     return { observations, withdrawnValuesByField: new Map() };
@@ -227,7 +259,12 @@ export function withoutGoneLanePageObservations<T extends LanePageObservation>(
   const withdrawnValuesByField = new Map<string, unknown[]>();
   for (const observation of observations) {
     if (observation.field === LANE_PAGE_HEALTH_FIELD) continue;
-    const key = pageScopeKey(observation, observation.sourceUrl, rowIdentities);
+    const key = pageScopeKey(
+      observation,
+      observation.sourceUrl,
+      rowIdentities,
+      valueLaneScope(observation, borrowsPages),
+    );
     const page = key ? evidence.get(key) : undefined;
     const withdrawn =
       page !== undefined &&
