@@ -102,6 +102,15 @@ const assertsFacultyMentorship = (fields: string[]): boolean =>
 const isMentoredResearchPathway = (programKind: string, fields: string[]): boolean =>
   programKind === 'STRUCTURED_PROGRAM' && assertsFacultyMentorship(fields);
 
+// A multi-purpose fund is served when its own page text names research as an eligible use,
+// never on its purpose tags alone (owner decision, 2026-10-04, #4675). The phrasings are kept
+// narrower than FUNDS_RESEARCH_PROSE because "language study that can support research" names
+// research as an outcome rather than a use (#4291).
+const RESEARCH_AS_ELIGIBLE_USE =
+  /\b(?:(?<!non-)research\s+(?:expenses|costs|travel|trips?)\b|(?:use[sd]?|using|spen[dt]|funds?|funding|grants?|awards?|support)(?:\s+[\w-]+){0,2}\s+for\s+(?:(?:[\w-]+,?\s+){1,4}(?:and|or|and\/or)\s+)?research\b(?!\s+(?:opportunit|experience|interests?|careers?|staff|assistant|positions?))|(?<!\b(?:experience|prior)\s+(?:in\s+)?)(?:conduct|conducting|undertake|undertaking)\s+(?:[\w-]+\s+){0,2}research\b)/i;
+
+const DISCLAIMS_RESEARCH = /\bnon-research\b/i;
+
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
 // These lanes store `purpose` as inferPurpose output read from page prose rather than as a
@@ -150,6 +159,8 @@ export function classifyProgramResearchRelevance(
   const kindResearch = RESEARCH_PROGRAM_KINDS.has(programKind);
   const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
   const textResearch = RESEARCH_TEXT.test(blob);
+  const researchUseStated =
+    !DISCLAIMS_RESEARCH.test(sourceProse) && affirmedIn(bodyFields, RESEARCH_AS_ELIGIBLE_USE);
 
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
@@ -158,12 +169,14 @@ export function classifyProgramResearchRelevance(
   if (titleSaysNonResearch) reasons.push('non_research_title');
   if (facetSaysLanguageStudy) reasons.push('language_study_purpose');
   if (purposeUnbackedByProse) reasons.push('inferred_research_purpose_unbacked');
+  if (researchUseStated) reasons.push('research_use_stated');
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
   // language study, study/tuition scholarship), or a facet naming only language study, is not
   // research-related even if a generic "Research" purpose tag is attached, unless the program
-  // kind is research by construction. A kind derived from travel wording does not exempt it.
-  if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind) {
+  // kind is research by construction or its own page text names research as an eligible use.
+  // A kind derived from travel wording does not exempt it.
+  if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind && !researchUseStated) {
     return { researchRelated: false, reasons };
   }
 
@@ -176,7 +189,13 @@ export function classifyProgramResearchRelevance(
     const titleResearch = RESEARCH_TEXT.test(title);
     const researchCareer = affirmedIn(sourceFields, RESEARCH_CAREER_AWARD);
     const fundsResearch = affirmedIn(sourceFields, FUNDS_RESEARCH_PROSE);
-    if (!titleResearch && !inherentKind && !researchCareer && !fundsResearch) {
+    if (
+      !titleResearch &&
+      !inherentKind &&
+      !researchCareer &&
+      !fundsResearch &&
+      !researchUseStated
+    ) {
       reasons.push('purpose_not_research');
       return { researchRelated: false, reasons };
     }
