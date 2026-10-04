@@ -1253,7 +1253,7 @@ The snippet selector refuses publication records (citations, author runs, dated 
 Withdrawal retires the lane's own observations, re-resolves the row, unsets a body or derived card still resting on a retired observation, and re-gates; a failed fetch licenses nothing, the drop guard freezes a pass that would withdraw more than half of 20 or more complete reads, and `--max-withdraw <n>` caps it.
 Run `--revalidate-only` to re-read without synthesizing.
 
-Dry-run by default and needs `OPENAI_API_KEY` in either mode; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
+Dry-run by default and needs `OPENAI_API_KEY` in either mode unless `--revalidate-only` is set; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
 Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
 
 A synthesis lane cannot outrank a biography on confidence alone.
