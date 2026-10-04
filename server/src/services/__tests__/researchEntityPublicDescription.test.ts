@@ -4,6 +4,7 @@ import {
   buildResearchEntityPublicDescriptionRepresentation,
   publicDescriptionLeadMemberNames,
   researchEntityServesPublicDetail,
+  servedBodyIsBiographyWithoutResearch,
 } from '../researchEntityPublicDescription';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
 import { withMemoizedDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
@@ -605,5 +606,123 @@ describe('a body pasted from a CV serves its research', () => {
     const body =
       'Robin Fixture won an example prize for drama. Her plays include River Song (2019), Salt (2015), and Harbor (2012). She received grants from an example foundation.';
     expect(served(body).entity.fullDescription).toBe(body);
+  });
+});
+
+describe('a biography whose research sits among career facts serves its research', () => {
+  const served = (
+    fullDescription: string,
+    shortDescription = '',
+    leadMemberNames: readonly string[] = [],
+  ) =>
+    buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        fullDescription,
+        shortDescription,
+      },
+      leadMemberNames,
+    });
+
+  it('reads a CV whose degree is named without an article and whose record is "has published in"', () => {
+    const representation = served(
+      'Dr. Fixture has longstanding interests in the research of tissue inflammation, with specific training in immunobiology of the liver. He received Ph.D. from Example University in 2004. Dr. Fixture has focused on identifying the regulators of metabolic inflammation in liver disease. Dr. Fixture has published in Example Journal, Another Journal, and Third Journal.',
+      'Identifies the regulators of metabolic inflammation in liver disease.',
+    );
+    expect(representation.entity.fullDescription).toContain('regulators of metabolic inflammation');
+    expect(representation.entity.fullDescription).not.toMatch(/received Ph\.D\.|has published in/);
+  });
+
+  it('keeps the sentence that orients the reader and drops editorial boards, a co-founding and private life', () => {
+    const representation = served(
+      'Robin Fixture is a historian of early modern ports and their labor markets. She joined the faculty in 2012 after teaching at Example College. She is particularly interested in how dock work was organized across the Atlantic. She serves on the editorial boards of Example Review and Another Review. She was a co-founder of an example reading group. In her free time she enjoys spending time with her dogs.',
+      'Studies early modern ports and how dock work was organized across the Atlantic.',
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('historian of early modern ports');
+    expect(body).toContain('how dock work was organized');
+    expect(body).not.toMatch(/editorial boards|co-founder|free time|joined the faculty/);
+  });
+
+  it('does not anchor on an interest in supervising students', () => {
+    const body =
+      'Robin Fixture is a historian of modern architecture and its media. His current book project explores cinema buildings in five cities. He joined the faculty in 2015. Professor Fixture is interested in supervising dissertations on twentieth-century architecture.';
+    expect(served(body).entity.fullDescription).toContain('historian of modern architecture');
+  });
+
+  it('reads the research sentence glued behind a degree run before narrowing', () => {
+    const representation = served(
+      'Ph.D., M.A., Example College, ExampleshireM.A. Another University Robin Fixture specializes in the literatures and music of medieval France and England. Born in an example town, she took her BA and PhD degrees at Example College. She was elected a fellow of an example society and appointed Lecturer at Another University. She won the Example Prize in 2008. She has particular interests in the medieval lyric and lyric theory.',
+      'Studies the literatures and music of medieval France and England.',
+      ['Robin Fixture'],
+    );
+    expect(representation.entity.fullDescription).toContain(
+      'specializes in the literatures and music',
+    );
+    expect(representation.entity.fullDescription).not.toMatch(
+      /took her BA|elected a fellow|Example Prize/,
+    );
+  });
+
+  it('keeps research sentences that only resemble citation or record markers', () => {
+    const representation = served(
+      'Robin Fixture received a Ph.D. from Example University in 2004 and joined the faculty in 2010. She studies how detectors are built for dark matter experiments. These detectors are part of the search for axions. The press covered the 2020 election through these detectors. Her models predict CV outcomes in older adults. She was awarded the Example Prize in 2015.',
+      'Builds detectors for dark matter experiments.',
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('search for axions');
+    expect(body).toContain('press covered the 2020 election');
+    expect(body).toContain('CV outcomes');
+    expect(body).not.toMatch(/joined the faculty|Example Prize/);
+  });
+
+  it('keeps research sentences that share a verb or a place with a career record', () => {
+    const representation = served(
+      'Robin Fixture joined the faculty in 2010. She studies cardiac gene regulation. We have edited the genomes of zebrafish to model heart disease. We have translated these findings into a clinical trial. We worked with farmers in Kenya to measure soil carbon. The project traces the legacy of the London 2012 Games. She won the Example Prize in 2015.',
+      'Studies cardiac gene regulation in zebrafish models of heart disease.',
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('edited the genomes of zebrafish');
+    expect(body).toContain('translated these findings');
+    expect(body).toContain('worked with farmers');
+    expect(body).toContain('London 2012 Games');
+    expect(body).not.toMatch(/joined the faculty|Example Prize/);
+  });
+
+  it('still narrows a CV whose only CV signal is the leading degree run', () => {
+    const representation = served(
+      'Ph.D., History, Example University, 2004 M.A., History, Another University, 1999 B.A., History, Example College, 1997 Robin Fixture studies the labor history of early modern ports. She has also taught at Example College and Another College.',
+      'Studies the labor history of early modern ports.',
+      ['Robin Fixture'],
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('studies the labor history of early modern ports');
+    expect(body).not.toMatch(/taught at|Example University/);
+  });
+
+  it('leaves a body that only orients the reader with a role noun unnarrowed', () => {
+    const body =
+      'Robin Fixture is a cell biologist who studies membrane signaling in immune cells. Her lab combines reconstitution with live-cell imaging to follow receptor clustering.';
+    expect(served(body).entity.fullDescription).toBe(body);
+  });
+});
+
+describe('a biography that states no research', () => {
+  it('is not held when it is an arts practice biography, which is served as creative practice', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        departments: ['Music'],
+        school: 'School of Music',
+        fullDescription:
+          'Robin Fixture graduated from an example conservatory in 1989 and joined the faculty in 2004. A violinist, she has performed as a soloist with orchestras across the country and has premiered and recorded works written for her.',
+        shortDescription: 'Violinist who performs as a soloist and chamber musician.',
+      },
+    });
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
   });
 });

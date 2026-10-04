@@ -12,13 +12,18 @@ import {
   isFacultyResearchTextEntity,
   isLabResearchTextEntity,
   isPersonBiographyOrAdvisingDescription,
+  researchEntitySubjectPersonNames,
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
+  stripLeadingCredentialTitleRun,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import {
+  careerBiographyOpening,
+  isCareerFactSentence,
   isCurriculumVitaeShapedBody,
+  opensOnResearchHomeSubject,
   researchStatementSentences,
   splitDescriptionSentences,
 } from '../utils/careerBiographyDescription';
@@ -32,6 +37,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
+import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
   servedResearchEntityCardWithoutLastResort,
   servedResearchEntityCopy,
@@ -159,15 +165,18 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
   leadMemberNames?: readonly string[];
 }): ResearchEntityPublicDescriptionRepresentation {
   return withMemoizedDescriptionQuality(() => {
-    const narrowedBody = researchSentencesOfCurriculumVitaeBody(input.entity);
-    if (narrowedBody) {
-      const narrowed = derivePublicDescriptionRepresentation({
-        ...input,
-        entity: { ...input.entity, fullDescription: narrowedBody },
-      });
-      if (representationServesCard(narrowed)) return narrowed;
-    }
-    return derivePublicDescriptionRepresentation(input);
+    const narrowedBody = researchSentencesOfCurriculumVitaeBody(
+      input.entity,
+      input.leadMemberNames || publicDescriptionLeadMemberNames(input.leadMembers),
+    );
+    if (!narrowedBody) return derivePublicDescriptionRepresentation(input);
+    const narrowed = derivePublicDescriptionRepresentation({
+      ...input,
+      entity: { ...input.entity, fullDescription: narrowedBody },
+    });
+    if (representationServesCard(narrowed)) return narrowed;
+    const whole = derivePublicDescriptionRepresentation(input);
+    return narrowingKeepsWhatTheWholeBodyServed(narrowed, whole) ? narrowed : whole;
   });
 }
 
@@ -177,24 +186,49 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
  * that shape or states no research. Narrowing happens on the stored text before the
  * serve chain runs, so the gate, the card and the detail page all read one body.
  */
-function researchSentencesOfCurriculumVitaeBody(entity: Record<string, any>): string {
+function researchSentencesOfCurriculumVitaeBody(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[],
+): string {
   if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return '';
-  const body = textValue(entity.fullDescription);
+  // The serve chain drops a leading degree run before it reads the opener, so the
+  // research sentence glued behind one is read here the same way; otherwise it fails
+  // the sentence-start test and is narrowed away with the degrees.
+  const stored = textValue(entity.fullDescription);
+  const body = stripLeadingCredentialTitleRun(
+    stored,
+    researchEntitySubjectPersonNames(entity, leadMemberNames),
+  );
   if (!body) return '';
-  const curriculumVitae = isCurriculumVitaeShapedBody(body);
+  const readsAs = (predicate: (text: string) => boolean) => predicate(stored) || predicate(body);
+  const curriculumVitae = readsAs(isCurriculumVitaeShapedBody);
+  const careerBiography = readsAs(opensOnCareerFact);
   const biography =
-    isCredentialOrAwardLeadBiography(body) ||
-    isCredentialOrTitleLeadBiography(body) ||
-    isPersonBiographyOrAdvisingDescription(body);
+    careerBiography ||
+    readsAs(isCredentialOrAwardLeadBiography) ||
+    readsAs(isCredentialOrTitleLeadBiography) ||
+    readsAs(isPersonBiographyOrAdvisingDescription);
   if (!curriculumVitae && !biography) return '';
-  const research = researchStatementSentences(body, { activityAnchors: curriculumVitae });
+  const research = researchStatementSentences(body, {
+    activityAnchors: curriculumVitae || careerBiography,
+  });
   const narrowed = research.join(' ').trim();
   return narrowed && narrowed !== body ? narrowed : '';
 }
 
-// A CV body narrowed to its research sentences is served only when the narrowed
-// body and its card still serve. Narrowing can leave a body too thin for a card the
-// whole biography supported, and an accurate row should not leave the directory
+// A body whose opening states where the person trained, what they were appointed to or
+// what they were awarded. Narrower than `isCareerBiographyDescription` on purpose: that
+// predicate also reads "<name> is a historian of ..." as a career opener, which is how a
+// good research body orients the reader, and narrowing such a body drops the sentence
+// that says what the person studies.
+function opensOnCareerFact(body: string): boolean {
+  const opening = careerBiographyOpening(body);
+  return !opensOnResearchHomeSubject(opening.join(' ')) && opening.some(isCareerFactSentence);
+}
+
+// A CV body narrowed to its research sentences is served when the narrowed body and
+// its card still serve, or when the whole body serves no card either. Narrowing can
+// leave a body too thin for a card the whole biography supported, and an accurate row should not leave the directory
 // because its biography was trimmed.
 function representationServesCard(
   representation: ResearchEntityPublicDescriptionRepresentation,
@@ -206,6 +240,20 @@ function representationServesCard(
     representation.invariant.pass &&
     representation.quality.full.isUseful &&
     (representation.invariant.cardDescriptionUseful || cardIsOptional)
+  );
+}
+
+// The card a stored short supplies is the same whichever body is served, so when the
+// whole biography carries no usable card either, narrowing loses nothing the row had and
+// the narrowed body is still the better page.
+function narrowingKeepsWhatTheWholeBodyServed(
+  narrowed: ResearchEntityPublicDescriptionRepresentation,
+  whole: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  return (
+    narrowed.invariant.pass &&
+    narrowed.quality.full.isUseful &&
+    !whole.invariant.cardDescriptionUseful
   );
 }
 
@@ -487,10 +535,14 @@ export function servedBodyIsBiographyWithoutResearch(
   if (!body) return false;
   const biography =
     isCurriculumVitaeShapedBody(body) ||
+    opensOnCareerFact(body) ||
     isCredentialOrAwardLeadBiography(body) ||
     isCredentialOrTitleLeadBiography(body) ||
     isPersonBiographyOrAdvisingDescription(body);
   if (!biography) return false;
+  // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
+  // served and labelled creative practice, never withheld for stating no research.
+  if (decideCreativePractice({ ...entity, fullDescription: body }).creativePractice) return false;
   if (splitDescriptionSentences(body).some((sentence) => describesResearchFocus(sentence))) {
     return false;
   }
