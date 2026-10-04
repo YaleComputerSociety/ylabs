@@ -706,9 +706,9 @@ describe('fellowship materialization', () => {
           [
             fact('title', 'Fixture Independent Project Fund'),
             fact('description', 'Provides funding for an independent project.'),
-            fact('eligibility', `${filler('Eligibility', 12)} ${requirement}`),
-            fact('restrictionsToUseOfAward', filler('Restriction', 12)),
-            fact('applicationInformation', filler('Application', 40)),
+            fact('eligibility', `${filler('Eligibility', 20)} ${requirement}`),
+            fact('restrictionsToUseOfAward', filler('Restriction', 20)),
+            fact('applicationInformation', filler('Application', 50)),
           ],
           row,
         );
@@ -720,10 +720,13 @@ describe('fellowship materialization', () => {
         );
         const eligibility = String(result.plannedSet?.eligibility);
 
-        expect(eligibility.length).toBeLessThanOrEqual(500);
+        expect(eligibility.length).toBeGreaterThan(500);
+        expect(eligibility.length).toBeLessThanOrEqual(1200);
         expect(eligibility).not.toContain('faculty advisor');
-        expect(String(result.plannedSet?.restrictionsToUseOfAward).length).toBeLessThanOrEqual(500);
-        expect(String(result.plannedSet?.applicationInformation).length).toBeLessThanOrEqual(2000);
+        expect(String(result.plannedSet?.restrictionsToUseOfAward).length).toBeLessThanOrEqual(
+          1200,
+        );
+        expect(String(result.plannedSet?.applicationInformation).length).toBeLessThanOrEqual(3000);
         expect(result.plannedSet).toMatchObject({
           requiresMentorBeforeApply: true,
           entryMode: 'SECURE_MENTOR_THEN_APPLY',
