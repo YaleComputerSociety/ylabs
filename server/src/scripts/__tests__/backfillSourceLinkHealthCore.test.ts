@@ -363,6 +363,25 @@ describe('carryForwardSourceLinkHealthEntry', () => {
   });
 });
 
+describe('carryForwardSourceLinkHealthEntry https landing (#4649)', () => {
+  it('carries the recorded https landing forward with the verdict', () => {
+    const checkedAt = new Date('2026-09-20T00:00:00Z');
+    expect(
+      carryForwardSourceLinkHealthEntry('http://example-lab.yale.edu/', {
+        url: 'http://example-lab.yale.edu/',
+        healthStatus: 'HEALTHY',
+        httpsLandingUrl: 'https://example-lab.yale.edu/',
+        checkedAt,
+      }),
+    ).toEqual({
+      url: 'http://example-lab.yale.edu/',
+      healthStatus: 'HEALTHY',
+      httpsLandingUrl: 'https://example-lab.yale.edu/',
+      checkedAt,
+    });
+  });
+});
+
 describe('tlsFallbackCandidates', () => {
   it('adds the plain-HTTP spelling of an https url whose certificate failed', () => {
     const health = new Map([['https://a.yale.edu/~x/', { tlsVerificationFailed: true }]]);

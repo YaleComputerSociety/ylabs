@@ -102,6 +102,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    /**
+     * The `https:` page a plain-HTTP request was redirected to by its own host, kept
+     * only on a `HEALTHY` verdict that preserved host and path. Serve time offers it in
+     * place of the `http:` spelling (#4649).
+     */
+    httpsLandingUrl: {
+      type: String,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,

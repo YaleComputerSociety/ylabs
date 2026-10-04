@@ -81,6 +81,7 @@ export interface ResearchEntitySourceLinkHealth {
   httpStatusCode?: number;
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
 }
 
 export interface ResearchGroup {
