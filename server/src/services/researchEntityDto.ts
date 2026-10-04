@@ -37,7 +37,7 @@ import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityName
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import {
   isModelSearchNote,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
@@ -482,7 +482,6 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'fundingAgencies',
   'lastObservedAt',
   'waysIn',
-  'planningContext',
   'profileResearchAreas',
   'researchAreaSource',
 ] as const;
@@ -497,7 +496,7 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'planningContext']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn']);
 
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {

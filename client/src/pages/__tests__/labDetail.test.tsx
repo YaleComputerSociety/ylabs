@@ -447,17 +447,19 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('emits the server-owned category for a matching qualified route without its URL', async () => {
+  it('records no qualified action even when a stale payload names the opened route (#4581)', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
         sourceUrls: [JOIN_PAGE_URL],
-        planningContext: {
-          category: 'official_application',
-          label: 'Official application',
-          url: JOIN_PAGE_URL,
+        ...{
+          planningContext: {
+            category: 'official_application',
+            label: 'Official application',
+            url: JOIN_PAGE_URL,
+          },
         },
       },
     });
@@ -470,26 +472,14 @@ describe('LabDetail page', () => {
     fireEvent.click(actionLink!);
     await flushResearchAnalytics();
 
-    await waitFor(() =>
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/analytics/research/batch',
-        {
-          events: expect.arrayContaining([
-            expect.objectContaining({
-              eventType: 'research_qualified_action',
-              entityId: 'entity-1',
-              payload: { actionCategory: 'official_application' },
-            }),
-          ]),
-        },
-        { withCredentials: true },
-      ),
-    );
-    const actionEvent = mockedAxios.post.mock.calls
+    const sentEvents = mockedAxios.post.mock.calls
       .filter((call) => call[0] === '/analytics/research/batch')
-      .flatMap((call) => call[1]?.events ?? [])
-      .find((event: { eventType?: string }) => event?.eventType === 'research_qualified_action');
-    expect(JSON.stringify(actionEvent)).not.toContain(JOIN_PAGE_URL);
+      .flatMap((call) => call[1]?.events ?? []);
+    expect(
+      sentEvents.filter(
+        (event: { eventType?: string }) => event?.eventType === 'research_qualified_action',
+      ),
+    ).toHaveLength(0);
   });
 
   it('guides students to the official profile without promising an unavailable email', async () => {

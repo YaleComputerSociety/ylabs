@@ -13,15 +13,12 @@ export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_save',
   'research_compare',
   'research_plan_update',
-  'research_qualified_action',
 ] as const;
 
 export type ResearchJourneyEventType = (typeof RESEARCH_JOURNEY_EVENT_TYPES)[number];
 export type ResearchEventType = LegacyResearchEventType | ResearchJourneyEventType;
 export type ResearchSaveSurface = 'profile' | 'search' | 'saved_plans';
 export type ResearchEntityType = 'profile' | 'listing' | 'fellowship' | 'research_entity';
-export type PlanningContextCategory =
-  'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
 
 export type ResearchJourneyPayload =
   | {
@@ -61,8 +58,7 @@ export type ResearchJourneyPayload =
         | 'target_deadline'
         | 'acted_on_date'
         | 'follow_up';
-    }
-  | { actionCategory: PlanningContextCategory };
+    };
 
 interface TrackResearchEventParams {
   eventType: ResearchEventType;

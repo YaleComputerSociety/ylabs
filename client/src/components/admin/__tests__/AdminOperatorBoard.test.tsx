@@ -298,16 +298,12 @@ describe('AdminOperatorBoard', () => {
             status: 'blocked',
             command:
               'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10 --output /tmp/ylabs-launch-acquisition-report.json',
-            note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+            note: 'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
             scanned: 75,
             piBlockers: 65,
-            actionBlockers: 10,
             exactPiMatches: 0,
-            sourceBackedRouteCandidates: 0,
             missingOfficialProfileUrl: 61,
             ambiguousOrMismatchedUserMatch: 21,
-            sourceObservationsWithoutUndergradAccess: 4,
-            untrustedExternalRouteEvidence: 5,
           },
           productionCopy: {
             status: 'review_required',
@@ -704,14 +700,14 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Launch acquisition status: blocked')).toBeTruthy();
     expect(
       screen.getByText(
-        'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+        'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Scanned blockers: 75')).toBeTruthy();
     expect(screen.getByText('PI blockers: 65')).toBeTruthy();
-    expect(screen.getByText('Action blockers: 10')).toBeTruthy();
     expect(screen.getByText('Exact PI matches: 0')).toBeTruthy();
-    expect(screen.getByText('Route candidates: 0')).toBeTruthy();
+    expect(screen.queryByText(/Action blockers/)).toBeNull();
+    expect(screen.queryByText(/Route candidates/)).toBeNull();
     expect(screen.getByText('Missing official profile URLs: 61')).toBeTruthy();
     expect(screen.getByText('Ambiguous/mismatched user cases: 21')).toBeTruthy();
     expect(screen.getByText('Production copy status: review_required')).toBeTruthy();

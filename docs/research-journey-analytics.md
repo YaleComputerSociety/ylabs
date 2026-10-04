@@ -19,7 +19,7 @@ Any enum or payload change must update both files and their focused contract tes
 | `research_save`              | `research_entity` or `fellowship` | `operation`, `surface`                                            | A saved research-entity home, or a watched program on `/programs` (surface `search`) or the Dashboard Program Watch (surface `saved_plans`), was saved or removed successfully. |
 | `research_compare`           | `research_entity` | `entityCountBucket`                                               | One entity participated in an explicit saved-home comparison or advising preview.               |
 | `research_plan_update`       | `research_entity` | `field`                                                           | A saved plan field group persisted a changed value successfully.                                |
-| `research_qualified_action`  | `research_entity` | `actionCategory`                                                  | The student opened a route that the server re-qualified against the current QA-01 projection.   |
+| `research_qualified_action`  | `research_entity` | `actionCategory`                                                  | Retired (#4581): the batch route refuses it and no client emits it; stored rows still count.    |
 
 A result page is one row, never one row per entity.
 `entityIds` holds the page's canonical entity identifiers in display order, so a position is the array index, and the server keeps only the identifiers that name a current `ResearchEntity`, validated in one query for the whole page.
@@ -27,9 +27,9 @@ A grid restored from the tab's snapshot on a return visit is a page already reco
 The retired `research_entity_impression` wrote one row per card, which put 56% of Production's rows into impressions, and a single query with one result could sit beside hundreds of rows from browse scrolling (#3628).
 The enum value stays so stored rows remain valid until the TTL expires them, but the batch route no longer accepts it.
 
-The only access-conversion event is `research_qualified_action`.
-Its `actionCategory` is the `PlanningContextCategory` enum from `server/src/services/planningContextService.ts`: `open_position`, `official_application`, `reviewed_route`, or `qualified_participation`.
-The server rejects missing, stale, or mismatched qualifications and records the current server-owned category instead of trusting the client.
+The only access-conversion event was `research_qualified_action`, and it is retired.
+It was qualified against a planning context that no source ever produced (#377), so none could be recorded, and the 2026-08-25 "Simple Directory First" decision retired the planning-context framing; #4581 removed the producer, the planning-context service and the qualification check.
+The enum value and the funnel's read of it stay, so a stored row keeps counting until the TTL expires it, but the batch route no longer accepts the event.
 
 Source review, profile open, results view, filter, save, compare, and plan events never count as access conversion.
 `outreach_outcome` remains a separate self-reported outcome and is not inferred from any click.
@@ -78,7 +78,7 @@ Opening a program records one `fellowship_view`, whether from a card or a direct
 A research save or removal records the surface it came from, so a removal on the Dashboard reads `saved_plans`.
 Before #3716 a watch made on `/programs` recorded no `research_save`, and the only `fellowship` rows came from the Dashboard toggle, which is almost always a removal, so stored `fellowship` saves before that change undercount watches.
 A note field that is focused and left without a change sends no write and records no `research_plan_update`, and a typed edit records one; before #3716 every blur wrote and recorded one, so the Updated a plan stage overcounts before that change.
-No `research_qualified_action` can be recorded while planning contexts have no source (#377), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
+No `research_qualified_action` can be recorded (#4581), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
 The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` was only ever emitted by the fellowship detail route and nothing emits it after #3766.
 Top Research Entities ranks research and profiles by `research_profile_open` and programs by `fellowship_view`; before #3766 it counted `research_view` and so listed programs only.
 Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches that reached the full search, and its zero-result rate divides by those searches, so a degraded search neither qualifies a group nor dilutes its rate (#4007).

@@ -9,7 +9,7 @@
 
 ## What Is This?
 
-y/labs is a **Yale research discovery platform**. Students discover Yale research, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+y/labs is a **Yale research discovery platform**. Students discover Yale research, source-backed evidence, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 

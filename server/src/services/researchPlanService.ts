@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
 import {

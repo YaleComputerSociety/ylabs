@@ -78,11 +78,7 @@ describe('launchAcquisitionReportService', () => {
           ? [{ _id: 'user-1', firstName: 'Ada', lastName: 'Lovelace' }]
           : [],
       ),
-      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
@@ -100,79 +96,6 @@ describe('launchAcquisitionReportService', () => {
     expect(report.piIdentity?.groups.leadNotRequiredByEntityType.count).toBe(1);
     expect(report.bySource['ysm-atoz-index'].piIdentity).toBe(1);
     expect(report.bySource['dept-faculty-roster'].piIdentity).toBe(1);
-  });
-
-  it('groups action-evidence blockers by source and materialization posture', async () => {
-    const deps = {
-      findQueueItems: vi.fn().mockResolvedValue([
-        item({
-          _id: 'none',
-          recordId: 'entity-1',
-          label: 'No Source Lab',
-          repairStage: 'action_evidence',
-          blockerReasons: ['missing_action_evidence'],
-          sourceNames: [],
-        }),
-        item({
-          _id: 'access-observation',
-          recordId: 'entity-2',
-          label: 'Observed Undergrad Lab',
-          repairStage: 'action_evidence',
-          blockerReasons: ['missing_action_evidence'],
-          sourceNames: ['department-undergrad-research'],
-        }),
-        item({
-          _id: 'untrusted',
-          recordId: 'entity-3',
-          label: 'External Route Lab',
-          repairStage: 'action_evidence',
-          blockerReasons: ['missing_action_evidence'],
-          sourceNames: ['external-index'],
-        }),
-        item({
-          _id: 'materialized',
-          recordId: 'entity-4',
-          label: 'Materialized Route Lab',
-          repairStage: 'action_evidence',
-          blockerReasons: ['missing_action_evidence'],
-          sourceNames: ['ysm-atoz-index'],
-        }),
-      ]),
-      findResearchEntity: vi.fn(async (id: string) => ({
-        _id: id,
-        name: id,
-        type: 'LAB',
-        slug: id,
-        sourceUrls: id === 'entity-3' ? ['https://example.com/apply'] : ['https://yale.edu/lab'],
-      })),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
-      countSourceObservations: vi.fn(async (entity: Record<string, unknown>) =>
-        entity._id === 'entity-1' ? 0 : 1,
-      ),
-      findUsersByUrls: vi.fn().mockResolvedValue([]),
-      countUndergraduateAccessObservations: vi.fn(async (entity: Record<string, unknown>) =>
-        entity._id === 'entity-2' ? 3 : 0,
-      ),
-      observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi.fn(async (id: string) =>
-        id === 'entity-4'
-          ? { accessSignals: 1, entryPathways: 1, contactRoutes: 1 }
-          : { accessSignals: 0, entryPathways: 0, contactRoutes: 0 },
-      ),
-    };
-
-    const report = await buildLaunchAcquisitionReport(
-      { stages: ['action_evidence'], limit: 10, sampleLimit: 5 },
-      deps,
-    );
-
-    expect(report.actionEvidence?.total).toBe(4);
-    expect(report.actionEvidence?.groups.noSourceObservations.count).toBe(1);
-    expect(report.actionEvidence?.groups.sourceObservationsWithoutUndergradAccess.count).toBe(1);
-    expect(report.actionEvidence?.groups.untrustedExternalRouteEvidence.count).toBe(1);
-    expect(report.actionEvidence?.groups.sourceBackedRouteNotLaunchMaterialized.count).toBe(1);
-    expect(report.bySource['department-undergrad-research'].actionEvidence).toBe(1);
-    expect(report.bySource['unattributed'].actionEvidence).toBe(1);
   });
 
   it('groups source-description blockers by source URL posture', async () => {
@@ -246,11 +169,7 @@ describe('launchAcquisitionReportService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       countSourceObservations: vi.fn().mockResolvedValue(0),
       findUsersByUrls: vi.fn().mockResolvedValue([]),
-      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
@@ -279,14 +198,6 @@ describe('launchAcquisitionReportService', () => {
           sourceNames: [],
         }),
         item({
-          _id: 'grant-action',
-          recordId: 'entity-2',
-          label: 'Grant Only Action Lab',
-          repairStage: 'action_evidence',
-          blockerReasons: ['missing_action_evidence'],
-          sourceNames: ['nih-reporter'],
-        }),
-        item({
           _id: 'ambiguous-pi',
           recordId: 'entity-3',
           label: 'Ambiguous PI Lab',
@@ -298,14 +209,6 @@ describe('launchAcquisitionReportService', () => {
       findResearchEntity: vi.fn(async (id: string) => {
         if (id === 'entity-1') {
           return { _id: id, name: 'Missing URL Research', slug: id, sourceUrls: [] };
-        }
-        if (id === 'entity-2') {
-          return {
-            _id: id,
-            name: 'Grant Only Action Lab',
-            slug: id,
-            sourceUrls: ['https://reporter.nih.gov/project-details/123'],
-          };
         }
         return {
           _id: id,
@@ -325,16 +228,12 @@ describe('launchAcquisitionReportService', () => {
             ]
           : [],
       ),
-      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
       {
-        stages: ['source_description', 'action_evidence', 'pi_identity'],
+        stages: ['source_description', 'pi_identity'],
         limit: 10,
         sampleLimit: 5,
       },
@@ -352,15 +251,6 @@ describe('launchAcquisitionReportService', () => {
         requiredFact: 'Current official Yale or lab page with research-specific prose.',
         safeNextCommand:
           'SCRAPER_ENV=beta yarn --cwd server research-homes:backfill-official-urls --dry-run --limit=100 --output /tmp/ylabs-research-home-url-backfill.json',
-      }),
-      expect.objectContaining({
-        recordId: 'entity-2',
-        label: 'Grant Only Action Lab',
-        stage: 'action_evidence',
-        rootCauseCategory: 'grant_not_action_evidence',
-        currentSourceUrl: 'https://reporter.nih.gov/project-details/123',
-        requiredFact:
-          'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
       }),
       expect.objectContaining({
         recordId: 'entity-3',
@@ -381,9 +271,7 @@ describe('launchAcquisitionReportService', () => {
       findResearchEntityMembers: vi.fn(),
       countSourceObservations: vi.fn(),
       findUsersByUrls: vi.fn(),
-      countUndergraduateAccessObservations: vi.fn(),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi.fn(),
     };
 
     await expect(buildLaunchAcquisitionReport({ limit: 9007199254740992 }, deps)).rejects.toThrow(
@@ -400,9 +288,7 @@ describe('launchAcquisitionReportService', () => {
       findResearchEntityMembers: vi.fn(),
       countSourceObservations: vi.fn(),
       findUsersByUrls: vi.fn(),
-      countUndergraduateAccessObservations: vi.fn(),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi.fn(),
     };
 
     await expect(
@@ -411,67 +297,28 @@ describe('launchAcquisitionReportService', () => {
 
     expect(deps.findQueueItems).not.toHaveBeenCalled();
   });
-  it('reports an unavailable observation store instead of diagnosing every row as unsourced', async () => {
-    const deps = {
-      findQueueItems: vi
-        .fn()
-        .mockResolvedValue([
-          item({ recordId: 'entity-1', repairStage: 'action_evidence' }),
-          item({ _id: 'queue-2', recordId: 'entity-2', repairStage: 'action_evidence' }),
-        ]),
-      findResearchEntity: vi.fn(async (id: string) => ({
-        _id: id,
-        name: 'Example Lab',
-        slug: id,
-        sourceUrls: ['https://medicine.yale.edu/lab/example/'],
-      })),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
-      countSourceObservations: vi.fn().mockResolvedValue(0),
-      findUsersByUrls: vi.fn().mockResolvedValue([]),
-      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
-      observationStorePopulated: vi.fn().mockResolvedValue(false),
-      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 2 }),
-    };
 
-    const report = await buildLaunchAcquisitionReport(
-      { stages: ['action_evidence'], limit: 10, sampleLimit: 5 },
-      deps,
-    );
-
-    expect(report.observationStorePopulated).toBe(false);
-    expect(report.actionEvidence?.groups.observationStoreUnavailable.count).toBe(2);
-    // The false positive this replaces, and the verdict the early return suppressed.
-    expect(report.actionEvidence?.groups.noSourceObservations.count).toBe(0);
-    expect(report.actionEvidence?.groups.sourceObservationsWithoutUndergradAccess.count).toBe(0);
-    expect(report.actionEvidence?.groups.sourceBackedRouteNotLaunchMaterialized.count).toBe(2);
-  });
-
-  it('still diagnoses a genuinely unsourced row when the observation store is populated', async () => {
+  it('reports no action-evidence stage, even over a stored queue item that still names it (#4581)', async () => {
     const deps = {
       findQueueItems: vi
         .fn()
         .mockResolvedValue([item({ recordId: 'entity-1', repairStage: 'action_evidence' })]),
-      findResearchEntity: vi.fn(async (id: string) => ({
-        _id: id,
-        name: 'Example Lab',
-        slug: id,
-        sourceUrls: ['https://medicine.yale.edu/lab/example/'],
-      })),
+      findResearchEntity: vi.fn(async (id: string) => ({ _id: id, name: 'Legacy Lab', slug: id })),
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       countSourceObservations: vi.fn().mockResolvedValue(0),
       findUsersByUrls: vi.fn().mockResolvedValue([]),
-      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
       observationStorePopulated: vi.fn().mockResolvedValue(true),
-      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
-      { stages: ['action_evidence'], limit: 10, sampleLimit: 5 },
+      { stages: ['pi_identity', 'source_description'], limit: 10, sampleLimit: 5 },
       deps,
     );
 
-    expect(report.observationStorePopulated).toBe(true);
-    expect(report.actionEvidence?.groups.noSourceObservations.count).toBe(1);
-    expect(report.actionEvidence?.groups.observationStoreUnavailable.count).toBe(0);
+    expect(report).not.toHaveProperty('actionEvidence');
+    expect(report.manifest).toEqual([]);
+    expect(Object.values(report.bySource).every((counts) => !('actionEvidence' in counts))).toBe(
+      true,
+    );
   });
 });

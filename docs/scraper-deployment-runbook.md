@@ -314,7 +314,7 @@ Run these checks against the production app and production API after the copy pl
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
 - Research relevance smoke checks cover short/noisy student queries such as `AI`, `Professor Zhong`, and `computer vision for medical imaging` without substring-only matches dominating true topic or person matches.
 - A known research detail page renders its simplified student-facing research summary, people, saved-plan action, and supported access context without legacy `/labs` or `/api/research-groups` dependencies.
-- The research detail page shows evidence-backed planning context and the derived official-profile link-out without exposing raw non-public scraped contact data.
+- The research detail page shows source-backed evidence and the derived official-profile link-out without exposing raw non-public scraped contact data.
 - Research and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
 - Unauthenticated admin/operator routes return `401`.
 - Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.

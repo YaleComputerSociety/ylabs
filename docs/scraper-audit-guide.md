@@ -304,7 +304,7 @@ Expected collections after an accepted materialized write:
 
 Audit focus:
 
-- Use this deterministic department-page lane before targeted LLM repair for action-evidence gaps.
+- Use this deterministic department-page lane before targeted LLM extraction for program and undergraduate access evidence.
 - Treat department pages as evidence, not final claims that a lab is accepting students.
 - Generic department guidance should remain exploratory access evidence, not an overstated opening.
 - Direct contact details are never surfaced; contact is a derived official-profile link-out.

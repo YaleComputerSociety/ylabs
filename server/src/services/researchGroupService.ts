@@ -100,7 +100,6 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
-import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -134,8 +133,7 @@ import {
 import { unexpiredSignalClause } from './servedSignalExpiry';
 
 /**
- * The page's lead display names, batched for the whole hit set in one roster read
- * the way `optionalPlanningContexts` batches its own enrichment.
+ * The page's lead display names, batched for the whole hit set in one roster read.
  *
  * The browse/search DTO cannot run the mismatched-person-name guard without these,
  * so a card opening on a possessive name that is not one of the record's own leads
@@ -296,21 +294,6 @@ async function resolveEmeritusWayInDecisions(
   }
   return decisions;
 }
-
-const optionalPlanningContexts = async (entityIds: any[]) => {
-  try {
-    return {
-      contexts: await listPlanningContextsForResearchEntities(entityIds),
-      degraded: false,
-    };
-  } catch (error) {
-    console.error('Optional research planning-context enrichment failed:', sanitizeLogValue(error));
-    return {
-      contexts: new Map(),
-      degraded: true,
-    };
-  }
-};
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -1559,23 +1542,20 @@ async function searchResearchGroupsForQuery(
         );
       });
     const pageEntities = filteredCandidates.slice(offset, offset + safePageSize);
-    const pageEntityIds = pageEntities.map((entity) => entity._id);
-    const [planningContextResult, leadMemberNameRead] = await Promise.all([
-      optionalPlanningContexts(pageEntityIds),
-      optionalPublicLeadMemberNames(pageEntities, { withEmeritusWayIn: true }),
-    ]);
+    const leadMemberNameRead = await optionalPublicLeadMemberNames(pageEntities, {
+      withEmeritusWayIn: true,
+    });
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
           ...entity,
           _id: researchGroupDocumentId(entity._id),
-          planningContext: planningContextResult.contexts.get(researchGroupDocumentId(entity._id)),
         })),
         estimatedTotalHits: filteredCandidates.length,
         page: safePage,
         pageSize: safePageSize,
         facetDistribution: requestedFacetDistribution,
-        degraded: planningContextResult.degraded || leadMemberNameRead.unavailable,
+        degraded: leadMemberNameRead.unavailable,
       },
       {
         includeOperatorFields: safeOptions.includeNonPublic,
@@ -2210,19 +2190,14 @@ async function searchResearchGroupsForQuery(
   const visibleEntitiesById = new Map(
     (visibleEntities as any[]).map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
-  const visibleHitIds = hitIds.filter((id: any) =>
-    visibleEntitiesById.has(researchGroupDocumentId(id)),
-  );
   // Map Meilisearch's `id` back to `_id` for client backward compatibility. The
   // Meilisearch primary key is `serializedDocumentId(_id)`, the same serialization
   // the lead-name map is keyed by, so the DTO's per-hit lookup matches on either
   // path's `_id`.
-  const [planningContextResult, leadMemberNameRead] = await Promise.all([
-    optionalPlanningContexts(visibleHitIds),
-    optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>, {
-      withEmeritusWayIn: true,
-    }),
-  ]);
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(
+    visibleEntities as Array<Record<string, any>>,
+    { withEmeritusWayIn: true },
+  );
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -2231,7 +2206,6 @@ async function searchResearchGroupsForQuery(
     return {
       ...entity,
       _id: id,
-      planningContext: planningContextResult.contexts.get(entityId),
     };
   });
 
@@ -2260,7 +2234,7 @@ async function searchResearchGroupsForQuery(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
-      degraded: degraded || planningContextResult.degraded || leadMemberNameRead.unavailable,
+      degraded: degraded || leadMemberNameRead.unavailable,
     },
     {
       includeOperatorFields: safeOptions.includeNonPublic,
@@ -3702,18 +3676,15 @@ export async function getResearchGroupDetail(
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [accessSignals, planningContexts] = await Promise.all([
-    Signal.find({
-      researchEntityId: (group as any)._id,
-      type: { $in: accessSignalTypes },
-      archived: false,
-      ...unexpiredSignalClause(new Date()),
-    })
-      .sort({ observedAt: -1 })
-      .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
-      .lean(),
-    optionalPlanningContexts([(group as any)._id]),
-  ]);
+  const accessSignals = await Signal.find({
+    researchEntityId: (group as any)._id,
+    type: { $in: accessSignalTypes },
+    archived: false,
+    ...unexpiredSignalClause(new Date()),
+  })
+    .sort({ observedAt: -1 })
+    .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
+    .lean();
 
   const publicGroupForResponse = publicResearchDetailGroup({
     ...publicGroup,
@@ -3743,9 +3714,6 @@ export async function getResearchGroupDetail(
         ...publicGroupForResponse,
         ...leadIdentity,
         ...servedEmeritusWayInFlags(emeritusWayIn),
-        planningContext: emeritusWayIn.wayInWithheld
-          ? undefined
-          : planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
       },
       members,
       roster,

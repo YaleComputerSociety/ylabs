@@ -800,10 +800,7 @@ describe('researchEntityDto', () => {
     expect(dto.departments).toEqual(['Department [email redacted]']);
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
-    expect(dto.planningContext).toEqual({
-      bestNextStep: 'Email [email redacted] after reading the source.',
-      reasons: ['Call [phone redacted] before outreach.'],
-    });
+    expect(dto).not.toHaveProperty('planningContext');
     expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
     expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
@@ -1014,7 +1011,7 @@ describe('researchEntityDto', () => {
     expect(String(dto.shortDescription).length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
-    expect((dto.planningContext as any).reasons).toHaveLength(100);
+    expect(dto).not.toHaveProperty('planningContext');
     expect(Object.keys(dto.qualitySummary as Record<string, unknown>)).toHaveLength(100);
   });
 

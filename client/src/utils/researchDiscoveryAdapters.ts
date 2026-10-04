@@ -1,4 +1,4 @@
-import type { PathwayBestNextStepCategory, PathwaySearchHit } from '../types/pathway';
+import type { PathwaySearchHit } from '../types/pathway';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -109,28 +109,6 @@ const titleizeValue = (value?: string): string =>
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-
-export const getPathwayActionLabel = (category?: PathwayBestNextStepCategory | string): string => {
-  switch (category) {
-    case 'apply':
-      return 'Apply';
-    case 'contact-program':
-      return 'Contact program';
-    case 'plan-outreach':
-      return 'Plan targeted outreach';
-    case 'find-funding':
-      return 'Find funding';
-    case 'register-for-credit':
-      return 'Ask about credit after finding a mentor';
-    case 'save-for-thesis':
-      return 'Save for thesis planning';
-    case 'check-back-later':
-    case 'save-for-later':
-      return 'Save for later';
-    default:
-      return 'Review next step';
-  }
-};
 
 export const getPathwayTypeLabel = (value?: string): string => {
   const studentFacingLabel = getStudentFacingPathwayLabel(value);
@@ -448,12 +426,7 @@ const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
     pathway.contactRoute?.url ||
     pathway.sourceUrls?.[0] ||
     pathway.evidence?.find((entry) => entry.sourceUrl)?.sourceUrl;
-  const opportunityKey =
-    sourceKey ||
-    pathway.bestNextStepCategory ||
-    pathway.bestNextStep ||
-    pathway.studentFacingLabel ||
-    pathway._id;
+  const opportunityKey = sourceKey || pathway.studentFacingLabel || pathway._id;
 
   return [entityKey, pathway.pathwayType || 'pathway', opportunityKey]
     .map(normalizeDisplayKeyPart)

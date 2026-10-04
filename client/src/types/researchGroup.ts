@@ -21,12 +21,6 @@ export const researchEntityTypes = [
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
-export interface ResearchPlanningContext {
-  category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
-  label: string;
-  url: string;
-}
-
 export type StudentDecisionRecommendedAction =
   | 'APPLY'
   | 'OPEN_OFFICIAL_ROUTE'
@@ -135,7 +129,6 @@ export interface ResearchGroup {
    * has any non-archived Listings. Optional because the search endpoint does
    * not include it.
    */
-  planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
   leadIdentityStatus?: 'verified' | 'under_review';
   leadProfessorPublicKey?: string;

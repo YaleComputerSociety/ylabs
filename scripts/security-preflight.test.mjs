@@ -3116,7 +3116,6 @@ test('launch acquisition report record ids are normalized before entity fan-out'
   assert.match(source, /if \(serialized\) return serialized\.trim\(\)/);
   assert.match(source, /const safeId = normalizeLaunchAcquisitionObjectId\(id\)/);
   assert.match(source, /ResearchEntity\.findById\(safeId\)/);
-  assert.match(source, /researchEntityId: safeId/);
   assert.doesNotMatch(source, /ResearchEntity\.findById\(id\)/);
   assert.doesNotMatch(source, /researchEntityId: id/);
   assert.doesNotMatch(source, /typeof \(value as any\)\.toHexString === 'function'/);
@@ -5005,7 +5004,6 @@ test('legacy research group public DTO ids use safe serialization', () => {
   assert.match(source, /_id: researchGroupDocumentId\(entity\._id\)/);
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
   assert.match(source, /\[researchGroupDocumentId\(entity\._id\), entity\]/);
-  assert.match(source, /visibleEntitiesById\.has\(researchGroupDocumentId\(id\)\)/);
   assert.match(source, /identityKey: researchGroupDocumentId\(entry\.personId\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);

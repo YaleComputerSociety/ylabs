@@ -318,13 +318,9 @@ export type LaunchAcquisitionGateArtifact =
       scanned: number;
       observationStorePopulated: boolean;
       piBlockers: number;
-      actionBlockers: number;
       exactPiMatches: number;
-      sourceBackedRouteCandidates: number;
       missingOfficialProfileUrl: number;
       ambiguousOrMismatchedUserMatch: number;
-      sourceObservationsWithoutUndergradAccess: number;
-      untrustedExternalRouteEvidence: number;
     }
   | {
       artifactStatus: 'missing' | 'invalid';
@@ -1760,31 +1756,27 @@ export function deriveLaunchAcquisitionGate(input?: LaunchAcquisitionGateArtifac
     };
   }
 
-  const deterministicCandidates = input.exactPiMatches + input.sourceBackedRouteCandidates;
+  const deterministicCandidates = input.exactPiMatches;
   const base = {
     command,
     scanned: input.scanned,
     piBlockers: input.piBlockers,
-    actionBlockers: input.actionBlockers,
     exactPiMatches: input.exactPiMatches,
-    sourceBackedRouteCandidates: input.sourceBackedRouteCandidates,
     missingOfficialProfileUrl: input.missingOfficialProfileUrl,
     ambiguousOrMismatchedUserMatch: input.ambiguousOrMismatchedUserMatch,
-    sourceObservationsWithoutUndergradAccess: input.sourceObservationsWithoutUndergradAccess,
-    untrustedExternalRouteEvidence: input.untrustedExternalRouteEvidence,
   };
 
   if (deterministicCandidates > 0) {
     return {
       status: 'active' as const,
-      note: `Launch acquisition report has ${deterministicCandidates} deterministic PI/action repair candidates; run the matching bounded repair dry-run before any apply.`,
+      note: `Launch acquisition report has ${deterministicCandidates} deterministic PI repair candidates; run the matching bounded repair dry-run before any apply.`,
       ...base,
     };
   }
 
   return {
     status: 'blocked' as const,
-    note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+    note: 'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
     ...base,
   };
 }
@@ -1831,7 +1823,6 @@ export function readLaunchAcquisitionGateArtifact(
     }
 
     const piGroups = parsed.piIdentity?.groups || {};
-    const actionGroups = parsed.actionEvidence?.groups || {};
     return {
       artifactStatus: 'loaded',
       artifactPath: safeArtifactPath,
@@ -1839,19 +1830,9 @@ export function readLaunchAcquisitionGateArtifact(
       scanned: Number(parsed.scanned || 0),
       observationStorePopulated: parsed.observationStorePopulated !== false,
       piBlockers: Number(parsed.piIdentity?.total || 0),
-      actionBlockers: Number(parsed.actionEvidence?.total || 0),
       exactPiMatches: groupCount(piGroups, 'exactSingleUserMatch'),
-      sourceBackedRouteCandidates: groupCount(
-        actionGroups,
-        'sourceBackedRouteNotLaunchMaterialized',
-      ),
       missingOfficialProfileUrl: groupCount(piGroups, 'missingOfficialProfileUrl'),
       ambiguousOrMismatchedUserMatch: groupCount(piGroups, 'ambiguousOrMismatchedUserMatch'),
-      sourceObservationsWithoutUndergradAccess: groupCount(
-        actionGroups,
-        'sourceObservationsWithoutUndergradAccess',
-      ),
-      untrustedExternalRouteEvidence: groupCount(actionGroups, 'untrustedExternalRouteEvidence'),
     };
   } catch {
     return {

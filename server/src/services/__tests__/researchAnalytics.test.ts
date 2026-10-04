@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AnalyticsEventType } from '../../models/analytics';
-import { emitResearchEvent, sanitizeResearchPayload } from '../researchAnalytics';
+import {
+  emitResearchEvent,
+  isResearchEventType,
+  isResearchJourneyEventType,
+  sanitizeResearchPayload,
+} from '../researchAnalytics';
 import type { LogEventParams } from '../analyticsService';
 
 const user = { netId: 'abc123', userType: 'undergraduate' };
@@ -361,100 +366,27 @@ describe('research analytics event emission', () => {
     ).toEqual({ operation: 'remove', filter: 'department' });
   });
 
-  it('emits a qualified action only from the current server-owned category', async () => {
+  it('refuses the retired qualified action, whatever category it claims (#4581)', async () => {
     const events: LogEventParams[] = [];
-    const resolve = async () =>
-      new Map([
-        [
-          '507f1f77bcf86cd799439010',
+    for (const payload of [undefined, { actionCategory: 'official_application' }]) {
+      await expect(
+        emitResearchEvent(
           {
-            category: 'official_application' as const,
-            label: 'Official application',
-            url: 'https://example.edu/apply',
+            eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439010',
+            user,
+            payload,
           },
-        ],
-      ]);
-
-    const emitted = await emitResearchEvent(
-      {
-        eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-        entityType: 'research_entity',
-        entityId: '507f1f77bcf86cd799439010',
-        user,
-        dedupeKey: 'action:fixture-1',
-        payload: {
-          actionCategory: 'official_application',
-          query: 'must not join',
-          url: 'https://example.edu/apply?student=abc123',
-          destination: 'fixture-mentor@yale.edu',
-          note: 'private plan',
-        },
-      },
-      async (event) => {
-        events.push(event);
-        return 'recorded' as const;
-      },
-      resolve,
-    );
-
-    expect(emitted).toBe('recorded');
-    expect(events[0]).toMatchObject({
-      eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-      entityType: 'research_entity',
-      entityId: '507f1f77bcf86cd799439010',
-      metadata: { actionCategory: 'official_application' },
-    });
-    expect(JSON.stringify(events[0])).not.toContain('query');
-    expect(JSON.stringify(events[0])).not.toContain('fixture-mentor');
-    expect(JSON.stringify(events[0])).not.toContain('private plan');
-  });
-
-  it('rejects stale, missing, and client-mismatched qualified actions', async () => {
-    const events: LogEventParams[] = [];
-    const missing = async () => new Map();
-    const qualified = async () =>
-      new Map([
-        [
-          '507f1f77bcf86cd799439010',
-          {
-            category: 'reviewed_route' as const,
-            label: 'Official contact route',
-            url: 'https://example.edu/contact',
+          async (event) => {
+            events.push(event);
+            return 'recorded' as const;
           },
-        ],
-      ]);
-
-    await expect(
-      emitResearchEvent(
-        {
-          eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-          entityType: 'research_entity',
-          entityId: '507f1f77bcf86cd799439010',
-          user,
-          payload: { actionCategory: 'official_application' },
-        },
-        async (event) => {
-          events.push(event);
-          return 'recorded' as const;
-        },
-        qualified,
-      ),
-    ).resolves.toBe('rejected');
-    await expect(
-      emitResearchEvent(
-        {
-          eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-          entityType: 'research_entity',
-          entityId: '507f1f77bcf86cd799439010',
-          user,
-        },
-        async (event) => {
-          events.push(event);
-          return 'recorded' as const;
-        },
-        missing,
-      ),
-    ).resolves.toBe('rejected');
+        ),
+      ).resolves.toBe('rejected');
+    }
     expect(events).toHaveLength(0);
+    expect(isResearchEventType(AnalyticsEventType.RESEARCH_QUALIFIED_ACTION)).toBe(false);
+    expect(isResearchJourneyEventType(AnalyticsEventType.RESEARCH_QUALIFIED_ACTION)).toBe(false);
   });
 });

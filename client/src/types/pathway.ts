@@ -1,13 +1,3 @@
-export type PathwayBestNextStepCategory =
-  | 'apply'
-  | 'register-for-credit'
-  | 'find-funding'
-  | 'plan-outreach'
-  | 'contact-program'
-  | 'save-for-thesis'
-  | 'save-for-later'
-  | 'check-back-later';
-
 export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
 export interface PathwaySearchFilters {
@@ -18,7 +8,6 @@ export interface PathwaySearchFilters {
   entityType?: string[];
   departments?: string[];
   researchAreas?: string[];
-  bestNextStepCategory?: PathwayBestNextStepCategory[];
 }
 
 export interface PathwayResearchEntitySummary {
@@ -62,8 +51,6 @@ export interface PathwaySearchHit {
   evidenceStrength: string;
   studentFacingLabel: string;
   explanation?: string;
-  bestNextStep?: string;
-  bestNextStepCategory: PathwayBestNextStepCategory;
   compensation?: string;
   confidence?: number;
   sourceUrls: string[];

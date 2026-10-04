@@ -10,7 +10,7 @@ import { Observation, researchEntityObservationSubjects } from '../models/observ
 import { collapseLatestWins } from './observationStore';
 import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
-import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
+import { hasPastUndergradAdvisees } from '../services/hostedUndergraduates';
 import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
