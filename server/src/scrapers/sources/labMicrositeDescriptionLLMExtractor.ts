@@ -134,7 +134,7 @@ const MIN_LLM_PAGE_TEXT_CHARS = 120;
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
 // (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
 const LAB_NAME_CONFIDENCE = 0.95;
-export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v2';
+export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v3';
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
