@@ -8,6 +8,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
+import { withoutUnbackedLabSelfDescription } from './unbackedLabSelfDescription';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import {
@@ -35,6 +36,7 @@ const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
 ] as const;
 
 const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
+
 // This is a curated allowlist, not a mechanical inflection table: some
 // inflections of a listed verb carry no research signal in bio prose
 // ("currently developing a new feature" in a filmmaker CV), so a missing
@@ -2329,7 +2331,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         // body in the source bio's voice on rows whose stored text never opened
         // with a pronoun at all, which is where most of #1871's rows came from.
         next[field] = revoicedThirdPersonBody(
-          revoicedFirstPersonBody(biographyRepair.value, next, field),
+          withoutUnbackedLabSelfDescription(
+            revoicedFirstPersonBody(biographyRepair.value, next, field),
+            next,
+            field,
+          ),
           next,
           field,
         );
@@ -2338,7 +2344,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       }
       const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
       const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
-      const withFirstPersonReVoice = revoicedFirstPersonBody(withResearchLeadRepair, next, field);
+      const withFirstPersonReVoice = withoutUnbackedLabSelfDescription(
+        revoicedFirstPersonBody(withResearchLeadRepair, next, field),
+        next,
+        field,
+      );
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,

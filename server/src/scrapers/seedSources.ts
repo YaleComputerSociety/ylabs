@@ -584,6 +584,15 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
 
 export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
 
+/**
+ * The sources whose values a language model wrote, read off each seed's display name.
+ * `utils/unbackedLabSelfDescription.ts` cannot import this module, so it names the same
+ * set by rule and a test pins the two together.
+ */
+export const LLM_AUTHORED_SOURCE_NAMES: readonly string[] = SOURCES.filter((seed) =>
+  /\bLLM\b/.test(seed.displayName),
+).map((seed) => seed.name);
+
 export { RETIRED_SOURCE_NAMES };
 
 export function seededSourceEnabled(name: string): boolean {
