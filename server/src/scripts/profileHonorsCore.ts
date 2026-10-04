@@ -19,9 +19,14 @@ export interface ProfileHonorsArgs {
 
 export function parseProfileHonorsArgs(argv: readonly string[]): ProfileHonorsArgs {
   const args: ProfileHonorsArgs = { apply: false, limit: 0, slugs: [] };
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
     if (arg === '--apply') args.apply = true;
-    else if (arg.startsWith('--limit=')) {
+    else if (arg === '--output') {
+      const output = argv[++index];
+      if (!output) throw new Error('--output needs a path');
+      args.output = output;
+    } else if (arg.startsWith('--limit=')) {
       const limit = Number(arg.slice('--limit='.length));
       if (!Number.isSafeInteger(limit) || limit < 1) {
         throw new Error('--limit must be a positive integer');

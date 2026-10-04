@@ -221,16 +221,17 @@ The two exhaustive Development modes (`development-full`, `development-increment
 13. `refusal-lane-attribution` (`refusals:attribute-lanes --apply`; after every stage that records a refusal, #3521)
 14. `pi-attributed-researcher-mint` (`observations:materialize-pi-attributed-users --apply --mint-only`; ordered before `inferred-pi-lead-reclaim` so the researcher a stored PI attribution names exists before the reclaim tries to link it; `--mint-only` applies a key only when its dry-run probe would mint, leaving researchers the same keys already reach to the scrape that observes them)
 15. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741; a key the original netid, alias-map and key-name walk cannot resolve falls back to the `user` materializer's own identity join, and a bare-alias or Yale-email key is read in `netid:` form, both refusing a researcher whose title cannot own a research row or who is not the person an eponymous lab name names, #4697)
-16. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-17. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-18. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-19. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
-20. `coverage-audit`
-21. `data-quality` (`beta:data-quality --strict`)
-22. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-23. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-24. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-25. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+16. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
+17. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+18. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+19. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+20. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+21. `coverage-audit`
+22. `data-quality` (`beta:data-quality --strict`)
+23. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+24. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+25. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+26. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `grant-shell-faculty-port`, `eponymous-fra-merge`, the URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe`, `website-url-identity-dedupe` and `shared-person-name-agreed-dedupe` are three keys onto one question and an operator suppressing those merges wants all three off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 

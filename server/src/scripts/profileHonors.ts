@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
+import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fraProfileSynthesisLeads, profileUrlsOf } from './fraProfileSynthesisLane';
@@ -24,6 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ENTITY_FIELDS = '_id slug name displayName entityType archived sourceUrls leadHonors';
+const PAGE_READ_CONCURRENCY = 6;
 
 async function main(): Promise<void> {
   const args = parseProfileHonorsArgs(process.argv.slice(2));
@@ -63,7 +65,8 @@ async function main(): Promise<void> {
     withRecent: 0,
   };
   const writes: { slug: string; sourceUrl: string; honors: unknown[] }[] = [];
-  for (const [index, entity] of targets.entries()) {
+  let read = 0;
+  await runWithBoundedConcurrency(targets, PAGE_READ_CONCURRENCY, async (entity) => {
     const outcome = await readProfileHonors(
       entity,
       profileUrlsOf(entity),
@@ -101,8 +104,9 @@ async function main(): Promise<void> {
         await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false });
       }
     }
-    if ((index + 1) % 100 === 0) console.log(`read ${index + 1}/${targets.length}`);
-  }
+    read++;
+    if (read % 100 === 0) console.log(`read ${read}/${targets.length}`);
+  });
 
   const summary = {
     generatedAt: new Date().toISOString(),
