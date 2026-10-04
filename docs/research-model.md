@@ -154,7 +154,10 @@ Every merge writer calls it: `applyResearchEntityDedupeMergeGroup` (the PI dedup
 A plan with no counterpart on the survivor moves whole; a student-archived plan on the survivor is replaced by the live duplicate plan.
 When the student has live plans on both, the two combine into the survivor's plan: the more advanced stage, both notes with a visible separator between them, the union of the checklists by label (completed if either was), the union of the deadlines by label keeping the earliest still-open date, and each export preference only if both plans opted in.
 A combination that would exceed a plan limit is not truncated: the duplicate plan stays live and is counted as `heldOverCapacity`.
-Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatWouldMove`.
+Only a plan the student archived, one with no `archivedReason`, counts as archived here.
+A plan a system lane archived, such as the PI dedupe's old conflict archive, is carried as a live plan and restored, and is counted as `restoredSystemArchivedPlans`.
+Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatWouldMove`: the PI dedupe, the same-lead merge, the eponymous FRA merge, the duplicate-name review for accepted merge decisions, the grant-shell port, and the stranded-key redirect decisions.
+The department-roster shell fold runs inside materialization and has no dry run.
 
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
 `REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.

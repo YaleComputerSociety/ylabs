@@ -7,7 +7,10 @@ import {
   combineResearchPlans,
   type StoredResearchPlan,
 } from '../researchPlanMergeCarry';
-import { recordResearchEntityMergeTombstone } from '../researchEntityCanonicalTombstone';
+import {
+  previewResearchEntityMergeTombstonePlanCarry,
+  recordResearchEntityMergeTombstone,
+} from '../researchEntityCanonicalTombstone';
 import { applyResearchEntityDedupeMergeGroup } from '../../scripts/dedupeResearchEntitiesByPi';
 import { MAX_RESEARCH_PLAN_NOTES_LENGTH } from '../../models/researchPlan';
 
@@ -377,5 +380,130 @@ describe('research plans carried through a dedupe merge', () => {
       stage: 'PREPARING',
       privateNotes: 'synthetic tombstone notes',
     });
+  });
+
+  it('restores a plan a system lane archived instead of leaving it archived', async () => {
+    const db = mongoose.connection.db!;
+    const { survivorId, duplicateId } = await seedPair();
+    const movedAccountId = oid();
+    const mergedAccountId = oid();
+    const survivorPlanId = oid();
+    await db.collection('research_plans').insertMany([
+      {
+        accountId: movedAccountId,
+        target: { kind: 'RESEARCH_ENTITY', id: duplicateId },
+        stage: 'CONTACTED',
+        privateNotes: 'synthetic moved notes',
+        archived: true,
+        archivedReason: 'synthetic_system_archive',
+        archivedAt: daysFromNow(-30),
+      },
+      {
+        _id: survivorPlanId,
+        accountId: mergedAccountId,
+        target: { kind: 'RESEARCH_ENTITY', id: survivorId },
+        stage: 'SAVED',
+        privateNotes: 'synthetic survivor notes',
+        archived: false,
+      },
+      {
+        accountId: mergedAccountId,
+        target: { kind: 'RESEARCH_ENTITY', id: duplicateId },
+        stage: 'APPLIED',
+        privateNotes: 'synthetic conflict-archived notes',
+        archived: true,
+        archivedReason: 'synthetic_system_archive',
+        archivedAt: daysFromNow(-30),
+      },
+    ]);
+
+    const report = await carryResearchPlansToSurvivor({
+      survivorId,
+      duplicateIds: [duplicateId],
+      apply: true,
+      now: NOW,
+    });
+
+    expect(report).toMatchObject({
+      plansOnDuplicates: 2,
+      moved: 1,
+      merged: 1,
+      keptStudentArchivedPlans: 0,
+      restoredSystemArchivedPlans: 2,
+    });
+    const moved = await db.collection('research_plans').findOne({ accountId: movedAccountId });
+    expect(moved).toMatchObject({
+      target: { kind: 'RESEARCH_ENTITY', id: survivorId },
+      stage: 'CONTACTED',
+      privateNotes: 'synthetic moved notes',
+      archived: false,
+    });
+    expect(moved).not.toHaveProperty('archivedReason');
+    expect(moved).not.toHaveProperty('archivedAt');
+    const merged = await db
+      .collection('research_plans')
+      .find({ accountId: mergedAccountId })
+      .toArray();
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ _id: survivorPlanId, stage: 'APPLIED', archived: false });
+    expect(merged[0].privateNotes).toBe(
+      `synthetic survivor notes${MERGED_RESEARCH_PLAN_NOTES_SEPARATOR}synthetic conflict-archived notes`,
+    );
+  });
+
+  it('keeps a plan the student archived archived when the student has a survivor plan', async () => {
+    const db = mongoose.connection.db!;
+    const { survivorId, duplicateId } = await seedPair();
+    const accountId = oid();
+    await db.collection('research_plans').insertMany([
+      { accountId, target: { kind: 'RESEARCH_ENTITY', id: survivorId }, archived: false },
+      {
+        accountId,
+        target: { kind: 'RESEARCH_ENTITY', id: duplicateId },
+        archived: true,
+        restorableUntil: daysFromNow(1),
+      },
+    ]);
+
+    const report = await carryResearchPlansToSurvivor({
+      survivorId,
+      duplicateIds: [duplicateId],
+      apply: true,
+      now: NOW,
+    });
+
+    expect(report).toMatchObject({ keptStudentArchivedPlans: 1, restoredSystemArchivedPlans: 0 });
+    expect(
+      await db
+        .collection('research_plans')
+        .countDocuments({ 'target.id': duplicateId, archived: true }),
+    ).toBe(1);
+  });
+
+  it('previews the plans a merge tombstone would carry without writing anything', async () => {
+    const db = mongoose.connection.db!;
+    const survivorId = oid();
+    const archivedId = oid();
+    await db.collection('research_entities').insertMany([
+      { _id: survivorId, slug: 'synthetic-preview-survivor', archived: false },
+      { _id: archivedId, slug: 'synthetic-preview-key', archived: true },
+    ]);
+    await db.collection('research_plans').insertOne({
+      accountId: oid(),
+      target: { kind: 'RESEARCH_ENTITY', id: archivedId },
+      archived: false,
+    });
+    const before = await db.collection('research_plans').find({}).toArray();
+
+    const report = await previewResearchEntityMergeTombstonePlanCarry({
+      slug: 'synthetic-preview-key',
+      canonicalEntityId: survivorId,
+    });
+
+    expect(report).toMatchObject({ plansOnDuplicates: 1, moved: 1 });
+    expect(await db.collection('research_plans').find({}).toArray()).toEqual(before);
+    expect(
+      await db.collection('research_entities').findOne({ _id: archivedId }),
+    ).not.toHaveProperty('canonicalGroupId');
   });
 });

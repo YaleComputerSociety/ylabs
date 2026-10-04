@@ -45,6 +45,7 @@ export interface StoredResearchPlan {
   deadlines?: unknown;
   exportPreferences?: StoredResearchPlanExportPreferences;
   archived?: unknown;
+  archivedReason?: unknown;
   restorableUntil?: unknown;
 }
 
@@ -98,6 +99,7 @@ export interface ResearchPlanCarryReport {
   replacedArchivedSurvivorPlans: number;
   heldOverCapacity: number;
   keptStudentArchivedPlans: number;
+  restoredSystemArchivedPlans: number;
 }
 
 export const emptyResearchPlanCarryReport = (): ResearchPlanCarryReport => ({
@@ -107,6 +109,7 @@ export const emptyResearchPlanCarryReport = (): ResearchPlanCarryReport => ({
   replacedArchivedSurvivorPlans: 0,
   heldOverCapacity: 0,
   keptStudentArchivedPlans: 0,
+  restoredSystemArchivedPlans: 0,
 });
 
 export const addResearchPlanCarryReports = (
@@ -120,10 +123,19 @@ export const addResearchPlanCarryReports = (
     left.replacedArchivedSurvivorPlans + right.replacedArchivedSurvivorPlans,
   heldOverCapacity: left.heldOverCapacity + right.heldOverCapacity,
   keptStudentArchivedPlans: left.keptStudentArchivedPlans + right.keptStudentArchivedPlans,
+  restoredSystemArchivedPlans: left.restoredSystemArchivedPlans + right.restoredSystemArchivedPlans,
 });
 
 export const researchPlansThatWouldMove = (report: ResearchPlanCarryReport): number =>
   report.moved + report.merged + report.replacedArchivedSurvivorPlans;
+
+const isSystemArchived = (plan: StoredResearchPlan): boolean =>
+  plan.archived === true &&
+  typeof plan.archivedReason === 'string' &&
+  plan.archivedReason.trim() !== '';
+
+const isStudentArchived = (plan: StoredResearchPlan): boolean =>
+  plan.archived === true && !isSystemArchived(plan);
 
 const stageRank = (stage: unknown): number => {
   const rank = researchPlanStages.indexOf(stage as ResearchPlanStage);
@@ -270,10 +282,10 @@ export const decideResearchPlanCarry = (
   now: Date,
 ): ResearchPlanCarryDecision => {
   if (!survivorPlan) return { action: 'move', duplicatePlan };
-  if (duplicatePlan.archived === true) {
+  if (isStudentArchived(duplicatePlan)) {
     return { action: 'keep-student-archived-plan', duplicatePlan, survivorPlan };
   }
-  if (survivorPlan.archived === true) {
+  if (isStudentArchived(survivorPlan)) {
     return { action: 'replace-archived-survivor-plan', duplicatePlan, survivorPlan };
   }
   const combined = combineResearchPlans(survivorPlan, duplicatePlan, now);
@@ -303,6 +315,7 @@ const PLAN_PROJECTION = {
   deadlines: 1,
   exportPreferences: 1,
   archived: 1,
+  archivedReason: 1,
   restorableUntil: 1,
 } as const;
 
@@ -330,6 +343,26 @@ const loadAccountEntityPlans = async (
 
 const accountKey = (plan: StoredResearchPlan): string => String(plan.accountId);
 
+const RESTORED_PLAN_UNSET = { archivedReason: '', archivedAt: '', restorableUntil: '' } as const;
+
+const RESTORED_PLAN_STATE = {
+  archived: false,
+  archivedReason: undefined,
+  restorableUntil: undefined,
+} as const;
+
+const carryOntoSurvivorUpdate = (
+  plan: StoredResearchPlan,
+  survivorId: mongoose.Types.ObjectId,
+  now: Date,
+) =>
+  isStudentArchived(plan)
+    ? { $set: { 'target.id': survivorId, updatedAt: now } }
+    : {
+        $set: { 'target.id': survivorId, archived: false, updatedAt: now },
+        $unset: RESTORED_PLAN_UNSET,
+      };
+
 const applyResearchPlanCarryDecision = async (
   decision: ResearchPlanCarryDecision,
   survivorId: mongoose.Types.ObjectId,
@@ -339,7 +372,7 @@ const applyResearchPlanCarryDecision = async (
   if (decision.action === 'move') {
     await collection.updateOne(
       { _id: decision.duplicatePlan._id },
-      { $set: { 'target.id': survivorId, updatedAt: now } },
+      carryOntoSurvivorUpdate(decision.duplicatePlan, survivorId, now),
     );
     return;
   }
@@ -347,20 +380,34 @@ const applyResearchPlanCarryDecision = async (
     await collection.deleteOne({ _id: decision.survivorPlan._id, archived: true });
     await collection.updateOne(
       { _id: decision.duplicatePlan._id },
-      { $set: { 'target.id': survivorId, updatedAt: now } },
+      carryOntoSurvivorUpdate(decision.duplicatePlan, survivorId, now),
     );
     return;
   }
   if (decision.action === 'merge') {
     await collection.updateOne(
       { _id: decision.survivorPlan._id },
-      { $set: { ...decision.fields, updatedAt: now } },
+      {
+        $set: { ...decision.fields, archived: false, updatedAt: now },
+        $unset: RESTORED_PLAN_UNSET,
+      },
     );
     await collection.deleteOne({ _id: decision.duplicatePlan._id });
   }
 };
 
+const restoresSystemArchivedPlan = (decision: ResearchPlanCarryDecision): boolean => {
+  if (decision.action === 'move' || decision.action === 'replace-archived-survivor-plan') {
+    return isSystemArchived(decision.duplicatePlan);
+  }
+  if (decision.action === 'merge') {
+    return isSystemArchived(decision.duplicatePlan) || isSystemArchived(decision.survivorPlan);
+  }
+  return false;
+};
+
 const countDecision = (report: ResearchPlanCarryReport, decision: ResearchPlanCarryDecision) => {
+  if (restoresSystemArchivedPlan(decision)) report.restoredSystemArchivedPlans += 1;
   if (decision.action === 'move') report.moved += 1;
   else if (decision.action === 'merge') report.merged += 1;
   else if (decision.action === 'replace-archived-survivor-plan')
@@ -370,7 +417,7 @@ const countDecision = (report: ResearchPlanCarryReport, decision: ResearchPlanCa
 };
 
 const liveFirst = (left: StoredResearchPlan, right: StoredResearchPlan): number =>
-  Number(left.archived === true) - Number(right.archived === true);
+  Number(isStudentArchived(left)) - Number(isStudentArchived(right));
 
 export async function carryResearchPlansToSurvivor(input: {
   survivorId: ObjectIdLike;
@@ -434,9 +481,14 @@ const projectDecisionOntoSurvivor = (
   if (decision.action === 'move' || decision.action === 'replace-archived-survivor-plan') {
     survivorPlanByAccount.set(key, {
       ...decision.duplicatePlan,
+      ...(isStudentArchived(decision.duplicatePlan) ? {} : RESTORED_PLAN_STATE),
       target: { kind: RESEARCH_ENTITY_TARGET_KIND, id: survivorId },
     });
   } else if (decision.action === 'merge') {
-    survivorPlanByAccount.set(key, { ...decision.survivorPlan, ...decision.fields });
+    survivorPlanByAccount.set(key, {
+      ...decision.survivorPlan,
+      ...decision.fields,
+      ...RESTORED_PLAN_STATE,
+    });
   }
 };

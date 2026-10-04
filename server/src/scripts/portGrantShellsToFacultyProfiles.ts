@@ -31,7 +31,16 @@ import {
 } from '../services/studentVisibilityGateService';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { applyResearchEntityDedupeMergeGroup } from './dedupeResearchEntitiesByPi';
+import {
+  applyResearchEntityDedupeMergeGroup,
+  previewResearchPlanCarryForMergeGroups,
+} from './dedupeResearchEntitiesByPi';
+import {
+  addResearchPlanCarryReports,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import { GRANT_CORPUS_SYNTHESIS_SOURCE_NAME, GRANT_SOURCE_NAMES } from './grantCorpusSynthesisCore';
 import {
   GRANT_SHELL_PORT_SLUG_RE,
@@ -97,6 +106,8 @@ export interface GrantShellPortDelta {
   grantOnlyEnrichedIntoExistingRow: number;
   grantOnlyEnrichmentDeferred: number;
   grantOnlyDeferredByCap: number;
+  researchPlanCarry: ResearchPlanCarryReport;
+  researchPlansThatWouldMove: number;
 }
 
 type GrantOnlyArchivalDelta = Pick<
@@ -110,7 +121,7 @@ type GrantOnlyArchivalDelta = Pick<
   | 'grantOnlyEnrichedIntoExistingRow'
   | 'grantOnlyEnrichmentDeferred'
   | 'grantOnlyDeferredByCap'
->;
+> & { grantOnlyResearchPlanCarry: ResearchPlanCarryReport };
 
 export const GRANT_OR_ORCID_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
   ...GRANT_SOURCE_NAMES,
@@ -171,7 +182,7 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
 async function mergeGrantRowInto(
   target: Record<string, any>,
   grantRow: Record<string, any>,
-): Promise<boolean> {
+): Promise<{ merged: boolean; researchPlanCarry: ResearchPlanCarryReport }> {
   const rows = [target, grantRow];
   const mergedRecentGrants = unionRecentGrants(rows);
   const result = await applyResearchEntityDedupeMergeGroup(
@@ -201,7 +212,7 @@ async function mergeGrantRowInto(
       (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
         .deferredAsWouldSwapPinnedCanonical,
     );
-  return !deferred;
+  return { merged: !deferred, researchPlanCarry: result.researchPlanCarry };
 }
 
 async function enrichmentTargetIdForRow(
@@ -293,9 +304,16 @@ async function archiveGrantOnlyRows(
       plannedArchives.length -
       enrichmentsToApply.length -
       toArchive.length,
+    grantOnlyResearchPlanCarry: emptyResearchPlanCarryReport(),
   };
   if (dryRun) {
     delta.grantOnlyEnrichedIntoExistingRow = enrichmentsToApply.length;
+    delta.grantOnlyResearchPlanCarry = await previewResearchPlanCarryForMergeGroups(
+      enrichmentsToApply.map(({ id, enrichmentTargetId }) => ({
+        canonicalEntityId: enrichmentTargetId,
+        duplicateEntityIds: [id],
+      })),
+    );
     return delta;
   }
 
@@ -305,7 +323,14 @@ async function archiveGrantOnlyRows(
     const row = candidates.find((doc) => idText(doc._id) === id);
     const target = await ResearchEntity.findById(enrichmentTargetId).lean();
     if (!row || !target) continue;
-    const merged = await mergeGrantRowInto(target as Record<string, any>, row);
+    const { merged, researchPlanCarry } = await mergeGrantRowInto(
+      target as Record<string, any>,
+      row,
+    );
+    delta.grantOnlyResearchPlanCarry = addResearchPlanCarryReports(
+      delta.grantOnlyResearchPlanCarry,
+      researchPlanCarry,
+    );
     if (merged) delta.grantOnlyEnrichedIntoExistingRow += 1;
     else delta.grantOnlyEnrichmentDeferred += 1;
   }
@@ -536,7 +561,7 @@ async function prepareSurvivor(
 async function applyPort(
   plan: GrantShellPortPlan,
   shellDocById: Map<string, Record<string, any>>,
-): Promise<{ applied: boolean; survivorId: string }> {
+): Promise<{ applied: boolean; survivorId: string; researchPlanCarry: ResearchPlanCarryReport }> {
   const { survivorId, rollback } = await prepareSurvivor(plan, shellDocById);
   const survivorDoc = ((await ResearchEntity.findById(survivorId).lean()) ?? {}) as Record<
     string,
@@ -574,13 +599,13 @@ async function applyPort(
     );
   if (deferred) {
     await rollback();
-    return { applied: false, survivorId };
+    return { applied: false, survivorId, researchPlanCarry: result.researchPlanCarry };
   }
   await ResearchEntity.updateMany(
     { _id: { $in: plan.shellIds }, archived: true },
     { $set: { archivedReason: GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON } },
   );
-  return { applied: true, survivorId };
+  return { applied: true, survivorId, researchPlanCarry: result.researchPlanCarry };
 }
 
 function withoutSubdocumentIds(value: unknown): unknown {
@@ -629,7 +654,7 @@ export async function runGrantShellPort(options: Options): Promise<{
   delta: GrantShellPortDelta;
   outcome: GrantShellPortOutcome;
 }> {
-  const grantOnlyDelta = await archiveGrantOnlyRows(
+  const { grantOnlyResearchPlanCarry, ...grantOnlyDelta } = await archiveGrantOnlyRows(
     options.dryRun,
     options.maxArchives ?? options.maxPorts,
   );
@@ -669,8 +694,25 @@ export async function runGrantShellPort(options: Options): Promise<{
     survivorsResynced: 0,
     survivorsAwaitingResync: 0,
     ...grantOnlyDelta,
+    researchPlanCarry: grantOnlyResearchPlanCarry,
+    researchPlansThatWouldMove: 0,
   };
-  if (options.dryRun) return { delta, outcome };
+  if (options.dryRun) {
+    delta.researchPlanCarry = addResearchPlanCarryReports(
+      delta.researchPlanCarry,
+      await previewResearchPlanCarryForMergeGroups(
+        plansToApply.map((plan) => ({
+          canonicalEntityId:
+            plan.kind === 'created-faculty-row'
+              ? String(new mongoose.Types.ObjectId())
+              : plan.survivorId,
+          duplicateEntityIds: plan.shellIds,
+        })),
+      ),
+    );
+    delta.researchPlansThatWouldMove = researchPlansThatWouldMove(delta.researchPlanCarry);
+    return { delta, outcome };
+  }
 
   const applied: Array<{ plan: GrantShellPortPlan; survivorId: string }> = [];
   for (const plan of plansToApply) {
@@ -678,6 +720,10 @@ export async function runGrantShellPort(options: Options): Promise<{
       (id) => idText(shellDocById.get(id)?.studentVisibilityTier) === 'student_ready',
     ).length;
     const result = await applyPort(plan, shellDocById);
+    delta.researchPlanCarry = addResearchPlanCarryReports(
+      delta.researchPlanCarry,
+      result.researchPlanCarry,
+    );
     if (!result.applied) {
       delta.deferredAsWouldDemote += 1;
       continue;
@@ -734,6 +780,7 @@ export async function runGrantShellPort(options: Options): Promise<{
     researchEntityId: { $in: portedObjectIds },
     archived: { $ne: true },
   });
+  delta.researchPlansThatWouldMove = researchPlansThatWouldMove(delta.researchPlanCarry);
   return { delta, outcome };
 }
 
