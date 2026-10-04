@@ -961,6 +961,7 @@ It reads the database and writes nothing but its `--output` report.
 Read `brokenLanes`, not `status`: `section-contract-broken`, `stale-publish-date`, `member-precision-defect`, `membership-not-materialized`, `entity-missing`, `unreachable` and `fetch-error` alarm, while `snapshot-expired` and `uncovered-section` do not.
 `snapshot-expired` is the one to read first even though it never alarms: the source stamps a 21-day `freshnessExpiresAt` and serve suppresses an expired row, so a lane can be structurally perfect and serve nobody.
 The lane is manual-only until that review is recorded (#4025).
+The 2026-10-04 strict run is recorded in `docs/scraper-audit-guide.md`: clean structure, but the review was withheld because `membership-not-materialized` cannot see an expired unrefreshed edge or a twin edge (#4757, #4758).
 `--strict` gates broad enablement on `broadEnablementReady`, which needs clean structure AND `--sampled-precision-reviewed-by=<reviewer>`, because no structural check can tell whether a mapped role is honest.
 `--sample-limit` rows carry member names and titles, so they require `--output` and never reach stdout, the same rule `scrape run --explain` follows.
 

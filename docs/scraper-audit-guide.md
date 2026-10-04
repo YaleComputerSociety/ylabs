@@ -395,6 +395,11 @@ Read `brokenLanes`, not `status` alone: `snapshot-expired` and `uncovered-sectio
 #2357 is the defect class the precision arm catches, and its `rosterUrlAsProfileUrl` check is separate from `listingShapedProfileUrls` on purpose: a lab roster at `/labmembers/` is not listing-shaped by URL, so only an identity comparison against the configured roster URL catches it.
 - Every membership key declared by the latest snapshot must have a fresh verified current row materialized for the same entity, official source URL, and snapshot observation time.
 - Do not return the source to the research sweep (remove it from `MANUAL_ONLY_SWEEP_SOURCES`) unless `broadEnablementReady` is true; `Source.enabled` is not a run switch and only means the source is not retired (#4025).
+- Recorded strict run, 2026-10-04, Development, commit `976005782`, `--strict --sample-limit=100` (#4757).
+It audited 2 lanes holding 7 members on the page, with `brokenLanes` 0, verdicts `ok` 1 and `uncovered-section` 1, every precision check at 0, and no expired snapshot.
+The sample covered all 7 members, and a manual review found 7 of 7 roles honestly mapped to the stated title and section.
+`broadEnablementReady` stayed false because the review was deliberately not recorded: reading the stored edges directly, 1 of 7 snapshot keys is served only by an expired edge the lane has not refreshed since its first write run, and 1 of 7 keys holds two live CURRENT edges on two researcher records.
+The audit reported that lane `ok` because `membership-not-materialized` ignores edge freshness, so the source stays manual-only until #4758 fixes the lane and the audit.
 - `--strict` exits non-zero until both the structural checks pass and `--sampled-precision-reviewed-by=<reviewer>` records the manual sample review; `--sample-limit=<0-100>` controls the bounded sample in the JSON report.
 - Confirm a successful complete non-empty refresh archives disappeared source-owned rows, while empty or failed refreshes archive nothing.
 
