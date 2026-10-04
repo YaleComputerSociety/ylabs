@@ -2110,7 +2110,7 @@ const PROGRAM_CARD_DEADLINE_ANNOUNCEMENT =
   /\bdeadline\s*:\s*(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i;
 
 const PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS: readonly RegExp[] = [
-  /^(?:please\s+)?(?:note|n\.b\.|important|reminder|update)\b[^:]{0,20}:/i,
+  /^(?:please\s+)?note\b[^:]{0,20}:/i,
   /^application\s+(?:process|instructions|requirements|procedures?)\s*:/i,
   /\bdeadlines?\b/i,
   /\b(?:is|are)\s+due\s+(?:by|on|before)\b/i,
@@ -2119,7 +2119,6 @@ const PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS: readonly RegExp[] = [
   /\b(?:applications?|apply)\b[^.]{0,80}\b(?:via|through|using)\s+(?:the\s+)?[^.]{0,80}\b(?:application|portal|form|system)\b/i,
   /\bapplications?\s+(?:will\s+be|are)\s+(?:accepted|received|reviewed)\s+(?:on\s+a\s+rolling\s+basis|from|until|via|through)\b/i,
   /\bapplications?\s+(?:will\s+(?:open|close|be\s+(?:open|closed))|(?:opens?|closes?)\s+(?:on|in)|(?:is|are)\s+(?:now\s+)?(?:open|closed))\b/i,
-  /\bin\s+order\s+to\s+(?:receive|be\s+given)\s+consideration\b/i,
   /\bclick\s+(?:through|here|on|the)\b/i,
   /\bgenerously\s+(?:provided|funded|given|supported)\b|\b(?:is|are|was|were)\s+made\s+possible\s+(?:through|by)\b/i,
   /^(?:he|she|his|her)\b/i,
