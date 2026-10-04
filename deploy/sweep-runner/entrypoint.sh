@@ -37,6 +37,7 @@ yarn --cwd "$checkout/server" install --immutable
 for name in $(compgen -e | grep '^MEILISEARCH_' || true); do unset "$name"; done
 export SEARCH_INDEX_WRITES=deferred
 export SWEEP_TARGET_SHA="$target_sha"
+export SOURCE_COMMIT="$target_sha"
 
 cd "$checkout"
 exec yarn --cwd server scrape:sweep:weekly-development "$@"
