@@ -1019,6 +1019,63 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.joinPageUrl).not.toContain('admissions.yale.edu');
   });
 
+  it('reads the two program pages the funding recall found unread as application routes (#4648)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+    const awardConfig = configsByKey.get('global-affairs-undergraduate-research-award');
+    const surfConfig = configsByKey.get('gsas-summer-undergraduate-research-fellowship');
+
+    expect(awardConfig).toMatchObject({
+      url: 'https://jackson.yale.edu/academics-admissions/global-affairs-major/undergraduate-research',
+      parser: 'structured-opportunity',
+    });
+    expect(surfConfig).toMatchObject({
+      url: 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program',
+      parser: 'structured-opportunity',
+    });
+
+    const awardHtml = `<html><body><nav><a href="/apply">Apply to Yale</a></nav><main>
+      <h1>Undergraduate Research</h1>
+      <p>Students in the major can conduct research that leads to a senior thesis and secure research funding from the school.</p>
+      <p>The undergraduate research award supports undergraduate research up to a stated amount each academic year.</p>
+      <p>Fall applications are open this month and can be submitted through the <a href="https://forms.example.org/synthetic-award">Undergraduate Research Award Application</a>.</p>
+    </main></body></html>`;
+    const surfHtml = `<html><body><main>
+      <h1>Summer Undergraduate Research Fellowship Program</h1>
+      <p>Each summer the program brings undergraduates to Yale for eight weeks of mentored research with a faculty mentor.</p>
+      <p>Please apply through the <a href="https://consortium.example.org/summer-research">consortium website</a>.
+      You still need to apply through the <a href="https://consortium.example.org/summer-research">Consortium Application portal</a>.</p>
+    </main></body></html>`;
+
+    const [award] = parseStructuredOpportunityPage(awardHtml, awardConfig!);
+    const [surf] = parseStructuredOpportunityPage(surfHtml, surfConfig!);
+
+    expect(award).toMatchObject({
+      kind: 'program',
+      name: 'Jackson School Undergraduate Research Award',
+      joinPageUrl: 'https://forms.example.org/synthetic-award',
+    });
+    expect(surf).toMatchObject({
+      kind: 'program',
+      name: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
+      joinPageUrl: 'https://consortium.example.org/summer-research',
+    });
+
+    const fields = departmentUndergradResearchRecordsToObservations([award, surf]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(expect.arrayContaining(['sourceUrl', 'applicationLink']));
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'programKind',
+        'programCategory',
+        'entryMode',
+        'studentFacingCategory',
+      ]),
+    );
+  });
+
   it('covers Sociology and Biomedical Engineering undergraduate research pages (#1281)', () => {
     const configsByKey = new Map(
       DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),

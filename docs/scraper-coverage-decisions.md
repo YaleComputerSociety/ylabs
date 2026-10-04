@@ -71,6 +71,19 @@ These were found by the 2026-09-30 get-started recall measurement (#4179) and le
 - **Cancer Center CICRT internship**, listed on `medicine.yale.edu/cancer/education/highschool-and-undergraduates/`.
   It has no page of its own; that page is an index shared with high-school programs, and its application goes through the BioMed Amgen Scholars form, which the health-sciences lane already cites.
 
+### Undergraduate research funding pages with nothing a program lane can serve
+
+The 2026-10-04 recall measurement of 116 official undergraduate research funding sources (#4648) found 17 distinct pages with no stored program, and the GSAS Summer Undergraduate Research Fellowship stored but unserved because the fellowships-office lane reads its page with no description and no application route.
+Two were seeded into `department-undergrad-research`: the Jackson School undergraduate research award and that GSAS fellowship.
+The other 16 pages were left out on the merits, by predicate:
+
+- 3 are listing or recipient pages (a residential college grants page, a center's multi-audience fellowships page, a fellows roster), which #4597 withholds.
+- 4 state no current or upcoming cycle (closed with no reopening date, a passed annual deadline, or a tentative event schedule with no application).
+- 2 take applications only by email to a named person, and the lanes are fail-closed on contact data.
+- 2 are already served through the Yale fellowship database under another title or URL, and the database copy is served (#4289).
+- 2 have no application route on the page at all.
+- 1 is a job posting, 1 funds student-organized events rather than research, and 1 is a senior essay requirements page the lane already reads as a for-credit route.
+
 ## Covered indirectly, standalone roster deferred
 
 These two have a covered entity and an un-ingested roster.

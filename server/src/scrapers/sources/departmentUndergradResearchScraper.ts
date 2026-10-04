@@ -314,6 +314,22 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       title: 'ISPS Dahl Scholars',
     },
     {
+      key: 'global-affairs-undergraduate-research-award',
+      url: 'https://jackson.yale.edu/academics-admissions/global-affairs-major/undergraduate-research',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+      parser: 'structured-opportunity',
+      title: 'Jackson School Undergraduate Research Award',
+    },
+    {
+      key: 'gsas-summer-undergraduate-research-fellowship',
+      url: 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program',
+      department: 'Graduate School of Arts and Sciences',
+      school: 'Graduate School of Arts and Sciences',
+      parser: 'structured-opportunity',
+      title: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
+    },
+    {
       key: 'sociology',
       url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
       department: 'Sociology',
