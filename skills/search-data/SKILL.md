@@ -219,9 +219,12 @@ The scorer rewards completeness (a source-backed description, an identified lead
 Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), and there is no entity-type bonus, so a faculty research row is never demoted for its type.
 Completeness is read from the copy a row serves, so the stored-only `profileSynthesisDescription` earns no rank: before #4120 it lifted a row with no served description from 0 or 2 description points to 8.
 The gate requires every completeness term of a served row, so completeness alone tied 3,379 of 3,464 `student_ready` Development rows at the maximum score on 2026-10-03.
-Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website (+8), served methods (+5), and a current grant from the served current-funding view (+5), so a grant whose end date has passed earns nothing.
-The grant term is only as broad as the grant lanes: NIH RePORTER supplies most served grant evidence, NSF Award Search most of the rest, NEH and DOE OSTI a handful of rows, and no private-foundation, other-agency, or internal-award source exists, so the term favours NIH-funded and NSF-funded research over well-funded rows the lanes cannot see.
-The score is computed when it is recomputed, not at serve time, so a grant that ends after the last recompute keeps its points until the next materialize or browse-rank backfill.
+Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website (+8), served methods (+5), and a current grant from the served current-funding view, weighted 0 for now (#4622).
+The grant term is computed but weighted 0, because the grant lanes are uneven: NIH RePORTER supplies most served grant evidence and no private-foundation, other-agency, or internal-award source exists, so any positive weight ordered the first page by coverage gaps rather than by the row (#4622).
+Grants stay visible on cards and profiles; only their rank weight is zero.
+Restore the weight only when, for every school, its share of served rows with a current grant is within 10 percentage points of its share of all served rows; #4546 tracks the funder lanes that move that split.
+Because a binary term in a strict sort forms its own top tier, a smaller positive weight does not reduce the skew, so the re-entry test is the per-school split, not a tuned weight.
+When the weight is non-zero, a grant that ends after the last recompute keeps its points until the next materialize or browse-rank backfill, because the score is stored rather than computed at serve time.
 The `duplicate_risk` penalty never reaches a served row today: on 2026-10-03 all 224 live rows carrying the reason were `suppressed` or `operator_review`.
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
