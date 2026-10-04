@@ -344,6 +344,43 @@ function citedUrls(entity: Record<string, any>): string[] {
   return [...entityUrls(entity), ...provenanceUrls].filter((value) => hasHttpUrl(value));
 }
 
+const YALE_HOST = /(?:^|\.)yale\.edu$/i;
+
+const letterTokensOf = (value: string): string[] => value.toLowerCase().split(/[^a-z]+/);
+
+const nameTokensOf = (value: unknown): string[] =>
+  letterTokensOf(textValue(value)).filter(
+    (token) =>
+      token.length >= 3 && !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
+  );
+
+/**
+ * A website specific enough to stand for this lab or this person: any non-Yale host, or a
+ * Yale URL that names a laboratory, is an official person profile, or carries a token of
+ * the row's own name as a whole host label or path word. Any other Yale page, whether a
+ * school section ("/opportunities", "/pediatrics/") or a department host's listing, is
+ * shared by rows with different leads, so it is evidence of neither a lab nor this row
+ * and backs no lab name (measured on Development: one such page was the only website of
+ * four served rows with four different leads).
+ */
+function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
+  const text = textValue(value);
+  if (!hasHttpUrl(text)) return false;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  if (!YALE_HOST.test(url.hostname)) return true;
+  if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
+  const urlWords = new Set([
+    ...url.hostname.toLowerCase().split('.'),
+    ...letterTokensOf(url.pathname),
+  ]);
+  return nameTokensOf(entity.name || entity.displayName).some((token) => urlWords.has(token));
+}
+
 /**
  * A row whose heading claims a laboratory that nothing it cites names, and whose
  * `name` no lane recorded together with its `LAB` type (#4050).
@@ -373,71 +410,6 @@ function citedUrls(entity: Record<string, any>): string[] {
  * `name` observation after all, so the row-local reading agrees with the
  * observation log on 57 of 58.
  */
-const YALE_HOST = /(?:^|\.)yale\.edu$/i;
-
-// Hosts that publish a school's or department's own sections rather than one lab's or
-// one person's site. A lab or person site on Yale is its own subdomain
-// (`<name>.yale.edu`, `<name>.research.yale.edu`) or a path on a personal-site platform.
-const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
-  'www',
-  'm',
-  'art',
-  'medicine',
-  'ysph',
-  'law',
-  'som',
-  'environment',
-  'divinity',
-  'nursing',
-  'music',
-  'drama',
-  'architecture',
-  'news',
-  'college',
-  'gsas',
-  'seas',
-  'engineering',
-]);
-
-const nameTokensOf = (value: unknown): string[] =>
-  textValue(value)
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter(
-      (token) =>
-        token.length >= 3 && !/^(?:lab|labs|laboratory|the|and|for|faculty|research)$/.test(token),
-    );
-
-/**
- * A website specific enough to stand for this lab or this person: any non-Yale host, a
- * Yale lab or personal site, a URL that names a laboratory or a token of the row's own
- * name, or an official person profile. A school or department section page
- * ("/opportunities", "/pediatrics/") is shared by rows with different leads, so it is
- * evidence of neither a lab nor this row and backs no lab name (measured on
- * Development: one such page was the only website of four served rows with four
- * different leads).
- */
-function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
-  const text = textValue(value);
-  if (!hasHttpUrl(text)) return false;
-  let url: URL;
-  try {
-    url = new URL(text);
-  } catch {
-    return false;
-  }
-  const host = url.hostname.toLowerCase();
-  if (!YALE_HOST.test(host)) return true;
-  const labels = host
-    .replace(/\.?yale\.edu$/, '')
-    .split('.')
-    .filter(Boolean);
-  if (labels.length > 0 && !SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(labels[0])) return true;
-  if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
-  const path = url.pathname.toLowerCase();
-  return nameTokensOf(entity.name || entity.displayName).some((token) => path.includes(token));
-}
-
 export function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
