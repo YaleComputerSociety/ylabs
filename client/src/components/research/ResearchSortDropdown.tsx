@@ -2,8 +2,11 @@ import SortMenu, { type SortDirection, type SortMenuOption } from '../shared/Sor
 
 export type ResearchSortField = 'relevance' | 'name' | 'lastObservedAt';
 
-const sortOptions: readonly SortMenuOption<ResearchSortField>[] = [
-  { value: 'relevance', label: 'Recommended' },
+const BEST_MATCH_LABEL = 'Best match';
+const MOST_COMPLETE_LABEL = 'Most complete profiles';
+
+const sortOptionsFor = (hasQuery: boolean): readonly SortMenuOption<ResearchSortField>[] => [
+  { value: 'relevance', label: hasQuery ? BEST_MATCH_LABEL : MOST_COMPLETE_LABEL },
   { value: 'name', label: 'Name' },
   { value: 'lastObservedAt', label: 'Recently updated' },
 ];
@@ -11,6 +14,7 @@ const sortOptions: readonly SortMenuOption<ResearchSortField>[] = [
 interface ResearchSortDropdownProps {
   sortBy: ResearchSortField;
   sortOrder: SortDirection;
+  hasQuery: boolean;
   onSortByChange: (value: ResearchSortField) => void;
   onToggleSortDirection: () => void;
 }
@@ -18,12 +22,13 @@ interface ResearchSortDropdownProps {
 const ResearchSortDropdown = ({
   sortBy,
   sortOrder,
+  hasQuery,
   onSortByChange,
   onToggleSortDirection,
 }: ResearchSortDropdownProps) => (
   <SortMenu
     subject="research"
-    options={sortOptions}
+    options={sortOptionsFor(hasQuery)}
     value={sortBy}
     directionlessValue="relevance"
     sortDirection={sortOrder}

@@ -15,6 +15,7 @@ const ResearchSortHarness = () => {
     <ResearchSortDropdown
       sortBy={sortBy}
       sortOrder="asc"
+      hasQuery={false}
       onSortByChange={setSortBy}
       onToggleSortDirection={() => {}}
     />
@@ -33,8 +34,20 @@ const ProgramSortHarness = () => {
 };
 
 const surfaces = [
-  { name: 'research', Harness: ResearchSortHarness, subject: 'research', second: 'Name' },
-  { name: 'program', Harness: ProgramSortHarness, subject: 'programs', second: 'Deadline' },
+  {
+    name: 'research',
+    Harness: ResearchSortHarness,
+    subject: 'research',
+    first: 'Most complete profiles',
+    second: 'Name',
+  },
+  {
+    name: 'program',
+    Harness: ProgramSortHarness,
+    subject: 'programs',
+    first: 'Recommended',
+    second: 'Deadline',
+  },
 ] as const;
 
 const sortTrigger = (): HTMLElement => {
@@ -50,12 +63,12 @@ const focusedTrigger = (): HTMLElement => {
   return trigger;
 };
 
-describe.each(surfaces)('$name sort menu', ({ Harness, subject, second }) => {
+describe.each(surfaces)('$name sort menu', ({ Harness, subject, first, second }) => {
   it('exposes a named combobox that controls a listbox', () => {
     render(<Harness />);
 
     const trigger = screen.getByRole('combobox', {
-      name: `Sort ${subject}, currently Recommended`,
+      name: `Sort ${subject}, currently ${first}`,
     });
     expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -73,7 +86,7 @@ describe.each(surfaces)('$name sort menu', ({ Harness, subject, second }) => {
       expect(trigger).toHaveAttribute('aria-controls', listbox.id);
       const active = document.getElementById(trigger.getAttribute('aria-activedescendant') ?? '');
       expect(active).toHaveAttribute('role', 'option');
-      expect(active).toHaveTextContent('Recommended');
+      expect(active).toHaveTextContent(first);
 
       fireEvent.keyDown(trigger, { key: 'Escape' });
     }
@@ -134,5 +147,23 @@ describe.each(surfaces)('$name sort menu', ({ Harness, subject, second }) => {
     fireEvent.keyDown(focusedTrigger(), { key: 'Enter' });
 
     await expectNoAxeViolations(container);
+  });
+});
+
+describe('research sort label', () => {
+  it('names relevance order a best match once a query is submitted', () => {
+    render(
+      <ResearchSortDropdown
+        sortBy="relevance"
+        sortOrder="asc"
+        hasQuery
+        onSortByChange={() => {}}
+        onToggleSortDirection={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole('combobox', { name: 'Sort research, currently Best match' }),
+    ).toBeTruthy();
   });
 });
