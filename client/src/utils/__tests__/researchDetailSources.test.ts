@@ -2078,3 +2078,45 @@ describe('servedResearchWebsiteUrl (#4080)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('servedResearchWebsiteUrl https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('offers the https page the host redirected a reachable http website to', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING },
+      ]),
+    ).toBe(LANDING);
+  });
+
+  it('keeps the http url when its verdict is not HEALTHY', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'UNKNOWN', httpsLandingUrl: LANDING },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('keeps the http url when the host never redirected it to https', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'HEALTHY' },
+        { url: 'https://faculty.example.yale.edu/FixturePerson/', healthStatus: 'HEALTHY' },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('never reads a landing recorded on another spelling of the link', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        {
+          url: 'https://faculty.example.yale.edu/FixturePerson/',
+          healthStatus: 'HEALTHY',
+          httpsLandingUrl: LANDING,
+        },
+      ]),
+    ).toBe(HTTP);
+  });
+});

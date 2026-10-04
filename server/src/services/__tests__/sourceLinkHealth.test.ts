@@ -52,6 +52,7 @@ import {
   probeSourceLink,
   probeStatusBackoffMs,
   hasLiveSourceCitation,
+  httpsLandingOf,
 } from '../sourceLinkHealth';
 
 const daysAgo = (days: number, now = new Date('2026-09-10T00:00:00.000Z')): Date =>
@@ -924,5 +925,41 @@ describe('isPubliclyUnreachableSourceUrl', () => {
         PRIVATE_ONLY,
       ),
     ).toBe(true);
+  });
+});
+
+describe('https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('records the https page a reachable http link was redirected to on its own host', () => {
+    expect(
+      classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: LANDING }),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING });
+  });
+
+  it('records no landing for a link that was not redirected to https', () => {
+    expect(
+      classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP }),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  });
+
+  it('records no landing on a verdict that is not HEALTHY', () => {
+    expect(
+      classifySourceLinkHealth({ status: 404, requestedUrl: HTTP, finalUrl: LANDING }),
+    ).toEqual({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
+  it('refuses a landing on another host or another page', () => {
+    expect(httpsLandingOf(HTTP, 'https://elsewhere.example.edu/fixtureperson/')).toBeUndefined();
+    expect(httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/other-page/')).toBeUndefined();
+    expect(httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/fixtureperson/?tab=2')).toBeUndefined();
+  });
+
+  it('accepts only an http request landing on https', () => {
+    expect(httpsLandingOf(LANDING, LANDING)).toBeUndefined();
+    expect(httpsLandingOf(HTTP, 'https://www.faculty.example.yale.edu/fixtureperson')).toBe(
+      'https://www.faculty.example.yale.edu/fixtureperson',
+    );
   });
 });

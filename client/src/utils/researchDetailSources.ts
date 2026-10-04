@@ -52,6 +52,7 @@ export interface DetailSourceLinkHealth {
   httpStatusCode?: number;
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
 }
 
 export interface DetailSourceFieldContribution {
@@ -1131,7 +1132,9 @@ export const findSourceLinkHealthEntry = (
  * The spelling of a research website a student should be sent to. When the `https:`
  * spelling fails certificate verification and its plain-HTTP spelling is verified
  * reachable, the working spelling is offered, so a click lands on the page instead of
- * a browser security warning. Otherwise the stored URL is returned unchanged.
+ * a browser security warning. When a plain-HTTP website is verified reachable and its
+ * own host redirected it to the same page over `https:`, that landing is offered
+ * (#4649). Otherwise the stored URL is returned unchanged.
  */
 export const servedResearchWebsiteUrl = (
   url: string | null | undefined,
@@ -1139,6 +1142,16 @@ export const servedResearchWebsiteUrl = (
 ): string | undefined => {
   if (!url) return undefined;
   const normalized = normalizeSourceUrl(url);
+  if (normalized && urlScheme(normalized) === 'http:') {
+    const plainHealth = findSourceLinkHealthEntry(sourceLinkHealth, normalized);
+    const landing = plainHealth?.httpsLandingUrl;
+    return plainHealth?.healthStatus === 'HEALTHY' &&
+      urlScheme(plainHealth.url) === 'http:' &&
+      landing &&
+      urlScheme(landing) === 'https:'
+      ? landing
+      : url;
+  }
   if (!normalized || urlScheme(normalized) !== 'https:') return url;
   if (findSourceLinkHealthEntry(sourceLinkHealth, normalized)?.tlsVerificationFailed !== true)
     return url;

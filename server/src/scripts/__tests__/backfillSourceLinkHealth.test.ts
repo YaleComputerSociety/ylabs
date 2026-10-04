@@ -16,6 +16,11 @@ describe('parseSourceLinkHealthBackfillArgs', () => {
     expect(parseSourceLinkHealthBackfillArgs(['--stale-only']).staleOnly).toBe(true);
   });
 
+  it('parses --http-websites-only', () => {
+    expect(parseSourceLinkHealthBackfillArgs(['--http-websites-only']).httpWebsitesOnly).toBe(true);
+    expect(parseSourceLinkHealthBackfillArgs([]).httpWebsitesOnly).toBe(false);
+  });
+
   it('still rejects an unknown flag', () => {
     expect(() => parseSourceLinkHealthBackfillArgs(['--stale'])).toThrow();
   });
@@ -33,6 +38,15 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: false,
       limit: 100,
       staleOnly: true,
+    });
+  });
+
+  it('carries --http-websites-only through to the run, so the scope is not inert', () => {
+    const options = parseSourceLinkHealthBackfillArgs(['--http-websites-only']);
+    expect(sourceLinkHealthRunOptions(options)).toEqual({
+      dryRun: true,
+      staleOnly: false,
+      httpWebsitesOnly: true,
     });
   });
 

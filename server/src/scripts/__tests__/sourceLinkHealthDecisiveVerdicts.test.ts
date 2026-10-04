@@ -241,3 +241,51 @@ describe('resolveSourceLinkHealthEntry under a certificate failure (#4080)', () 
     });
   });
 });
+
+describe('resolveSourceLinkHealthEntry https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('stores the landing a fresh HEALTHY probe recorded', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING },
+      undefined,
+      NOW,
+    );
+    expect(resolved.entry).toEqual({
+      url: HTTP,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      httpsLandingUrl: LANDING,
+      checkedAt: NOW,
+    });
+  });
+
+  it('keeps the landing with a decisive verdict an inconclusive probe preserved', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'UNKNOWN', httpStatusCode: 503 },
+      {
+        url: HTTP,
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+        httpsLandingUrl: LANDING,
+        checkedAt: EARLIER,
+      },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry.httpsLandingUrl).toBe(LANDING);
+  });
+
+  it('drops the landing when a fresh decisive probe no longer records one', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: HTTP, healthStatus: 'HEALTHY', httpsLandingUrl: LANDING, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.httpsLandingUrl).toBeUndefined();
+  });
+});

@@ -1495,6 +1495,13 @@ Lookups rank a same-scheme verdict first; the other spelling's verdict stands in
 A fresh certificate failure replaces a stored `HEALTHY` for the same `https:` URL rather than being preserved under it, because it contradicts that verdict; a stored `UNAVAILABLE` still stands.
 When an `https:` probe fails verification and no plain-HTTP spelling is already a candidate, the pass probes that spelling too, and serve time (`servedResearchWebsiteUrl`) offers it only when it is verified `HEALTHY`; otherwise the stored URL is linked unchanged.
 
+The reverse direction runs on the host's own redirect rather than on a guess (#4649).
+When a plain-HTTP probe comes back `HEALTHY` after its host redirected it to `https:` on the same host and the same path, apart from `www.`, letter case and a trailing slash, the entry records that landing as `httpsLandingUrl`.
+Serve time offers the landing in place of the stored `http:` website, so a student lands on the page the server canonically answers on.
+An `https:` spelling that merely answers `200` beside a plain-HTTP site that never redirects is not adopted, because a shared host can answer `https:` with a different site.
+The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
+`--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
+
 The resolved address has to be the one a student gets, not the one the probing machine gets.
 Yale answers its legacy departmental hosts with split-horizon DNS: the resolver on the Development scrape host returned RFC1918 space for `www.cs.yale.edu`, `ursula.chem.yale.edu`, `www.astro.yale.edu` and others, while public resolvers return routable `128.36.0.0/16` addresses and the pages load off campus (#3903).
 So the flag is recorded only after `classifyOffCampusAddressing` (`server/src/utils/publicDnsResolution.ts`) confirms the host against public DNS over HTTPS, which a network intercepting port 53 cannot answer in the public resolver's place.
