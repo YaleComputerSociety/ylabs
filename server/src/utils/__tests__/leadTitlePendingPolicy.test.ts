@@ -22,6 +22,14 @@ describe('leadTitlesArePendingPolicy', () => {
     }
   });
 
+  it('reads the user record title when the membership title is blank, as the gate does', () => {
+    expect(
+      leadTitlesArePendingPolicy([
+        { ...lead(), title: '', user: { _id: 'user-fixture-lead', title: 'Clinical Fellow' } },
+      ]),
+    ).toBe(true);
+  });
+
   it('never holds on a missing title, a hosting rank beside the pending one, or a mixed roster', () => {
     expect(leadTitlesArePendingPolicy([])).toBe(false);
     expect(leadTitlesArePendingPolicy([lead()])).toBe(false);

@@ -8,10 +8,11 @@ export const LEAD_TITLE_PENDING_POLICY_REASON = 'lead_title_pending_policy';
 const RANKS_PENDING_POLICY =
   /\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bpostgraduate associate\b/i;
 
-const titleOf = (member: Record<string, any>): string => {
-  const title = member?.title ?? member?.user?.title;
-  return typeof title === 'string' ? title.trim() : '';
-};
+const textValue = (value: unknown): string =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const titleOf = (member: Record<string, any>): string =>
+  textValue(member?.title) || textValue(member?.user?.title);
 
 /**
  * Whether every lead on the row states only a rank awaiting the owner's ruling. A lead
