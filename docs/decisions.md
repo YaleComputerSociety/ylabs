@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-03: A Survivor's Complete Read Re-Reads Evidence Filed Under Its Merged-In Keys (#4568)
+
+This reverses one bullet of the 2026-09-28 #3609 entry below, which held that a survivor-key read never retires loser-keyed evidence.
+A source that now reads the survivor never reads the merged-in key again, so matching reads by the exact key an observation was filed under judged that observation `source-has-not-reread` forever, and no evidence could ever retire it.
+A merged-in key's state is already the survivor's (#3560), so a complete read of the survivor by the same source is that source's current statement about what the observation backs.
+The #2647 concern that silence is not absence one key over still holds, and it is met by the guards rather than by the key: a retraction still needs the read to assert absence of the field, so a survivor read that is merely silent stays `absence-not-witnessed`, and the drop guard and the liveness screen are unchanged.
+The sharing runs one way only: a merged-in key's read is never given to the survivor or to a sibling merged-in key, so a duplicate's absence claim never judges the survivor's own evidence.
+Measured as a dry run on Development with this one-way rule, `dept-faculty-roster` observations judged not re-read fell from 1,368 to 1,336 and retractions before the liveness screen rose from 38 to 41, with none newly retained after it; sharing reads between sibling merged-in keys as well would have moved 145 and retracted 29 more, which is the cross-page risk the one-way rule refuses.
+Most of the 873 `dept-faculty-roster` website observations on archived keys are re-read only under another archived key, because the lane still files new reads under stale slugs, so the remaining population belongs to the lane's key choice rather than to retraction.
+The field-retraction section of [`research-data-pipeline.md`](research-data-pipeline.md) owns the mechanism.
+
 ## 2026-10-03: A Merged-In Row's Type Backs A Survivor's Matching Type, And Never Restates It (#3381)
 
 A merged survivor's `entityType` stays survivor-owned, but a survivor with no `entityType` observation of its own now resolves its stored type from a merged-in row's observation of the same type, read through `mergedRowEvidenceIdentity`, so the served type rests on evidence and records it in `fieldProvenance`.
@@ -407,6 +418,7 @@ How that carried evidence stops backing the survivor:
   Now a loser key's state is the survivor its tombstone chain reaches: the survivor's stored value and locks decide, the clear lands on the survivor, and rival evidence is counted across every key and id merged into that survivor, because any of them refills the field on the next resolve.
   Two keys of one survivor retracting the same field in one pass are decided together, so the survivor clears once instead of each key deferring to the other.
 - **A survivor-key read never retires loser-keyed evidence.** It is a read of a different key, and often a different page (of the 779 slots whose source now reads the survivor instead, 116 are the same page), so it says nothing about what the loser's page states; that is the #2647 lesson that silence is not absence, one key over.
+  Superseded by the 2026-10-03 #4568 entry above: a survivor's complete read now counts as a re-read for evidence filed under its merged-in keys.
 - **Nothing is pruned.** A retired observation is superseded with a reason, and provenance that cites it is history.
 
 A dry run on Development on 2026-09-28 at 05:04 UTC, with the change, planned for `ysm-faculty-directory` 14 retirements and 8 stored clears, and for `dept-faculty-roster` 39 retirements and 5 clears, every clear on a live row.

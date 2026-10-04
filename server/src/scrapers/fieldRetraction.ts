@@ -424,6 +424,7 @@ export interface FieldRetractionEntityState {
   manuallyLockedFields: string[];
   storedValues: Record<string, unknown>;
   liveObservationCountByField: Record<string, number>;
+  survivorKey?: string;
 }
 
 export type FieldRetractionVerdict =
@@ -453,6 +454,48 @@ export function completeReadsSupportingRetraction(
     runIds.add(read.scrapeRunId);
   }
   return Array.from(runIds);
+}
+
+/**
+ * A merged-in key's state is its survivor's (#3560), and so is its re-read: the source reads
+ * the survivor under the survivor's own key, so matching reads by the exact key the old
+ * observation was filed under judged it `source-has-not-reread` forever (#4568). A survivor's
+ * read is shared with each key merged into it, never the reverse or between merged-in keys, so
+ * a duplicate's absence claim never judges the survivor; every other guard is unchanged.
+ */
+export function completeReadsAcrossMergedEvidence(
+  reads: readonly FieldRetractionCompleteRead[],
+  entities: readonly Pick<FieldRetractionEntityState, 'entityKey' | 'survivorKey'>[],
+): FieldRetractionCompleteRead[] {
+  const readsByKey = new Map<string, FieldRetractionCompleteRead[]>();
+  for (const read of reads) {
+    const group = readsByKey.get(read.entityKey);
+    if (group) group.push(read);
+    else readsByKey.set(read.entityKey, [read]);
+  }
+  const merged = new Map<string, FieldRetractionCompleteRead>();
+  const add = (entityKey: string, read: FieldRetractionCompleteRead) => {
+    const identity = `${entityKey}\u0000${read.scrapeRunId}`;
+    const existing = merged.get(identity);
+    if (!existing) {
+      merged.set(identity, { ...read, entityKey });
+      return;
+    }
+    merged.set(identity, {
+      ...existing,
+      observedAt:
+        read.observedAt.getTime() > existing.observedAt.getTime()
+          ? read.observedAt
+          : existing.observedAt,
+      assertsNoValueFor: [...new Set([...existing.assertsNoValueFor, ...read.assertsNoValueFor])],
+    });
+  };
+  for (const read of reads) add(read.entityKey, read);
+  for (const entity of entities) {
+    if (!entity.survivorKey || entity.survivorKey === entity.entityKey) continue;
+    for (const read of readsByKey.get(entity.survivorKey) ?? []) add(entity.entityKey, read);
+  }
+  return [...merged.values()];
 }
 
 /**
@@ -1218,6 +1261,8 @@ async function loadEntityStates(
     states.push({
       entityId,
       entityKey,
+      survivorKey:
+        typeof storedRow.slug === 'string' && storedRow.slug ? storedRow.slug : undefined,
       manuallyLockedFields: Array.isArray(storedRow.manuallyLockedFields)
         ? storedRow.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
         : [],
@@ -1298,10 +1343,15 @@ export async function reconcileFieldRetractions(options: {
   const candidateEntityKeys = Array.from(
     new Set(activeObservations.map((observation) => observation.entityKey)),
   );
-  const loadedReads = await loadCompleteReads(
-    options.sourceName,
-    contract.witnessFields,
-    candidateEntityKeys,
+  const entities = await loadEntityStates(candidateEntityKeys, contract.retractableFields);
+  const loadedReads = completeReadsAcrossMergedEvidence(
+    await loadCompleteReads(options.sourceName, contract.witnessFields, [
+      ...new Set([
+        ...candidateEntityKeys,
+        ...entities.flatMap((entity) => (entity.survivorKey ? [entity.survivorKey] : [])),
+      ]),
+    ]),
+    entities,
   );
   const completeReads =
     (contract.absenceClaimCutoffs ?? []).length > 0
@@ -1315,8 +1365,6 @@ export async function reconcileFieldRetractions(options: {
   if (completeReads.length === 0) {
     return { ...emptyResult('no-complete-reads', dryRun), sourceName: options.sourceName };
   }
-
-  const entities = await loadEntityStates(candidateEntityKeys, contract.retractableFields);
 
   const plan = planFieldRetractions({
     sourceName: options.sourceName,
