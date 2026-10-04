@@ -15,8 +15,15 @@ import {
 import {
   applyResearchEntityDedupeGroupsSequentially,
   applyResearchEntityDedupeMergeGroup,
+  previewResearchPlanCarryForMergeGroups,
   type ResearchEntityDedupeMergeGroup,
 } from './dedupeResearchEntitiesByPi';
+import {
+  addResearchPlanCarryReports,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
@@ -276,6 +283,8 @@ export interface DuplicateEntityNameReviewReport {
   planSummary: DuplicateEntityNameReviewPlanSummary;
   reviewDecisionValidation?: DuplicateEntityNameReviewDecisionValidationSummary;
   applied?: Array<Awaited<ReturnType<typeof applyResearchEntityDedupeMergeGroup>>>;
+  researchPlanCarry?: ResearchPlanCarryReport;
+  researchPlansThatWouldMove?: number;
   clusters: DuplicateEntityNameReviewCluster[];
   nextAction: string;
 }
@@ -854,7 +863,7 @@ async function buildDuplicateEntityNameReviewReport(
       )
     : undefined;
   const acceptedMergeSelections =
-    reviewDecisionValidation && args.apply
+    reviewDecisionValidation && (args.apply || reviewDecisionValidation.invalidDecisionCount === 0)
       ? selectDuplicateEntityNamePlansForAcceptedMergeApply(
           planSummary.plans,
           reviewDecisionValidation,
@@ -880,6 +889,15 @@ async function buildDuplicateEntityNameReviewReport(
         }),
       )
     : [];
+  const researchPlanCarry = args.apply
+    ? applied.reduce(
+        (total, result) =>
+          result?.researchPlanCarry
+            ? addResearchPlanCarryReports(total, result.researchPlanCarry)
+            : total,
+        emptyResearchPlanCarryReport(),
+      )
+    : await previewResearchPlanCarryForMergeGroups(mergeGroups);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -894,6 +912,8 @@ async function buildDuplicateEntityNameReviewReport(
     planSummary,
     reviewDecisionValidation,
     applied,
+    researchPlanCarry,
+    researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
     clusters,
     nextAction:
       'Apply only reviewed shared-website, zero-reference cross-department, or specific-website cross-department merge decisions; keep same-label and ambiguous cross-department plans in review.',

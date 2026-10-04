@@ -1,5 +1,10 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  carryResearchPlansToSurvivor,
+  emptyResearchPlanCarryReport,
+  type ResearchPlanCarryReport,
+} from './researchPlanMergeCarry';
 
 export const MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS = 10;
 
@@ -259,11 +264,19 @@ export async function recordResearchEntityMergeTombstone(input: {
   if (!slug || !mongoose.Types.ObjectId.isValid(String(input.canonicalEntityId))) return null;
   const canonicalGroupId = new mongoose.Types.ObjectId(String(input.canonicalEntityId));
 
-  const existing = (await ResearchEntity.findOne({ slug }).select('_id').lean()) as {
+  const existing = (await ResearchEntity.findOne({ slug }).select('_id archived').lean()) as {
     _id: mongoose.Types.ObjectId;
+    archived?: boolean;
   } | null;
   if (existing) {
     await ResearchEntity.updateOne({ _id: existing._id }, { $set: { canonicalGroupId } });
+    if (existing.archived === true) {
+      await carryResearchPlansToSurvivor({
+        survivorId: canonicalGroupId,
+        duplicateIds: [existing._id],
+        apply: true,
+      });
+    }
     return { created: false, entityId: String(existing._id) };
   }
 
@@ -274,6 +287,25 @@ export async function recordResearchEntityMergeTombstone(input: {
     canonicalGroupId,
   });
   return { created: true, entityId: String(created._id) };
+}
+
+export async function previewResearchEntityMergeTombstonePlanCarry(input: {
+  slug: string;
+  canonicalEntityId: string | mongoose.Types.ObjectId;
+}): Promise<ResearchPlanCarryReport> {
+  const slug = input.slug.trim();
+  if (!slug || !mongoose.Types.ObjectId.isValid(String(input.canonicalEntityId))) {
+    return emptyResearchPlanCarryReport();
+  }
+  const archivedRow = (await ResearchEntity.findOne({ slug, archived: true })
+    .select('_id')
+    .lean()) as { _id: mongoose.Types.ObjectId } | null;
+  if (!archivedRow) return emptyResearchPlanCarryReport();
+  return carryResearchPlansToSurvivor({
+    survivorId: String(input.canonicalEntityId),
+    duplicateIds: [archivedRow._id],
+    apply: false,
+  });
 }
 
 export async function withdrawResearchEntityMergeTombstone(input: {

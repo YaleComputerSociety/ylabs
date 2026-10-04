@@ -147,7 +147,17 @@ A TTL index on `restorableUntil` deletes the archived plan once the window passe
 Before #3643 unsave cleared the fields on the way to archiving, so no undo could restore a checklist, deadlines or stage, and plans archived before the change have nothing to restore.
 Plans archived before the window existed carry no `restorableUntil`, so the TTL index never matched them, and some archived before #984 still held private notes (#4163).
 `yarn --cwd server research-plans:expire-legacy-archived` gives each of them the window it would have had, `updatedAt` plus `RESEARCH_PLAN_RESTORE_WINDOW_MS`, and the TTL index then deletes it; it is dry-run by default, `--apply` needs `--confirm-expire-legacy-archived-research-plans`, and `--environment` names the database because `research_plans` is not promoted and each environment holds its own.
-A plan a system lane archived carries an `archivedReason`, such as the PI dedupe's conflict archive of a duplicate plan, and the student never removed it, so the script gives it no window and its private notes are kept.
+A plan a system lane archived carries an `archivedReason`, such as the PI dedupe's former conflict archive of a duplicate plan, and the student never removed it, so the script gives it no window and its private notes are kept.
+
+A merge that folds a duplicate research entity into its survivor carries every plan on the duplicate to the survivor through `carryResearchPlansToSurvivor` (`server/src/services/researchPlanMergeCarry.ts`) and never archives one (#4701).
+Every merge writer calls it: `applyResearchEntityDedupeMergeGroup` (the PI dedupe, the URL-identity lanes, the eponymous FRA merge, the duplicate-name review and the grant-shell port), the same-lead merge, the department-roster shell fold in the materializer, and `recordResearchEntityMergeTombstone` when it points an archived row at a survivor.
+A plan with no counterpart on the survivor moves whole; a student-archived plan on the survivor is replaced by the live duplicate plan.
+When the student has live plans on both, the two combine into the survivor's plan: the more advanced stage, both notes with a visible separator between them, the union of the checklists by label (completed if either was), the union of the deadlines by label keeping the earliest still-open date, and each export preference only if both plans opted in.
+A combination that would exceed a plan limit is not truncated: the duplicate plan stays live and is counted as `heldOverCapacity`.
+Only a plan the student archived, one with no `archivedReason`, counts as archived here.
+A plan a system lane archived, such as the PI dedupe's old conflict archive, is carried as a live plan and restored, and is counted as `restoredSystemArchivedPlans`.
+Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatWouldMove`: the PI dedupe, the same-lead merge, the eponymous FRA merge, the duplicate-name review for accepted merge decisions, the grant-shell port, and the stranded-key redirect decisions.
+The department-roster shell fold runs inside materialization and has no dry run.
 
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
 `REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.

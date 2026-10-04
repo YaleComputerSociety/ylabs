@@ -65,6 +65,13 @@ import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
+import {
+  addResearchPlanCarryReports,
+  carryResearchPlansToSurvivor,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import { buildGateLeadRow } from './retireForeignLeadGraftsCore';
 import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
 import {
@@ -989,13 +996,14 @@ const SCALAR_REFERENCE_SPECS: Array<{
   },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchEntity' } },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchGroup' } },
-  {
-    collection: 'research_plans',
-    field: 'target.id',
-    filter: { 'target.kind': 'RESEARCH_ENTITY' },
-    archiveOnConflict: true,
-  },
 ];
+
+const RESEARCH_PLAN_REFERENCE_SPEC = {
+  collection: 'research_plans',
+  field: 'target.id',
+  filter: { 'target.kind': 'RESEARCH_ENTITY' },
+  archiveOnConflict: true,
+};
 
 const ARRAY_REFERENCE_SPECS: Array<{
   collection: string;
@@ -2085,6 +2093,7 @@ async function countRemainingDuplicateReferences(
     archiveOnConflict?: boolean;
   }> = [
     ...SCALAR_REFERENCE_SPECS,
+    RESEARCH_PLAN_REFERENCE_SPEC,
     ...ARTIFACT_SPECS.map((item) => ({
       collection: item.collection,
       field: 'researchEntityId',
@@ -2407,6 +2416,23 @@ export async function resolveNonDemotingMerge(
   };
 }
 
+export async function previewResearchPlanCarryForMergeGroups(
+  groups: ReadonlyArray<{ canonicalEntityId: string; duplicateEntityIds: string[] }>,
+): Promise<ResearchPlanCarryReport> {
+  let total = emptyResearchPlanCarryReport();
+  for (const group of groups) {
+    total = addResearchPlanCarryReports(
+      total,
+      await carryResearchPlansToSurvivor({
+        survivorId: group.canonicalEntityId,
+        duplicateIds: group.duplicateEntityIds,
+        apply: false,
+      }),
+    );
+  }
+  return total;
+}
+
 export async function applyResearchEntityDedupeMergeGroup(
   group: ResearchEntityDedupeMergeGroup,
   options: {
@@ -2432,6 +2458,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkedMembers: 0,
     artifactRelink: {},
     scalarRelink: {},
+    researchPlanCarry: emptyResearchPlanCarryReport(),
     arrayRelink: {},
     fundingObservationRelink: {},
     remainingReferencesBeforeDelete: {},
@@ -2604,6 +2631,13 @@ export async function applyResearchEntityDedupeMergeGroup(
     { $set: { 'target.id': canonicalId } },
   );
 
+  const researchPlanCarry = await carryResearchPlansToSurvivor({
+    survivorId: canonicalId,
+    duplicateIds,
+    apply: true,
+    now,
+  });
+
   const shouldRelinkReferences = options.deleteDuplicates || options.relinkReferences;
   const artifactRelink = shouldRelinkReferences
     ? await applyDeleteModeArtifactPlan({
@@ -2681,6 +2715,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkedMembers: members.modifiedCount || 0,
     artifactRelink,
     scalarRelink,
+    researchPlanCarry,
     arrayRelink,
     fundingObservationRelink,
     remainingReferencesBeforeDelete,
@@ -2936,6 +2971,17 @@ async function main() {
         )
       ).filter(Boolean);
 
+  const researchPlanCarryPreview = apply
+    ? emptyResearchPlanCarryReport()
+    : await previewResearchPlanCarryForMergeGroups(cappedPlan);
+  const researchPlanCarryApplied = applied.reduce(
+    (total: ResearchPlanCarryReport, result: any) =>
+      result?.researchPlanCarry
+        ? addResearchPlanCarryReports(total, result.researchPlanCarry)
+        : total,
+    emptyResearchPlanCarryReport(),
+  );
+
   const retiredDuplicateCurrentMembers = apply
     ? await retireDuplicateCurrentMembers(duplicateCurrentMembers)
     : [];
@@ -3010,6 +3056,10 @@ async function main() {
     demotingMergeConfirmed: confirmDemotingMerge,
     wouldDemoteOnConfirm: demotionPreview.length,
     demotionPreview,
+    researchPlanCarry: apply ? researchPlanCarryApplied : researchPlanCarryPreview,
+    researchPlansThatWouldMove: researchPlansThatWouldMove(
+      apply ? researchPlanCarryApplied : researchPlanCarryPreview,
+    ),
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,

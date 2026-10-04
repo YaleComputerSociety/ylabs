@@ -41,9 +41,16 @@ import {
 } from '../scrapers/entityMaterializer';
 import { retireObservations } from '../scrapers/observationStore';
 import {
+  previewResearchEntityMergeTombstonePlanCarry,
   recordResearchEntityMergeTombstone,
   withdrawResearchEntityMergeTombstone,
 } from '../services/researchEntityCanonicalTombstone';
+import {
+  addResearchPlanCarryReports,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { runOrphanObservationKeyAudit } from './orphanObservationKeyAudit';
 import { EVIDENCE_MERGE_REMEDY } from './orphanObservationKeyAuditCore';
@@ -366,6 +373,23 @@ async function applyStrandedKeyDecisions(
   return outcomes;
 }
 
+async function previewStrandedKeyResearchPlanCarry(
+  selection: StrandedKeyApplySelection<ReportRow>,
+): Promise<ResearchPlanCarryReport> {
+  let total = emptyResearchPlanCarryReport();
+  for (const row of selection.selected) {
+    if (row.decision !== 'BACKFILL_REDIRECT' || !row.targetEntityId) continue;
+    total = addResearchPlanCarryReports(
+      total,
+      await previewResearchEntityMergeTombstonePlanCarry({
+        slug: row.entityKey,
+        canonicalEntityId: row.targetEntityId,
+      }),
+    );
+  }
+  return total;
+}
+
 async function applyOneRedirect(
   row: ReportRow,
   targetEntityId: string,
@@ -446,6 +470,14 @@ async function main(): Promise<void> {
   );
 
   const outcomes = apply ? await applyStrandedKeyDecisions(selection) : [];
+  const researchPlanCarry = apply
+    ? undefined
+    : await previewStrandedKeyResearchPlanCarry(selection);
+  if (researchPlanCarry) {
+    console.log(
+      `research plans that would move: ${researchPlansThatWouldMove(researchPlanCarry)} ${JSON.stringify(researchPlanCarry)}`,
+    );
+  }
   if (apply) {
     const byAction: Record<string, number> = {};
     let fieldsWritten = 0;
@@ -472,7 +504,10 @@ async function main(): Promise<void> {
 
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify({ ...report, outcomes }, null, 2)}\n`);
+    fs.writeFileSync(
+      safeOutput,
+      `${JSON.stringify({ ...report, outcomes, researchPlanCarry }, null, 2)}\n`,
+    );
     console.log(`\nwrote ${safeOutput}`);
   }
   await mongoose.disconnect();
