@@ -222,9 +222,20 @@ function surnameOf(personName: string): string {
   return tokens[tokens.length - 1] ?? '';
 }
 
+const BLOCK_BREAK = '\u2029';
+const BLOCK_ELEMENTS = 'p, li, div, h1, h2, h3, h4, h5, h6, dt, dd, br, tr, td, th, section, article';
+
+function blockSeparatedText($: cheerio.CheerioAPI): string {
+  $(BLOCK_ELEMENTS).after(BLOCK_BREAK);
+  return $('body').text();
+}
+
 function sentencesOf(text: string): string[] {
-  return collapse(text)
-    .split(/(?<!\b(?:Dr|Prof|Mr|Ms|Mrs|St|[A-Z])\.)(?<=[.!?;])\s+(?=[A-Z“"(])/)
+  return text
+    .split(BLOCK_BREAK)
+    .flatMap((block) =>
+      collapse(block).split(/(?<!\b(?:Dr|Prof|Mr|Ms|Mrs|St|[A-Z])\.)(?<=[.!?;])\s+(?=[A-Z“"(])/),
+    )
     .map(collapse)
     .filter((sentence) => sentence.length >= 12);
 }
@@ -292,7 +303,7 @@ export function extractProfileHonors(
   const surname = surnameOf(personName);
   const found = [
     ...honorsSectionItems($).flatMap((item) => honorsIn(item, false, surname, currentYear)),
-    ...sentencesOf($('body').text()).flatMap((sentence) =>
+    ...sentencesOf(blockSeparatedText($)).flatMap((sentence) =>
       honorsIn(sentence, true, surname, currentYear),
     ),
   ];

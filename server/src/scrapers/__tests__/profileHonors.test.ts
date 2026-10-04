@@ -30,6 +30,19 @@ describe('extractProfileHonors', () => {
     ).toEqual([['guggenheim', 2024]]);
   });
 
+  it('reads adjacent paragraphs as separate sentences so a refused one spares its neighbour', () => {
+    expect(
+      extractProfileHonors(
+        page(
+          '<p>In 2022, Prof. Placeholder received a Guggenheim Fellowship.</p>' +
+            '<p>He served as a judge for the Pulitzer Prize in 2024.</p>',
+        ),
+        'Avery Placeholder',
+        2026,
+      ).map((h) => [h.key, h.year]),
+    ).toEqual([['guggenheim', 2022]]);
+  });
+
   it('reads support statements about the person and every honor they list', () => {
     expect(
       keys(
