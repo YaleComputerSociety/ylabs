@@ -20,12 +20,11 @@ const servedRow = (shortDescription: string) => ({
 
 describe('servedRowFacts browse card shape', () => {
   it('flags a single card sentence too long for the card as cut mid-sentence', () => {
-    const facts = servedRowFacts(
-      servedRow(
-        'Studies medieval manuscript transmission, scribal practice, marginal annotation, binding structures, ownership inscriptions, and the movement of fictional archives between monastic, princely, and university collections over five centuries of change.',
-      ),
-      ['Robin Roster'],
-    );
+    const sentence =
+      'Studies medieval manuscript transmission, scribal practice, marginal annotation, binding structures, ownership inscriptions, and the movement of fictional archives between monastic, princely, and university collections over five centuries of change.';
+    const facts = servedRowFacts({ ...servedRow(sentence), fullDescription: sentence }, [
+      'Robin Roster',
+    ]);
 
     expect(facts.browseCardCutMidSentence).toBe(true);
     expect(facts.browseCardSixWordsOrFewer).toBe(false);

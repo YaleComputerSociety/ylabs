@@ -167,7 +167,7 @@ describe('a biography description is a fallback only (#4288)', () => {
 
   it('keeps a servable biography rather than adopt research prose that restates the card and leaves no card', async () => {
     const card =
-      'Research focuses on the economics of early childhood, examining how state preschool statutes govern program quality and access, measuring the social costs of early disadvantage, and addressing childcare challenges internationally.';
+      'Research focuses on the economics of early childhood, examining how state preschool statutes govern program quality and access across states, measuring the social costs of early disadvantage across generations of families in rural and urban regions, and addressing childcare challenges in many countries across several continents over recent decades.';
     const resolverObs = [
       observation(CAREER_BIOGRAPHY, 'synthetic-profile-source', 0.82),
       observation(card, 'synthetic-signal-source', 0.55),

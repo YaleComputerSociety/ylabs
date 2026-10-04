@@ -578,9 +578,14 @@ function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
   // A card identical to its body is the row's whole description, which the owner
   // serves when it is thin but accurate (2026-10-04), so identity alone is not empty;
-  // a role or affiliation listed as a topic, or a clause glued onto "including", is.
+  // a role or affiliation listed as a topic, a clause glued onto "including", or a
+  // model's rationale for guessing the topic, is.
   if (full && text.toLowerCase() === full.toLowerCase()) {
-    return listsARoleOrAffiliationAsATopic(text) || STUDIES_INCLUDING_GLUED_CLAUSE.test(text);
+    return (
+      listsARoleOrAffiliationAsATopic(text) ||
+      STUDIES_INCLUDING_GLUED_CLAUSE.test(text) ||
+      EVIDENCE_RATIONALE_PATTERN.test(text)
+    );
   }
   if (!full || isBareTopicLabelListText(full)) return true;
   const fields = parseLabelListFields(text);
