@@ -3121,3 +3121,42 @@ describe('a department research guidance page (#4285)', () => {
     expect(result.tier).not.toBe('student_ready');
   });
 });
+
+describe('a stored card that repeats a useful body', () => {
+  const lead = [
+    { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+  ];
+  const visibility = (shortDescription: string, fullDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'card-repeats-body-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription,
+        fullDescription,
+        researchAreas: ['Glaciology'],
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: lead,
+    });
+
+  it('does not hold the row for a missing card', () => {
+    const text =
+      'Studies glacier physics, including ice sheet dynamics, subglacial hydrology, meltwater routing, and sea level projections.';
+    expect(visibility(text, text).reasons).not.toContain('missing_card_description');
+  });
+
+  it('still holds a repeated sentence that only states why a model guessed the topic', () => {
+    const text =
+      'Studies topics associated with the Example Glacier Center, as evidenced by inclusion in news about award recipients at the center.';
+    expect(visibility(text, text).reasons).toContain('missing_card_description');
+  });
+
+  it('still holds a repeated sentence whose template swallowed a clause', () => {
+    const text =
+      'Studies glaciology, including research in the group is currently focused on three themes: ice flow, calving, and meltwater routing.';
+    expect(visibility(text, text).reasons).toContain('missing_card_description');
+  });
+});
