@@ -41,6 +41,11 @@ import {
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
 import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
@@ -81,7 +86,7 @@ export interface DepartmentUndergradResearchRecord {
   pageTitle?: string;
 }
 
-type FetchHtml = (url: string, useCache: boolean) => Promise<string>;
+type FetchHtml = (url: string, useCache: boolean, pageReads?: LanePageReads) => Promise<string>;
 
 interface DepartmentCourseCreditRead {
   sourceUrl: string;
@@ -91,6 +96,7 @@ interface DepartmentCourseCreditRead {
 export interface DepartmentUndergradResearchScraperDeps {
   pageConfigs?: DepartmentUndergradResearchPageConfig[];
   fetchHtml?: FetchHtml;
+  probePage?: LanePageProbe;
 }
 
 /**
@@ -874,7 +880,11 @@ export function departmentUndergradResearchRecordsToObservations(
   });
 }
 
-async function defaultFetchHtml(url: string, useCache: boolean): Promise<string> {
+async function defaultFetchHtml(
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -892,6 +902,7 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
       httpsAgent: agents.httpsAgent,
     }),
   );
+  pageReads?.recordRead(url, response.request?.res?.responseUrl || url);
   const html = response.data as string;
   if (useCache) await setCached(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE, cacheKey, html);
   return html;
@@ -914,10 +925,12 @@ export class DepartmentUndergradResearchScraper implements IScraper {
   readonly displayName = 'Department undergraduate research pages';
   private readonly pageConfigs: DepartmentUndergradResearchPageConfig[];
   private readonly fetchHtml: FetchHtml;
+  private readonly probePage?: LanePageProbe;
 
   constructor(deps: DepartmentUndergradResearchScraperDeps = {}) {
     this.pageConfigs = deps.pageConfigs || DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES;
     this.fetchHtml = deps.fetchHtml || defaultFetchHtml;
+    this.probePage = deps.probePage;
   }
 
   /**
@@ -1030,6 +1043,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     const summaries: string[] = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
     const courseCreditReads = new Map<string, DepartmentCourseCreditRead[]>();
+    const pageReads = new LanePageReads();
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
@@ -1039,8 +1053,9 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       const startedAt = performance.now();
       let html: string;
       try {
-        html = await this.fetchHtml(page.url, ctx.options.useCache);
+        html = await this.fetchHtml(page.url, ctx.options.useCache, pageReads);
       } catch (err: unknown) {
+        pageReads.recordFailure(page.url, err);
         failedPages += 1;
         fetchAttempts.push({
           ...buildFetchAttemptMetrics({ fetchMode: 'http', success: false, startedAt }),
@@ -1110,6 +1125,13 @@ export class DepartmentUndergradResearchScraper implements IScraper {
 
     const courseCreditRoutes = await this.emitCourseCreditRoutes(ctx, courseCreditReads);
     totalObs += courseCreditRoutes.stated + courseCreditRoutes.withdrawn;
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only ? { sourceUrls: pages.map((page) => page.url) } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     const failureNote =
       failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';

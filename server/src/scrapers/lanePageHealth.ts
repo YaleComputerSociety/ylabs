@@ -1,13 +1,15 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import { ResearchEntity } from '../models/researchEntity';
 import {
   checkSourceLinkHealth,
   findSourceLinkHealth,
+  landsAwayFromRequestedResource,
   sourceLinkHealthKey,
   type SourceLinkHealth,
 } from '../services/sourceLinkHealth';
 import { isBenchmarkModeActive, isBenchmarkReplayActive } from './snapshotBenchmarkMode';
-import type { ObservationInput } from './types';
+import type { ObservationInput, ScraperContext } from './types';
 
 export const LANE_PAGE_HEALTH_FIELD = 'lanePageHealth';
 
@@ -284,4 +286,182 @@ export function planGoneLanePageFieldClears(input: {
   return cardFollowsClearedBody || storedFromGonePage('shortDescription')
     ? [...clearedBodies, 'shortDescription']
     : clearedBodies;
+}
+
+export class LanePageReads {
+  readonly reads = new Map<string, { url: string; resolvedUrl: string }>();
+  readonly failures = new Map<string, { url: string; httpStatusCode?: number }>();
+
+  recordRead(url: string, resolvedUrl: string = url): void {
+    const key = sourceLinkHealthKey(url);
+    if (!key || landsAwayFromRequestedResource(url, resolvedUrl)) return;
+    this.failures.delete(key);
+    this.reads.set(key, { url, resolvedUrl });
+  }
+
+  recordFailure(url: string, error: unknown): void {
+    const key = sourceLinkHealthKey(url);
+    if (!key || this.reads.has(key)) return;
+    this.failures.set(key, { url, httpStatusCode: fetchFailureHttpStatus(error) });
+  }
+}
+
+type CitedLaneObservation = LanePageObservation & { scrapeRunId?: unknown };
+
+interface CitingRow {
+  identity: Pick<ObservationInput, 'entityType' | 'entityId' | 'entityKey'>;
+  observations: CitedLaneObservation[];
+}
+
+export interface CitedLanePageHealthResult {
+  gone: number;
+  restored: number;
+}
+
+function identityForm(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+function citingRowsOf(observations: readonly CitedLaneObservation[]): Map<string, CitingRow> {
+  const rows = new Map<string, CitingRow>();
+  for (const observation of observations) {
+    const entityKey = identityForm(observation.entityKey);
+    const entityId = identityForm(observation.entityId);
+    if (!entityKey && !entityId) continue;
+    const key = JSON.stringify([entityKey, entityId]);
+    const row = rows.get(key) ?? {
+      identity: {
+        entityType: 'researchEntity',
+        ...(entityId ? { entityId } : {}),
+        ...(entityKey ? { entityKey } : {}),
+      },
+      observations: [],
+    };
+    row.observations.push(observation);
+    rows.set(key, row);
+  }
+  return rows;
+}
+
+export type CitedLanePageScope =
+  { entityKeys: readonly string[] } | { sourceUrls: readonly string[] };
+
+function scopeFilter(scope: CitedLanePageScope | undefined): Record<string, unknown> {
+  if (!scope) return {};
+  return 'entityKeys' in scope
+    ? { entityKey: { $in: [...scope.entityKeys] } }
+    : { sourceUrl: { $in: [...scope.sourceUrls] } };
+}
+
+async function storedHealthByIdentity(rows: Iterable<CitingRow>) {
+  const ids = new Set<string>();
+  const slugs = new Set<string>();
+  for (const { identity } of rows) {
+    if (identity.entityId && mongoose.isValidObjectId(identity.entityId))
+      ids.add(identity.entityId);
+    if (identity.entityKey) slugs.add(identity.entityKey);
+  }
+  const stored = await ResearchEntity.find({
+    $or: [{ _id: { $in: [...ids] } }, { slug: { $in: [...slugs] } }],
+  })
+    .select('_id slug sourceLinkHealth')
+    .lean<Array<{ _id: unknown; slug?: string; sourceLinkHealth?: unknown }>>();
+  const byIdentity = new Map<string, { identities: Set<string>; sourceLinkHealth?: unknown }>();
+  for (const row of stored) {
+    const entry = {
+      identities: new Set([String(row._id), row.slug ?? ''].filter(Boolean)),
+      sourceLinkHealth: row.sourceLinkHealth,
+    };
+    byIdentity.set(String(row._id), entry);
+    if (row.slug) byIdentity.set(row.slug, entry);
+  }
+  return byIdentity;
+}
+
+function memoizedProbe(probe: LanePageProbe): LanePageProbe {
+  const answers = new Map<string, Promise<SourceLinkHealth>>();
+  return (url) => {
+    const key = sourceLinkHealthKey(url) ?? url;
+    const answer = answers.get(key) ?? probe(url);
+    answers.set(key, answer);
+    return answer;
+  };
+}
+
+export async function emitLanePageHealthForCitedPages(
+  ctx: Pick<ScraperContext, 'sourceName' | 'scrapeRunId' | 'emit' | 'log'>,
+  pageReads: LanePageReads = new LanePageReads(),
+  probe: LanePageProbe = checkSourceLinkHealth,
+  scope?: CitedLanePageScope,
+): Promise<CitedLanePageHealthResult> {
+  const result: CitedLanePageHealthResult = { gone: 0, restored: 0 };
+  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return result;
+  const cited = await Observation.find({
+    sourceName: ctx.sourceName,
+    entityType: 'researchEntity',
+    superseded: false,
+    sourceUrl: { $type: 'string', $ne: '' },
+    ...scopeFilter(scope),
+  })
+    .select('sourceName field value sourceUrl observedAt entityKey entityId scrapeRunId')
+    .lean<CitedLaneObservation[]>();
+  const rows = citingRowsOf(cited);
+  if (rows.size === 0) return result;
+  const storedHealth = await storedHealthByIdentity(rows.values());
+  const confirmingProbe = memoizedProbe(probe);
+  const verdicts: ObservationInput[] = [];
+  for (const row of rows.values()) {
+    const stored =
+      storedHealth.get(identityForm(row.identity.entityId)) ??
+      storedHealth.get(identityForm(row.identity.entityKey));
+    const rowIdentities =
+      stored?.identities ??
+      new Set([row.identity.entityId, row.identity.entityKey].filter(Boolean) as string[]);
+    const gonePages = goneLanePageKeys(row.observations, rowIdentities);
+    const pagesCitedThisRun = new Set(
+      row.observations
+        .filter((observation) => String(observation.scrapeRunId ?? '') === ctx.scrapeRunId)
+        .map((observation) => sourceLinkHealthKey(observation.sourceUrl)),
+    );
+    const stillCounted = withoutGoneLanePageObservations(row.observations, rowIdentities);
+    const pages = new Map<string, string>();
+    for (const observation of row.observations) {
+      if (observation.field === LANE_PAGE_HEALTH_FIELD) continue;
+      const key = sourceLinkHealthKey(observation.sourceUrl);
+      if (key && !pages.has(key)) pages.set(key, String(observation.sourceUrl));
+    }
+    const countedPages = new Set(
+      stillCounted.observations
+        .filter((observation) => observation.field !== LANE_PAGE_HEALTH_FIELD)
+        .map((observation) => sourceLinkHealthKey(observation.sourceUrl)),
+    );
+    for (const [page, url] of pages) {
+      const read = pageReads.reads.get(page);
+      if (read) {
+        if (!gonePages.has(page)) continue;
+        verdicts.push(
+          lanePageHealthObservation(row.identity, lanePageReadVerdict(url, read.resolvedUrl)),
+        );
+        result.restored += 1;
+        continue;
+      }
+      if (!countedPages.has(page) || pagesCitedThisRun.has(page)) continue;
+      const verdict = await confirmGoneLanePage(
+        url,
+        {
+          httpStatusCode: pageReads.failures.get(page)?.httpStatusCode,
+          storedHealth: stored?.sourceLinkHealth,
+        },
+        confirmingProbe,
+      );
+      if (!verdict) continue;
+      verdicts.push(lanePageHealthObservation(row.identity, verdict));
+      result.gone += 1;
+    }
+  }
+  if (verdicts.length > 0) await ctx.emit(verdicts);
+  ctx.log(
+    `[lane-page-health] ${result.gone} gone and ${result.restored} restored page verdict(s) across ${rows.size} citing row(s)`,
+  );
+  return result;
 }

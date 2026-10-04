@@ -66,6 +66,11 @@ import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescrip
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   labUrlUnusabilityFor,
   loadLabUrlEvidenceBySlug,
   type LabUrlEvidenceLoader,
@@ -90,7 +95,11 @@ const INFERRED_PI_CONFIDENCE = 0.7;
 const MAX_RESEARCH_AREAS = 24;
 const MAX_DEPARTMENTS = 10;
 
-export type HtmlFetcher = (url: string, useCache: boolean) => Promise<string>;
+export type HtmlFetcher = (
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+) => Promise<string>;
 
 export interface RawYsmFaculty {
   name: string;
@@ -425,6 +434,10 @@ export function classifyProfileLabWebsite(
   };
 }
 
+function researchEntityKeyOf(faculty: Pick<RawYsmFaculty, 'slug'>): string {
+  return `ysm-faculty-${faculty.slug}`.slice(0, 100);
+}
+
 export function skippedProfileRefusedWebsiteObservations(
   profile: YsmFacultyProfile,
 ): ObservationInput[] {
@@ -432,7 +445,7 @@ export function skippedProfileRefusedWebsiteObservations(
   return [
     {
       entityType: 'researchEntity',
-      entityKey: `ysm-faculty-${profile.slug}`.slice(0, 100),
+      entityKey: researchEntityKeyOf(profile),
       sourceUrl: profile.profileUrl,
       field: REFUSED_WEBSITE_URL_FIELD,
       value: profile.labUrl,
@@ -482,7 +495,7 @@ export function facultyToResearchEntityObservations(
     isPersonalNameDomainWebsite(profile.labUrl, profile.name);
   const hasLab = linkIsOwnSite && !linksPersonalWebsite;
 
-  const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
+  const slug = researchEntityKeyOf(profile);
   const entityName = hasLab
     ? linkedSite.adoptableName || `${profile.name} Lab`
     : `${profile.name} Faculty Research`;
@@ -551,7 +564,11 @@ function matchesOnlyFilter(faculty: RawYsmFaculty, only: string[]): boolean {
   return only.some((value) => normalized.has(value.toLowerCase().trim()));
 }
 
-async function fetchHtml(url: string, useCache: boolean): Promise<string> {
+async function fetchHtml(
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -569,6 +586,7 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
       httpsAgent: agents.httpsAgent,
     }),
   );
+  pageReads?.recordRead(url, res.request?.res?.responseUrl || url);
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, cacheKey, html);
   return html;
@@ -583,6 +601,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly pause: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
+    private readonly probePage?: LanePageProbe,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -639,15 +658,17 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       return refusal.length;
     };
 
+    const pageReads = new LanePageReads();
     const refusedProfiles: RawYsmFaculty[] = [];
     let refusedProfilesRecovered = 0;
     const fetchProfile = (faculty: RawYsmFaculty) =>
-      this.htmlFetcher(faculty.profileUrl, ctx.options.useCache);
+      this.htmlFetcher(faculty.profileUrl, ctx.options.useCache, pageReads);
     const consumeProfile =
       (pass: 'first' | 'retry') =>
       async (faculty: RawYsmFaculty, fetched: PromiseSettledResult<string>): Promise<void> => {
         if (pass === 'first') profilesScanned += 1;
         if (fetched.status === 'rejected') {
+          pageReads.recordFailure(faculty.profileUrl, fetched.reason);
           const status = fetchFailureStatusCode(fetched.reason);
           if (pass === 'first' && status !== undefined && REFUSAL_STATUS_CODES.has(status)) {
             refusedProfiles.push(faculty);
@@ -728,6 +749,13 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       );
     }
     const refusedProfilesLost = refusedProfiles.length - refusedProfilesRecovered;
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length ? { entityKeys: selected.map(researchEntityKeyOf) } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
