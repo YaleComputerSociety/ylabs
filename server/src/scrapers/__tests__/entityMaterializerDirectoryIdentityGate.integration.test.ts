@@ -853,6 +853,41 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({ displayName: 'Jian Wang' })).toBe(2);
     });
 
+    it('mints when every same-surname researcher has another given name (#4388)', async () => {
+      await seedNamingResearchEntity();
+      await Researcher.create({ displayName: 'Byron Lovelace' });
+      await Researcher.create({ displayName: 'Charles Lovelace' });
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
+    });
+
+    it('refuses when a same-surname researcher could be the same person (#4388)', async () => {
+      await seedNamingResearchEntity();
+      await Researcher.create({ displayName: 'Byron Lovelace' });
+      await Researcher.create({ displayName: 'A. Lovelace' });
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(0);
+    });
+
     it('refuses a netid-shaped key, which the lead materializer cannot resolve back', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('netid:al99', 'Ada', 'Lovelace');

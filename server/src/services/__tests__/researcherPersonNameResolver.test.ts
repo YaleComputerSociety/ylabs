@@ -71,6 +71,22 @@ describe('resolveResearcherIdForPersonName', () => {
     expect(result.researcherId).toBeUndefined();
   });
 
+  it('marks an ambiguous name whose every same-surname candidate is someone else (#4388)', async () => {
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      deps: depsFor([candidate('Jonas Quillfeather'), candidate('Pell Quillfeather')]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', everyCandidateNamesSomeoneElse: true });
+  });
+
+  it('does not mark a name when one candidate could be the same person (#4388)', async () => {
+    for (const other of ['M. Quillfeather', 'M. J. Quillfeather']) {
+      const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+        deps: depsFor([candidate('Jonas Quillfeather'), candidate(other)]),
+      });
+      expect(result).toEqual({ status: 'ambiguous' });
+    }
+  });
+
   it('is ambiguous when two candidates share surname and given name', async () => {
     const result = await resolveResearcherIdForPersonName('John Smith', {
       deps: depsFor([candidate('John Smith'), candidate('John Smith')]),

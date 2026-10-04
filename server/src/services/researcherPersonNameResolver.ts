@@ -3,6 +3,7 @@ import { Account } from '../models/account';
 import { isValidOrcid, Researcher } from '../models/researcher';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import {
+  givenNamesCouldNameOnePerson,
   givenNamesEquivalent,
   surnameFetchRegex,
   surnameOnlyMatch,
@@ -15,6 +16,7 @@ export type ResearcherPersonNameResolutionStatus = 'matched' | 'absent' | 'ambig
 export interface ResearcherPersonNameResolution {
   status: ResearcherPersonNameResolutionStatus;
   researcherId?: mongoose.Types.ObjectId;
+  everyCandidateNamesSomeoneElse?: boolean;
 }
 
 export interface ResearcherNameCandidate {
@@ -153,5 +155,11 @@ export async function resolveResearcherIdForPersonName(
     if (byPrefix.length > 1) return { status: 'ambiguous' };
   }
 
-  return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
+  if (candidates.length === 0) return { status: 'absent' };
+  const everyCandidateNamesSomeoneElse = candidates.every(
+    ({ parsed }) => !givenNamesCouldNameOnePerson(first, parsed.first),
+  );
+  return everyCandidateNamesSomeoneElse
+    ? { status: 'ambiguous', everyCandidateNamesSomeoneElse }
+    : { status: 'ambiguous' };
 }

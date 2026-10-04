@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   givenNamesAgree,
+  givenNamesCouldNameOnePerson,
   givenNamesEquivalent,
   givenNameTokensAgree,
   givenNameVariants,
@@ -191,5 +192,20 @@ describe('givenNamesAgree', () => {
   it('refuses two genuinely different given names in neither table', () => {
     expect(givenNamesAgree('haiqun', 'hung')).toBe(false);
     expect(givenNamesAgree('amy', 'amelia')).toBe(false);
+  });
+});
+
+describe('givenNamesCouldNameOnePerson (#4388)', () => {
+  it('keeps a pair possibly one person on an initial, a prefix, a nickname or a missing name', () => {
+    expect(givenNamesCouldNameOnePerson('Ada', 'A.')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Chris', 'Christopher')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Bob', 'Robert')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Ada', '')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Mary Ada', 'Ada')).toBe(true);
+  });
+
+  it('reads two unrelated given names as two people', () => {
+    expect(givenNamesCouldNameOnePerson('Ada', 'Byron')).toBe(false);
+    expect(givenNamesCouldNameOnePerson('Mara', 'Jonas')).toBe(false);
   });
 });

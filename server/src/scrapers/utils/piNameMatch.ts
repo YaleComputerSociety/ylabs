@@ -223,6 +223,23 @@ export function givenNamesAgree(a: string, b: string): boolean {
   return givenNameTokensAgree(a, b) || givenNamesEquivalent(a, b);
 }
 
+// Read deliberately wider than `givenNamesAgree`: a caller asks this to decide that
+// two records are different people, so an initial, a short form outside both tables,
+// or a middle name used as a first name must all keep the pair a possible match.
+export function givenNamesCouldNameOnePerson(a: string, b: string): boolean {
+  const left = givenTokens(a);
+  const right = givenTokens(b);
+  if (left.length === 0 || right.length === 0) return true;
+  return left.some((x) => right.some((y) => givenNameTokensCouldMatch(x, y)));
+}
+
+function givenNameTokensCouldMatch(x: string, y: string): boolean {
+  if (x.length === 1 || y.length === 1) return x[0] === y[0];
+  return (
+    x.startsWith(y) || y.startsWith(x) || x.endsWith(y) || y.endsWith(x) || givenNamesAgree(x, y)
+  );
+}
+
 export function givenNameVariants(first: string): string[] {
   const key = foldToken(first);
   if (!key) return [];
