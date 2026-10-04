@@ -3532,9 +3532,7 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
 }
 
 export type ResearchDetailWithholdingCheck =
-  | 'visibility_tier'
-  | 'deceased_lead'
-  | 'description_invariant';
+  'visibility_tier' | 'deceased_lead' | 'description_invariant';
 
 export interface ResearchDetailOperatorPreview {
   studentVisibilityTier: string;
