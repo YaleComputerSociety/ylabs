@@ -57,7 +57,11 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
 
   it('lets the fund description replace another lane’s where the fund speaks for the row (#4602)', () => {
     expect(
-      withheld(ownedRow, { description: 'Description from the fund page.' }, 'student-grants-database'),
+      withheld(
+        ownedRow,
+        { description: 'Description from the fund page.' },
+        'student-grants-database',
+      ),
     ).toEqual([]);
     expect(
       fellowshipFieldsWithheldBySourcePrecedence({

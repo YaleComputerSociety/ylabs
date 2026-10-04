@@ -267,7 +267,9 @@ describe('a fellowship description no observation backs (#4602)', () => {
     if (!query || typeof query !== 'object') return true;
     if (Array.isArray(query.$or) && query.$or.length > 0) {
       const anyBranch = query.$or.some((branch: any) =>
-        branch?.entityKey !== undefined ? keyMatches(branch.entityKey, observation.entityKey) : true,
+        branch?.entityKey !== undefined
+          ? keyMatches(branch.entityKey, observation.entityKey)
+          : true,
       );
       if (!anyBranch) return false;
     }
@@ -315,7 +317,12 @@ describe('a fellowship description no observation backs (#4602)', () => {
 
   const officeRead = [
     { entityKey: OFFICE_KEY, field: 'sourceKey', value: OFFICE_KEY, sourceName: OFFICE },
-    { entityKey: OFFICE_KEY, field: 'title', value: 'Fixture Research Fellowship', sourceName: OFFICE },
+    {
+      entityKey: OFFICE_KEY,
+      field: 'title',
+      value: 'Fixture Research Fellowship',
+      sourceName: OFFICE,
+    },
   ];
 
   it('clears a stored description that neither the row nor a fund it cites states', async () => {
@@ -337,8 +344,18 @@ describe('a fellowship description no observation backs (#4602)', () => {
       stored,
       [
         ...officeRead,
-        { entityKey: FUND_KEY, field: 'title', value: 'Fixture Research Fellowship', sourceName: DATABASE },
-        { entityKey: FUND_KEY, field: 'description', value: OBSERVED_DESCRIPTION, sourceName: DATABASE },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
       ],
       OFFICE_KEY,
     );
@@ -357,8 +374,18 @@ describe('a fellowship description no observation backs (#4602)', () => {
       stored,
       [
         ...officeRead,
-        { entityKey: FUND_KEY, field: 'title', value: 'Fixture Graduate Research Fellowship', sourceName: DATABASE },
-        { entityKey: FUND_KEY, field: 'description', value: OBSERVED_DESCRIPTION, sourceName: DATABASE },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Graduate Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
       ],
       OFFICE_KEY,
     );
@@ -374,9 +401,24 @@ describe('a fellowship description no observation backs (#4602)', () => {
       stored,
       [
         ...officeRead,
-        { entityKey: OFFICE_KEY, field: 'description', value: OFFICE_DESCRIPTION, sourceName: OFFICE },
-        { entityKey: FUND_KEY, field: 'title', value: 'Fixture Research Fellowship', sourceName: DATABASE },
-        { entityKey: FUND_KEY, field: 'description', value: OBSERVED_DESCRIPTION, sourceName: DATABASE },
+        {
+          entityKey: OFFICE_KEY,
+          field: 'description',
+          value: OFFICE_DESCRIPTION,
+          sourceName: OFFICE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
       ],
       OFFICE_KEY,
     );
@@ -391,8 +433,18 @@ describe('a fellowship description no observation backs (#4602)', () => {
       stored,
       [
         { entityKey: FUND_KEY, field: 'sourceKey', value: FUND_KEY, sourceName: DATABASE },
-        { entityKey: FUND_KEY, field: 'title', value: 'Fixture Research Fellowship', sourceName: DATABASE },
-        { entityKey: FUND_KEY, field: 'description', value: OBSERVED_DESCRIPTION, sourceName: DATABASE },
+        {
+          entityKey: FUND_KEY,
+          field: 'title',
+          value: 'Fixture Research Fellowship',
+          sourceName: DATABASE,
+        },
+        {
+          entityKey: FUND_KEY,
+          field: 'description',
+          value: OBSERVED_DESCRIPTION,
+          sourceName: DATABASE,
+        },
       ],
       FUND_KEY,
     );

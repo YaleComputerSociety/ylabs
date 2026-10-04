@@ -72,9 +72,7 @@ export function isRecordSpecificFundDetailUrl(url: string | undefined): boolean 
   }
 }
 
-export function fundKeysCitedByFellowship(
-  row: Record<string, any> | null | undefined,
-): string[] {
+export function fundKeysCitedByFellowship(row: Record<string, any> | null | undefined): string[] {
   if (!row) return [];
   const urls = [
     row.sourceUrl,
