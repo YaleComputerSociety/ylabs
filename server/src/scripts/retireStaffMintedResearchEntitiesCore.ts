@@ -56,13 +56,15 @@ export type StaffMintedEntityReason =
   | 'non_research_staff_title'
   | 'research_support_staff_title'
   | 'student_title'
-  | 'non_hosting_trainee_title';
+  | 'non_hosting_trainee_title'
+  | 'administrative_staff_title';
 
 export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityReason[] = [
   'non_research_staff_title',
   'research_support_staff_title',
   'student_title',
   'non_hosting_trainee_title',
+  'administrative_staff_title',
 ];
 
 export type StaffMintedEntityRefusal =
@@ -73,7 +75,8 @@ export type StaffMintedEntityRefusal =
   | 'manually-locked'
   | 'operator-intent'
   | 'has-foreign-website'
-  | 'has-foreign-role-edge';
+  | 'has-foreign-role-edge'
+  | 'description-states-research';
 
 export interface StaffMintedEntityCandidate {
   id: string;
@@ -86,6 +89,8 @@ export interface StaffMintedEntityCandidate {
   visibilityOverrideTier?: string | null;
   operatorProvenanceSourceNames?: readonly string[];
   hasForeignWebsite?: boolean;
+  /** Whether the row's own description states research; an administrative title needs it false. */
+  descriptionStatesResearch?: boolean;
   identityPersonIds?: readonly string[];
   roleEdgePersonIds?: readonly string[];
 }
@@ -174,6 +179,22 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
   return !ADMINISTRATIVE_HEAD_NOUN.test(clean);
 }
 
+const ADMINISTRATIVE_OBJECT =
+  /\b(?:career services?|(?:academic|student|faculty) affairs|financial (?:aid|strategy)|finance|administration|education technology|medical education|admissions|communications|alumni|human resources)\b/i;
+
+/**
+ * An office that runs a school rather than a research group: an administrative head noun
+ * over an administrative object, with no rank that owns research and no research named
+ * anywhere in the title. The planner archives on it only when the row's own description
+ * states no research either, so the title is one of two witnesses, never the only one.
+ */
+function statesOnlyAnAdministrativeRole(title: string | undefined | null): boolean {
+  const clean = stripInvisibleFormatCharacters(String(title ?? ''));
+  if (!ADMINISTRATIVE_HEAD_NOUN.test(clean) || !ADMINISTRATIVE_OBJECT.test(clean)) return false;
+  if (/\bresearch\b/i.test(clean)) return false;
+  return titleResearchOwnership(clean) !== 'owns_research';
+}
+
 export function staffMintedEntityReasonFor(
   title: string | undefined | null,
 ): StaffMintedEntityReason | undefined {
@@ -182,6 +203,7 @@ export function staffMintedEntityReasonFor(
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
   if (statesOnlyThatItsHolderIsAStudent(title)) return 'student_title';
+  if (statesOnlyAnAdministrativeRole(title)) return 'administrative_staff_title';
   return undefined;
 }
 
@@ -265,6 +287,10 @@ export function planStaffMintedEntityRetirement(
     const reason = STAFF_MINTED_ENTITY_REASON_PRECEDENCE.find((value) =>
       reasons.includes(value),
     ) as StaffMintedEntityReason;
+    if (reason === 'administrative_staff_title' && candidate.descriptionStatesResearch !== false) {
+      refuse('description-states-research');
+      continue;
+    }
     if ((candidate.manuallyLockedFields || []).length > 0) {
       refuse('manually-locked');
       continue;
@@ -308,6 +334,7 @@ export function summarizeStaffMintedEntityReasons(
     research_support_staff_title: 0,
     student_title: 0,
     non_hosting_trainee_title: 0,
+    administrative_staff_title: 0,
   };
   for (const entry of planned) counts[entry.reason] += 1;
   return counts;
@@ -325,6 +352,7 @@ export function summarizeStaffMintedEntityRefusals(
     'operator-intent': 0,
     'has-foreign-website': 0,
     'has-foreign-role-edge': 0,
+    'description-states-research': 0,
   };
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;

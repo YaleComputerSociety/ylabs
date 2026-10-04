@@ -15,6 +15,8 @@ import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
+import { researchStatementSentences } from '../utils/careerBiographyDescription';
+import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -125,6 +127,22 @@ const provenanceOf = (
  * on Development, so dropping it is a real narrowing of what may be archived, in
  * the conservative direction.
  */
+/**
+ * Whether either stored description makes an explicit research statement in its own
+ * subject, the second witness an administrative title needs before the row can be
+ * archived. The research-focus phrase test reads only the card's short description,
+ * because over a long office biography it matches "focused on" or "supports".
+ */
+export function descriptionStatesResearch(entity: {
+  shortDescription?: unknown;
+  fullDescription?: unknown;
+}): boolean {
+  if (describesResearchFocus(entity.shortDescription)) return true;
+  return [entity.shortDescription, entity.fullDescription].some(
+    (value) => researchStatementSentences(value).length > 0,
+  );
+}
+
 export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): string | undefined {
   const url = provenanceOf(entity, 'slug')?.sourceUrl;
   return isPersonProfileIdentityUrl(url) ? String(url) : undefined;
@@ -259,7 +277,7 @@ async function main(): Promise<void> {
 
   const rows = await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select(
-      '_id archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website',
+      '_id archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
     )
     .lean();
 
@@ -399,6 +417,9 @@ async function main(): Promise<void> {
         // Both fields, because the floor has to read what rows actually carry:
         // Development has 1,695 live rows populating `websiteUrl` against 454
         // populating `website`, and the mints being retired here write the former.
+        descriptionStatesResearch: descriptionStatesResearch(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
         hasForeignWebsite: hasForeignWebsite(
           row as { fieldProvenance?: unknown; websiteUrl?: unknown; website?: unknown },
           identityProfileUrl,

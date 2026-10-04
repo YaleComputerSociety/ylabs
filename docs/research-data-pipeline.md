@@ -2019,6 +2019,12 @@ A postdoc who also holds a lecturer or professor appointment keeps the row, beca
 Clinical fellows, residents, staff affiliates, postgraduate associates and research fellows await a ruling and stay out of the population, alone or beside a ruled rank.
 The pass reports the class as `non_hosting_trainee_title`.
 
+Administrative staff are a decided class too (2026-10-04), reported as `administrative_staff_title`, and they need two witnesses because an office title alone cannot say the person does no research.
+The title names an administrative head noun over an administrative object (career services, academic, student or faculty affairs, financial aid, finance, administration, education technology, medical education, admissions, communications, alumni, human resources), names no research anywhere, and carries no rank that owns research.
+The row's own description must also state no research: no explicit research statement in either description (`researchStatementSentences`) and no research-focus phrase on the card's short description (`describesResearchFocus`, which over a long office biography reads "focused on" or "supports" as research).
+A row failing the second witness refuses as `description-states-research`.
+Measured on Development on 2026-10-04: 6 archives planned, 2 of them served, and 5 rows refused because their card describes research; those descriptions are a separate attribution question rather than a reason to retire.
+
 A row minted from a shared roster listing (`isSharedPeopleRosterUrl`) has no page about one person, so it used to refuse as `no-identity-profile-url` whatever its lead's rank.
 When exactly one person holds a live edge on such a row and that person has exactly one verified official primary page, the pass borrows that page as the identity (`soleLeadIdentityFor`): the page's live title observations decide, and the person's stored `profile.title` stands in only when the page has none.
 Every floor then applies unchanged, so the same unanimity, faculty yield, foreign-website and foreign-role-edge refusals hold.

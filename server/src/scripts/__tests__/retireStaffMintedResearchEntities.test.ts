@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  descriptionStatesResearch,
   entriesInReasonScope,
   hasForeignWebsite,
   identityProfileUrlOf,
@@ -133,5 +134,23 @@ describe('reason scope', () => {
     ]);
     expect(entriesInReasonScope(planned, undefined)).toHaveLength(3);
     expect(entriesInReasonScope(planned, [])).toHaveLength(3);
+  });
+});
+
+describe('descriptionStatesResearch', () => {
+  it('reads a research statement anywhere, and a research-focus phrase on the card only', () => {
+    expect(
+      descriptionStatesResearch({
+        shortDescription: 'Studies how fixtures shape outcomes in clinical trials.',
+      }),
+    ).toBe(true);
+    expect(
+      descriptionStatesResearch({
+        shortDescription:
+          'Provides advising and manages the office platform for students and alumni.',
+        fullDescription: 'The office supports students and is focused on career outcomes.',
+      }),
+    ).toBe(false);
+    expect(descriptionStatesResearch({})).toBe(false);
   });
 });
