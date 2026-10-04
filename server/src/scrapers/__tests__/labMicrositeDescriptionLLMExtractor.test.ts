@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { LANE_PAGE_HEALTH_FIELD } from '../lanePageHealth';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   LabMicrositeDescriptionLLMExtractor,
@@ -37,7 +38,11 @@ function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs
         ignoreWorkPlanner: true,
       },
       emit: async (obs) => {
-        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+        emitted.push(
+          ...(Array.isArray(obs) ? obs : [obs]).filter(
+            (observation) => observation.field !== LANE_PAGE_HEALTH_FIELD,
+          ),
+        );
       },
       log: (msg) => logs.push(msg),
     },

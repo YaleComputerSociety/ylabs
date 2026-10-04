@@ -36,6 +36,13 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  confirmGoneLanePage,
+  fetchFailureHttpStatus,
+  lanePageHealthObservation,
+  lanePageReadVerdict,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   createWorkPlannerMetrics,
   getWorkPlannerSourcePolicy,
   loadEntityWorkPlan,
@@ -261,6 +268,7 @@ export function foreignEvidenceCiterNames(
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
   fetchPage?: FetchDescriptionPageFn;
+  probePage?: LanePageProbe;
   callLLM?: CallDescriptionLLMFn;
   callCardLLM?: CardSynthesisLLMFn;
   workPlanLoader?: DescriptionWorkPlanLoaderFn;
@@ -1931,6 +1939,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
   readonly displayName = 'Lab microsite LLM (description only)';
 
   private readonly fetchPage: FetchDescriptionPageFn;
+  private readonly probePage?: LanePageProbe;
   private readonly callLLM: CallDescriptionLLMFn;
   private readonly callCardLLM: CardSynthesisLLMFn;
   private readonly workPlanLoader: DescriptionWorkPlanLoaderFn;
@@ -1945,6 +1954,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
 
   constructor(deps: LabMicrositeDescriptionLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
+    this.probePage = deps.probePage;
     this.callLLM = deps.callLLM || defaultCallLLM;
     this.callCardLLM = deps.callCardLLM || defaultCardSynthesisLLM;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
@@ -2059,16 +2069,36 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             return;
           }
         }
-        const urls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
+        const candidateUrls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
           (url) =>
             !isRejectedDescriptionSourceUrl(url) &&
-            !isKnownUnavailableSourceUrl(url, lab.sourceLinkHealth) &&
             // Before the fetch, not after: the page that identifies no single entity is
             // the one this lane used to pay a fetch and a generation for and then throw
             // away (#3494).
             !isNonIdentifyingDescriptionSourceUrl(url, identityCorpus) &&
             personProfileSourceMatchesEntity(url, lab),
         );
+        const urls = candidateUrls.filter(
+          (url) => !isKnownUnavailableSourceUrl(url, lab.sourceLinkHealth),
+        );
+        const pageHealthEntity = {
+          entityType: 'researchEntity' as const,
+          entityId: serializedDocumentId(lab._id) || undefined,
+          entityKey: lab.slug,
+        };
+        const pageHealthObservations: ObservationInput[] = [];
+        const recordGonePage = async (url: string, firstAnswer: { httpStatusCode?: unknown }) => {
+          const verdict = await confirmGoneLanePage(
+            url,
+            { ...firstAnswer, storedHealth: lab.sourceLinkHealth },
+            this.probePage,
+          );
+          if (verdict)
+            pageHealthObservations.push(lanePageHealthObservation(pageHealthEntity, verdict));
+        };
+        for (const skippedUrl of candidateUrls.filter((url) => !urls.includes(url))) {
+          await recordGonePage(skippedUrl, {});
+        }
         let page: FetchedDescriptionPage | null = null;
         let lastFetchError = '';
         for (const sourceUrl of urls) {
@@ -2079,10 +2109,17 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             ctx.log(
               `[${lab.slug || 'candidate'}] description extraction source failed: ${lastFetchError}`,
             );
+            await recordGonePage(sourceUrl, { httpStatusCode: fetchFailureHttpStatus(error) });
             continue;
           }
-          if (page?.html) break;
+          if (page?.html) {
+            pageHealthObservations.push(
+              lanePageHealthObservation(pageHealthEntity, lanePageReadVerdict(sourceUrl)),
+            );
+            break;
+          }
         }
+        if (pageHealthObservations.length > 0) await ctx.emit(pageHealthObservations);
         if (!page?.html && lastFetchError) {
           ctx.log(
             `[${lab.slug || 'candidate'}] skipping description extraction: ${lastFetchError}`,

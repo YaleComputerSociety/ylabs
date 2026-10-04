@@ -213,6 +213,11 @@ import {
   withoutLaneRefusedWebsiteUrls,
 } from './laneRefusedWebsiteUrl';
 import {
+  LANE_PAGE_HEALTH_FIELD,
+  planGoneLanePageFieldClears,
+  withoutGoneLanePageObservations,
+} from './lanePageHealth';
+import {
   planNeverBackedFieldProvenanceRetirement,
   planUnrecordedProvenanceObservationRelink,
 } from './neverBackedFieldProvenance';
@@ -1511,7 +1516,8 @@ export function shouldIgnoreObservationForEntityMaterialization(
   }
   if (
     isResearchEntityObservationType(entityType) &&
-    observation.field === REFUSED_WEBSITE_URL_FIELD
+    (observation.field === REFUSED_WEBSITE_URL_FIELD ||
+      observation.field === LANE_PAGE_HEALTH_FIELD)
   ) {
     return true;
   }
@@ -6469,6 +6475,7 @@ export interface ProjectFromLogInput {
   droppedLoserWebsiteValues?: readonly unknown[];
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
+  gonePageWithdrawnValuesByField?: ReadonlyMap<string, readonly unknown[]>;
   loserRosterReads?: readonly ResolverObservation[];
   survivorReadOnARoster?: boolean;
   rosterPersonKeys?: readonly unknown[];
@@ -7515,6 +7522,7 @@ export async function projectFromLog(
     droppedLoserWebsiteValues = [],
     mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
+    gonePageWithdrawnValuesByField = new Map<string, readonly unknown[]>(),
     loserRosterReads = [],
     survivorReadOnARoster = false,
     rosterPersonKeys = [],
@@ -8440,6 +8448,17 @@ export async function projectFromLog(
       unset[field] = '';
       delete confidenceByField[field];
     }
+    for (const field of planGoneLanePageFieldClears({
+      stored: entityDoc as Record<string, unknown>,
+      staged: set,
+      fieldsWithLiveObservation,
+      withdrawnValuesByField: gonePageWithdrawnValuesByField,
+      lockedFields: manuallyLockedFields,
+    })) {
+      console.log(`[lane-page-health] cleared a ${field} only a gone page's read backed`);
+      unset[field] = '';
+      delete confidenceByField[field];
+    }
   }
 
   // Runs last of the field stages, because it reads the value this pass will leave
@@ -9154,15 +9173,16 @@ export async function materializeEntity(
     entityType === 'fellowship'
       ? fellowshipFieldsAssertedAbsent(obs)
       : new Map<string, Set<string>>();
+  const laneScopedRowIdentities = new Set(
+    [entityIdString, identifier.entityKey, identifier.entityId, textValue(entityDoc?.slug)]
+      .map((value) => String(value || ''))
+      .filter(Boolean),
+  );
+  const gonePageWithdrawal = isResearchEntityObservationType(entityType)
+    ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
+    : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
-    ? withoutLaneRefusedWebsiteUrls(
-        obs,
-        new Set(
-          [entityIdString, identifier.entityKey, identifier.entityId, textValue(entityDoc?.slug)]
-            .map((value) => String(value || ''))
-            .filter(Boolean),
-        ),
-      )
+    ? withoutLaneRefusedWebsiteUrls(gonePageWithdrawal.observations, laneScopedRowIdentities)
     : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'
@@ -9384,6 +9404,7 @@ export async function materializeEntity(
     droppedLoserWebsiteValues,
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
+    gonePageWithdrawnValuesByField: gonePageWithdrawal.withdrawnValuesByField,
     loserRosterReads,
     survivorReadOnARoster,
     rosterPersonKeys: researchAreaEvidenceObservations
