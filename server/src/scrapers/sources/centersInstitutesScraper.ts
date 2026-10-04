@@ -1997,6 +1997,7 @@ export class CentersInstitutesScraper implements IScraper {
     const fetchAttempts: ScraperFetchMetric[] = [];
     const rosterSiteRefusals: Array<{ key: string; reason: CenterRosterSiteRefusal }> = [];
     const survivorRoutes: Array<{ key: string; from: string; to: string }> = [];
+    const selectedEntityKeys = new Set<string>();
 
     const refuseRosterSite = (
       config: CenterConfig,
@@ -2129,6 +2130,8 @@ export class CentersInstitutesScraper implements IScraper {
       if (centersProcessed >= limit) break;
 
       const route = routes[index];
+      selectedEntityKeys.add(centerEntityKey(configured));
+      if ('config' in route) selectedEntityKeys.add(centerEntityKey(route.config));
       if ('refusal' in route) {
         ctx.log(
           `[${configured.centerKey}] refused - its row ${sanitizeLogValue(centerEntityKey(configured))} is archived (${route.refusal}); nothing read`,
@@ -2334,7 +2337,7 @@ export class CentersInstitutesScraper implements IScraper {
       ctx,
       this.pageReads,
       this.probePage,
-      onlyFilter ? { entityKeys: [...emittedEntityKeys] } : undefined,
+      onlyFilter ? { entityKeys: [...selectedEntityKeys, ...emittedEntityKeys] } : undefined,
     );
     totalObs += pageHealth.gone + pageHealth.restored;
 

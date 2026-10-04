@@ -287,6 +287,114 @@ describe('the page-reading lanes withdraw what a gone page they cite supplied (#
       expect(await storedDepartments()).toEqual([RIVAL_DEPARTMENT]);
     });
   });
+
+  describe('a narrowed run that names the citing row', () => {
+    it('reaches a center whose roster page now answers 404', async () => {
+      const lane = 'centers-institutes-index';
+      await laneCites(lane, GONE_PAGE, new Date('2026-09-01T00:00:00Z'));
+      await storeGoneHealth(GONE_PAGE);
+      const scraper = new CentersInstitutesScraper(
+        [
+          {
+            centerKey: 'synthetic-membrane',
+            centerName: 'Synthetic Membrane Center',
+            schoolName: '',
+            kind: 'center',
+            url: GONE_PAGE,
+            extractor: () => ({ members: [] }),
+            entityKey: SLUG,
+          },
+        ],
+        null,
+        vi.fn().mockRejectedValue(new HttpStatusError(404)),
+        vi.fn(),
+        goneProbe(),
+      );
+      const { ctx, emitted } = laneContext(lane, {
+        ignoreWorkPlanner: true,
+        only: ['synthetic-membrane'],
+      });
+
+      await scraper.run(ctx);
+
+      expect(pageVerdicts(emitted)).toEqual([
+        expect.objectContaining({ entityKey: SLUG, sourceUrl: GONE_PAGE }),
+      ]);
+    });
+
+    it('reaches an official-profile row named by its id', async () => {
+      const lane = 'official-profile-pi-backfill';
+      await laneCites(lane, GONE_PAGE, new Date('2026-09-01T00:00:00Z'));
+      await storeGoneHealth(GONE_PAGE);
+      const selectRow = async () => [{ _id: rowId, slug: SLUG }];
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(),
+        noRows,
+        async () => null,
+        noRows,
+        selectRow,
+        noRows,
+        0,
+        async () => undefined,
+        noRows,
+        noRows,
+        goneProbe(),
+      );
+      const { ctx, emitted } = laneContext(lane, { ignoreWorkPlanner: true, only: [rowId] });
+
+      await scraper.run(ctx);
+
+      expect(pageVerdicts(emitted)).toEqual([
+        expect.objectContaining({ entityKey: SLUG, sourceUrl: GONE_PAGE }),
+      ]);
+    });
+  });
+
+  describe('lab-site-lead-verification restoring a gone page', () => {
+    const lane = 'lab-site-lead-verification';
+    const candidate = async () => [{ entityId: rowId, slug: SLUG, website: GONE_PAGE, leads: [] }];
+
+    async function withdrawnPage() {
+      await laneCites(lane, GONE_PAGE, new Date('2026-09-01T00:00:00Z'));
+      await storeGoneHealth(GONE_PAGE);
+      const { ctx, emitted } = laneContext(lane, { ignoreWorkPlanner: true });
+      await new LabSiteLeadVerificationScraper(noRows, vi.fn(), goneProbe()).run(ctx);
+      await recordVerdicts(lane, pageVerdicts(emitted), new Date('2026-09-10T00:00:00Z'));
+    }
+
+    const healthyVerdicts = (emitted: ObservationInput[]) =>
+      pageVerdicts(emitted).filter(
+        (verdict) => (verdict.value as { healthStatus?: string }).healthStatus === 'HEALTHY',
+      );
+
+    it('restores it from a live read', async () => {
+      await withdrawnPage();
+      const { ctx, emitted } = laneContext(lane, { ignoreWorkPlanner: true });
+
+      await new LabSiteLeadVerificationScraper(
+        candidate,
+        async () => ({ html: '<p>lab</p>', visitedUrls: [GONE_PAGE] }),
+        goneProbe(),
+      ).run(ctx);
+
+      expect(healthyVerdicts(emitted)).toEqual([
+        expect.objectContaining({ entityKey: SLUG, sourceUrl: GONE_PAGE }),
+      ]);
+    });
+
+    it('does not restore it from a cached read', async () => {
+      await withdrawnPage();
+      const { ctx, emitted } = laneContext(lane, { ignoreWorkPlanner: true, useCache: true });
+
+      await new LabSiteLeadVerificationScraper(
+        candidate,
+        async () => ({ html: '<p>lab</p>', visitedUrls: [GONE_PAGE], fromCache: true }),
+        goneProbe(),
+      ).run(ctx);
+
+      expect(healthyVerdicts(emitted)).toEqual([]);
+    });
+  });
 });
 
 describe('a recorded lane fetch (#4840)', () => {

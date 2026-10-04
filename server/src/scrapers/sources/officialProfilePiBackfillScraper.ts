@@ -3941,7 +3941,17 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       ctx,
       this.pageReads,
       this.probePage,
-      targetKeys.length ? { entityKeys: targetKeys } : undefined,
+      targetKeys.length
+        ? {
+            entityKeys: [
+              ...targetKeys,
+              ...entities.flatMap((entity) => {
+                const slug = textValue(entity.slug);
+                return slug ? [slug] : [];
+              }),
+            ],
+          }
+        : undefined,
     );
     emitted += pageHealth.gone + pageHealth.restored;
 

@@ -146,6 +146,7 @@ interface FetchedPage {
   html: string;
   finalUrl: string;
   httpStatusCode?: number;
+  fromCache?: boolean;
 }
 
 function redirectedUrl(response: { request?: { res?: { responseUrl?: unknown } } }): string {
@@ -158,7 +159,7 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
   const cacheKey = safeUrl.toString();
   if (useCache) {
     const cached = await getCached<FetchedPage>(LAB_SITE_LEAD_VERIFICATION_SOURCE, cacheKey);
-    if (cached?.html) return cached;
+    if (cached?.html) return { ...cached, fromCache: true };
   }
   const agents = ssrfSafeAgents();
   const response = await retryOnRetryableStatus(() =>
@@ -180,6 +181,13 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
   return page;
 }
 
+interface LabSiteReading {
+  html: string;
+  visitedUrls: string[];
+  httpStatusCode?: number;
+  fromCache?: boolean;
+}
+
 /**
  * Reads the research home plus a bounded set of its own people pages. A YSM lab
  * landing page usually does NOT name its PI - the members page does - so reading
@@ -189,7 +197,7 @@ export async function readLabSite(
   website: string,
   useCache: boolean,
   fetcher: (url: string, useCache: boolean) => Promise<FetchedPage> = fetchPage,
-): Promise<{ html: string; visitedUrls: string[]; httpStatusCode?: number } | null> {
+): Promise<LabSiteReading | null> {
   let landing: FetchedPage;
   try {
     landing = await fetcher(website, useCache);
@@ -212,6 +220,7 @@ export async function readLabSite(
     html: pages.map((page) => page.html).join('\n'),
     visitedUrls: pages.map((page) => page.finalUrl),
     httpStatusCode: landing.httpStatusCode,
+    ...(landing.fromCache ? { fromCache: true } : {}),
   };
 }
 
@@ -242,7 +251,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     private readonly readSite: (
       website: string,
       useCache: boolean,
-    ) => Promise<{ html: string; visitedUrls: string[]; httpStatusCode?: number } | null> = (
+    ) => Promise<LabSiteReading | null> = (
       website,
       useCache,
     ) => readLabSite(website, useCache),
@@ -262,8 +271,9 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     for (const candidate of candidates) {
       const observedAt = context.options.referenceDate ?? new Date();
       const reading = await this.readSite(candidate.website, context.options.useCache);
-      if (reading?.html) pageReads.recordRead(candidate.website, reading.visitedUrls[0]);
-      else if (reading)
+      if (reading?.html) {
+        if (!reading.fromCache) pageReads.recordRead(candidate.website, reading.visitedUrls[0]);
+      } else if (reading)
         pageReads.recordFailure(candidate.website, { status: reading.httpStatusCode });
       const verification =
         reading && reading.html
