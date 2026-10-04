@@ -1363,6 +1363,7 @@ Resolution: 200 stays, as a rendering preference, and the 280 and 44 bounds move
 `clampShortDescriptionToWholeSentences` still prefers a run of whole sentences inside 200, and when none fits it keeps the run that fits the card ceiling instead of deleting the line.
 Both ceilings bound that run rather than judging it afterwards: rejecting a whole run for the word count of its last sentence deletes a card line whose leading sentence fit both ceilings, which is the same failure in a new place.
 Only a leading sentence that is itself past the ceiling, in characters or in words, is still refused.
+Superseded on 2026-10-04 (#4833): such a sentence is now cut at a clause boundary that fits, as `docs/student-ready-definition.md` records.
 A kept line past the preference is quality-checked because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
 A line inside the preference is untouched, so this cannot drop the fluent stored card lines #1680 and #2184 intentionally keep.
 
