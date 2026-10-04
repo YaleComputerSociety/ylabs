@@ -260,7 +260,8 @@ export function nonContactPiProfileIds(grants: readonly NihGrant[]): number[] {
 }
 
 export function isYaleOrganization(orgName: string | undefined): boolean {
-  return /\byale\b/i.test(orgName || '');
+  const normalized = (orgName || '').trim().toUpperCase();
+  return YALE_ORG_NAMES.includes(normalized);
 }
 
 /**
@@ -751,7 +752,7 @@ async function fetchContactPiAffiliations(
         axios.post(
           REPORTER_ENDPOINT,
           {
-            criteria: { pi_profile_ids: batch },
+            criteria: { pi_profile_ids: batch, exclude_subprojects: true },
             include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
             offset,
             limit: PAGE_SIZE,
@@ -933,8 +934,11 @@ export class NihReporterScraper implements IScraper {
       `credited PIs: ${groups.size} (${piEntries.length} processed); ` +
       `multi-PI co-PIs: ${coPiCandidates.length} not a Yale contact PI in the window, ${coPi.credited} credited ` +
       `(latest contact-PI project at Yale), ${coPi.elsewhere} refused (latest contact-PI project elsewhere), ` +
-      `${coPi.noEvidence} refused (never a contact PI, so no affiliation evidence)` +
-      `${affiliationLookupFailed ? ' (affiliation lookup failed, so none credited)' : ''}; ` +
+      `${coPi.noEvidence} refused (${
+        affiliationLookupFailed
+          ? 'affiliation lookup failed, so none credited'
+          : 'never a contact PI, so no affiliation evidence'
+      }); ` +
       `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
       `${ineligibleLeadTitle} held for a non-lead title`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);

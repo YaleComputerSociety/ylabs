@@ -100,6 +100,14 @@ describe('multi-PI attribution helpers', () => {
     expect(affiliations.get(UNKNOWN_CO_PI)?.atYale).toBe(false);
   });
 
+  it('reads a Yale-named affiliate as another institution', () => {
+    const affiliations = latestContactPiAffiliations(
+      [project(YALE_CO_PI, 2025, 'YALE NEW HAVEN HOSPITAL')],
+      new Set([YALE_CO_PI]),
+    );
+    expect(affiliations.get(YALE_CO_PI)?.atYale).toBe(false);
+  });
+
   it('groups a grant under its contact PI and every credited co-PI only', () => {
     const groups = groupGrantsByCreditedPi([multiPiGrant], new Set([CONTACT, YALE_CO_PI]));
     expect([...groups.keys()]).toHaveLength(2);
@@ -167,7 +175,40 @@ describe('NihReporterScraper multi-PI run', () => {
     const result = await scraperWith(new Error('socket hang up')).run(ctx);
 
     expect(emitted.filter((o) => o.field === 'recentGrants')).toHaveLength(1);
-    expect(result.notes).toMatch(/affiliation lookup failed, so none credited/);
+    expect(result.notes).toMatch(/3 refused \(affiliation lookup failed, so none credited\)/);
+    expect(result.notes).not.toMatch(/never a contact PI/);
+  });
+
+  it('reads co-PI affiliation from parent projects only', async () => {
+    const affiliationCriteria: unknown[] = [];
+    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+      const request = body as any;
+      const offset = request.offset || 0;
+      if (request.criteria.pi_profile_ids) {
+        affiliationCriteria.push(request.criteria);
+        return { data: { meta: { total: 0, offset, limit: 500 }, results: [] } } as any;
+      }
+      return {
+        data: {
+          meta: { total: 1, offset, limit: 500 },
+          results: offset === 0 ? [multiPiGrant] : [],
+        },
+      } as any;
+    });
+    const { ctx } = makeContext();
+    await new NihReporterScraper({
+      resolveResearcherId,
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver: async (researcherId) => ({
+        status: 'canonical',
+        slug: `row-${researcherId}`,
+      }),
+    }).run(ctx);
+
+    expect(affiliationCriteria.length).toBeGreaterThan(0);
+    for (const criteria of affiliationCriteria) {
+      expect(criteria).toMatchObject({ exclude_subprojects: true });
+    }
   });
 
   it('emits one award once when two credited PIs share a row', async () => {
