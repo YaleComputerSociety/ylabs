@@ -10,10 +10,6 @@ const CONNECT_SRC_ORIGINS = [
   'https://www.yalelabs.io',
   'https://yalelabs.onrender.com',
   'https://ylabs-gr4v.onrender.com',
-  'https://www.google-analytics.com',
-  'https://analytics.google.com',
-  'https://region1.google-analytics.com',
-  'https://stats.g.doubleclick.net',
 ];
 
 const IMG_SRC_ORIGINS = [
@@ -25,8 +21,6 @@ const IMG_SRC_ORIGINS = [
   'https://ysm-res.cloudinary.com',
   'https://yalies.io',
   'https://*.yalies.io',
-  'https://www.google-analytics.com',
-  'https://stats.g.doubleclick.net',
 ];
 
 const SENTRY_INGEST_HOST = /^o\d+\.ingest(?:\.[a-z]{2})?\.sentry\.io$/;
@@ -64,7 +58,7 @@ export const buildContentSecurityPolicy = (
     "base-uri 'none'",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    "script-src 'self' https://www.googletagmanager.com",
+    "script-src 'self'",
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",

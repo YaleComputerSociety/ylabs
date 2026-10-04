@@ -36,9 +36,8 @@ Source review, profile open, results view, filter, save, compare, and plan event
 
 ## Privacy And Reliability
 
-Everything in this section describes `analytics_events`, the first-party instrument, and none of it describes the product as a whole.
-A third-party tag also runs on every page load, under none of these constraints.
-See Third-Party Measurement below before citing any sentence here as the product's telemetry posture.
+Everything in this section describes `analytics_events`, the first-party instrument.
+No third-party analytics tag runs on any page; see Third-Party Measurement below for the GA4 tag that did until #4754.
 
 Payloads are deny-by-default allowlists of short enums and count buckets.
 They do not retain raw query text, URLs, hostnames, contact destinations, notes, plan contents, filter values, or cross-event search identifiers.
@@ -103,65 +102,21 @@ Server-side research `search` rows exist in Production only from 2026-09-26, so 
 
 ## Third-Party Measurement
 
-A Google Analytics 4 tag is live on every page load, with measurement id `G-3SQLGT56ZM`.
-This section records what it is and what it does, because until #3102 nothing in the repository acknowledged it and the careful first-party sentences above read as if they described the product.
+No third-party analytics tag runs on any page, in any environment.
+A Google Analytics 4 tag ran on every page load until #4754 removed it, as the 2026-10-04 entry in `docs/decisions.md` records.
+It loaded from the initial document, before the application mounted and before any consent existed, so it sent every visitor's IP address, user agent and a persistent client-id cookie to Google, and nothing in this repository ever read what it collected.
 
-Three files carry it.
-`client/index.html` is the Vite entry document, and it loads `https://www.googletagmanager.com/gtag/js?id=G-3SQLGT56ZM` and then `/analytics.js`.
-`client/public/analytics.js` defines `window.gtag`, then installs the outgoing redaction described under [What the tag may not send](#what-the-tag-may-not-send), and only then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`.
-That order is load-bearing rather than cosmetic: `gtag/js` loads async, so it can already have replaced `dataLayer.push` with its command processor by the time this file runs, and the config push then initialises GA4 and sends its first hit synchronously through whatever transports exist at that moment.
-The same two script tags also sit in `client/public/index.html`, a Create React App leftover whose `%PUBLIC_URL%` placeholders are never substituted, so that copy is inert rather than a second live tag.
-It is inert because it never ships: Vite copies `client/public/` into `dist/` and then writes the built entry document over the copied one, so a build emits exactly one `dist/index.html` and it is the root document.
-Nothing in `client/src` calls `gtag` or pushes to `dataLayer`, so this repository sends no custom events and no user properties.
-Everything GA4 records here comes from the default `config` call plus whatever enhanced measurement the GA4 property has enabled, and the property is configured outside this repository, which is why the redaction below sits on the transport rather than in the configuration.
+The removal took out the `gtag/js` loader and the `/analytics.js` bootstrap from `client/index.html`, the inert copy of both in the Create React App leftover `client/public/index.html`, and `client/public/analytics.js` itself, which held nothing but the tag's configuration and the outgoing query redaction of #4158.
+That redaction went with it, because with no tag there is no measurement request left to redact.
+The CSP in `server/src/middleware/securityHeaders.ts` now allows scripts from `'self'` only, and names no Google tag or measurement origin in `connect-src` or `img-src`.
+Google Fonts is a separate decision and is unchanged: `style-src` still names `https://fonts.googleapis.com` and `font-src` still names `https://fonts.gstatic.com`.
 
-Every environment carries the tag, and all of them report to the same property.
-The measurement id is a literal in `client/index.html` and in `client/public/analytics.js` with no condition of any kind around it: no `import.meta.env` check, no environment variable, and no server-side gate.
-So `vite build` emits the same two script tags for Development, for Beta on `ylabs-gr4v.onrender.com`, and for Production on `yalelabs.onrender.com`, and a local `yarn dev` serves them too.
-`G-3SQLGT56ZM` is the only measurement id in the repository, which means local development traffic and Beta traffic land in the same GA4 property as Production traffic, distinguishable inside GA4 only by hostname.
-Any claim that the tag is production-only is therefore wrong, and switching it off for an environment is a change this repository does not currently have a mechanism for.
+Two tests keep the tag from coming back unnoticed.
+`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` runs a real production `vite build` into a temporary directory and scans every emitted file for a Google tag loader, a measurement host, a `gtag` call, or a measurement id, and checks that no `analytics.js` is emitted.
+`server/src/middleware/__tests__/securityHeaders.test.ts` pins every directive string literally and asserts that neither the production nor the local-development CSP names a Google tag or measurement origin.
 
-The tag loads on the initial document, before the application mounts and before anything a visitor could act on, so it runs for a logged-out visitor exactly as for a signed-in one and its collection precedes any consent that does not yet exist.
-Verified by building rather than by reading: `yarn --cwd client build` emits one `dist/index.html`, carrying both script tags with `/analytics.js` resolved and none of the Create React App markers, and ships `dist/analytics.js` beside it.
-
-The CSP allowlists the tag deliberately, not by accident.
-`server/src/middleware/securityHeaders.ts` names `https://www.googletagmanager.com` in `script-src`; `https://www.google-analytics.com`, `https://analytics.google.com`, `https://region1.google-analytics.com` and `https://stats.g.doubleclick.net` in `connect-src`; and `https://www.google-analytics.com` and `https://stats.g.doubleclick.net` in `img-src`.
-`server/src/middleware/__tests__/securityHeaders.test.ts` pins each of those directive strings literally, so dropping an origin is a test-visible change rather than a silent one.
-
-The tag carries no anonymization and no consent flags today.
-There is no `anonymize_ip`, no Consent Mode default, no cookie banner, and no opt-out anywhere in the repository.
-A default GA4 configuration therefore collects the client IP, the user agent, the page path, and a persistent client-id cookie, cross-session, from every visitor.
-`server/src/utils/logSanitizer.ts` does not redact IP addresses, and nothing currently requires it to.
-
-### What the tag may not send
-
-Until #4158 the tag also received every research search a visitor typed.
-The research page writes the query into the address bar as `?q=`, `page_location` defaults to `location.href` and keeps the query string, and `q` is one of the five parameters GA4's site-search enhanced measurement lifts into a `search_term`.
-Measured in a headless browser against a built client, a single landing on `/research?q=<term>&dept=<label>` produced a `view_search_results` hit carrying `ep.search_term=<term>`, and an in-page search produced a further `page_view` whose `dl` and `dr` both carried the raw query string.
-
-Configuring the tag cannot fix that, and this is the load-bearing fact.
-`send_page_view: false` suppresses only the tag's own initial page view; the enhanced-measurement features build their hits from `location.href` and from the query parameters themselves, and a `gtag('set', { page_location })` default is overridden by the explicit parameters those hits carry.
-That was measured too, not reasoned: with a sanitized `page_location` default in place, `scroll` and `form_start` reported the redacted path while `view_search_results` still carried the term and the history-driven `page_view` still carried the full URL.
-
-So `client/public/analytics.js` redacts on the way out instead, which is the one place this repository can hold the guarantee rather than delegating it to a property setting nobody here can see.
-It wraps `fetch`, `navigator.sendBeacon` and `XMLHttpRequest`, acts only on requests to `google-analytics.com`, `analytics.google.com` and `doubleclick.net`, and leaves every other request, first-party telemetry included, byte-for-byte untouched.
-On a measurement request it reduces every parameter whose value is an absolute http(s) URL to origin and path, which covers `dl`, `dr` and `ep.form_destination`, and deletes `ep.search_term`.
-A measurement hit whose shape it cannot read, a non-string body or a `Request` object, is dropped rather than sent, so a transport change by Google costs measurement instead of leaking text.
-
-What still reaches Google after that, from the same headless capture: the measurement id, a persistent client id and session id, the connection's IP address, the user agent and its client hints, screen size and language, the page title, `dl` and `dr` as origin and path only, and the events `page_view`, `view_search_results`, `scroll`, `form_start` and `user_engagement` with their non-text parameters (`epn.percent_scrolled`, `ep.form_id`, `ep.first_field_id`, `ep.first_field_type`, `epn.form_length`, `epn.first_field_position`, engagement time).
-`view_search_results` survives deliberately: that a search happened is the non-identifying count the product wants, and the term is what it may not have.
-No query string, no fragment, and no search term appear in any of it.
-
-Verification is a capture rather than a reading.
-Build the client, serve `dist`, and drive a headless browser through a landing on `/research?q=<synthetic>`, a second in-page search, and a navigation to another route, intercepting every request to Google's `collect` endpoints and asserting the synthetic terms appear in none of them.
-Block those requests in the probe rather than letting them through: a probe that forwards them files a real page view from a developer's machine into the live property.
-`client/src/__tests__/googleAnalyticsQueryRedaction.test.ts` holds the same contract as a unit test, executing the shipped `analytics.js` against recorded transports.
-
-Anonymous-visitor measurement currently comes only from this tag.
-`analytics_events` cannot record a logged-out visitor at all (#2333), so the two instruments do not overlap: the strict one sees only signed-in students, and the unconstrained one sees everybody, on a product that deliberately serves logged-out discovery (#1657).
-
-Whether the tag should run with IP anonymization and consent signalling, or run at all, is open and undecided.
-Adding `anonymize_ip`, adding Consent Mode, or removing the tag or its CSP entries is that decision being taken, not a cleanup, so none of it belongs in an incidental change.
+So `analytics_events` is the only analytics instrument.
+It cannot record a logged-out visitor at all (#2333), and that is now the whole posture rather than half of it: a logged-out visitor is not measured by anything.
 
 ## Error Reporting
 
