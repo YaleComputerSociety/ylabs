@@ -148,6 +148,11 @@ describe('recastUnbackedLabSelfDescription', () => {
     ).toBe('Wren Okonkwo-Vale studies estuaries.');
   });
 
+  it('leaves a sentence that defines the lab itself', () => {
+    const text = 'The Okonkwo-Vale Lab is a coastal geology lab studying estuaries.';
+    expect(recast(text)).toBe(text);
+  });
+
   it('recasts the full-name form on a row with no provenance at all', () => {
     expect(recast('The Wren Okonkwo-Vale Lab studies estuaries.', { fieldProvenance: {} })).toBe(
       'Wren Okonkwo-Vale studies estuaries.',

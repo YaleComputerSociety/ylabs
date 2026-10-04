@@ -30,6 +30,10 @@ const LAB_NAME_CONTINUATION =
 
 const ANOTHER_NAMED_LAB = /\b(?!The\b)[A-Z][\p{L}'’-]*\s+Lab(?:oratory)?\b/u;
 
+// "<Lab> is a hematology lab ..." defines the lab itself, so recasting its subject onto
+// the person would make the sentence say the person is a lab. Left for the serve chain.
+const IDENTITY_SENTENCE_CONTINUATION = /^\s+(?:is|was)\s+(?:an?|the)\b/;
+
 const LEADER_APPOSITIVE = /,\s*(?:led|directed|headed|run)\s+by\s+[^,]+,/;
 
 function textValue(value: unknown): string {
@@ -193,6 +197,12 @@ export function recastUnbackedLabSelfDescription(
     ) => {
       if (!runNamesOnlyThisPerson(givenRun, person)) return match;
       if (!llmAuthored && !isFullNameLabForm(givenRun, person)) return match;
+      if (
+        !possessiveSuffix &&
+        IDENTITY_SENTENCE_CONTINUATION.test(full.slice(offset + match.length))
+      ) {
+        return match;
+      }
       if (/["“‘]$/.test(full.slice(0, offset))) return match;
       if (!possessiveSuffix && LAB_NAME_CONTINUATION.test(full.slice(offset + match.length))) {
         return match;
