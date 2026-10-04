@@ -571,7 +571,49 @@ export function researchEntityDescriptionServesRequiredCard(
     isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
   const servedCardIsPresent = Boolean(textValue(publicDescription.servedCard));
   return (
-    publicDescription.invariant.cardDescriptionUseful || (cardIsOptional && !servedCardIsPresent)
+    publicDescription.invariant.cardDescriptionUseful ||
+    (cardIsOptional && !servedCardIsPresent) ||
+    storedCardRepeatsUsefulBody(entity, publicDescription)
+  );
+}
+
+const comparableCopy = (value: unknown): string =>
+  textValue(value).replace(/\s+/g, ' ').trim().toLowerCase();
+
+const EVIDENCE_RATIONALE_PATTERN =
+  /\bas\s+(?:evidenced|indicated|reflected|suggested)\s+by\s+(?:(?:its|his|her|their|the)\s+)?(?:inclusion|listing|mention|appearance)\b/i;
+
+const SWALLOWED_CLAUSE_PATTERN =
+  /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
+
+/**
+ * A card the source itself stored that is the same sentence as a useful body. The
+ * card bar refuses a "Studies A, including B and C." card identical to its body
+ * because it adds nothing over the body, which held well-formed rows whose only
+ * prose is that one source-asserted sentence. Only the stored card qualifies: a card
+ * the serve path derived from a different stored card is still judged by the bar, and
+ * the stored card and body must be the same source text. Any flag other
+ * than that identical-text arm still refuses the card, and so does a sentence that
+ * states why a model guessed the topic ("as evidenced by inclusion in news ...")
+ * rather than the research itself, or whose "including" swallowed a whole sentence
+ * from the body so the list item carries its own finite verb.
+ */
+function storedCardRepeatsUsefulBody(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const { quality, servedCard } = publicDescription;
+  if (!quality.full.isUseful) return false;
+  if (!quality.short.flags.every((flag) => flag === 'topic-label-list')) return false;
+  const storedCardText = textValue(entity.shortDescription);
+  if (EVIDENCE_RATIONALE_PATTERN.test(storedCardText)) return false;
+  if (SWALLOWED_CLAUSE_PATTERN.test(storedCardText)) return false;
+  const storedCard = comparableCopy(storedCardText);
+  const card = comparableCopy(servedCard);
+  return (
+    Boolean(storedCard) &&
+    storedCard === comparableCopy(entity.fullDescription) &&
+    card === comparableCopy(publicDescription.entity.fullDescription)
   );
 }
 
