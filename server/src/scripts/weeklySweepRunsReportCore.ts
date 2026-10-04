@@ -1,4 +1,9 @@
-import { RENDER_CRON_RUN_LIMIT_MS, type WeeklySweepRunRecord } from './weeklyDevelopmentSweepCore';
+import {
+  RENDER_CRON_RUN_LIMIT_MS,
+  WEEKLY_SWEEP_MODES,
+  type WeeklySweepMode,
+  type WeeklySweepRunRecord,
+} from './weeklyDevelopmentSweepCore';
 
 export const DEFAULT_WEEKLY_SWEEP_RUNS_LIMIT = 5;
 
@@ -46,11 +51,25 @@ type DeepPartial<T> = T extends Date
       : T;
 
 export type StoredWeeklySweepRun = DeepPartial<WeeklySweepRunRecord> &
-  Pick<WeeklySweepRunRecord, 'startedAt' | 'status'>;
+  Pick<WeeklySweepRunRecord, 'startedAt' | 'status'> & { _id?: unknown };
 
 const MODE_LABELS: Record<string, string> = {
   'development-full': 'research',
   'fellowship-development-full': 'fellowship',
+};
+
+export function weeklySweepRunModes(run: StoredWeeklySweepRun): WeeklySweepMode[] {
+  const requested = run.requestedModes ?? [];
+  const named =
+    requested.length > 0 ? requested : (run.modes ?? []).map((mode) => mode?.mode ?? null);
+  return WEEKLY_SWEEP_MODES.filter((mode) => named.includes(mode));
+}
+
+const formatModes = (run: StoredWeeklySweepRun): string => {
+  const modes = weeklySweepRunModes(run);
+  return modes.length > 0
+    ? modes.map((mode) => MODE_LABELS[mode] ?? mode).join('+')
+    : 'no modes recorded';
 };
 
 export function formatDuration(ms: number | null | undefined): string {
@@ -123,7 +142,7 @@ function formatElapsed(run: StoredWeeklySweepRun, now: Date): string {
 
 export function formatWeeklySweepRun(run: StoredWeeklySweepRun, now = new Date()): string {
   const lines = [
-    `${formatStarted(run.startedAt)}  ${run.status}  code ${run.codeSha ? run.codeSha.slice(0, 9) : 'unknown'}  ${formatElapsed(run, now)}`,
+    `${formatStarted(run.startedAt)}  ${formatModes(run)}  ${run.status}  code ${run.codeSha ? run.codeSha.slice(0, 9) : 'unknown'}  ${formatElapsed(run, now)}`,
   ];
   for (const mode of run.modes ?? []) lines.push(`  ${formatMode(mode)}`);
   const storage = formatStorage(run);
@@ -184,13 +203,24 @@ export function formatWeeklySweepRunsComparison(newestFirst: StoredWeeklySweepRu
   const runs = [...newestFirst].reverse();
   const perRun = runs.map(stepDurations);
   const latest = perRun.at(-1) ?? new Map<string, number>();
-  const previous = perRun.length > 1 ? perRun.at(-2) : undefined;
+  const earlier = perRun.slice(0, -1).reverse();
+  const previousDuration = (name: string): number | undefined =>
+    earlier.find((durations) => durations.has(name))?.get(name);
+  const latestRun = runs.at(-1);
+  const previousSameModes = latestRun
+    ? runs
+        .slice(0, -1)
+        .reverse()
+        .find((run) => formatModes(run) === formatModes(latestRun))
+    : undefined;
   const names = [...new Set(perRun.flatMap((durations) => [...durations.keys()]))].sort(
     (left, right) => (latest.get(right) ?? -1) - (latest.get(left) ?? -1),
   );
   const header = [
     'step',
-    ...runs.map((run) => new Date(run.startedAt).toISOString().slice(0, 10)),
+    ...runs.map(
+      (run) => `${new Date(run.startedAt).toISOString().slice(0, 10)} ${formatModes(run)}`,
+    ),
     'change',
   ];
   const change = (now: number | undefined, before: number | undefined): string => {
@@ -202,12 +232,12 @@ export function formatWeeklySweepRunsComparison(newestFirst: StoredWeeklySweepRu
     [
       'TOTAL',
       ...runs.map((run) => formatDuration(run.durationMs)),
-      change(runs.at(-1)?.durationMs ?? undefined, runs.at(-2)?.durationMs ?? undefined),
+      change(latestRun?.durationMs ?? undefined, previousSameModes?.durationMs ?? undefined),
     ],
     ...names.map((name) => [
       name,
       ...perRun.map((durations) => formatDuration(durations.get(name))),
-      change(latest.get(name), previous?.get(name)),
+      change(latest.get(name), previousDuration(name)),
     ]),
   ];
   const widths = header.map((title, column) =>

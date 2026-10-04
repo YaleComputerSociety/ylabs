@@ -3,6 +3,7 @@ import { connectScriptMongo } from '../db/connections';
 import { WeeklySweepRun } from '../models/weeklySweepRun';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
+import { WEEKLY_RUN_LOOKBACK } from './promoteCore';
 import { runPromoteBeta } from './promoteFlowsCore';
 import { baseRuntimeDeps } from './promoteRuntime';
 import {
@@ -19,12 +20,17 @@ export async function promoteBetaMain(argv: string[]): Promise<number> {
   try {
     return await runPromoteBeta(argv, {
       ...baseRuntimeDeps('beta'),
-      loadWeeklyRun: async (runId) =>
-        (runId
-          ? await WeeklySweepRun.findById(runId).lean()
-          : await WeeklySweepRun.findOne({})
+      loadWeeklyRuns: async (runIds) =>
+        (runIds.length > 0
+          ? await WeeklySweepRun.find({
+              _id: { $in: runIds.filter((id) => mongoose.isValidObjectId(id)) },
+            })
               .sort({ startedAt: -1 })
-              .lean()) as unknown as StoredWeeklySweepRun | null,
+              .lean()
+          : await WeeklySweepRun.find({})
+              .sort({ startedAt: -1 })
+              .limit(WEEKLY_RUN_LOOKBACK)
+              .lean()) as unknown as StoredWeeklySweepRun[],
       heldSweepLocks: heldSweepSourceLocks,
     });
   } finally {

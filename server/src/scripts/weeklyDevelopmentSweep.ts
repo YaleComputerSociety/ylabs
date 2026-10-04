@@ -21,7 +21,6 @@ import {
 } from './scraperSweepPreflight';
 import { WeeklySweepRun } from '../models/weeklySweepRun';
 import {
-  WEEKLY_SWEEP_MODES,
   buildCorpusSnapshotArgs,
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
@@ -36,6 +35,7 @@ import {
   type WeeklySweepArgs,
   weeklySweepStorageReading,
   type WeeklySweepCorpusSnapshotRecord,
+  type WeeklySweepMode,
   type WeeklySweepModeOutcome,
   type WeeklySweepPreflightRecord,
 } from './weeklyDevelopmentSweepCore';
@@ -116,8 +116,8 @@ async function preflight(
   }
 }
 
-function runSweeps(jobDir: string): WeeklySweepModeOutcome[] {
-  return WEEKLY_SWEEP_MODES.map((mode) => {
+function runSweeps(jobDir: string, modes: WeeklySweepMode[]): WeeklySweepModeOutcome[] {
+  return modes.map((mode) => {
     const modeDir = path.join(jobDir, mode);
     fs.mkdirSync(modeDir, { recursive: true });
     console.log(`[weekly-sweep] starting ${mode}`);
@@ -208,19 +208,24 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   }
   const codeSha = readSweepHeadSha(REPO_ROOT);
   console.log(`[weekly-sweep] code ${codeSha ?? 'unknown'}`);
+  console.log(`[weekly-sweep] modes: ${args.modes.join(', ')}`);
   const jobDir = fs.mkdtempSync(
     path.join(fs.realpathSync(process.env.TMPDIR || '/tmp'), 'ylabs-weekly-sweep-'),
   );
   if (args.dryRun) {
     if (!(await preflight(args, jobDir)).ok) return 1;
-    for (const mode of WEEKLY_SWEEP_MODES) {
+    for (const mode of args.modes) {
       console.log(`[weekly-sweep] would run: yarn ${buildWeeklySweepArgs(mode).join(' ')}`);
     }
     return 0;
   }
 
   const startedAt = new Date();
-  const runId = await recordWeeklySweepRunStarted({ startedAt, codeSha });
+  const runId = await recordWeeklySweepRunStarted({
+    startedAt,
+    codeSha,
+    requestedModes: args.modes,
+  });
   if (!runId) return 1;
   let preflightRecord: WeeklySweepPreflightRecord = {
     ok: false,
@@ -234,7 +239,7 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   try {
     preflightRecord = await preflight(args, jobDir);
     if (preflightRecord.ok) {
-      outcomes = runSweeps(jobDir);
+      outcomes = runSweeps(jobDir, args.modes);
       exitCode = weeklySweepExitCode(outcomes);
       if (exitCode === 0) corpusSnapshot = takeCorpusSnapshot();
     }
@@ -247,6 +252,7 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     startedAt,
     codeSha,
     exitCode,
+    requestedModes: args.modes,
     preflight: preflightRecord,
     outcomes,
     corpusSnapshot,

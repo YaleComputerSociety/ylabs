@@ -13,7 +13,8 @@ import {
   remotePhaseSteps,
   renderServiceProblems,
   renderSetupProblems,
-  weeklyRunProblems,
+  missingWeeklyRunIds,
+  weeklyRunCoverage,
 } from '../promoteCore';
 import type { StoredWeeklySweepRun } from '../weeklySweepRunsReportCore';
 
@@ -33,59 +34,114 @@ const succeededRun = (overrides: Partial<StoredWeeklySweepRun> = {}): StoredWeek
   ...overrides,
 });
 
-describe('weeklyRunProblems', () => {
-  it('accepts a recent run whose two modes both succeeded', () => {
-    expect(weeklyRunProblems(succeededRun(), NOW)).toEqual([]);
+const researchOnly = (overrides: Partial<StoredWeeklySweepRun> = {}): StoredWeeklySweepRun =>
+  succeededRun({
+    _id: 'research1',
+    requestedModes: ['development-full'],
+    modes: [{ mode: 'development-full', exitCode: 0, summaryFound: true }],
+    ...overrides,
   });
 
-  it('refuses when no run was recorded', () => {
-    expect(weeklyRunProblems(null, NOW)).toEqual([
-      'no weekly_sweep_runs record found in Development',
+const fellowshipOnly = (overrides: Partial<StoredWeeklySweepRun> = {}): StoredWeeklySweepRun =>
+  succeededRun({
+    _id: 'fellowship1',
+    startedAt: new Date('2026-10-03T07:00:00Z'),
+    finishedAt: new Date('2026-10-03T09:00:00Z'),
+    requestedModes: ['fellowship-development-full'],
+    modes: [{ mode: 'fellowship-development-full', exitCode: 0, summaryFound: true }],
+    ...overrides,
+  });
+
+describe('weeklyRunCoverage', () => {
+  it('accepts one recent run whose two modes both succeeded', () => {
+    const run = succeededRun({ _id: 'both1' });
+    const coverage = weeklyRunCoverage([run], NOW);
+    expect(coverage.problems).toEqual([]);
+    expect(coverage.covered.map((entry) => [entry.mode, entry.run._id])).toEqual([
+      ['development-full', 'both1'],
+      ['fellowship-development-full', 'both1'],
     ]);
   });
 
-  it('refuses a failed, drifted, stale or half-run sweep', () => {
-    const problems = weeklyRunProblems(
-      succeededRun({
-        status: 'failed',
-        exitCode: 1,
-        finishedAt: new Date('2026-09-20T00:00:00Z'),
-        codeDrift: [{ mode: 'development-full', stage: 'visibility-gate', message: 'moved' }],
-        modes: [{ mode: 'development-full', exitCode: 0, summaryFound: true }],
-      }),
+  it('accepts two split runs, each covering its own mode', () => {
+    const coverage = weeklyRunCoverage([researchOnly(), fellowshipOnly()], NOW);
+    expect(coverage.problems).toEqual([]);
+    expect(coverage.covered.map((entry) => entry.run._id)).toEqual(['research1', 'fellowship1']);
+  });
+
+  it('judges each mode by the newest run covering it, not an older success', () => {
+    const coverage = weeklyRunCoverage(
+      [
+        researchOnly({ _id: 'research2', status: 'failed', exitCode: 1 }),
+        fellowshipOnly(),
+        researchOnly(),
+      ],
       NOW,
     );
+    expect(coverage.problems).toEqual([
+      'development-full run research2 started 2026-10-04T07:00:00.000Z status is failed',
+      'development-full run research2 started 2026-10-04T07:00:00.000Z exit code is 1',
+    ]);
+    expect(coverage.covered.map((entry) => entry.mode)).toEqual(['fellowship-development-full']);
+  });
+
+  it('refuses when no run was recorded, or a mode has no covering run', () => {
+    expect(weeklyRunCoverage([], NOW).problems).toEqual([
+      'no weekly_sweep_runs record in Development covers development-full',
+      'no weekly_sweep_runs record in Development covers fellowship-development-full',
+    ]);
+    expect(weeklyRunCoverage([researchOnly()], NOW).problems).toEqual([
+      'no weekly_sweep_runs record in Development covers fellowship-development-full',
+    ]);
+  });
+
+  it('refuses a drifted, stale, or summary-less mode', () => {
+    const problems = weeklyRunCoverage(
+      [
+        researchOnly({
+          finishedAt: new Date('2026-09-20T00:00:00Z'),
+          codeDrift: [{ mode: 'development-full', stage: 'visibility-gate', message: 'moved' }],
+          modes: [{ mode: 'development-full', exitCode: 0, summaryFound: false }],
+        }),
+        fellowshipOnly(),
+      ],
+      NOW,
+    ).problems;
+    const label = 'development-full run research1 started 2026-10-04T07:00:00.000Z';
     expect(problems).toEqual([
-      'latest weekly run status is failed',
-      'latest weekly run exit code is 1',
-      'latest weekly run recorded 1 code-drift refusal(s)',
-      'fellowship-development-full did not run',
-      'latest weekly run finished 2026-09-20T00:00:00.000Z, more than 8 days ago',
+      `${label} recorded 1 code-drift refusal(s)`,
+      `${label} exited 0 or left no summary`,
+      `${label} finished 2026-09-20T00:00:00.000Z, more than 8 days ago`,
     ]);
   });
 
-  it('refuses a mode that left no summary', () => {
-    const problems = weeklyRunProblems(
-      succeededRun({
-        modes: [
-          { mode: 'development-full', exitCode: 0, summaryFound: false },
-          { mode: 'fellowship-development-full', exitCode: 0, summaryFound: true },
-        ],
-      }),
-      NOW,
-    );
-    expect(problems).toEqual(['development-full exited 0 or left no summary']);
+  it('reads a legacy row without requestedModes by the outcomes it recorded', () => {
+    const legacy = succeededRun({ _id: 'legacy1', requestedModes: undefined });
+    expect(weeklyRunCoverage([legacy], NOW).problems).toEqual([]);
+  });
+
+  it('names a requested run id that was not found', () => {
+    expect(missingWeeklyRunIds(['research1', 'gone'], [researchOnly()])).toEqual(['gone']);
   });
 });
 
 describe('argument parsing', () => {
   it('parses promote:beta flags', () => {
     expect(
-      parsePromoteBetaArgs(['--dry-run', '--yes', '--weekly-run', 'abc', '--backup-ref', 'snap-1']),
+      parsePromoteBetaArgs([
+        '--dry-run',
+        '--yes',
+        '--weekly-run',
+        'abc',
+        '--weekly-run',
+        'def',
+        '--backup-ref',
+        'snap-1',
+      ]),
     ).toEqual({
       dryRun: true,
       yes: true,
-      weeklyRunId: 'abc',
+      weeklyRunIds: ['abc', 'def'],
       allowWithoutWeeklyRun: false,
       backupRef: 'snap-1',
       skipRemotePhase: false,

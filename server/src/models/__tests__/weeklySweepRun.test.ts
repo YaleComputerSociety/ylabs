@@ -14,6 +14,7 @@ const record = () =>
     databaseName: 'Development',
     codeSha: 'abc123',
     exitCode: 0,
+    requestedModes: ['development-full', 'fellowship-development-full'],
     preflight: { ok: true, heldLockSources: [], snapshotCacheDropped: false },
     outcomes: [
       { mode: 'development-full', exitCode: 0, summaryFound: true, summary: sweepSummaryFixture() },
@@ -36,10 +37,12 @@ describe('WeeklySweepRun', () => {
         startedAt: new Date('2026-10-04T07:00:00Z'),
         databaseName: 'Development',
         codeSha: 'abc123',
+        requestedModes: ['fellowship-development-full'],
       }),
     );
     expect(run.validateSync()).toBeUndefined();
     expect(run.status).toBe('running');
+    expect([...run.requestedModes]).toEqual(['fellowship-development-full']);
   });
 
   it('refuses a finished row that is missing its end time and outcome', () => {

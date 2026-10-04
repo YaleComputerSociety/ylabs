@@ -17,7 +17,9 @@ import {
   remotePhaseStartCommand,
   renderServiceProblems,
   renderSetupProblems,
-  weeklyRunProblems,
+  missingWeeklyRunIds,
+  weeklyRunCoverage,
+  weeklyRunLabel,
   type MirrorReport,
   type ProductionPromotionReport,
   type PromotionTarget,
@@ -52,7 +54,7 @@ export interface PromoteDeps {
 }
 
 export interface PromoteBetaDeps extends PromoteDeps {
-  loadWeeklyRun: (runId?: string) => Promise<StoredWeeklySweepRun | null>;
+  loadWeeklyRuns: (runIds: string[]) => Promise<StoredWeeklySweepRun[]>;
   heldSweepLocks: () => Promise<string[]>;
 }
 
@@ -151,9 +153,15 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
   if (args.allowWithoutWeeklyRun) {
     deps.log('Weekly run check skipped by --allow-without-weekly-run.');
   } else {
-    const run = await deps.loadWeeklyRun(args.weeklyRunId);
-    if (run) deps.log(`Weekly sweep run:\n${formatWeeklySweepRun(run)}`);
-    problems.push(...weeklyRunProblems(run, new Date(deps.now?.() ?? Date.now())));
+    const runs = await deps.loadWeeklyRuns(args.weeklyRunIds);
+    for (const id of missingWeeklyRunIds(args.weeklyRunIds, runs)) {
+      problems.push(`weekly run ${id} was not found in weekly_sweep_runs`);
+    }
+    const coverage = weeklyRunCoverage(runs, new Date(deps.now?.() ?? Date.now()));
+    for (const { mode, run } of coverage.covered) {
+      deps.log(`${mode} satisfied by ${weeklyRunLabel(run)}:\n${formatWeeklySweepRun(run)}`);
+    }
+    problems.push(...coverage.problems);
   }
   const heldLocks = await deps.heldSweepLocks();
   if (heldLocks.length > 0) {

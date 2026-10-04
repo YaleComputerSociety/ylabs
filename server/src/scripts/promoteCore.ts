@@ -1,5 +1,5 @@
-import { weeklySweepModes } from '../models/storedVocabularies';
-import type { StoredWeeklySweepRun } from './weeklySweepRunsReportCore';
+import { weeklySweepModes, type WeeklySweepMode } from '../models/storedVocabularies';
+import { weeklySweepRunModes, type StoredWeeklySweepRun } from './weeklySweepRunsReportCore';
 
 export type PromotionTarget = 'beta' | 'production';
 
@@ -23,7 +23,7 @@ const DATASET_VERSION_PATTERN = /^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-cop
 export interface PromoteBetaArgs {
   dryRun: boolean;
   yes: boolean;
-  weeklyRunId?: string;
+  weeklyRunIds: string[];
   allowWithoutWeeklyRun: boolean;
   backupRef?: string;
   skipRemotePhase: boolean;
@@ -45,6 +45,7 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
   const args: PromoteBetaArgs = {
     dryRun: false,
     yes: false,
+    weeklyRunIds: [],
     allowWithoutWeeklyRun: false,
     skipRemotePhase: false,
   };
@@ -55,7 +56,7 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
     else if (arg === '--yes') args.yes = true;
     else if (arg === '--allow-without-weekly-run') args.allowWithoutWeeklyRun = true;
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
-    else if (arg === '--weekly-run') args.weeklyRunId = readValue(argv, index++, arg);
+    else if (arg === '--weekly-run') args.weeklyRunIds.push(readValue(argv, index++, arg));
     else if (arg === '--backup-ref') args.backupRef = readValue(argv, index++, arg);
     else throw new Error(`Unknown promote:beta argument: ${arg}`);
   }
@@ -95,35 +96,70 @@ export function parsePromoteProductionArgs(
   return args;
 }
 
-export function weeklyRunProblems(
-  run: StoredWeeklySweepRun | null,
-  now: Date = new Date(),
-): string[] {
-  if (!run) return ['no weekly_sweep_runs record found in Development'];
+export const WEEKLY_RUN_LOOKBACK = 20;
+
+export interface WeeklyModeCoverage {
+  mode: WeeklySweepMode;
+  run: StoredWeeklySweepRun;
+}
+
+export interface WeeklyRunCoverage {
+  covered: WeeklyModeCoverage[];
+  problems: string[];
+}
+
+export const weeklyRunLabel = (run: StoredWeeklySweepRun): string =>
+  `run ${run._id ? String(run._id) : 'unknown'} started ${new Date(run.startedAt).toISOString()}`;
+
+function weeklyModeProblems(mode: WeeklySweepMode, run: StoredWeeklySweepRun, now: Date): string[] {
+  const label = `${mode} ${weeklyRunLabel(run)}`;
   const problems: string[] = [];
-  if (run.status !== 'succeeded') problems.push(`latest weekly run status is ${run.status}`);
-  if (run.exitCode !== 0)
-    problems.push(`latest weekly run exit code is ${run.exitCode ?? 'missing'}`);
+  if (run.status !== 'succeeded') problems.push(`${label} status is ${run.status}`);
+  if (run.exitCode !== 0) problems.push(`${label} exit code is ${run.exitCode ?? 'missing'}`);
   if ((run.codeDrift ?? []).length > 0) {
-    problems.push(`latest weekly run recorded ${run.codeDrift?.length} code-drift refusal(s)`);
+    problems.push(`${label} recorded ${run.codeDrift?.length} code-drift refusal(s)`);
   }
   if ((run.refusals ?? []).length > 0) {
-    problems.push(`latest weekly run recorded refusals: ${run.refusals?.join('; ')}`);
+    problems.push(`${label} recorded refusals: ${run.refusals?.join('; ')}`);
   }
-  const modes = run.modes ?? [];
-  for (const mode of weeklySweepModes) {
-    const record = modes.find((entry) => entry?.mode === mode);
-    if (!record) problems.push(`${mode} did not run`);
-    else if (record.exitCode !== 0 || !record.summaryFound) {
-      problems.push(`${mode} exited ${record.exitCode ?? 'missing'} or left no summary`);
-    }
+  const record = (run.modes ?? []).find((entry) => entry?.mode === mode);
+  if (!record) problems.push(`${label} recorded no outcome for ${mode}`);
+  else if (record.exitCode !== 0 || !record.summaryFound) {
+    problems.push(`${label} exited ${record.exitCode ?? 'missing'} or left no summary`);
   }
   const finishedAt = run.finishedAt ? new Date(run.finishedAt) : null;
-  if (!finishedAt) problems.push('latest weekly run has no finish time');
+  if (!finishedAt) problems.push(`${label} has no finish time`);
   else if (now.getTime() - finishedAt.getTime() > WEEKLY_RUN_MAX_AGE_MS) {
-    problems.push(`latest weekly run finished ${finishedAt.toISOString()}, more than 8 days ago`);
+    problems.push(`${label} finished ${finishedAt.toISOString()}, more than 8 days ago`);
   }
   return problems;
+}
+
+export function weeklyRunCoverage(
+  newestFirst: StoredWeeklySweepRun[],
+  now: Date = new Date(),
+): WeeklyRunCoverage {
+  const covered: WeeklyModeCoverage[] = [];
+  const problems: string[] = [];
+  for (const mode of weeklySweepModes) {
+    const run = newestFirst.find((candidate) => weeklySweepRunModes(candidate).includes(mode));
+    if (!run) {
+      problems.push(`no weekly_sweep_runs record in Development covers ${mode}`);
+      continue;
+    }
+    const modeProblems = weeklyModeProblems(mode, run, now);
+    problems.push(...modeProblems);
+    if (modeProblems.length === 0) covered.push({ mode, run });
+  }
+  return { covered, problems };
+}
+
+export function missingWeeklyRunIds(
+  requestedIds: string[],
+  found: StoredWeeklySweepRun[],
+): string[] {
+  const foundIds = new Set(found.map((run) => String(run._id)));
+  return requestedIds.filter((id) => !foundIds.has(id));
 }
 
 interface CollectionCounts {
