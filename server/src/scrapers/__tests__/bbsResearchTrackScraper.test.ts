@@ -798,7 +798,7 @@ describe('per-track counts for the per-unit barren-streak check', () => {
     };
     const failures = resolveBarrenUnitStreakFailures({
       sourceName: 'bbs-research-track',
-      source: { enabled: true, coverage: { tier: 'THIRD_PARTY_ENRICHMENT' } },
+      source: { coverage: { tier: 'THIRD_PARTY_ENRICHMENT' } },
       currentRun: asRun,
       priorRunsNewestFirst: Array.from(
         { length: BARREN_RUN_STREAK_FAILURE_THRESHOLD - 1 },

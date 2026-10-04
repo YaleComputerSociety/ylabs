@@ -15,7 +15,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Reviewed official current-roster sections for allowlisted research homes. Disabled by default until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
+      'Reviewed official current-roster sections for allowlisted research homes. Manual-only and out of the sweep until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
   },
   'lab-site-lead-verification': {
     priority: 1,
@@ -242,7 +242,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry, and the detail page stops serving it once that expiry passes (#4628). Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Disabled by default until an operator confirms each page is reliably public on Development. No page is configured today, so the lane emits nothing and says so in its run notes (#3550).',
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry, and the detail page stops serving it once that expiry passes (#4628). Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Manual-only and out of the sweep while no page is configured. No page is configured today, so the lane emits nothing and says so in its run notes (#3550).',
   },
   'official-profile-pi-backfill': {
     priority: 2,
@@ -393,7 +393,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes:
-      "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Disabled by default until an operator confirms the rendered catalog is reliably public on Development.",
+      "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Runs in the fellowship sweep as an official Yale source.",
   },
   'nih-reporter': {
     priority: 6,

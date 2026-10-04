@@ -103,14 +103,21 @@ describe('barrenRunStreak', () => {
 });
 
 describe('sourceIsExpectedToYield', () => {
-  it('exempts a disabled source and a manual-override channel', () => {
-    expect(sourceIsExpectedToYield({ enabled: false, coverage: { tier: 'OFFICIAL_INDEX' } })).toBe(
-      false,
-    );
-    expect(sourceIsExpectedToYield({ enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } })).toBe(
-      false,
-    );
+  it('exempts a retired source and a manual-override channel', () => {
+    expect(
+      sourceIsExpectedToYield({ name: 'ylabs-listing', coverage: { tier: 'OFFICIAL_INDEX' } }),
+    ).toBe(false);
+    expect(sourceIsExpectedToYield({ coverage: { tier: 'MANUAL_OVERRIDE' } })).toBe(false);
     expect(sourceIsExpectedToYield(enabledSource)).toBe(true);
+  });
+
+  it('keeps a live source under the alarm even when its stored row reads disabled (#4025)', () => {
+    const storedDisabledLiveSource = {
+      name: 'fixture-live-lane',
+      enabled: false,
+      coverage: { tier: 'OFFICIAL_INDEX' },
+    };
+    expect(sourceIsExpectedToYield(storedDisabledLiveSource)).toBe(true);
   });
 });
 
@@ -154,7 +161,18 @@ describe('resolveBarrenStreakFailure', () => {
     expect(
       resolveBarrenStreakFailure({
         sourceName: 'fixture-manual-channel',
-        source: { enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } },
+        source: { coverage: { tier: 'MANUAL_OVERRIDE' } },
+        priorRunsNewestFirst: barrenRuns(10),
+        currentRun: barrenRun,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('reads retirement from the run source name when the source row carries none', () => {
+    expect(
+      resolveBarrenStreakFailure({
+        sourceName: 'ylabs-listing',
+        source: { coverage: { tier: 'OFFICIAL_INDEX' } },
         priorRunsNewestFirst: barrenRuns(10),
         currentRun: barrenRun,
       }),
@@ -297,7 +315,7 @@ describe('resolveBarrenUnitStreakFailures', () => {
     expect(
       resolveBarrenUnitStreakFailures({
         sourceName: 'fixture-manual-channel',
-        source: { enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } },
+        source: { coverage: { tier: 'MANUAL_OVERRIDE' } },
         currentRun: unitRun({ dead: 0 }),
         priorRunsNewestFirst: Array.from({ length: 10 }, () => unitRun({ dead: 0 })),
       }),

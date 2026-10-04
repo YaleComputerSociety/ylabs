@@ -40,9 +40,15 @@ The research engine writes `ResearchEntity` records for `/research` and runs the
 The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
 `validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
 The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
+The sweep manifests and `MANUAL_ONLY_SWEEP_SOURCES` are the only run switch.
+`Source.enabled` is not one: it means "not retired", and `scrape:seed-sources` re-derives it as `!isRetiredSourceName(name)` on every apply, create and update alike, so a stored `enabled: false` on a live source is drift the next seed apply corrects (#4025).
+Before #4025 two sweep sources were seeded `enabled: false` and ran in every sweep anyway, because nothing that dispatches reads the flag, while the barren-streak guard exempted them for reading disabled.
+`scrapers/__tests__/seedSourcesEnabledFlag.test.ts` fails if any sweep-listed or manual-only source would be seeded disabled, or if any seed's `enabled` differs from "not retired".
 Each manual-only source records its reason next to its name in `scrapers/manualOnlySweepSources.ts`, which `runScraperSweep.ts` re-exports:
 
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
+- `official-research-home-roster` claims a named non-lead person is a current member, and no strict `research-homes:audit-rosters` run has been recorded reporting `broadEnablementReady`, so its sampled roster precision review is not yet recorded (#2412, #4025).
+  It returns to the research sweep when that review is recorded.
 - `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
   Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
   It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
@@ -1650,8 +1656,8 @@ Names alone never resolve a `Researcher` or merge membership rows.
 A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
 Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
 After an optional-source failure, public detail may retain only the exact still-fresh rows from the most recent successful current or partial snapshot, using that snapshot's source and observation metadata for disclosure.
-The source is seeded disabled and owned by y/labs data operations on a weekly cadence.
-It stays disabled until `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by=<reviewer>` reports `broadEnablementReady`, which needs clean structure and a recorded sampled precision review (#2412).
+The source is owned by y/labs data operations on a weekly cadence.
+It is manual-only, out of the research sweep and run only by hand, until `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by=<reviewer>` reports `broadEnablementReady`, which needs clean structure and a recorded sampled precision review (#2412, #4025).
 The audit reads each configured page with the source's own extractor and joins it to the stored snapshot, so it measures the acquisition path rather than restating the config: a configured current section that left the page is `section-contract-broken` rather than an empty roster, a stored membership key with no live source-owned `CURRENT` row is `membership-not-materialized`, and a member whose profile URL is a listing or the roster page itself is the #2357 precision defect.
 `snapshot-expired` is reported and deliberately does not alarm, because the source expires every row 21 days after its run, so an unrefreshed lane serves no roster at all while remaining structurally sound: on Development on 2026-09-22 both configured lanes were `current` on the page with 7 members and all 7 materialized rows had expired four days earlier.
 
@@ -2094,8 +2100,9 @@ A workable second witness has to be something a person in somebody else's group 
 `scrapers:audit-freshness` therefore computes overdue and never-crawled over sweep-registered rows only, reports script-driven lanes next to the command that runs each one, lists retired rows separately, and fails rather than reporting phantom work when a registered scraper has no row, a row is `unowned`, or a retired lane's row is still enabled.
 Freshness reads `Source.lastCrawledAt`, and its one writer is `stampSourceCrawlIfEarned` in `scrapers/sourceCrawlStamp.ts`, which the scrape CLI calls after the run and its materialization: only a run that ended `success` or `partial` with no materialization errors is stamped, so a barren-streak `failure`, an interrupted run, or a run whose materialization failed leaves the source dated by its last productive crawl (#3721).
 Admin source health reads the same classification, so a retired row is `ok` with its retirement stated rather than a warning asking an operator to confirm a decision the repo already made, and a script-driven lane with no scrape run names its command instead of suggesting a crawl that would fail.
-Source health and the freshness worklist also share one recurrence rule, `sourceIsExpectedToRecur` in `scrapers/sourceYieldGuard.ts`: a source that is disabled, `MANUAL_OVERRIDE`, or in the sweep's manual-only set (`scrapers/manualOnlySweepSources.ts`) has no recurring run expectation, so it never reads as stale and its latest failed run is `ok` with the report command rather than `error` risk (#3582).
+Source health and the freshness worklist also share one recurrence rule, `sourceIsExpectedToRecur` in `scrapers/sourceYieldGuard.ts`: a source that is retired, `MANUAL_OVERRIDE`, or in the sweep's manual-only set (`scrapers/manualOnlySweepSources.ts`) has no recurring run expectation, so it never reads as stale and its latest failed run is `ok` with the report command rather than `error` risk (#3582).
 Only the recurrence rule reads the manual-only set: the barren-streak guard still uses `sourceIsExpectedToYield`, so a deliberate manual run of a manual-only lane that acquires nothing is still a failed run the operator sees.
+Both read retirement from `isRetiredSourceName` rather than the stored `enabled` flag, so a live source whose row still reads disabled stays under the zero-yield alarm (#4025).
 Every scraper in `registry.ts` must also have a `seedSources.ts` entry, because applying the seed is the only remediation the audit's missing-row block accepts.
 
 ## Canonical Collections

@@ -178,7 +178,8 @@ function riskForSource(
   if (!source.enabled) {
     return {
       risk: 'warn',
-      action: 'Source is disabled; confirm this is intentional before rollout.',
+      action:
+        'Source row reads disabled but the source is not retired; apply the source seed so enabled matches retirement (#4025).',
     };
   }
   if (!source.coverage) {
