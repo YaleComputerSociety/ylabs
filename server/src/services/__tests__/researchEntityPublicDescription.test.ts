@@ -666,6 +666,29 @@ describe('a biography whose research sits among career facts serves its research
     );
   });
 
+  it('keeps research sentences that only resemble citation or record markers', () => {
+    const representation = served(
+      'Robin Fixture received a Ph.D. from Example University in 2004 and joined the faculty in 2010. She studies how detectors are built for dark matter experiments. These detectors are part of the search for axions. The press covered the 2020 election through these detectors. Her models predict CV outcomes in older adults. She was awarded the Example Prize in 2015.',
+      'Builds detectors for dark matter experiments.',
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('search for axions');
+    expect(body).toContain('press covered the 2020 election');
+    expect(body).toContain('CV outcomes');
+    expect(body).not.toMatch(/joined the faculty|Example Prize/);
+  });
+
+  it('still narrows a CV whose only CV signal is the leading degree run', () => {
+    const representation = served(
+      'Ph.D., History, Example University, 2004 M.A., History, Another University, 1999 B.A., History, Example College, 1997 Robin Fixture studies the labor history of early modern ports. She has also taught at Example College and Another College.',
+      'Studies the labor history of early modern ports.',
+      ['Robin Fixture'],
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('studies the labor history of early modern ports');
+    expect(body).not.toMatch(/taught at|Example University/);
+  });
+
   it('leaves a body that only orients the reader with a role noun unnarrowed', () => {
     const body =
       'Robin Fixture is a cell biologist who studies membrane signaling in immune cells. Her lab combines reconstitution with live-cell imaging to follow receptor clustering.';

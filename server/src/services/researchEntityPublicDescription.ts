@@ -194,18 +194,20 @@ function researchSentencesOfCurriculumVitaeBody(
   // The serve chain drops a leading degree run before it reads the opener, so the
   // research sentence glued behind one is read here the same way; otherwise it fails
   // the sentence-start test and is narrowed away with the degrees.
+  const stored = textValue(entity.fullDescription);
   const body = stripLeadingCredentialTitleRun(
-    textValue(entity.fullDescription),
+    stored,
     researchEntitySubjectPersonNames(entity, leadMemberNames),
   );
   if (!body) return '';
-  const curriculumVitae = isCurriculumVitaeShapedBody(body);
-  const careerBiography = opensOnCareerFact(body);
+  const readsAs = (predicate: (text: string) => boolean) => predicate(stored) || predicate(body);
+  const curriculumVitae = readsAs(isCurriculumVitaeShapedBody);
+  const careerBiography = readsAs(opensOnCareerFact);
   const biography =
     careerBiography ||
-    isCredentialOrAwardLeadBiography(body) ||
-    isCredentialOrTitleLeadBiography(body) ||
-    isPersonBiographyOrAdvisingDescription(body);
+    readsAs(isCredentialOrAwardLeadBiography) ||
+    readsAs(isCredentialOrTitleLeadBiography) ||
+    readsAs(isPersonBiographyOrAdvisingDescription);
   if (!curriculumVitae && !biography) return '';
   const research = researchStatementSentences(body, {
     activityAnchors: curriculumVitae || careerBiography,
