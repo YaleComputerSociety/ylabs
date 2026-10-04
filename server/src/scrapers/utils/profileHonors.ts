@@ -77,7 +77,7 @@ export const PROFILE_HONOR_CATALOG: readonly HonorCatalogEntry[] = [
     label: 'Institute for Advanced Study',
     kind: 'fellowship',
     pattern:
-      /(?<!\b(?!The\b|Princeton\b)[A-Z][\w'’.-]*\s+)\bInstitute for Advanced Study\b(?!\s+(?:in|at)\s+(?!Princeton\b)[A-Z])(?![^.;]{0,60}\bUniversity of (?!Princeton\b)[A-Z])/,
+      /(?<!\b(?!The\b|Princeton\b)[A-Z][\w'’.-]*\s+)\bInstitute for Advanced Study\b(?!\s+(?:in|at)\s+(?!Princeton\b)[A-Z])(?!(?:(?!Princeton\b)[^.;]){0,60}\bUniversity of (?!Princeton\b)[A-Z])/,
   },
   {
     key: 'radcliffe',

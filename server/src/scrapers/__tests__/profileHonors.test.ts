@@ -185,5 +185,12 @@ describe('extractProfileHonors', () => {
     expect(
       keys(page('<p>He was a member of the Institute for Advanced Study in Princeton.</p>')),
     ).toEqual(['ias']);
+    expect(
+      keys(
+        page(
+          '<p>He was a member of the Institute for Advanced Study in Princeton and a visiting professor at the University of Synthetica.</p>',
+        ),
+      ),
+    ).toEqual(['ias']);
   });
 });
