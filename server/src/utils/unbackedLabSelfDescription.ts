@@ -137,7 +137,7 @@ function nonLlmEvidenceNamesTheLab(entity: Record<string, any>, person: string):
  * Official pages name a lab by surname ("The Okonkwo Lab"); the full-name form is the
  * wording our own description writers produce, and it reaches non-LLM provenance through
  * repairs and enrichment rewrites. So it is never evidence that a lab exists, whatever
- * source recorded it (#4681).
+ * source recorded it (#4707).
  */
 function isFullNameLabForm(givenRun: string | undefined, person: string): boolean {
   const tokens = personTokens(person);
