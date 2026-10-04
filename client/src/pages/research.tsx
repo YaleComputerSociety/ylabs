@@ -293,7 +293,11 @@ const resultSummary = (
   totalMatchingHomeCount?: number,
   degraded = false,
 ): string => {
-  if (loading) return `Searching y/labs for ${query}.`;
+  if (loading) {
+    return query === FILTERED_RESULT_QUERY_LABEL
+      ? 'Searching your filters'
+      : `Searching for '${query}'`;
+  }
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
@@ -1785,7 +1789,20 @@ const Research = () => {
                   className="yr-focus-ring yr-pressable min-h-12 shrink-0 rounded-control bg-[var(--yr-blue)] px-5 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 sm:px-6 xl:min-h-11"
                   disabled={searchDisabled}
                 >
-                  {searchLoading ? 'Searching…' : 'Search'}
+                  <span className="grid">
+                    <span
+                      aria-hidden={searchLoading || undefined}
+                      className={`col-start-1 row-start-1 ${searchLoading ? 'invisible' : ''}`}
+                    >
+                      Search
+                    </span>
+                    <span
+                      aria-hidden={searchLoading ? undefined : true}
+                      className={`col-start-1 row-start-1 ${searchLoading ? '' : 'invisible'}`}
+                    >
+                      Searching…
+                    </span>
+                  </span>
                 </button>
               </div>
               <p
