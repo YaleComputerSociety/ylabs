@@ -425,6 +425,21 @@ export function classifyProfileLabWebsite(
   };
 }
 
+export function skippedProfileRefusedWebsiteObservations(
+  profile: YsmFacultyProfile,
+): ObservationInput[] {
+  if (!profile.labUrl) return [];
+  return [
+    {
+      entityType: 'researchEntity',
+      entityKey: `ysm-faculty-${profile.slug}`.slice(0, 100),
+      sourceUrl: profile.profileUrl,
+      field: REFUSED_WEBSITE_URL_FIELD,
+      value: profile.labUrl,
+    },
+  ];
+}
+
 /**
  * ResearchEntity observations. A profile whose own research section links a
  * lab website that is plausibly that person's own research home seeds a LAB home
@@ -618,6 +633,12 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let withdrawnLabCount = 0;
     let areaCount = 0;
 
+    const emitSkippedProfileRefusal = async (profile: YsmFacultyProfile): Promise<number> => {
+      const refusal = skippedProfileRefusedWebsiteObservations(profile);
+      if (refusal.length > 0) await ctx.emit(refusal);
+      return refusal.length;
+    };
+
     const refusedProfiles: RawYsmFaculty[] = [];
     let refusedProfilesRecovered = 0;
     const fetchProfile = (faculty: RawYsmFaculty) =>
@@ -640,7 +661,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
 
         const profile = extractProfile(profileHtml, faculty);
         if (!profile) return;
-        if (looksLikeNonResearchTitle(profile.title)) return;
+        if (looksLikeNonResearchTitle(profile.title)) {
+          totalObs += await emitSkippedProfileRefusal(profile);
+          return;
+        }
         // A trainee works in somebody else's lab, so their profile mints no
         // research home of their own and cannot inherit their PI's lab name
         // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
@@ -648,6 +672,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // lab for the same reason, and matched neither screen before #3410.
         if (isSubordinateResearchRank(profile.title)) {
           subordinateRankSkipped += 1;
+          totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
         if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return;
@@ -664,6 +689,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // still skip person enrichment, which predates this change.
         if (isResearchSupportStaffTitle(profile.title)) {
           supportStaffSkipped += 1;
+          totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
 

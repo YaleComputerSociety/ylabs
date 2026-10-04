@@ -530,7 +530,9 @@ describe('YsmFacultyDirectoryScraper.run support-staff mint gate (#3410)', () =>
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
-    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    expect(
+      emitted.filter((o) => o.entityType === 'researchEntity' && o.field !== 'refusedWebsiteUrl'),
+    ).toEqual([]);
     expect(result.notes).toMatch(/1 research-support staff skipped/);
 
     // The person is still a person: their own observations keep flowing, which is
@@ -942,5 +944,54 @@ describe('YsmFacultyDirectoryScraper.run refused-profile retry (#3599)', () => {
       quiet,
     ).run(makeContext().ctx);
     expect(quiet).not.toHaveBeenCalled();
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run title-skip refusal (#4596)', () => {
+  async function runOne(workdayTitle: string, labWebsite?: { name: string; url: string }) {
+    const html = directoryHtml([
+      { id: 'T', items: [{ url: '/profile/skip-person/', text: 'Person, Skip' }] },
+    ]);
+    const profileUrl = 'https://medicine.yale.edu/profile/skip-person/';
+    const profile = profileHtml({
+      fullName: 'Skip Person',
+      workdayTitle,
+      email: 'skip.person@yale.edu',
+      meshKeywords: ['Microbiome'],
+      ...(labWebsite ? { labWebsite } : {}),
+    });
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return profile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+    return { emitted, result, profileUrl };
+  }
+
+  const LAB = { name: 'Principal Lab', url: 'https://medicine.yale.edu/lab/principal/' };
+
+  it.each(['Postdoctoral Associate', 'Laboratory Assistant 3', 'Administrative Assistant'])(
+    'states the lab link it skipped as a refusal on the row key for a %s',
+    async (title) => {
+      const { emitted, result, profileUrl } = await runOne(title, LAB);
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs).toEqual([
+        {
+          entityType: 'researchEntity',
+          entityKey: 'ysm-faculty-skip-person',
+          sourceUrl: profileUrl,
+          field: 'refusedWebsiteUrl',
+          value: LAB.url,
+        },
+      ]);
+      expect(result.observationCount).toBe(emitted.length);
+    },
+  );
+
+  it('states nothing for a skipped profile with no lab link', async () => {
+    const { emitted } = await runOne('Postdoctoral Associate');
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
   });
 });

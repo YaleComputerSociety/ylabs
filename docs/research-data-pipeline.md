@@ -1033,6 +1033,9 @@ A refusal is not an absence, so field retraction cannot act on one, and a read t
 Measured on Development on 2026-10-02, 60 non-archived rows served a `websiteUrl` whose provenance named `ysm-faculty-directory` while that lane's newest read typed the row `FACULTY_RESEARCH_AREA` and stated no empty slot, 47 of them `student_ready`.
 
 `ysm-faculty-directory` now states the refusal as evidence: a populated lab slot it will not adopt emits a `refusedWebsiteUrl` observation carrying the refused link.
+It states the same refusal when a title screen skips the profile (a non-research staff title, a subordinate research rank, or a research-support title) and the profile still carries a lab link, because the lane may have adopted that link on an earlier read (#4596).
+On Development on 2026-10-04, 3 served rows kept a website from this lane after its newest read skipped the profile as a subordinate rank.
+A refusal carries no name, so it never mints a row.
 `official-profile-pi-backfill` states it the same way for a refused lab-website card (#4509, described with that lane below).
 `withoutLaneRefusedWebsiteUrls` in `scrapers/laneRefusedWebsiteUrl.ts` reads it on every resolve, before the resolver ranks anything.
 The lane's newest read wins over its own older reads of the row: every `websiteUrl` and `website` it asserted before the refusal stops counting, whatever the link, on either identity form of the row, because a slot that now carries a refused link no longer carries the earlier one.
