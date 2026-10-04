@@ -102,6 +102,9 @@ export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
+export const SAME_PERSON_ARCHIVE_TOMBSTONE_REASON =
+  'research-entity:tombstone-same-person-archives: a person-scoped row archived with no survivor pointer, pointed at the one live row its lead key reaches (#4696).';
+
 export const PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON =
   'research-entity:dedupe-by-pi:self-relationship';
 export const SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON =

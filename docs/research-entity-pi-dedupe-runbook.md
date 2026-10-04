@@ -328,3 +328,10 @@ A production run uses the same command under `SCRAPER_ENV=production` and `CONFI
 Rollback for archive-mode dedupe is unarchiving the affected duplicates and clearing their `canonicalGroupId`, or restoring the target database from the pre-run backup for delete mode.
 
 See the promotion lanes and copy-set details in [`scraper-deployment-runbook.md`](scraper-deployment-runbook.md) and the control-plane repair posture in [`research-data-pipeline.md`](research-data-pipeline.md).
+
+### Archives with no survivor pointer
+
+Some person-scoped rows were archived before archives recorded a reason (#2558) and carry no `canonicalGroupId`, so no survivor resolves over their evidence and their slug answers 404.
+`research-entity:tombstone-same-person-archives` points each `FACULTY_RESEARCH_AREA` or `INDIVIDUAL_RESEARCH` row archived with neither a reason nor a pointer at the one live row its lead key (`inferredPiUserKey`) reaches, records `SAME_PERSON_ARCHIVE_TOMBSTONE_REASON`, then re-materializes, re-gates and re-indexes each survivor and re-reads the redirect (#4696).
+It holds a row whose lead reaches several live rows and any row that is not person-scoped, such as an archived program.
+Dry-run by default; apply needs `--apply --confirm-tombstone-same-person-archives`.
