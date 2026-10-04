@@ -9,12 +9,15 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 A fund that pays for research among other uses, such as study, language, internships or travel, is research-relevant when its own page text (description, eligibility or summary) names research as an eligible use (owner decision).
 It stays withheld when research appears only in the purpose tags, when its text disclaims research ("non-research projects", "may not be used for research"), or when another hold applies: a duplicate copy, a prize for completed work, a stale cycle, a suspension or a listing page.
-The statement has to name research as a use, such as funding for research, research expenses or travel, or conducting research.
+The statement has to name research as a use: research expenses, costs, travel or trips, a fund, grant or award used for research, or conducting research.
+A bare "for research" with no usage word before it does not count.
 Research named as an outcome ("language study that can support research"), as an applicant interest ("students whose work or research involves") or as prior experience does not count, which keeps the #4291 language-study rule intact.
 The rule lifts the non-research title and language-study facet holds and the purpose-facet hold of #3904, and nothing else.
 Measured on Development on 2026-10-04 over all 534 live programs: 238 were held as non-research, 9 of them with a research value in `purpose`.
-The rule changes the tier of 2 programs, each read on its live page: a summer research and language study grant open to undergraduates with an upcoming deadline becomes `student_ready`, and a travel fund whose text names research among its uses rises to `limited_but_safe`, which is not served because it has no application route.
-The other 7 stay withheld: their text names no research use, it disclaims research, they are a duplicate or a prize for completed work, or, in one case, the stored blurb was copied from a sibling grant and names research only as an applicant interest.
+The rule as merged changes the tier of 1 program, read on its live page: a summer research and language study grant open to undergraduates, with an upcoming deadline, becomes `student_ready`.
+The draft rule also matched a bare "for research", which moved a travel fund to `limited_but_safe` and removed the non-research reason from a postgraduate fellowship that a stale cycle holds anyway, and requiring a usage word dropped both.
+The other 8 stay withheld: their text names no research use, it disclaims research, they are a duplicate or a prize for completed work, or, in one case, the stored blurb was copied from a sibling grant and names research only as an applicant interest.
+Applied on Development the same day, served programs went from 170 to 171 and served fellowships from 137 to 138, the added row being that grant.
 
 ## 2026-10-04: The Site Stays Out Of Search Engines, And Link-Preview Fetchers May Read It (#4241)
 
