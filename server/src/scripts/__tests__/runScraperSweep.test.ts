@@ -1171,6 +1171,7 @@ describe('runScraperSweep', () => {
       'server',
       'journey:eval',
       '--case=sorted-browse-keeps-order,title-sorted-browse-follows-card-title',
+      '--fail-on-inconclusive',
       '--output',
       '/tmp/development-sweep/development-search-index-check.json',
     ]);

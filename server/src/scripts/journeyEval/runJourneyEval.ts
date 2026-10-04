@@ -92,6 +92,7 @@ interface JourneyEvalArgs {
   facetValues: number;
   pages: number;
   cases?: string[];
+  failOnInconclusive?: boolean;
   judgements?: string;
   undergradJudgements?: string;
   undergradSampleOut?: string;
@@ -133,6 +134,7 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
       args.undergradSampleSize = Number(token.slice('--undergrad-sample-size='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
     else if (token === '--output') args.output = argv[++index];
+    else if (token === '--fail-on-inconclusive') args.failOnInconclusive = true;
   }
   return args;
 }
@@ -340,6 +342,7 @@ async function main(): Promise<void> {
     );
   }
   if (summary.invariantsFailed > 0) process.exitCode = 1;
+  if (args.failOnInconclusive && summary.invariantsInconclusive > 0) process.exitCode = 1;
 }
 
 const isDirectRun = process.argv[1]

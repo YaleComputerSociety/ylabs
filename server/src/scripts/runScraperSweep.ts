@@ -1572,7 +1572,10 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     name: 'search-index-check',
     command: 'journey:eval',
     artifactName: 'development-search-index-check.json',
-    buildArgs: () => [`--case=${SEARCH_INDEX_CHECK_JOURNEY_CASES.join(',')}`],
+    buildArgs: () => [
+      `--case=${SEARCH_INDEX_CHECK_JOURNEY_CASES.join(',')}`,
+      '--fail-on-inconclusive',
+    ],
     isEnabled: () => !searchIndexWritesDeferred(),
   },
   {

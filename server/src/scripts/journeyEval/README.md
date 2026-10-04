@@ -108,7 +108,7 @@ It compares against the stored row rather than the card because the card's title
 A row whose stored `updatedAt` falls within a minute of the read is counted under `writtenDuringRead` rather than as stale, since its index task may still be in flight.
 A failure names a stale index, and the remedy is a rebuild per `docs/meilisearch-reindex-runbook.md`, not a change to the sort.
 The usual cause on Development is a writer whose index syncs reach a different Meilisearch, or a hosted weekly run, which defers its index writes until `yarn development:search:rebuild` re-syncs it (`docs/data-refresh-runbook.md`).
-The two sorted cases are also the sample check that command and a laptop sweep's `search-index-check` stage run after a rebuild, as `yarn development:search:check`.
+The two sorted cases are also the sample check that command and a laptop sweep's `search-index-check` stage run after a rebuild, as `yarn development:search:check`, with `--fail-on-inconclusive` so a window in which no served row settled before the read fails the check rather than passing over an empty population.
 
 ## What this harness does not cover
 

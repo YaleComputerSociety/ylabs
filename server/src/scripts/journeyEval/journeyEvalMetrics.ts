@@ -448,9 +448,19 @@ export function checkIndexedSortKeyMatchesStored(
     missingFromIndex: settled.filter((observation) => !observation.inIndex).length,
     writtenDuringRead: observations.length - settled.length,
   };
+  const id = 'indexed-sort-key-is-fresh';
+  const title = `Every served row is sorted on the ${sortAttribute} its stored row derives now`;
+  if (settled.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served row settled before the read, so a zero stale count would be a green signal over an empty population',
+      tally,
+    );
+  }
   return buildInvariant(
-    'indexed-sort-key-is-fresh',
-    `Every served row is sorted on the ${sortAttribute} its stored row derives now`,
+    id,
+    title,
     stale === 0,
     stale === 0
       ? tally

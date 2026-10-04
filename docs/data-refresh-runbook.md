@@ -117,7 +117,7 @@ So a hosted run ends with a re-sync from a checkout whose `server/.env` reaches 
 yarn development:search:rebuild
 ```
 
-That rebuilds the index with `--clear` and then runs `yarn development:search:check`, which is `journey:eval` limited to its two sorted-browse cases; their `indexed-sort-key-is-fresh` invariant (#4751) compares the indexed sort key of each served row in a 100-row window with what the stored row derives, and fails the command when any differs.
+That rebuilds the index with `--clear` and then runs `yarn development:search:check`, which is `journey:eval` limited to its two sorted-browse cases; their `indexed-sort-key-is-fresh` invariant (#4751) compares the indexed sort key of each served row in a 100-row window with what the stored row derives, and fails the command when any differs, or when no served row settled long enough before the read to be compared.
 Until the re-sync runs, a sorted browse serves each changed card at its old position and a page can come back short.
 A laptop sweep writes the real index, so it runs the same check as its `search-index-check` stage right after `search-rebuild` and fails the sweep when the index it wrote disagrees with Mongo.
 

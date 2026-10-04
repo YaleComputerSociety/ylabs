@@ -122,7 +122,7 @@ describe('sorted browse cases check the index holds the sort key the stored row 
     ]);
 
     expect(byId['indexed-sort-key-is-fresh']).toMatchObject({
-      status: 'pass',
+      status: 'inconclusive',
       detail: { compared: 0, stale: 0, writtenDuringRead: 1 },
     });
   });
