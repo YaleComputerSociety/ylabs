@@ -74,6 +74,7 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
+import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
   resolveFundYearOfStudy,
@@ -107,6 +108,7 @@ export interface StudentGrantsFund {
   eligibilityStatesOnlyContactDirections?: boolean;
   restrictionsToUseOfAward?: string;
   awardAmount?: string;
+  contactOffice?: string;
   deadline?: Date;
   applicationOpenDate?: Date;
   applicationRoute: FundApplicationRoute;
@@ -409,6 +411,7 @@ export function parseFundDetailPage(
     ...prose,
     eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
     awardAmount: fundAwardAmount(awardAmountHeader($), Object.values(prose)),
+    contactOffice: statedAdministeringOffice(Object.values(prose)),
     deadline,
     applicationOpenDate: opensAt,
     applicationRoute: resolveFundApplicationRoute(
@@ -441,6 +444,7 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     fullSourceDescription: fund.fullSourceDescription || '',
     restrictionsToUseOfAward: fund.restrictionsToUseOfAward || '',
     awardAmount: fund.awardAmount || '',
+    ...(fund.contactOffice ? { contactOffice: fund.contactOffice } : {}),
     deadline: fund.deadline?.toISOString() || '',
     applicationOpenDate: fund.applicationOpenDate?.toISOString() || '',
     ...(fund.applicationRoute.kind === 'fund-page' ? {} : { route: fund.applicationRoute }),
@@ -544,6 +548,7 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('eligibility', fund.eligibility),
     observation('restrictionsToUseOfAward', fund.restrictionsToUseOfAward),
     observation('awardAmount', fund.awardAmount),
+    observation('contactOffice', fund.contactOffice),
     observation('applicationLink', applicationLink),
     observation('links', fundLinks(fund, applicationLink)),
     observation('deadline', fund.deadline),

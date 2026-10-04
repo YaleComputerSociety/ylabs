@@ -641,6 +641,38 @@ describe('the award amount a fund page states (#4588)', () => {
   });
 });
 
+describe('the administering office a fund page states (#4589)', () => {
+  const officeOf = (options: Parameters<typeof fundDetailHtml>[0]) => {
+    const fund = parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+    return fundToObservations(fund).find((obs) => obs.field === 'contactOffice')?.value;
+  };
+
+  it('observes the office an explicit statement names', () => {
+    expect(
+      officeOf({
+        fullDescription:
+          '<p>Funds are administered by the Fixture Studies Council at the Fixture Center.</p>',
+      }),
+    ).toBe('Fixture Studies Council at the Fixture Center');
+    expect(
+      officeOf({
+        brief: 'The Fixture Council on Regional Studies invites applications for this grant.',
+      }),
+    ).toBe('Fixture Council on Regional Studies');
+  });
+
+  it('observes no office for a person, a contact direction, or a page that states none', () => {
+    expect(officeOf({ brief: 'This fellowship is administered by Pat Fixture.' })).toBeUndefined();
+    expect(
+      officeOf({
+        applicationInformation:
+          '<p>For questions about this fellowship, please contact the Office of Fixture Fellowships at fixture.office@example.org.</p>',
+      }),
+    ).toBeUndefined();
+    expect(officeOf({})).toBeUndefined();
+  });
+});
+
 describe('the year of study a fund page admits (#4216)', () => {
   const yearOfStudyFor = (options: Parameters<typeof fundDetailHtml>[0]) =>
     parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!.yearOfStudy;
