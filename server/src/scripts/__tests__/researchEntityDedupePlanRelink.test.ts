@@ -116,7 +116,7 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
     await mongoose.connection.db!.collection('research_entities').deleteMany({});
   });
 
-  it('writes the carried best website and fullest description onto the canonical entity', async () => {
+  it('writes the carried best website but keeps the canonical its own description', async () => {
     const db = mongoose.connection.db!;
     const canonicalId = new mongoose.Types.ObjectId();
     const duplicateId = new mongoose.Types.ObjectId();
@@ -140,6 +140,31 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
 
     const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
     expect(canonical?.websiteUrl).toBe('https://example-lab.research.yale.edu/');
+    expect(canonical?.fullDescription).toBe('thin');
+  });
+
+  it('writes the carried fullest description onto a canonical that states none', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'yse-faculty-example', archived: false, fullDescription: '' },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false, fullDescription: 'X'.repeat(400) },
+    ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+        canonicalFullDescription: 'X'.repeat(400),
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
     expect(canonical?.fullDescription).toBe('X'.repeat(400));
   });
 
