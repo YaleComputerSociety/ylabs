@@ -1802,7 +1802,7 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
     ).toBe(true);
   });
 
-  it('credits action evidence via a REACH_OUT_PLAUSIBLE signal, recorded as a soft signal that never gates student_ready (issue #1802)', () => {
+  it('credits a REACH_OUT_PLAUSIBLE signal as access evidence without recording a reason for it (#4574)', () => {
     const entity = {
       entityType: 'LAB',
       name: 'Doe Lab',
@@ -1821,7 +1821,8 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
       leadMembers,
       accessSignalCount: 0,
     });
-    expect(withoutSignal.reasons).toContain('missing_action_evidence');
+    expect(withoutSignal.reasons).not.toContain('missing_action_evidence');
+    expect(withoutSignal.reasons).not.toContain('concrete_next_step');
 
     const credited = reachOutPlausibleSignalCreditsActionEvidence({
       signal: validReachOutSignal,
@@ -1836,7 +1837,7 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
     });
     expect(credited).toBe(1);
     expect(withSignal.reasons).not.toContain('missing_action_evidence');
-    expect(withSignal.reasons).toContain('concrete_next_step');
+    expect(withSignal.reasons).not.toContain('concrete_next_step');
     // Crediting evidence never changes the tier by itself (issue #1802):
     // both computations land on the same tier here regardless of the signal.
     expect(withSignal.tier).toBe(withoutSignal.tier);

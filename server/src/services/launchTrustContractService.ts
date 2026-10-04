@@ -141,9 +141,6 @@ const laneCommand = (
   if (stage === 'pi_identity') {
     return dryRunRepairCommand('pi_identity', 'ylabs-beta-repair-pi-identity.json', 250);
   }
-  if (stage === 'action_evidence') {
-    return dryRunRepairCommand('action_evidence', 'ylabs-beta-repair-action-evidence.json', 250);
-  }
   if (stage === 'suppression') {
     return dryRunRepairCommand(
       'suppression',

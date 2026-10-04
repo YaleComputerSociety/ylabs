@@ -34,7 +34,7 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('archive_review')).toBe('review');
     expect(classifyOperatorQueueReason('duplicate_risk')).toBe('review');
     expect(classifyOperatorQueueReason('exact_url_duplicate_risk')).toBe('review');
-    expect(classifyOperatorQueueReason('concrete_next_step')).toBe('evidence');
+    expect(classifyOperatorQueueReason('concrete_next_step')).not.toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
   });

@@ -198,7 +198,6 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
 - `source_backed_description` - anti-fabrication signal; a coherent description is enough on its own, source-backing only strengthens ranking.
 - `biography_description_fallback` - the served body reads as a career biography (`isBiographyRatherThanResearch`), which per the 2026-10-01 decision is served only when the row has no servable research prose it could carry without losing its card (#4288, `docs/decisions.md`).
   It flags the row for a lane that can find research prose, and it never holds the row, because refusing a row's only servable body took it off the surface (#4280).
-- `concrete_next_step` / `missing_action_evidence` - reaching out is already the next step and the action.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
 - `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
   It stays soft on purpose: per #1802 the card is never withheld for unknown access evidence.
@@ -234,3 +233,6 @@ The finalized realignment then moved the remaining enrichment/reachability signa
 Issue #2818 closed the gap that realignment left open.
 With every enrichment signal soft, a row whose only reasons were soft could sit at `operator_review` saying nothing about why, and 7 organizational rows did.
 The held-row invariant above now pins that the tier and the reasons array agree.
+
+Issue #4574 removed `concrete_next_step` and `missing_action_evidence` entirely, carrying out the 2026-08-25 "Simple Directory First" decision.
+No lane collects a way in as a fact, so the pair only measured whether an access signal happened to exist, and the repair queue minted boilerplate signals to clear it.

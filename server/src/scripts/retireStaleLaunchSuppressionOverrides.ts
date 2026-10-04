@@ -118,7 +118,7 @@ export async function loadStaleLaunchOverrideCohort(): Promise<{
     archived: { $ne: true },
   })
     .select(
-      '_id slug entityType archived studentVisibilityOverrideTier studentVisibilityComputedTier studentVisibilityTier studentVisibilityReasons studentVisibilityComputedReasons studentVisibilitySuppressionReason',
+      '_id slug entityType archived websiteUrl website sourceUrls sourceLinkHealth studentVisibilityOverrideTier studentVisibilityComputedTier studentVisibilityTier studentVisibilityReasons studentVisibilityComputedReasons studentVisibilitySuppressionReason',
     )
     .lean()) as any[];
 

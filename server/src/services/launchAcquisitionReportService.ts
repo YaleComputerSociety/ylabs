@@ -145,7 +145,7 @@ export interface LaunchAcquisitionReport {
   };
 }
 
-const defaultStages: LaunchAcquisitionStage[] = ['pi_identity', 'action_evidence'];
+const defaultStages: LaunchAcquisitionStage[] = ['pi_identity'];
 const yaleHostPattern = /(^|\.)yale\.edu$/i;
 const undergradAccessPattern =
   /\b(undergrad|undergraduate|student|students|research assistant|ra\b|internship|apply|application|contact|mentor|summer|work-study|volunteer|opportunit)/i;

@@ -58,7 +58,7 @@ describe('AdminOperatorBoard', () => {
               recordId: 'entity-held',
               label: 'Queued Lab',
               blockerReasons: ['missing_description'],
-              evidenceSignals: ['concrete_next_step'],
+              evidenceSignals: ['official_source'],
               sourceNames: ['ysm-atoz-index'],
               nextRepairAction: 'Backfill a source-backed research description.',
             },
@@ -111,22 +111,22 @@ describe('AdminOperatorBoard', () => {
                 id: 'sample-evidence',
                 label: 'Source Backed Lab',
                 tier: 'limited_but_safe',
-                reasons: ['source_backed_description', 'missing_action_evidence'],
+                reasons: ['source_backed_description', 'missing_card_description'],
               },
             ],
           },
           {
             collection: 'research',
-            reason: 'missing_action_evidence',
+            reason: 'missing_card_description',
             kind: 'blocking',
             count: 5,
-            nextAction: 'Add source-backed action evidence.',
+            nextAction: 'Backfill a student-facing short description.',
             samples: [
               {
                 id: 'sample-blocker',
                 label: 'Repair Candidate Lab',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence', 'source_backed_description'],
+                reasons: ['missing_card_description', 'source_backed_description'],
               },
             ],
           },
@@ -156,7 +156,7 @@ describe('AdminOperatorBoard', () => {
             patchedCount: 0,
             blockedCount: 500,
             blockedReasonCounts: [
-              { reason: 'missing_action_evidence', count: 320 },
+              { reason: 'missing_card_description', count: 320 },
               { reason: 'missing_lead', count: 190 },
             ],
           },
@@ -480,14 +480,17 @@ describe('AdminOperatorBoard', () => {
     const repairLane = screen.getByText('Must Fix Before Promotion');
     const evidenceLane = screen.getByText('Promotion Evidence');
     expect(repairLane.compareDocumentPosition(evidenceLane)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(screen.getByText('Can this record show a source-backed next step?')).toBeTruthy();
+    expect(
+      screen.getAllByText('Can official source prose support student-facing copy?')[0],
+    ).toBeTruthy();
+    expect(screen.queryByText('Can this record show a source-backed next step?')).toBeNull();
     expect(
       screen.getByText('Should this stay capped, or is there evidence of a real entry route?'),
     ).toBeTruthy();
     expect(
       screen.getByText('Is this ready to promote from evidence to student-facing copy?'),
     ).toBeTruthy();
-    expect(screen.getAllByText('missing_action_evidence').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('missing_card_description').length).toBeGreaterThan(0);
     expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
     expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
     expect(screen.getByText('Likely blockers')).toBeTruthy();
@@ -518,7 +521,7 @@ describe('AdminOperatorBoard', () => {
     expect(screen.queryByText(/Promoted by the gate/)).toBeNull();
     expect(screen.getByText('Blocked: 500')).toBeTruthy();
     expect(
-      screen.getByText('Blocked reasons: missing_action_evidence 320 · missing_lead 190'),
+      screen.getByText('Blocked reasons: missing_card_description 320 · missing_lead 190'),
     ).toBeTruthy();
     expect(
       screen.getByText('Data-quality gate has 1 hard error and 3 must-fix promotion blockers.'),
@@ -730,23 +733,23 @@ describe('AdminOperatorBoard', () => {
         queues: [
           {
             collection: 'research',
-            reason: 'missing_action_evidence',
+            reason: 'missing_card_description',
             kind: 'blocking',
             count: 3,
-            nextAction: 'Add source-backed action evidence.',
+            nextAction: 'Backfill a student-facing short description.',
             samples: [
               {
                 id: 'sample-research-linked',
                 label: 'Linked Research Home',
                 slug: 'linked-research-home',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence'],
+                reasons: ['missing_card_description'],
               },
               {
                 id: 'sample-research-plain',
                 label: 'Unlinked Research Home',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence'],
+                reasons: ['missing_card_description'],
               },
             ],
           },

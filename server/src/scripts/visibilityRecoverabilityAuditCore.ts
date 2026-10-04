@@ -71,7 +71,6 @@ export const BLOCKER_EVIDENCE_FIELDS: Record<string, string[]> = {
   missing_description: ['fullDescription', 'shortDescription'],
   thin_description: ['fullDescription', 'shortDescription'],
   missing_card_description: ['shortDescription', 'fullDescription'],
-  missing_action_evidence: ['undergradEvidenceQuote', 'undergradAccessEvidence'],
   missing_lead: ['inferredPiUserKey', 'inferredPiUserId', 'inferredDirectorName'],
   missing_facet_signal: ['researchAreas', 'departments'],
   missing_source_url: ['sourceUrls'],

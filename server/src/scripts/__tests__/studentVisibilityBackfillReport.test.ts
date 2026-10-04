@@ -128,8 +128,6 @@ describe('studentVisibilityBackfillReport', () => {
     expect(nextRepairActionForReasons(['missing_lead', 'missing_description'])).toBe(
       'Attach a source-backed PI, director, or lead member.',
     );
-    expect(nextRepairActionForReasons(['missing_action_evidence'])).toBe(
-      'Add source-backed access or pathway evidence only if it exists.',
-    );
+    expect(nextRepairActionForReasons(['missing_action_evidence'])).toBe('Operator review.');
   });
 });

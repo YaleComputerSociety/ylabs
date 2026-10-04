@@ -98,9 +98,7 @@ export interface StudentVisibilityGateOptions {
    * The tier emits `duplicate_risk` alongside `exact_url_duplicate_risk` unconditionally,
    * so a row's own cause cannot be recovered from gate output and "clearing the duplicate
    * reasons releases N rows" was unfalsifiable in both directions: 261 of 382 duplicate
-   * members carry no other blocking reason and all 261 carry affirmative evidence, yet 145
-   * also carry `missing_action_evidence`, which is neither blocking nor evidence under this
-   * module's own predicates (#3272).
+   * members carry no other blocking reason and all 261 carry affirmative evidence (#3272).
    *
    * Refused in apply mode. This exists to read a counterfactual, and writing tiers computed
    * from a premise that is false of the corpus would be the opposite of measuring it.
@@ -207,7 +205,6 @@ const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
 
 const evidenceReasons = new Set([
   'application_route',
-  'concrete_next_step',
   'graduate_relevant',
   'official_source',
   'source_backed_description',
@@ -242,12 +239,6 @@ export const PI_IDENTITY_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'duplicate_name_risk',
   'duplicate_risk',
   'profile_identity_risk',
-]);
-export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
-  'missing_action_evidence',
-  'missing_alternate_access_path',
-  'missing_application_route',
-  'missing_source_route',
 ]);
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
@@ -367,8 +358,6 @@ export const repairStageForReasons = (reasons: string[]) => {
     return 'source_description';
   }
   if (reasons.some((reason) => PI_IDENTITY_REPAIR_REASONS.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => ACTION_EVIDENCE_REPAIR_REASONS.has(reason)))
-    return 'action_evidence';
   if (reasons.some((reason) => SUPPRESSION_REPAIR_REASONS.has(reason))) return 'suppression';
   return 'review_exception';
 };

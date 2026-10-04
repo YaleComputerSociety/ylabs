@@ -516,7 +516,6 @@ const riskStyles: Record<Risk, string> = {
 
 const evidenceReasons = new Set([
   'application_route',
-  'concrete_next_step',
   'graduate_relevant',
   'official_source',
   'source_backed_description',
@@ -842,8 +841,6 @@ const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; desc
 
 const queueDecisionPrompt = (reason: string): string => {
   switch (reason) {
-    case 'missing_action_evidence':
-      return 'Can this record show a source-backed next step?';
     case 'missing_alternate_access_path':
       return 'Can a related lab, faculty area, hosted program, or a people/get-involved page give students a real way in?';
     case 'missing_lead':

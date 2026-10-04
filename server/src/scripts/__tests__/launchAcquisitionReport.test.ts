@@ -19,7 +19,7 @@ describe('launchAcquisitionReport CLI helpers', () => {
         '/tmp/ylabs-launch-acquisition-report.json',
       ]),
     ).toEqual({
-      stages: ['pi_identity', 'action_evidence', 'source_description'],
+      stages: ['pi_identity', 'source_description'],
       limit: 250,
       sampleLimit: 10,
       output: '/tmp/ylabs-launch-acquisition-report.json',

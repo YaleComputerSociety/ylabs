@@ -1,6 +1,7 @@
 import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { STUDENT_READY_HARD_BLOCKER_REASONS } from '../services/studentVisibilityTier';
 import { QUEUE_AUTO_SUPPRESSIBLE_REASONS } from '../services/visibilityRepairQueueService';
+import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 
 /**
  * The verbatim opening of the prose a single pre-#1802 launch-strictness pass wrote
@@ -20,34 +21,26 @@ export const STALE_LAUNCH_OVERRIDE_FIELDS = [
 const PUBLIC_COMPUTED_TIERS: ReadonlySet<string> = new Set(['student_ready', 'limited_but_safe']);
 
 /**
- * The reason the gate pushes when it found a way for a student to get in:
- * `hasActionEvidence` in `studentVisibilityTier`, which is true when the row has a
- * posted opportunity, an access signal, or an actionable pathway.
+ * Whether a student can reach the research from this row: it carries an official,
+ * non-grant source URL that is not known to be dead, the same proof the gate uses.
  *
- * This is the whole test for whether an override is stale, and it replaced an
- * earlier split by `entityType` that read `CORE_FACILITY` and `INITIATIVE` as
- * standing product questions. Type was the wrong axis: it asked what a row IS, and
- * what the override claims is that a student has no way in.
+ * This is the whole test for whether an override is stale. Type was the wrong axis,
+ * because what the override claims is that a student has no way in, and that is a
+ * property of the row. See `docs/decisions.md` for why cores are not a standing hold.
  *
- * That split cited #1721 for "a core facility is often a legitimate hold", which
- * #1721 does not say: it is the `fullDescription` restatement guard. #1401 and #1925
- * are the issues that discuss cores, and both record them wrongly suppressed rather
- * than legitimately held. See `docs/decisions.md`. A core facility
- * that publishes an access route is reachable and a lab that publishes none is not,
- * so the deciding property is on the row and is measurable.
- *
- * Tested positively rather than by the absence of `missing_action_evidence`, so a
- * row whose reasons were never computed is held rather than released: the override
- * survives until something records a route in, never on a silent array.
+ * It reads a URL rather than a gate reason: reaching out is the universal action
+ * (2026-08-25), so no reason records a way in any more (#4574).
  */
-const ROUTE_IN_REASON = 'concrete_next_step';
-
 export function recordsARouteIn(entity: StaleLaunchOverrideCandidate): boolean {
-  return reasonsOf(entity).includes(ROUTE_IN_REASON);
+  return Boolean(officialNonGrantSourceUrl(entity));
 }
 
 export interface StaleLaunchOverrideCandidate {
   archived?: unknown;
+  websiteUrl?: unknown;
+  website?: unknown;
+  sourceUrls?: unknown;
+  sourceLinkHealth?: unknown;
   entityType?: unknown;
   studentVisibilityOverrideTier?: unknown;
   studentVisibilityComputedTier?: unknown;
@@ -120,7 +113,7 @@ export function planStaleLaunchSuppressionOverrideRetirement(
     };
   }
 
-  if (!reasons.includes(ROUTE_IN_REASON)) {
+  if (!recordsARouteIn(entity)) {
     return {
       refusedBecause:
         'the row records no route in for a student, so the override still states something true',

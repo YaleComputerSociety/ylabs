@@ -673,8 +673,6 @@ export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fall
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
   BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
-  'concrete_next_step',
-  'missing_action_evidence',
   'missing_facet_signal',
   'missing_alternate_access_path',
   'missing_application_route',
@@ -991,9 +989,6 @@ export function computeResearchEntityStudentVisibility({
   if (unbackedLabName) reasons.push('unbacked_lab_name');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
-
-  if (hasActionEvidence) reasons.push('concrete_next_step');
-  else reasons.push('missing_action_evidence');
 
   // The single source of truth for `student_ready` correctness (issue #1802).
   // Every hard-blocker category is one field; enrichment signals never appear.
