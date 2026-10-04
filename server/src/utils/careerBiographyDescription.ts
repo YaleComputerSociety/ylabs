@@ -45,7 +45,7 @@ const CAPITALIZED_PRONOUN_SUBJECT = 'He|She|They|His|Her|Their|Him|Hers|Theirs';
  * that right-hand side is always a real sentence start.
  */
 const SENTENCE_BOUNDARY = new RegExp(
-  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
+  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Mx|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
     '(?<=[.!?])\\s+(?=["\'“‘(]?[A-Z])' +
     `|(?<=[.!?])\\s+(?=(?:${CAPITALIZED_PRONOUN_SUBJECT})\\b)`,
 );
@@ -216,5 +216,54 @@ export function isCareerBiographyDescription(value: unknown): boolean {
   return (
     hasPersonSubjectLead(opening) &&
     PERSON_SUBJECT_CAREER_MARKERS.some((marker) => marker.test(opening))
+  );
+}
+
+const RESEARCH_STATEMENT_SUBJECT = [
+  "(?:[Hh]is|[Hh]er|[Tt]heir|[Mm]y|[Oo]ur|(?:[A-Z][A-Za-z.'’-]+\\s+){0,3}[A-Z][A-Za-z.'’-]*?(?:['’]s|s['’]))\\s+(?:(?:current|primary|main|principal|recent|ongoing|academic|other)\\s+)?" +
+    '(?:(?:areas?|fields?)\\s+of\\s+(?:academic\\s+)?(?:research|study|expertise)' +
+    '|(?:teaching\\s+and\\s+)?research(?:\\s+and\\s+teaching)?(?:\\s+(?:interests?|program|agenda))?' +
+    '|scholarship)',
+  'The\\s+(?:(?:primary|main|central|principal)\\s+)?focus\\s+of\\s+(?:his|her|their|my|our)\\s+' +
+    '(?:(?:current|recent)\\s+)?(?:research|scholarship)',
+].join('|');
+
+const RESEARCH_STATEMENT_LEAD_IN =
+  '(?:(?:Most\\s+recently|More\\s+recently|Recently|Currently|Today|In\\s+addition|Additionally|' +
+  'In\\s+(?:the\\s+)?(?:area|field|context)\\s+of\\s+[^,.]{1,80}),?\\s+)?';
+
+const RESEARCH_STATEMENT_SENTENCE = new RegExp(
+  `^${RESEARCH_STATEMENT_LEAD_IN}(?:${RESEARCH_STATEMENT_SUBJECT})\\s+(?:(?:has|have)\\s+)?(?:\\w+ly\\s+)?` +
+    '(?:(?:is|are|was|were)(?!\\s+(?:\\w+ly\\s+)?(?:supported|funded|sponsored|published|featured|recognized|cited|' +
+    'covered|highlighted|awarded))|focus(?:es|ed)?|cent(?:er|re)(?:s|d)?|examines?|explores?|investigates?|' +
+    'includes?|spans?|concerns?|addresses?|lies|revolves|engages?|seeks?|aims?)\\b',
+);
+
+const RESEARCH_TOPICS_SENTENCE =
+  /^(?:(?:Active|Current|Ongoing|Recent)\s+)*(?:current\s+)?(?:research\s+(?:topics|areas|projects|questions)|projects)\s+(?:are|include)\b/i;
+
+const RESEARCH_ACTIVITY_SENTENCE =
+  /^(?:He|She|They|We|I|(?:His|Her|Their|Our|My)\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research|scholarship)|(?:Dr\.?\s+|Professor\s+)?[A-Z][\p{L}'’-]+(?:['’]s\s+(?:(?:recent|current)\s+)?(?:work|lab|group|research))?)\s+(?:has\s+|have\s+)?(?:(?:also|currently|primarily|mainly|further)\s+)?(?:studies|investigates|examines|explores|analy[sz]es|evaluates|models|develops|focus(?:es|ed)|concerns|addresses|asks|seeks|aims|works\s+on|combines|employs|applies|uses\s+(?:diverse\s+|a\s+)?(?:research\s+)?(?:methods|methodologies|approaches|techniques)|uses\s+\w+(?:\s+\w+)?\s+to\s+(?:study|understand|examine|investigate))\b/u;
+
+/**
+ * The sentences of a biography that state, in their own subject, what the person
+ * researches: "Her area of academic research is ...", "The focus of his current
+ * research is ...", and the research sentences that follow such a statement ("She
+ * studies how firms respond ..."). A profile that pastes a CV (degree line, book
+ * list, awards, past appointments) usually still carries such sentences, and they
+ * are the only part a student opened the page to read. Returns nothing unless at
+ * least one explicit research statement is present, because a subject frame is what
+ * makes lifting sentences out safe: its start is a real sentence start, so a false
+ * boundary inside a book title or degree cannot produce the fragment that
+ * opener-stripping did.
+ */
+export function researchStatementSentences(value: unknown): string[] {
+  const sentences = splitDescriptionSentences(textValue(value));
+  if (!sentences.some((sentence) => RESEARCH_STATEMENT_SENTENCE.test(sentence))) return [];
+  return sentences.filter(
+    (sentence) =>
+      RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
+      RESEARCH_TOPICS_SENTENCE.test(sentence) ||
+      (RESEARCH_ACTIVITY_SENTENCE.test(sentence) && !isCareerFactSentence(sentence)),
   );
 }

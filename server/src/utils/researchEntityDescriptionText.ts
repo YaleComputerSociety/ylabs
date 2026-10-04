@@ -15,7 +15,11 @@ import {
   decideServedResearchAreas,
   type ServedResearchAreaDecision,
 } from './servedResearchAreaGuards';
-import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
+import {
+  isCareerFactSentence,
+  researchStatementSentences,
+  splitDescriptionSentences,
+} from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
   isPersonScopedResearchEntity,
@@ -1947,11 +1951,17 @@ export function repairBiographyOrDeceasedEmeritusLead(
   ) {
     return { changed: false, value: text };
   }
+  const researchStatements =
+    !deceasedOrEmeritusLead && (isFacultyEntity || isLabEntity)
+      ? researchStatementSentences(text)
+      : [];
   const repaired = deceasedOrEmeritusLead
     ? ''
-    : isFacultyEntity || isLabEntity
-      ? repairFacultyBiographyOpener(text, isLabEntity || isFacultyEntity)
-      : '';
+    : researchStatements.length > 0
+      ? researchStatements.join(' ')
+      : isFacultyEntity || isLabEntity
+        ? repairFacultyBiographyOpener(text, isLabEntity || isFacultyEntity)
+        : '';
   return { changed: repaired !== text, value: repaired };
 }
 

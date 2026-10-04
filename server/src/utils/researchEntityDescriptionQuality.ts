@@ -24,6 +24,10 @@ import {
   nonResearchBodyShape,
 } from './descriptionNonResearchBodyShape';
 import {
+  isCareerBiographyDescription,
+  splitDescriptionSentences,
+} from './careerBiographyDescription';
+import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
   isResearchAreaPlaceholderDescription,
@@ -538,10 +542,10 @@ function isBareTopicLabelListText(value: string): boolean {
  * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
  * not a faithful compression of its own fullDescription (#1616) when there is
  * no real fullDescription prose to compress in the first place - full is
- * blank, full is itself just the same bare label-list shape, or short and
- * full are the literal same text (a short is supposed to be a distinct
- * summary, so contributing zero delta over the full is substantively empty) -
- * or when a listed item names an affiliation rather than a topic (Schmidt
+ * blank, or full is itself just the same bare label-list shape and is not a
+ * usable body on its own - or when a
+ * listed item names an affiliation or a role track ("Theorist") rather than a
+ * topic (Schmidt
  * Camacho's short serves her Council/Program affiliations as things she
  * "studies", which is incoherent - you can be affiliated with a Council, but
  * you cannot study one).
@@ -558,13 +562,21 @@ function isBareTopicLabelListText(value: string): boolean {
  * or a much larger tuning corpus than this issue affords, so those are left
  * for one-off data correction rather than a general rule.
  */
-function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
+function isUngroundedTopicLabelListShort(
+  text: string,
+  full: string,
+  fullIsUseful: boolean,
+): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
-  if (!full || text.toLowerCase() === full.toLowerCase() || isBareTopicLabelListText(full)) {
-    return true;
-  }
+  if (!full || (!fullIsUseful && isBareTopicLabelListText(full))) return true;
   const fields = parseLabelListFields(text);
-  return Boolean(fields?.some((field) => LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field)));
+  return Boolean(
+    fields?.some(
+      (field) =>
+        LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field) ||
+        ROLE_TRACK_CARD_LEAKAGE_TOPICS.has(field.toLowerCase()),
+    ),
+  );
 }
 
 const TOPIC_LABEL_LIST_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
@@ -1460,6 +1472,67 @@ function pressFeatureShapeFlag(text: string): DescriptionQualityFlag | null {
   return shape === 'publication-list' ? 'paper-fragment' : 'source-news-fragment';
 }
 
+// Shapes that read as a page fragment rather than prose. Each one used to be held
+// only incidentally, by the thin-body flags that no longer block, so each is named
+// here instead, and only where a thin flag fired: on a body no thin flag touches
+// these shapes are out of scope for the thin-but-accurate decision.
+const COLON_BEFORE_TERMINAL_PATTERN = /:\s*[.!?]?\s*$/;
+const LABEL_CHROME_LEAD_PATTERN =
+  /^(?:Research\s+Interests?|Areas?\s+of\s+(?:Interest|Expertise|Research)|Perspectives|Keywords?|Specialt(?:y|ies)|Expertise)\s+(?=[A-Z])/;
+const DEGREE_RECEIPT_ONLY_PATTERN =
+  /^[^.!?]{0,80}\b(?:earned|received|obtained|completed|holds)\s+(?:(?:his|her|their|a|an)\s+)?(?:Ph\.?\s?D\.?|doctorate|M\.?D\.?|J\.?D\.?|M\.?A\.?|B\.?A\.?|B\.?S\.?|M\.?S\.?|degree)\b[^.!?]*[.!?]?$/i;
+const INCLUSION_RATIONALE_PATTERN =
+  /\bas\s+(?:evidenced|indicated|reflected|suggested)\s+by\s+(?:(?:its|his|her|their|the)\s+)?(?:inclusion|listing|mention|appearance|being\s+(?:listed|mentioned|included))\b/i;
+
+const PAST_ROLE_SENTENCE_PATTERN =
+  /\b(?:was|were)\s+(?:(?:the|a|an)\s+)?(?:\w+\s+){0,3}(?:director|manager|officer|advisor|adviser|counsel|consultant|analyst|chief|head|president|vice\s+president|fellow|staffer|associate|assistant|aide)\b|^(?:Prior\s+to|Before\s+(?:joining|coming))\b|\bserved\s+as\b/i;
+
+const DEGREE_HOLDING_SENTENCE_PATTERN =
+  /\b(?:has|have|holds|hold|earned|received)\s+(?:an?\s+)?(?:B\.?A\.?|B\.?S\.?|M\.?A\.?|M\.?S\.?|M\.?P\.?A\.?|M\.?P\.?H\.?|M\.?B\.?A\.?|J\.?D\.?|M\.?D\.?|Ph\.?\s?D\.?|degree)/i;
+
+const SUBJECT_EXPERTISE_PATTERN =
+  /\b(?:expert\s+(?:in|on)|speciali[sz]\w*\s+in|research|scholar\s+of)\b/i;
+
+const isPastRoleHistoryOnly = (text: string): boolean => {
+  if (SUBJECT_EXPERTISE_PATTERN.test(text)) return false;
+  const sentences = splitDescriptionSentences(text);
+  return (
+    sentences.some((sentence) => PAST_ROLE_SENTENCE_PATTERN.test(sentence)) &&
+    sentences.every(
+      (sentence) =>
+        PAST_ROLE_SENTENCE_PATTERN.test(sentence) || DEGREE_HOLDING_SENTENCE_PATTERN.test(sentence),
+    )
+  );
+};
+
+function fragmentShapeFlags(text: string): DescriptionQualityFlag[] {
+  const flags: DescriptionQualityFlag[] = [];
+  if (COLON_BEFORE_TERMINAL_PATTERN.test(text) || !/[.!?]/.test(text)) {
+    flags.push('incomplete-sentence');
+  }
+  if (LABEL_CHROME_LEAD_PATTERN.test(text)) flags.push('synthetic-placeholder');
+  if (DEGREE_RECEIPT_ONLY_PATTERN.test(text)) flags.push('synthetic-placeholder');
+  if (isCareerBiographyDescription(text) && !hasResearchFocusPhrase(text)) {
+    flags.push('synthetic-placeholder');
+  }
+  return flags;
+}
+
+// A body that is short, or that restates the row's own topics, is thin but not
+// wrong, and the owner decided such a row is shown rather than held (2026-10-04).
+// The flags stay on the verdict so description selection and ranking still prefer
+// richer prose; they no longer make the body unusable.
+const THIN_BUT_ACCURATE_BODY_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'too-short',
+  'area-echo-fallback',
+]);
+
+const MIN_THIN_BODY_WORDS = 6;
+
+const isThinButAccurateBodyFlag = (flag: DescriptionQualityFlag, text: string): boolean =>
+  THIN_BUT_ACCURATE_BODY_FLAGS.has(flag) &&
+  (flag !== 'too-short' || wordCount(text) >= MIN_THIN_BODY_WORDS);
+
 function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
@@ -1499,6 +1572,11 @@ function computeFullDescriptionQuality(
   ) {
     flags.push('incomplete-sentence');
   }
+  if (text && flags.some((flag) => THIN_BUT_ACCURATE_BODY_FLAGS.has(flag))) {
+    flags.push(...fragmentShapeFlags(text));
+  }
+  if (text && isPastRoleHistoryOnly(text)) flags.push('synthetic-placeholder');
+  if (text && INCLUSION_RATIONALE_PATTERN.test(text)) flags.push('synthetic-placeholder');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
   if (text && isPhilanthropicFundAppealText(text)) flags.push('fundraising-appeal');
@@ -1582,13 +1660,15 @@ function computeFullDescriptionQuality(
     !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text) &&
     !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text)
   ) {
-    if (flags.length === 0) flags.push('synthetic-placeholder');
+    if (flags.every((flag) => isThinButAccurateBodyFlag(flag, text))) {
+      flags.push('synthetic-placeholder');
+    }
   }
 
   return {
     text,
     flags: uniqueFlags(flags),
-    isUseful: flags.length === 0,
+    isUseful: flags.every((flag) => isThinButAccurateBodyFlag(flag, text)),
   };
 }
 
@@ -1802,6 +1882,28 @@ const isPastCardLengthCeiling = (text: string): boolean =>
   text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
   wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
 
+const PARENTHESIZED_YEAR_PATTERN = /\((?:19|20)\d{2}\)/g;
+
+const DISCIPLINE_OF_PATTERN =
+  '(?:history|philosophy|sociology|anthropology|economics|politics|ethics|law|psychology|literature)\\s+of\\s+';
+
+// "Studies medicine, ..." over a body that says "history of medicine": the card
+// dropped the discipline, so it names a field the person does not work in.
+function dropsTheDisciplineOfItsTopic(card: string, full: string): boolean {
+  const topic = card.match(/^Studies\s+([a-z][a-z-]+)\b/)?.[1];
+  if (!topic || !full) return false;
+  const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const withDiscipline = new RegExp(`\\b${DISCIPLINE_OF_PATTERN}${escaped}\\b`, 'i');
+  if (!withDiscipline.test(full)) return false;
+  const bare = full.replace(new RegExp(`\\b${DISCIPLINE_OF_PATTERN}${escaped}\\b`, 'gi'), '');
+  return !new RegExp(`\\b${escaped}\\b`, 'i').test(bare);
+}
+
+// A card that opens on a news or post dateline ("May 11, 2021In Defense of ...")
+// is a page fragment the scraper glued onto the research sentence after it.
+const LEADING_DATELINE_PATTERN =
+  /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}(?=[A-Z\s:|-])/;
+
 function computeShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
@@ -1829,10 +1931,16 @@ function computeShortDescriptionQuality(
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
+  if (text && LEADING_DATELINE_PATTERN.test(text)) flags.push('source-news-fragment');
+  if (text && (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2) {
+    flags.push('paper-fragment');
+  }
+  if (text && INCLUSION_RATIONALE_PATTERN.test(text)) flags.push('synthetic-placeholder');
+  if (text && dropsTheDisciplineOfItsTopic(text, full)) flags.push('ungrounded-topic-short');
   if (
     text &&
     isTopicLabelListEligibleEntityType(options?.entityType) &&
-    isUngroundedTopicLabelListShort(text, full)
+    isUngroundedTopicLabelListShort(text, full, fullQuality.isUseful)
   ) {
     flags.push('topic-label-list');
   }
@@ -3337,6 +3445,18 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
   return '';
 }
 
+const POSSESSIVE_RESEARCH_STATEMENT =
+  /^(?:(?:[\p{Lu}][\p{L}.'’-]*\s+){0,4}[\p{Lu}][\p{L}.'’-]*?(?:['’]s|s['’])|This)\s+(?:(?:current|primary|main|academic)\s+)?(?:research(?:\s+and\s+teaching)?|teaching\s+and\s+research|work|scholarship)(?:\s+interests?)?\s+(?:spans?|includes?|covers?|concerns?|focus(?:es)?\s+on|cent(?:er|re)s?\s+on)\s+(.+?)[.!?]?$/u;
+
+// "<Name>'s research and teaching interests span domestic policy issues including
+// ..." is the body a biography narrows to, and its object is the card.
+function possessiveResearchStatementSummary(sentences: string[], full: string): string {
+  const match = textValue(sentences[0]).match(POSSESSIVE_RESEARCH_STATEMENT);
+  if (!match?.[1]) return '';
+  const candidate = `Studies ${match[1].trim()}.`;
+  return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';
+}
+
 export function deriveShortDescriptionFromFullDescription(fullDescription: unknown): string {
   const rawFull = textValue(fullDescription);
   const fullQuality = fullDescriptionQuality(rawFull);
@@ -3350,6 +3470,9 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
 
   const primaryInterestSummary = primaryInterestTechnologySummary(sentences);
   if (primaryInterestSummary) return primaryInterestSummary;
+
+  const possessiveResearchSummary = possessiveResearchStatementSummary(sentences, rawFull);
+  if (possessiveResearchSummary) return possessiveResearchSummary;
 
   const combinedFull = sentences.join(' ');
 
@@ -3489,4 +3612,22 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     if (shortened && shortDescriptionQuality(shortened, rawFull).isUseful) return shortened;
   }
   return '';
+}
+
+/**
+ * A stored card that is a page fragment rather than a summary: a dateline glued to
+ * a headline, a book-title list, the model's evidence rationale, or a topic whose
+ * discipline was cut off. The served-card resolver keeps fluent stored cards
+ * verbatim, so these have to be named for it to derive a card from the body instead
+ * of serving one the gate refuses.
+ */
+export function isStoredCardPageFragment(card: unknown, fullDescription: unknown): boolean {
+  const text = textValue(card);
+  if (!text) return false;
+  return (
+    LEADING_DATELINE_PATTERN.test(text) ||
+    (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2 ||
+    INCLUSION_RATIONALE_PATTERN.test(text) ||
+    dropsTheDisciplineOfItsTopic(text, textValue(fullDescription))
+  );
 }

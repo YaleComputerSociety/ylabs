@@ -9,6 +9,7 @@ import {
   fullDescriptionQuality,
   isReplaceableResearchAreaChipEchoShort,
   isVacuousGenericFocusSummary,
+  isStoredCardPageFragment,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
@@ -451,6 +452,7 @@ export function resolveServedShortDescriptionOutcome(
     // intentionally keeps (#1680/#2184).
     if (
       !/(?:\.{3}|…)\s*$/.test(cleaned) &&
+      !isStoredCardPageFragment(cleaned, full) &&
       storedShortPastRenderingPreferenceIsServable({
         shortDescription: cleaned,
         fullDescription: full,

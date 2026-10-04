@@ -452,7 +452,7 @@ describe('the serve refusal asks what renders, not how the card scores (#2597)',
 });
 
 describe('the gate judges the card the serve sanitizer produces (#3097)', () => {
-  it("refuses a person-scoped row whose card is another organization's prose (#3067)", () => {
+  it("never serves another organization's prose as a person-scoped row's card, deriving it from the body instead (#3067)", () => {
     const entity = {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
@@ -469,9 +469,8 @@ describe('the gate judges the card the serve sanitizer produces (#3097)', () => 
 
     const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
 
-    expect(representation.servedCard).toBe('');
-    expect(representation.invariant.reasons).toContain('missing_public_card_description');
-    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+    expect(representation.servedCard).not.toContain('Office of Health Equity Research');
+    expect(representation.servedCard).toBe(entity.fullDescription);
   });
 
   it('refuses a row whose only carding chip research-area hygiene drops', () => {

@@ -1530,7 +1530,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe('');
   });
 
-  it('strips a multi-sentence opener/award/fellowship CV run, keeping only the surviving research content, on a FACULTY_RESEARCH_AREA entity (#1745)', () => {
+  it('keeps only the research statement of a multi-sentence opener/award/fellowship CV run, on a FACULTY_RESEARCH_AREA entity (#1745)', () => {
     const fra = {
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
@@ -1540,8 +1540,43 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
     expect(sanitized.fullDescription).toBe(
-      "This researcher's research interests include family economics and the global economy. He has published extensively in leading economic journals.",
+      "This researcher's research interests include family economics and the global economy.",
     );
+  });
+
+  it('serves the research statement of a pasted CV whose degree line and book list carry a false sentence boundary', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      name: 'Robin Fixture Faculty Research',
+      fullDescription:
+        'Ph.D., American Studies, Example University, 1990 Robin Fixture is Sterling Professor of History. She is the author of four books: Where Did It Go?: A History of Maps (2010); Rivers of Salt (2004); and Small Towns (1998). She also served as writer for a documentary that garnered an award in 2019. Her teaching and research focus on race in U.S. political culture, including U.S. imperialism and the juridical structures of U.S. citizenship.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).not.toMatch(/Ph\.D\.|author of|garnered|^:/);
+    expect(sanitized.fullDescription).toMatch(
+      /teaching and research focus on race in U\.S\. political culture, including U\.S\. imperialism and the juridical structures of U\.S\. citizenship\.$/,
+    );
+  });
+
+  it('drops past-appointment and teaching sentences from a career biography, keeping its research statements', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      name: 'Robin Fixture Faculty Research',
+      fullDescription:
+        'Robin Fixture is the Example Professor of Economics at the Example School of Management, where she has been on the faculty since 1999. Her area of academic research is industrial organization, with a focus on empirical studies of competition. The focus of her current research is competition in healthcare markets. From 2011-12, Professor Fixture served as the Chief Economist at a federal agency. At the school, she teaches courses in competitive strategy. Professor Fixture has a BA and a PhD in Economics.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toContain(
+      'area of academic research is industrial organization',
+    );
+    expect(sanitized.fullDescription).toContain(
+      'The focus of her current research is competition in healthcare markets.',
+    );
+    expect(sanitized.fullDescription).not.toMatch(/served as|teaches courses|has a BA|since 1999/);
   });
 
   it('blanks a full-length artist/humanities CV run (degrees, exhibitions, residency, surveys, publications, faculty appointment) with zero practice/research content, on a LAB entity (#1745)', () => {

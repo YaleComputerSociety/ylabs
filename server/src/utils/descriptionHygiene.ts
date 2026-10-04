@@ -158,8 +158,20 @@ function continuesMiddleInitialName(segment: string, next: string): boolean {
 
 const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
+const GLUED_INITIAL_TAIL = /(?:^|[\s(.])[A-Z]\.$/;
+const GLUED_TITLE_PUNCTUATION = /[?!]$/;
+const TITLE_CONTINUATION_HEAD = /^[:;,)]/;
+const DOTTED_INITIALISM_TAIL = /(?:^|[\s(])(?:[A-Z]\.){2,}\s+$/;
+const LOWERCASE_HEAD = /^[a-z]/;
+
+// A sentence ends at terminal punctuation followed by whitespace, so "U." inside
+// "U.S." and the "?" of a title such as "What Have They Built You to Do?: The ..."
+// are not ends; neither is "U.S. " before a lowercase continuation.
 function isAbbreviationSplit(segment: string, next: string): boolean {
   return (
+    GLUED_INITIAL_TAIL.test(segment) ||
+    (GLUED_TITLE_PUNCTUATION.test(segment) && TITLE_CONTINUATION_HEAD.test(next)) ||
+    (DOTTED_INITIALISM_TAIL.test(segment) && LOWERCASE_HEAD.test(next)) ||
     PROTECTED_ABBREVIATION_TAIL.test(segment) ||
     continuesMiddleInitialName(segment, next) ||
     LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)
@@ -978,6 +990,20 @@ const awardCitationLeakPattern =
  * genuine prose; broader than #944's own-name-subject check because the tail,
  * not the subject, is the tell (#978).
  */
+// "Studies biophysics, including research in the group is currently focused on
+// ...": the template's "including" swallowed a whole sentence from the body, so the
+// list item carries its own finite verb.
+const studiesIncludingSwallowedClausePattern =
+  /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
+
+// "Studies Douglas Fixture's research concerns ...": the template prefixed a body
+// sentence that already has its own possessive subject and verb.
+const studiesRoleNounGluePattern =
+  /^Studies\s+(?:an?\s+)?(?:Scholar|Professor|Historian|Expert|Specialist|Researcher|Lecturer|Director)\b/;
+
+const studiesPossessiveSubjectGluePattern =
+  /^Studies\s+(?:[A-Z][\p{L}.'’-]*\s+){0,3}[A-Z][\p{L}.'’-]*['’]s\s+(?:research|work|teaching|scholarship|interests?|lab|group)\b/u;
+
 export function isStudiesTemplateGlueMalformed(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
@@ -988,7 +1014,10 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
     careerFactLeakPattern.test(normalized) ||
     awardCitationLeakPattern.test(normalized) ||
     studiesBioNameEchoVerbPattern.test(normalized) ||
-    studiesCourseCodeTopicPattern.test(normalized)
+    studiesCourseCodeTopicPattern.test(normalized) ||
+    studiesIncludingSwallowedClausePattern.test(normalized) ||
+    studiesPossessiveSubjectGluePattern.test(normalized) ||
+    studiesRoleNounGluePattern.test(normalized)
   );
 }
 

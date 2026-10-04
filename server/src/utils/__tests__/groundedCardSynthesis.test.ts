@@ -228,14 +228,12 @@ describe('synthesizeGroundedCardDescription', () => {
     expect(card).toBe('');
   });
 
-  it('rejects a model card shaped as a bare researchArea label list when entityType is threaded (#1730/#1680)', async () => {
+  it('accepts a model card that restates a usable research-interests body as a topic list', async () => {
     const labelListFull =
       "Jordan Ellis's research interests include comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.";
-    const callLLM = vi
-      .fn()
-      .mockResolvedValue(
-        'Studies comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.',
-      );
+    const listCard =
+      'Studies comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
+    const callLLM = vi.fn().mockResolvedValue(listCard);
     const card = await synthesizeGroundedCardDescription({
       fullDescription: labelListFull,
       researchAreas: ['Political Science'],
@@ -243,7 +241,7 @@ describe('synthesizeGroundedCardDescription', () => {
       callLLM,
     });
     expect(callLLM).toHaveBeenCalledOnce();
-    expect(card).toBe('');
+    expect(card).toBe(listCard);
   });
 });
 
@@ -294,7 +292,7 @@ describe('resolveGroundedCardDescription topic-label-list awareness (#1730/#1680
   const LABEL_LIST_STUDIES_TEXT =
     'Studies comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
 
-  it('does not settle for the deterministic derivation when it is itself a bare label-list restatement, and tries synthesis instead', async () => {
+  it('settles for the deterministic topic-list card of a usable research-interests body without synthesizing', async () => {
     expect(
       shortDescriptionQuality(
         deriveShortDescriptionFromFullDescription(LABEL_LIST_FULL),
@@ -302,40 +300,17 @@ describe('resolveGroundedCardDescription topic-label-list awareness (#1730/#1680
         LABEL_LIST_AREAS,
         { entityType: 'FACULTY_RESEARCH_AREA' },
       ).isUseful,
-    ).toBe(false);
+    ).toBe(true);
 
-    const synthesize = vi.fn(async () => LABEL_LIST_STUDIES_TEXT);
-    await resolveGroundedCardDescription({
-      fullDescription: LABEL_LIST_FULL,
-      researchAreas: LABEL_LIST_AREAS,
-      entityType: 'FACULTY_RESEARCH_AREA',
-      synthesize,
-    });
-    expect(synthesize).toHaveBeenCalledOnce();
-  });
-
-  it('rejects a synthesized candidate that only restates the researchArea chips as a "Studies" list', async () => {
-    const synthesize = vi.fn(async () => LABEL_LIST_STUDIES_TEXT);
+    const synthesize = vi.fn(async () => 'Examines constitutional law.');
     const resolved = await resolveGroundedCardDescription({
       fullDescription: LABEL_LIST_FULL,
       researchAreas: LABEL_LIST_AREAS,
       entityType: 'FACULTY_RESEARCH_AREA',
       synthesize,
     });
-    expect(resolved).not.toBe(LABEL_LIST_STUDIES_TEXT);
-  });
-
-  it('accepts a synthesized candidate that is not shaped like the bare label-list template', async () => {
-    const rewordedCard =
-      'Examines comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
-    const synthesize = vi.fn(async () => rewordedCard);
-    const resolved = await resolveGroundedCardDescription({
-      fullDescription: LABEL_LIST_FULL,
-      researchAreas: LABEL_LIST_AREAS,
-      entityType: 'FACULTY_RESEARCH_AREA',
-      synthesize,
-    });
-    expect(resolved).toBe(rewordedCard);
+    expect(synthesize).not.toHaveBeenCalled();
+    expect(resolved).toBe(LABEL_LIST_STUDIES_TEXT);
   });
 });
 

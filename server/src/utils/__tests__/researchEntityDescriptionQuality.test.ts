@@ -238,7 +238,7 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription).isUseful).toBe(true);
   });
 
-  it('rejects a fluent two-sentence fullDescription that only restates researchAreas chips (#1625)', () => {
+  it('flags a fluent two-sentence fullDescription that only restates researchAreas chips as thin but usable (#1625)', () => {
     const fullDescription =
       'The James Giles Lab focuses on acute ischemic stroke management, cerebrovascular and carotid artery diseases, venous thromboembolism diagnosis and management, and atrial fibrillation management and outcomes. The lab investigates the clinical implications and treatment strategies associated with these conditions.';
     const researchAreas = [
@@ -250,10 +250,10 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
-  it('rejects a fluent area-echo fullDescription even when it paraphrases the chip wording (#1625)', () => {
+  it('flags a fluent area-echo fullDescription that paraphrases the chip wording as thin but usable (#1625)', () => {
     const fullDescription =
       'The Jacob Tebes Lab focuses on research related to schizophrenia and mental health, exploring health policy implementation science and its impact on access to care. Additionally, the lab investigates topics related to school health and nursing education, aiming to improve health outcomes in these areas.';
     const researchAreas = [
@@ -267,7 +267,7 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
   it('keeps a fluent fullDescription that names specific methods and model systems beyond the researchAreas chips (#1625)', () => {
@@ -293,7 +293,7 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription).flags).not.toContain('area-echo-fallback');
   });
 
-  it('rejects a fluent area-echo fullDescription padded with demographic-plural chip mismatches (#1699)', () => {
+  it('flags a fluent area-echo fullDescription padded with demographic-plural chip mismatches as thin but usable (#1699)', () => {
     const fullDescription =
       'The Priya Chandrasekaran Lab focuses on substance abuse and its outcomes, as well as the psychosocial and emotional development of children and adolescents. The lab investigates community health and development issues, including the impacts of child abuse and trauma.';
     const researchAreas = [
@@ -306,10 +306,10 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
-  it('rejects a fluent area-echo fullDescription padded with generic biology filler nouns (#1699)', () => {
+  it('flags a fluent area-echo fullDescription padded with generic biology filler nouns as thin but usable (#1699)', () => {
     const fullDescription =
       'The Owen Marsh Lab focuses on genomics and chromatin dynamics, RNA research and splicing, as well as single-cell and spatial transcriptomics. The lab investigates the molecular mechanisms underlying gene regulation and expression at both the cellular and spatial levels.';
     const researchAreas = [
@@ -322,10 +322,10 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
-  it('rejects a fluent area-echo fullDescription closing on a generic "contribute to overall health" tail (#1699)', () => {
+  it('flags a fluent area-echo fullDescription closing on a generic "contribute to overall health" tail as thin but usable (#1699)', () => {
     const fullDescription =
       'The Renata Solis Lab studies the interconnections between sleep and various factors such as obesity, physical activity, diet, child abuse and trauma, as well as early childhood education and development. The lab focuses on understanding how these elements influence each other and contribute to overall health and well-being.';
     const researchAreas = [
@@ -338,10 +338,10 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
-  it('rejects a two-word PI name subject that would otherwise pad the non-chip word count (#1625 residual)', () => {
+  it('flags past a two-word PI name subject that would otherwise pad the non-chip word count (#1625 residual)', () => {
     const fullDescription =
       'The Harlan Voss Lab focuses on advanced imaging techniques and their applications, alongside metabolomics and mass spectrometry studies. The lab investigates the interplay between diet and metabolism, with a particular emphasis on amino acids.';
     const researchAreas = [
@@ -353,10 +353,10 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
-  it('rejects a vacuous closer sentence even when the opening sentence dilutes the whole-text overlap (#1625 residual)', () => {
+  it('flags a vacuous closer sentence even when the opening sentence dilutes the whole-text overlap (#1625 residual)', () => {
     const fullDescription =
       'The Nadia Ellery Lab focuses on the diagnosis and treatment of platelet disorders, hemoglobinopathies, and erythrocyte pathophysiology. The lab investigates various therapeutic approaches and diagnostic techniques to improve patient outcomes in these hematological conditions.';
     const researchAreas = [
@@ -368,7 +368,7 @@ describe('fullDescriptionQuality', () => {
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.isUseful).toBe(true);
   });
 
   it('matches a chip word against its closer-sentence morphological variant via stem comparison (#1625 residual)', () => {
@@ -1563,14 +1563,14 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.isUseful).toBe(false);
   });
 
-  it('rejects a possessive-name "research fields include" short whose full is the same bare list under a different lead', () => {
+  it('accepts a "Studies <list>." short restating a usable possessive research-interests full under a different lead', () => {
     const full =
       "Albert Laguna's research interests include transnational Latinx literatures and cultures, comparative ethnic studies, performance studies, and popular culture studies.";
     const short =
       'Studies transnational Latinx literatures and cultures, comparative ethnic studies, performance studies, and popular culture studies.';
     const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
-    expect(quality.flags).toContain('topic-label-list');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).not.toContain('topic-label-list');
+    expect(quality.isUseful).toBe(true);
   });
 
   it('rejects a "Studies <tags>." short that lists an affiliation rather than a topic', () => {
@@ -1604,12 +1604,22 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.flags).not.toContain('topic-label-list');
   });
 
-  it('rejects a bare "Studies <tags>." LAB short identical to its full', () => {
+  it('rejects a "Studies X, including <swallowed sentence>" LAB short identical to its full', () => {
     const text =
       'Studies biophysics, including research in the group is currently focused on three general themes: decoding self-organization, controlling self-organization, and electrophysiological pattern formation.';
     const quality = shortDescriptionQuality(text, text, undefined, labOptions);
-    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.flags).toContain('malformed-generated-text');
     expect(quality.isUseful).toBe(false);
+  });
+
+  it('accepts a well-formed "Studies X, including A, B, and C." card identical to a useful full', () => {
+    const text =
+      'Studies astrophysics and cosmology, including high-energy radiation processes, particle propagation, blazars, and neutron star binaries.';
+    const quality = shortDescriptionQuality(text, text, undefined, {
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(quality.flags).not.toContain('topic-label-list');
+    expect(quality.isUseful).toBe(true);
   });
 
   it('rejects a single-clause "Studies <topic>." short whose topic is entirely absent from the full (ungrounded cherry-pick)', () => {
@@ -1647,14 +1657,14 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.isUseful).toBe(true);
   });
 
-  it('still rejects a short that restates its own full label list under a swapped lead', () => {
+  it('accepts a short that restates its usable full label list under a swapped lead', () => {
     const full =
       "Dr. Placeholder's research interests include sexually transmitted infections, medical education and training, faculty development, assessment, and humanism in medical practice.";
     const short =
       'Studies sexually transmitted infections, medical education and training, faculty development, assessment, and humanism in medical practice.';
     const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
-    expect(quality.flags).toContain('topic-label-list');
-    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).not.toContain('topic-label-list');
+    expect(quality.isUseful).toBe(true);
   });
 
   it('does not apply the ungrounded single-clause guard without an eligible entityType', () => {
