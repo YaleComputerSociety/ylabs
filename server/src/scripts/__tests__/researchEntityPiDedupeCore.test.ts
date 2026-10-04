@@ -14,6 +14,8 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
+  buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  nameAgreementKey,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
@@ -1370,6 +1372,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1389,6 +1392,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1414,6 +1418,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1433,6 +1438,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -2126,6 +2132,15 @@ describe('buildResearchEntityPiDedupePlan', () => {
     });
   });
 
+  it('accepts --require-name-agreement only as a narrowing of --shared-person-id', () => {
+    expect(
+      parseResearchEntityPiDedupeArgs(['--shared-person-id', '--require-name-agreement']),
+    ).toMatchObject({ sharedPersonId: true, requireNameAgreement: true });
+    expect(() => parseResearchEntityPiDedupeArgs(['--require-name-agreement'])).toThrow(
+      /only narrows --shared-person-id/,
+    );
+  });
+
   it('parses funding-only cleanup mode', () => {
     expect(parseResearchEntityPiDedupeArgs(['--funding-only', '--limit=50'])).toEqual({
       apply: false,
@@ -2139,6 +2154,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 50,
@@ -3477,6 +3493,60 @@ describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
   it('skips global current-member retirement in funding-only cleanup mode', () => {
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: true })).toBe(false);
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: false })).toBe(true);
+  });
+});
+
+describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
+  const row = (entities: Array<{ id: string; name: string; entityType: string }>) => ({
+    userId: 'person-1',
+    normalizedName: 'same-pi:person-1',
+    entities: entities.map((entity) => ({ ...entity, slug: entity.id })),
+  });
+  const members = (groups: Array<{ canonicalEntityId: string; duplicateEntityIds: string[] }>) =>
+    groups.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds].sort());
+
+  it('folds diacritics, punctuation and kind nouns when comparing names', () => {
+    expect(nameAgreementKey('Zoë Murić-Núñez Faculty Research')).toBe(
+      nameAgreementKey('Zoe Muric Nunez - Research'),
+    );
+    expect(nameAgreementKey('Ortolan Lab')).toBe(nameAgreementKey('Ortolan Laboratory'));
+    expect(nameAgreementKey('Wren Q. Ortolan Faculty Research')).toBe(
+      nameAgreementKey('Wren Ortolan Faculty Research'),
+    );
+    expect(nameAgreementKey('W. Ortolan Lab')).not.toBe(nameAgreementKey('Wren Ortolan Lab'));
+  });
+
+  it('groups rows that agree on lead, name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Laboratory', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b']]);
+  });
+
+  it('merges the agreeing rows even when the lead also has rows that differ in name or type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'lab-a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'lab-b', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['lab-a', 'lab-b']]);
+  });
+
+  it('plans nothing when no two rows agree on both name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(plan).toEqual([]);
   });
 });
 

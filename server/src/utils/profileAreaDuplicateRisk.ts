@@ -107,11 +107,53 @@ export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity)
   );
 }
 
+const entityNameKindWords = new Set(['faculty', 'research', 'lab', 'laboratory', 'group', 'the']);
+
+export function entityNameWordsWithoutKindNouns(name: string | undefined): string[] {
+  return normalizedProfileAreaWords(foldDiacritics(name)).filter(
+    (word) => !entityNameKindWords.has(word),
+  );
+}
+
+function foldDiacritics(value: string | undefined): string {
+  return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * A department site that publishes a person's page at a bare name path
+ * (`appliedphysics.yale.edu/ada-b-lovelace`) carries none of the profile markers above,
+ * so it read as the row's own lab website. That made a person-scoped shell look
+ * concrete, and the eponymous merge never folded it into the person's real lab. The
+ * test is the row's own name: a last path segment containing every word of it names
+ * the person, not a research website, and so does one spelling the name run together
+ * (`faculty.som.yale.edu/adalovelace`).
+ */
+function urlPathNamesEntityPerson(value: string, entity: ProfileAreaDuplicateEntity): boolean {
+  const nameWords = entityNameWordsWithoutKindNouns(entity.name);
+  if (nameWords.length < 2) return false;
+  try {
+    const segments = new URL(value.trim()).pathname.split('/').filter(Boolean);
+    const lastSegment = segments.at(-1);
+    if (!lastSegment) return false;
+    const segmentWordList = normalizedProfileAreaWords(
+      foldDiacritics(decodeURIComponent(lastSegment)),
+    );
+    const segmentWords = new Set(segmentWordList);
+    if (nameWords.every((word) => segmentWords.has(word))) return true;
+    const joinedSegment = segmentWordList.join('');
+    return [nameWords.join(''), `${nameWords[0]}${nameWords.at(-1)}`].includes(joinedSegment);
+  } catch {
+    return false;
+  }
+}
+
 export function concreteLabWebsiteForEntity(
   entity: ProfileAreaDuplicateEntity,
 ): string | undefined {
-  return [entity.websiteUrl, ...(entity.sourceUrls || [])].find((value) =>
-    isConcreteLabWebsiteUrl(value),
+  return [entity.websiteUrl, ...(entity.sourceUrls || [])].find(
+    (value) =>
+      isConcreteLabWebsiteUrl(value) &&
+      !(isProfileAreaShellEntity(entity) && urlPathNamesEntityPerson(value as string, entity)),
   );
 }
 

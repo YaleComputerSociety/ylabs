@@ -7,6 +7,7 @@ import {
 import {
   concreteLabWebsiteForEntity,
   entityCarriesConcreteWebsite,
+  entityNameWordsWithoutKindNouns,
   isCenterOrInstituteEntity,
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
@@ -904,21 +905,68 @@ function multiPersonEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
   return ids;
 }
 
+function sharedPersonEligibleEntities(
+  row: ResearchEntityPiDedupeRow,
+  sharedEntityIds: ReadonlySet<string>,
+): ResearchEntityPiDedupeRow['entities'] {
+  return row.entities.filter(
+    (entity) =>
+      entity.id &&
+      !sharedEntityIds.has(entity.id) &&
+      !isSharedOrganizationEntityType(entity.entityType),
+  );
+}
+
+function sharedPersonGroup(
+  row: ResearchEntityPiDedupeRow,
+  entities: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeGroup[] {
+  const group = buildGroupFromCluster(row, entities);
+  return group ? [{ ...group, dedupeCategory: 'shared_person_id' as const }] : [];
+}
+
 export function buildSharedPersonIdResearchEntityDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
   const sharedEntityIds = multiPersonEntityIds(rows);
+  return rows.flatMap((row) =>
+    sharedPersonGroup(row, sharedPersonEligibleEntities(row, sharedEntityIds)),
+  );
+}
+
+/**
+ * The comparable form of a research row's name for the name-agreement lane. Diacritics
+ * fold because one roster spells a name with them and another without, a lone initial
+ * drops because one roster prints a middle initial another omits, and the kind
+ * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees when the
+ * type already agrees.
+ */
+export function nameAgreementKey(value: string | undefined): string {
+  return entityNameWordsWithoutKindNouns(value)
+    .filter((word) => word.length > 1)
+    .join(' ');
+}
+
+/**
+ * The unattended form of the shared-person lane: one group per lead, entity type and
+ * name. One person can lead a lab and run an unrelated project under another name, and
+ * #3279 measured that a shared lead alone does not make two rows one entity, so rows only
+ * group with the rows that are the same kind of thing under the same name.
+ */
+export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
+  rows: ResearchEntityPiDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const sharedEntityIds = multiPersonEntityIds(rows);
   return rows.flatMap((row) => {
-    const entities = row.entities.filter(
-      (entity) =>
-        entity.id &&
-        !sharedEntityIds.has(entity.id) &&
-        !isSharedOrganizationEntityType(entity.entityType),
-    );
-    if (entities.length <= 1) return [];
-    const group = buildGroupFromCluster(row, entities);
-    if (!group) return [];
-    return [{ ...group, dedupeCategory: 'shared_person_id' as const }];
+    const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
+    for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
+      const name = nameAgreementKey(entity.name);
+      const entityType = (entity.entityType || '').toUpperCase();
+      if (!name || !entityType) continue;
+      const key = `${entityType}::${name}`;
+      clusters.set(key, [...(clusters.get(key) || []), entity]);
+    }
+    return [...clusters.values()].flatMap((entities) => sharedPersonGroup(row, entities));
   });
 }
 

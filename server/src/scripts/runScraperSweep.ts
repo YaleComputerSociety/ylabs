@@ -236,6 +236,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming {
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
     | 'website-url-identity-dedupe'
+    | 'shared-person-name-agreed-dedupe'
     | 'source-link-health'
     | 'profile-link-health'
     | 'dead-research-website-clear'
@@ -1364,6 +1365,26 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-website-url-identity-dedupe.json',
     buildArgs: (options) => [
       '--website-url-only',
+      '--apply',
+      '--confirm-research-entity-pi-dedupe',
+      '--limit=10000',
+      `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
+    ],
+    isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
+  },
+  // Both URL lanes need the two rows to share an address, so one lab listed by the
+  // medical school's lab index and by its own domain stayed two cards under one lead.
+  // The shared-person lane finds those through the lead, and the name-agreement filter
+  // keeps it to rows that are the same kind of thing under the same name, because a
+  // shared lead alone does not make two rows one entity (#3279).
+  {
+    name: 'shared-person-name-agreed-dedupe',
+    command: 'research-entity:dedupe-by-pi',
+    artifactName: 'development-shared-person-name-agreed-dedupe.json',
+    buildArgs: (options) => [
+      '--shared-person-id',
+      '--require-name-agreement',
       '--apply',
       '--confirm-research-entity-pi-dedupe',
       '--limit=10000',
