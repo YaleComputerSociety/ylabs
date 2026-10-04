@@ -993,6 +993,35 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('emits the description and application section past the old emission caps (#4572)', () => {
+    const paragraphs = (topic: string, count: number) =>
+      Array.from(
+        { length: count },
+        (_, index) =>
+          `<p>${topic} paragraph ${index + 1} describes a synthetic part of the fellowship in a full sentence.</p>`,
+      ).join('');
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Yale College Fixture Summer Research Fellowship</h1>
+          ${paragraphs('Overview', 30)}
+          <h2>How to apply</h2>
+          ${paragraphs('Application', 40)}
+          <p>Applications must include a recommendation letter from the proposed faculty mentor.</p>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.description?.length).toBeGreaterThan(2000);
+    expect(candidates[0]?.applicationInformation?.length).toBeGreaterThan(3000);
+    expect(candidates[0]?.applicationInformation).toContain(
+      'a recommendation letter from the proposed faculty mentor',
+    );
+    expect(candidates[0]?.applicationMaterials).toContain('Faculty mentor support');
+  });
+
   it('does not infer application materials from unrelated page content', () => {
     const candidates = parseFellowshipCatalogPage(
       `

@@ -599,3 +599,24 @@ describe('every lane that asserts kind pairs it with entityType', () => {
     expect(unpaired).toEqual([]);
   });
 });
+
+describe('the size bound on observed fellowship prose (#4572)', () => {
+  const runaway = 'A synthetic sentence about the award repeats here. '.repeat(40_000);
+
+  it('bounds a runaway page so one observation cannot hold megabytes', () => {
+    for (const field of ['eligibility', 'applicationInformation', 'fullSourceDescription']) {
+      const value = sanitizeObservationField('fellowship', field, runaway).value as string;
+      expect(runaway.length).toBeGreaterThan(1_000_000);
+      expect(value.length, field).toBeLessThanOrEqual(20_000);
+      expect(value.length, field).toBeGreaterThan(10_000);
+    }
+  });
+
+  it('keeps prose within the bound exactly as observed', () => {
+    const value = 'Open to juniors.\nApply by the posted date.';
+    expect(sanitizeObservationField('fellowship', 'eligibility', value)).toEqual({
+      value,
+      rejected: false,
+    });
+  });
+});

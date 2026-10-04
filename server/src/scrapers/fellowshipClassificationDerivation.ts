@@ -20,6 +20,7 @@ import {
 } from '../services/programClassifier';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
+import { FELLOWSHIP_DESCRIPTION_FIELDS } from './fellowshipProse';
 
 export const CLASSIFIER_OWNED_FELLOWSHIP_FIELDS = [
   'programCategory',
@@ -136,11 +137,6 @@ const CLASSIFIER_PROSE_FIELDS = [
   'additionalInformation',
   'fullSourceDescription',
 ] as const;
-
-export const FELLOWSHIP_DESCRIPTION_FIELDS: ReadonlySet<string> = new Set([
-  'description',
-  'summary',
-]);
 
 /**
  * The stored description is the display copy, capped by the sanitizer, so a requirement

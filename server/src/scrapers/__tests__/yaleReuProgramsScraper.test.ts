@@ -204,6 +204,35 @@ describe('parseReuProgramPage', () => {
   });
 });
 
+describe('an eligibility section past the old emission cap (#4572)', () => {
+  const requirement = 'Applicants must identify a Yale faculty mentor before applying.';
+  const conditions = Array.from(
+    { length: 24 },
+    (_, index) =>
+      `<p>Eligibility condition ${index + 1} describes a synthetic requirement every applicant to the summer program meets.</p>`,
+  ).join('');
+  const html = `
+    <main>
+      <h1>Fixture Summer Undergraduate Research Program</h1>
+      <p>This is a ten-week summer research program for undergraduates from any institution.</p>
+      <h2>Eligibility</h2>
+      ${conditions}
+      <p>${requirement}</p>
+    </main>
+  `;
+
+  it('emits the whole section and lets the classifier read its last requirement', () => {
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale Mathematics', referenceDate)!;
+
+    expect(candidate.eligibility?.length).toBeGreaterThan(2000);
+    expect(candidate.eligibility).toContain(requirement);
+    expect(classificationFromObservedFacts(candidateToObservations(candidate))).toMatchObject({
+      requiresMentorBeforeApply: true,
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
+  });
+});
+
 describe('classification derived from the observed facts', () => {
   it('classifies an REU that requires securing a mentor first as SECURE_MENTOR_THEN_APPLY', () => {
     const candidate = parseReuProgramPage(

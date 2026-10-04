@@ -62,6 +62,10 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
 import {
+  boundedObservedFellowshipProse,
+  OBSERVED_FELLOWSHIP_PROSE_FIELDS,
+} from './fellowshipProse';
+import {
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
   stripTrailingResearchHomeDescription,
@@ -299,6 +303,9 @@ export function sanitizeObservationField(
     return sanitizeMethodListField(value);
   }
   if (typeof value !== 'string') return accepted(value);
+  if (entityType === 'fellowship' && OBSERVED_FELLOWSHIP_PROSE_FIELDS.has(field)) {
+    return accepted(boundedObservedFellowshipProse(value));
+  }
   if (entityType === 'user' && field === 'title') return sanitizePersonTitleField(value);
   if (entityType === 'user' && PERSON_NAME_FIELDS.has(field)) return sanitizePersonNameField(value);
   if (entityType === 'researchGroupMember' && field === 'name') {

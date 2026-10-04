@@ -58,7 +58,7 @@ import {
 import { Fellowship } from '../../models/fellowship';
 import { Observation } from '../../models/observation';
 import { endOfNewYorkDay, newYorkCalendarDate } from '../../utils/newYorkTime';
-import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
+import { sanitizedObservedFellowshipProse } from '../fellowshipProse';
 import {
   fundIdentityKey,
   isRecordSpecificFundDetailUrl,
@@ -226,21 +226,17 @@ function sectionTextWithoutContactDirections($: cheerio.CheerioAPI, id: string):
   };
 }
 
-function sanitizedProse(text: string | undefined, maxLength: number): string | undefined {
-  return text ? sanitizeStoredCatalogDescription(text, maxLength) || undefined : undefined;
-}
-
 /**
  * The fund page's own Description section, which states requirements its Brief
  * Description leaves out, such as an adviser who must approve the project (#4232). It is
  * stored whole for the classifier and never served.
  */
 function fundFullSourceDescription($: cheerio.CheerioAPI): string | undefined {
-  return sectionProse($, 'lblDescription', Number.POSITIVE_INFINITY);
+  return sectionProse($, 'lblDescription');
 }
 
-function sectionProse($: cheerio.CheerioAPI, id: string, maxLength: number): string | undefined {
-  return sanitizedProse(sectionTextWithoutContactDirections($, id).text, maxLength);
+function sectionProse($: cheerio.CheerioAPI, id: string): string | undefined {
+  return sanitizedObservedFellowshipProse(sectionTextWithoutContactDirections($, id).text);
 }
 
 // The Global Region facet lists each country as its own "-- Country (Subregion)" item
@@ -402,12 +398,12 @@ export function parseFundDetailPage(
     sourceKey: sourceKeyForFund(fund.url),
     title,
     url,
-    description: sectionProse($, 'lblBriefDescription', 2000),
+    description: sectionProse($, 'lblBriefDescription'),
     fullSourceDescription: fundFullSourceDescription($),
-    applicationInformation: sectionProse($, 'lblApplicationInformation', 2000),
-    eligibility: sanitizedProse(eligibility.text, 500),
+    applicationInformation: sectionProse($, 'lblApplicationInformation'),
+    eligibility: sanitizedObservedFellowshipProse(eligibility.text),
     eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
-    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward', 500),
+    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward'),
     awardAmount: awardAmountText($),
     deadline,
     applicationOpenDate: opensAt,

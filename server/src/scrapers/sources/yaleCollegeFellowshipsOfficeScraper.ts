@@ -33,6 +33,10 @@ import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
+import {
+  boundedObservedFellowshipProse,
+  sanitizedObservedFellowshipProse,
+} from '../fellowshipProse';
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
 import { externalAwardRecord, withoutRecordWindow } from '../utils/externalAwardRecord';
@@ -718,7 +722,7 @@ function applicationSectionText($: cheerio.CheerioAPI): string | undefined {
   });
 
   const unique = Array.from(new Set(sections));
-  return unique.length > 0 ? unique.join('\n').slice(0, 3000) : undefined;
+  return unique.length > 0 ? boundedObservedFellowshipProse(unique.join('\n')) : undefined;
 }
 
 function inferApplicationMaterials(text: string): string[] {
@@ -1712,9 +1716,8 @@ function candidateFromDetailPage(
   const bodyBlocks = textBlocks(chromeFreeRoot);
   const titledBodyText = `${title} ${bodyText}`;
   const eligibility = eligibilitySentences(bodyBlocks);
-  const safeDescription = sanitizeStoredCatalogDescription(
+  const safeDescription = sanitizedObservedFellowshipProse(
     descriptionFieldText(chromeFreeRoot) ?? bodyText,
-    2000,
   );
   const applicationInformation = applicationSectionText($);
   const record = externalAwardRecord($, contentRoot, pageUrl, referenceDate);

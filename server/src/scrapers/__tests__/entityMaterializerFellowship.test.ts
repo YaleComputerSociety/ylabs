@@ -690,6 +690,66 @@ describe('fellowship materialization', () => {
       });
     });
 
+    describe('prose observed past the display caps (#4572)', () => {
+      const requirement =
+        'Each application must include the approval of a faculty advisor who will supervise the research project.';
+      const filler = (topic: string, count: number) =>
+        Array.from(
+          { length: count },
+          (_, index) =>
+            `${topic} clause ${index + 1} describes a synthetic condition of the award.`,
+        ).join(' ');
+      const row = { _id: storedRow._id, sourceKey: storedRow.sourceKey };
+
+      it('stores capped display copies while the classifier reads the whole observation', async () => {
+        mockRead(
+          [
+            fact('title', 'Fixture Independent Project Fund'),
+            fact('description', 'Provides funding for an independent project.'),
+            fact('eligibility', `${filler('Eligibility', 12)} ${requirement}`),
+            fact('restrictionsToUseOfAward', filler('Restriction', 12)),
+            fact('applicationInformation', filler('Application', 40)),
+          ],
+          row,
+        );
+
+        const result = await materializeEntity(
+          'fellowship',
+          { entityKey: row.sourceKey },
+          { dryRun: true },
+        );
+        const eligibility = String(result.plannedSet?.eligibility);
+
+        expect(eligibility.length).toBeLessThanOrEqual(500);
+        expect(eligibility).not.toContain('faculty advisor');
+        expect(String(result.plannedSet?.restrictionsToUseOfAward).length).toBeLessThanOrEqual(500);
+        expect(String(result.plannedSet?.applicationInformation).length).toBeLessThanOrEqual(2000);
+        expect(result.plannedSet).toMatchObject({
+          requiresMentorBeforeApply: true,
+          entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        });
+      });
+
+      it('stores prose within its display cap exactly as observed', async () => {
+        const applicationInformation = 'Submit a proposal.\nSubmit a budget.';
+        mockRead(
+          [
+            fact('title', 'Fixture Independent Project Fund'),
+            fact('applicationInformation', applicationInformation),
+          ],
+          row,
+        );
+
+        const result = await materializeEntity(
+          'fellowship',
+          { entityKey: row.sourceKey },
+          { dryRun: true },
+        );
+
+        expect(result.plannedSet?.applicationInformation).toBe(applicationInformation);
+      });
+    });
+
     it('keeps a stored award amount the classifier is silent about', async () => {
       mockRead(
         [
