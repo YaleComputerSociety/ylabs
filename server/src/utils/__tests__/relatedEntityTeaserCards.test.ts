@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { collectVisibleDescriptionCandidates } from '../officialResearchDescription';
+import { isRelatedEntityTeaserTextOnPage } from '../relatedEntityTeaserCards';
 
 const OWN =
   'We test tissues, cells and environmental samples for veterinary pathogens by polymerase chain reaction and serology.';
@@ -88,5 +89,23 @@ describe('related-entity teaser cards', () => {
 
     expect(hasCandidate(candidates, OTHER_A)).toBe(true);
     expect(hasCandidate(candidates, OTHER_B)).toBe(true);
+  });
+});
+
+describe('isRelatedEntityTeaserTextOnPage', () => {
+  const PAGE_URL = 'https://research.example.edu/cores/a';
+  const corePage = `<html><body><main><section><p>${OWN}</p></section><ul>${teaserCard('/cores/b', 'Metabolism Core', OTHER_A)}${teaserCard('/cores/c', 'Screening Center', OTHER_B)}</ul></main></body></html>`;
+
+  it("recognises another unit's teaser blurb as not this page's own text", () => {
+    expect(isRelatedEntityTeaserTextOnPage(corePage, PAGE_URL, OTHER_A)).toBe(true);
+  });
+
+  it("never claims the page's own text", () => {
+    expect(isRelatedEntityTeaserTextOnPage(corePage, PAGE_URL, OWN)).toBe(false);
+  });
+
+  it('claims nothing when the blurb also appears in the page body', () => {
+    const quoted = corePage.replace('<section>', `<section><p>${OTHER_A}</p>`);
+    expect(isRelatedEntityTeaserTextOnPage(quoted, PAGE_URL, OTHER_A)).toBe(false);
   });
 });

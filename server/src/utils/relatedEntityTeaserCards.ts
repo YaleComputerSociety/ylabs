@@ -18,7 +18,7 @@
  * lab's content, while a core page's cards for sibling cores are not. Without the
  * page's URL that cannot be told apart, so nothing is removed.
  */
-import type * as cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 
 // Whole class tokens naming a card BLOCK ("card", "cores-card", "card--listing",
 // "teaser", "listing-item"). A BEM element such as "card__content" is the inside of
@@ -77,9 +77,7 @@ const isInListingOfCards = ($: cheerio.CheerioAPI, element: any): boolean => {
   );
 };
 
-export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI, pageUrl?: string): void {
-  const page = pageUrl ? parseUrl(pageUrl) : null;
-  if (!page) return;
+const relatedEntityTeaserCardElements = ($: cheerio.CheerioAPI, page: URL): any[] =>
   $('[class]')
     .toArray()
     .filter((element) => isTeaserCardBlock($, element))
@@ -89,8 +87,45 @@ export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI, pageUrl?: 
         .find(LINKED_HEADING_SELECTOR)
         .toArray()
         .some((anchor) => linksOutsidePageSubtree($(anchor).attr('href'), page)),
-    )
-    .forEach((element) => {
-      $(element).remove();
-    });
+    );
+
+export function removeRelatedEntityTeaserCards($: cheerio.CheerioAPI, pageUrl?: string): void {
+  const page = pageUrl ? parseUrl(pageUrl) : null;
+  if (!page) return;
+  relatedEntityTeaserCardElements($, page).forEach((element) => {
+    $(element).remove();
+  });
+}
+
+const comparableText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const OPENING_WORDS = 12;
+
+/**
+ * Whether a description is another unit's teaser blurb on this page: its opening
+ * appears inside one of the page's related-unit teaser cards and nowhere in the
+ * page's own text. A lane that stored such a description before teaser cards were
+ * removed (#4823) can then retract it, because re-reading the page shows the text
+ * was never this page's own.
+ */
+export function isRelatedEntityTeaserTextOnPage(
+  html: string,
+  pageUrl: string,
+  description: string,
+): boolean {
+  const page = parseUrl(pageUrl);
+  const opening = comparableText(description).split(' ').slice(0, OPENING_WORDS).join(' ');
+  if (!page || opening.split(' ').length < OPENING_WORDS) return false;
+  const $ = cheerio.load(html);
+  $('script, style, noscript').remove();
+  const teasers = relatedEntityTeaserCardElements($, page);
+  if (!teasers.some((element) => comparableText($(element).text()).includes(opening))) return false;
+  teasers.forEach((element) => {
+    $(element).remove();
+  });
+  return !comparableText($('body').text()).includes(opening);
 }
