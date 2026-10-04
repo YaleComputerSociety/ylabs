@@ -1300,6 +1300,34 @@ export const rankOwnEvidenceAboveMeshDescriptorMatches = <T>(
   return descriptorOnly.length === 0 ? keywordLegHits : [...ownEvidence, ...descriptorOnly];
 };
 
+// Fusion credits a row for its semantic rank, and the semantic leg ranks a MeSH-descriptor-only
+// row by the descriptor text it embeds, so a row the keyword leg demoted came back above rows
+// whose own text names the query: 13 rows across 5 of 40 descriptor queries measured (#4538).
+export const keepMeshDescriptorMatchesBelowOwnEvidence = <T>(
+  fusedHits: T[],
+  keywordLegHits: T[],
+  normalizedQuery: Pick<NormalizedResearchSearchQuery, 'tokens' | 'isAliasExpanded'>,
+): T[] => {
+  if (normalizedQuery.isAliasExpanded || normalizedQuery.tokens.length === 0) return fusedHits;
+  const queryWordKeys = normalizedQuery.tokens.flatMap(meshDescriptorWordKeys);
+  const restsOnDescriptor = (hit: T) => hitMatchRestsOnMeshDescriptor(hit, queryWordKeys);
+  const ownEvidenceIds = new Set(
+    keywordLegHits.filter((hit) => !restsOnDescriptor(hit)).map(candidateHitId),
+  );
+  let lastOwnEvidenceIndex = -1;
+  fusedHits.forEach((hit, index) => {
+    if (ownEvidenceIds.has(candidateHitId(hit))) lastOwnEvidenceIndex = index;
+  });
+  const outrankingOwnEvidence = fusedHits.slice(0, lastOwnEvidenceIndex + 1);
+  const demoted = outrankingOwnEvidence.filter(restsOnDescriptor);
+  if (demoted.length === 0) return fusedHits;
+  return [
+    ...outrankingOwnEvidence.filter((hit) => !restsOnDescriptor(hit)),
+    ...demoted,
+    ...fusedHits.slice(lastOwnEvidenceIndex + 1),
+  ];
+};
+
 /**
  * True when the hit's keyword-leg relevance rests entirely on a coincidental
  * typo: only some query words matched, none of them exactly, and the partial
@@ -2147,9 +2175,13 @@ async function searchResearchGroupsForQuery(
     // neighbours carry no signal about which same-named row is the person, and
     // fusing them in pushed the right row of a common surname out of the top 10.
     if (withholdSemanticOnlyRows) return { hits: keywordLegHits, dropped: 0 };
-    const fused = fuseKeywordAndSemanticRankings(
-      keywordLegHits.slice(0, HYBRID_CANDIDATE_POOL_SIZE),
-      semanticLegHits,
+    const fused = keepMeshDescriptorMatchesBelowOwnEvidence(
+      fuseKeywordAndSemanticRankings(
+        keywordLegHits.slice(0, HYBRID_CANDIDATE_POOL_SIZE),
+        semanticLegHits,
+      ),
+      keywordLegHits,
+      normalizedQuery,
     );
     const fusedIds = new Set(fused.map(candidateHitId));
     const keywordTail = keywordLegHits.filter((hit: any) => !fusedIds.has(candidateHitId(hit)));

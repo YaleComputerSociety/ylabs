@@ -120,6 +120,7 @@ import {
   normalizeResearchSearchQuery,
   promoteExactAliasFieldMatches,
   rankOwnEvidenceAboveMeshDescriptorMatches,
+  keepMeshDescriptorMatchesBelowOwnEvidence,
   normalizeResearchGroupObjectId,
   isFreshVerifiedOfficialRosterRow,
   publicResearchEntityLeadMemberNames,
@@ -312,6 +313,85 @@ describe('searchResearchGroupsViaMeili', () => {
         (hit) => hit.id,
       ),
     ).toEqual(hits.map((hit) => hit.id));
+  });
+
+  it('keeps a MeSH descriptor match below own evidence after the semantic leg is fused in (#4538)', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const keywordLeg = rankOwnEvidenceAboveMeshDescriptorMatches(
+      [
+        { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+        { id: 'own-lab' },
+        { id: 'second-own-lab' },
+      ],
+      query,
+    );
+    const semanticLeg = [
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'semantic-neighbour' },
+      { id: 'own-lab' },
+    ];
+    const fused = fuseKeywordAndSemanticRankings(keywordLeg, semanticLeg);
+
+    expect(fused.map((hit) => hit.id).indexOf('descriptor-only')).toBeLessThan(
+      fused.map((hit) => hit.id).indexOf('second-own-lab'),
+    );
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(fused, keywordLeg, query).map((hit) => hit.id),
+    ).toEqual(['own-lab', 'second-own-lab', 'descriptor-only', 'semantic-neighbour']);
+  });
+
+  it('leaves the fused order alone when no row rests on a MeSH descriptor for the query', () => {
+    const fused = [{ id: 'a' }, { id: 'b', meshDescriptorOnlyTerms: ['urology'] }, { id: 'c' }];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(
+        fused,
+        fused,
+        normalizeResearchSearchQuery('robotics'),
+      ),
+    ).toBe(fused);
+  });
+
+  it('keeps semantic neighbours that follow every own-evidence row behind the demoted rows', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const fused = [
+      { id: 'own-lab' },
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'neighbour-before' },
+      { id: 'second-own-lab' },
+      { id: 'neighbour-after' },
+    ];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(
+        fused,
+        [{ id: 'own-lab' }, { id: 'second-own-lab' }],
+        query,
+      ).map((hit) => hit.id),
+    ).toEqual([
+      'own-lab',
+      'neighbour-before',
+      'second-own-lab',
+      'descriptor-only',
+      'neighbour-after',
+    ]);
+  });
+
+  it('leaves a MeSH descriptor match the fusion already ranked below own evidence where it was', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const keywordLeg = [{ id: 'own-lab' }];
+    const fused = [
+      { id: 'early-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'own-lab' },
+      { id: 'neighbour-a' },
+      { id: 'neighbour-b' },
+      { id: 'late-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+    ];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(fused, keywordLeg, query).map((hit) => hit.id),
+    ).toEqual(['own-lab', 'early-descriptor', 'neighbour-a', 'neighbour-b', 'late-descriptor']);
+    expect(keepMeshDescriptorMatchesBelowOwnEvidence(fused, [], query)).toBe(fused);
   });
 
   it('drops the institution name so it cannot outrank the topic', () => {
