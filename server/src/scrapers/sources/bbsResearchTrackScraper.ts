@@ -41,7 +41,6 @@ import {
   type CenterRosterReadMember,
   type CenterRosterStopReason,
 } from '../centerRosterRetirement';
-import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
 import { getCached, setCached } from '../snapshotCache';
 import { fetchFailureStatusCode } from '../utils/fetchFailure';
 import {
@@ -83,7 +82,7 @@ export const BBS_REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
  * Cross-checked against `schoolForDirectoryProfileHost`, which maps this school's hosts to the
  * same stored name, so the two agree rather than each carrying its own spelling.
  */
-const SCHOOL_NAME = SCHOOL_OF_MEDICINE_NAME;
+const SCHOOL_NAME = 'School of Medicine';
 const RESEARCH_AREA_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
 
