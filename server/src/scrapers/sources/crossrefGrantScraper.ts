@@ -61,7 +61,7 @@ const FEDERAL_LANE_FUNDER_DOIS = new Set([
   '10.13039/100000001',
   '10.13039/100000002',
   '10.13039/100000015',
-  '10.13039/100000048',
+  '10.13039/100000103',
 ]);
 const FEDERAL_LANE_FUNDER_NAME =
   /^(?:u\.?\s?s\.?\s+|united states\s+)?(?:department of energy|national science foundation|national endowment for the humanities|national institutes of health)$/i;

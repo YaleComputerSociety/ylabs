@@ -127,6 +127,21 @@ describe('extractCrossrefGrant', () => {
     });
   });
 
+  it('admits the American Cancer Society, whose funder DOI sits beside the federal ones', () => {
+    expect(extractCrossrefGrant(grantItem({ funderDoi: '10.13039/100000048' }), 2020).kind).toBe(
+      'grant',
+    );
+  });
+
+  it('refuses an NEH record by its funder DOI', () => {
+    expect(
+      extractCrossrefGrant(
+        grantItem({ funder: 'Synthetic humanities office', funderDoi: '10.13039/100000103' }),
+        2020,
+      ),
+    ).toEqual({ kind: 'refused', reason: 'federalFunder' });
+  });
+
   it('refuses a record from a funder a federal lane already reports', () => {
     const federal = { kind: 'refused', reason: 'federalFunder' };
     expect(
