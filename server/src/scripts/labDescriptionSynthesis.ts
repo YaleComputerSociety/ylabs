@@ -1,6 +1,7 @@
 import axios from 'axios';
 import {
   assessResearchEntityDescriptionQuality,
+  fullDescriptionMeetsEvidenceBar,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { asResearchEntityType } from '../models/researchAccessTypes';
@@ -297,7 +298,10 @@ export function evaluateSynthesisOutput(
     shortDescription: output.shortDescription,
     researchAreas,
   });
-  if (!quality.full.isUseful || !quality.short.isUseful) {
+  if (
+    !fullDescriptionMeetsEvidenceBar(output.fullDescription, researchAreas) ||
+    !quality.short.isUseful
+  ) {
     return { accepted: false, reason: 'low-quality', grounding };
   }
   if (classifyFullDescription(output.fullDescription) !== 'genuine') {

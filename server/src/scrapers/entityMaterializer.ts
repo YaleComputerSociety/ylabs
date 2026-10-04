@@ -36,6 +36,7 @@ import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
   entityDocShortDescriptionForRestatementGuard,
+  fullDescriptionMeetsEvidenceBar,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
   isPoorerThanCardDescription,
@@ -6195,10 +6196,19 @@ function adoptServableFullDescription(input: {
     );
   };
 
+  const meetsEvidenceBar = (value: unknown): boolean =>
+    fullDescriptionMeetsEvidenceBar(textValue(value), identity.researchAreas, identity.entityType);
+
   const servedValue = set[field] ?? entityDoc?.[field];
   if (!textValue(servedValue)) return 0;
   const incumbentServes = servesAsDescription(servedValue);
-  if (incumbentServes && !isBiographyRatherThanResearch(textValue(servedValue))) return 0;
+  if (
+    incumbentServes &&
+    !isBiographyRatherThanResearch(textValue(servedValue)) &&
+    meetsEvidenceBar(servedValue)
+  ) {
+    return 0;
+  }
 
   const servable = resolveFieldRanked(field, input.resolverObs, {
     now: input.now,
@@ -6238,10 +6248,14 @@ function adoptServableFullDescription(input: {
       textValue(value),
       input.leadPersonName,
     );
+  // A thin incumbent serves, but yields like a biography does to research prose that
+  // clears the evidence bar, so a richer body is still preferred to it.
   const replacement = incumbentServes
     ? servable.find(
         ({ materialized }) =>
-          isResearchProse(textValue(materialized)) && keepsDescriptionPair(materialized),
+          isResearchProse(textValue(materialized)) &&
+          meetsEvidenceBar(materialized) &&
+          keepsDescriptionPair(materialized),
       )
     : (servable.find(
         ({ materialized }) => !isBiographyRatherThanResearch(textValue(materialized)),

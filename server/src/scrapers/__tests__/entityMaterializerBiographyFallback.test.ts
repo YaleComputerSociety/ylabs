@@ -7,6 +7,7 @@ import {
 } from '../entityMaterializer';
 import type { ResolvedField, ResolverObservation } from '../confidenceResolver';
 import { isBiographyRatherThanResearch } from '../../utils/biographyRatherThanResearch';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
 
@@ -165,7 +166,7 @@ describe('a biography description is a fallback only (#4288)', () => {
     expect(plannedBody(result, researchProse)).toBe(researchProse);
   });
 
-  it('keeps a servable biography rather than adopt research prose that restates the card and leaves no card', async () => {
+  it('adopts research prose that restates the card once the pair still serves a card', async () => {
     const card =
       'Research focuses on the economics of early childhood, examining how state preschool statutes govern program quality and access, measuring the social costs of early disadvantage, and addressing childcare challenges internationally.';
     const resolverObs = [
@@ -177,7 +178,13 @@ describe('a biography description is a fallback only (#4288)', () => {
       ...withCard,
       entityDoc: { ...withCard.entityDoc, shortDescription: card },
     });
-    expect(plannedBody(result, CAREER_BIOGRAPHY)).toBe(CAREER_BIOGRAPHY);
+    expect(plannedBody(result, CAREER_BIOGRAPHY)).toBe(card);
+    const adopted = buildResearchEntityPublicDescriptionRepresentation({
+      entity: { ...withCard.entityDoc, fullDescription: card, shortDescription: card },
+      leadMemberNames: [],
+    });
+    expect(adopted.invariant.pass).toBe(true);
+    expect(adopted.entity.shortDescription).not.toBe('');
   });
 
   it('never trades one servable biography for another', async () => {

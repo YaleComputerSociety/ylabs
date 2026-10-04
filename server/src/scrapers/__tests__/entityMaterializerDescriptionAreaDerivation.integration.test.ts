@@ -423,6 +423,8 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
         );
       });
 
+      const THIN_METABOLIC_PROSE = 'Cohort study of metabolic disorders.';
+
       const resolve = (options: Parameters<typeof materializeEntity>[2] = {}) =>
         materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' }, options);
 
@@ -456,7 +458,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
 
       it('plans nothing when the stored list already holds every derived chip', async () => {
         await seedEntity({ researchAreas: ['Metabolic Disorders', 'Epidemiology'] });
-        await seedField('fullDescription', 'The cohort study examines metabolic disorders.');
+        await seedField('fullDescription', THIN_METABOLIC_PROSE);
 
         const planned = await resolve({ dryRun: true });
 
@@ -468,7 +470,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
 
       it('matches a stored chip to a derived one regardless of case', async () => {
         await seedEntity({ researchAreas: ['metabolic disorders', 'Epidemiology'] });
-        await seedField('fullDescription', 'The cohort study examines metabolic disorders.');
+        await seedField('fullDescription', THIN_METABOLIC_PROSE);
 
         const planned = await resolve({ dryRun: true });
 
@@ -518,7 +520,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
             },
           },
         });
-        await seedField('fullDescription', 'The cohort study examines metabolic disorders.');
+        await seedField('fullDescription', THIN_METABOLIC_PROSE);
 
         const result = await resolve({ writeOnlyFields: ['researchAreas'] });
 
@@ -567,10 +569,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
 
       it('plans nothing on the second resolve of a list it extended', async () => {
         await seedEntity({ researchAreas: ['Toxicology'] });
-        await seedField(
-          'fullDescription',
-          'The group applies data mining to long-term water quality records.',
-        );
+        await seedField('fullDescription', 'Data mining of water quality.');
 
         await resolve();
         const stored = await readRow();

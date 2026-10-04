@@ -202,8 +202,8 @@ describe('planCardBackfillRow assesses the served card, not the stored one (#267
 });
 
 describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
-  it('holds rather than fabricates when a stored bare label-list short would be rejected at serve time', async () => {
-    const emptySynthesize = vi.fn(async () => '');
+  it('keeps a stored topic-list card that restates a usable research-interests body', async () => {
+    const synthesize = vi.fn(async () => '');
     const row = await planCardBackfillRow(
       {
         id: '00000000000000000000000a',
@@ -214,14 +214,14 @@ describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
         researchAreas: LABEL_LIST_AREAS,
         visibilityReasons: ['missing_card_description'],
       },
-      emptySynthesize,
+      synthesize,
     );
-    expect(row.action).toBe('no-card');
-    expect(row.gainedCard).toBe(false);
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
   });
 
-  it('still detects the label-list short via a kind-derived entityType fallback when entityType is unset (#1732 parity)', async () => {
-    const emptySynthesize = vi.fn(async () => '');
+  it('keeps the same card via a kind-derived entityType fallback when entityType is unset (#1732 parity)', async () => {
+    const synthesize = vi.fn(async () => '');
     const row = await planCardBackfillRow(
       {
         id: '00000000000000000000000b',
@@ -232,32 +232,10 @@ describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
         researchAreas: LABEL_LIST_AREAS,
         visibilityReasons: ['missing_card_description'],
       },
-      emptySynthesize,
-    );
-    expect(row.action).toBe('no-card');
-    expect(row.gainedCard).toBe(false);
-  });
-
-  it('promotes a genuinely different synthesized sentence instead of restating the stored label-list', async () => {
-    const rewordedCard =
-      'Examines comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
-    const synthesize = vi.fn(async () => rewordedCard);
-    const row = await planCardBackfillRow(
-      {
-        id: '00000000000000000000000c',
-        slug: 'jordan-ellis-resynthesized',
-        entityType: 'FACULTY_RESEARCH_AREA',
-        shortDescription: LABEL_LIST_SHORT,
-        fullDescription: LABEL_LIST_FULL,
-        researchAreas: LABEL_LIST_AREAS,
-        visibilityReasons: ['missing_card_description'],
-      },
       synthesize,
     );
-    expect(row.action).toBe('card-synthesized');
-    expect(row.proposedShort).toBe(rewordedCard);
-    expect(row.gainedCard).toBe(true);
-    expect(row.wouldPromote).toBe(true);
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
   });
 });
 

@@ -13,6 +13,7 @@ import {
   usesLatestWinsFingerprint,
 } from '../observationStore';
 import {
+  fullDescriptionMeetsEvidenceBar,
   fullDescriptionQuality,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
@@ -1304,8 +1305,8 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     ];
     const areaEchoIncumbent =
       'The lab studies cancer biology, immunology, genomics, proteomics, and metabolomics in human tissue samples.';
-    expect(fullDescriptionQuality(areaEchoIncumbent, undefined).isUseful).toBe(true);
-    expect(fullDescriptionQuality(areaEchoIncumbent, researchAreas).isUseful).toBe(false);
+    expect(fullDescriptionMeetsEvidenceBar(areaEchoIncumbent, undefined)).toBe(true);
+    expect(fullDescriptionMeetsEvidenceBar(areaEchoIncumbent, researchAreas)).toBe(false);
 
     const result = await appendObservations(
       [

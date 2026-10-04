@@ -1151,8 +1151,8 @@ export function researchSentencesOfBiographyBody(value: string): string {
 }
 
 /**
- * The body this lane asserts for a biography: its research sentences when they serve
- * as a body on their own, and otherwise the biography itself. A research statement
+ * The body this lane asserts for a biography: its research sentences when they clear
+ * the evidence bar as a body on their own, and otherwise the biography itself. A research statement
  * that is only a topic list ("My research interests include: A, B, C") is not a body
  * the serve path accepts, so storing it alone would cost the row its card and its
  * place in browse. The owner chose to keep such a biography as the body and write the
@@ -1170,7 +1170,7 @@ function bodyForBiography(raw: string, context: { entityType?: string; kind?: st
     },
     leadMemberNames: [],
   });
-  return served.quality.full.isUseful ? research : raw;
+  return served.quality.full.flags.length === 0 ? research : raw;
 }
 
 // The serve sanitizer blanks a card the quality bar alone accepts, a first-person line

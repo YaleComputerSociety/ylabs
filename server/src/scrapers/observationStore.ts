@@ -19,7 +19,7 @@ import {
   sanitizeObservationField,
 } from './observationFieldSanitizer';
 import {
-  fullDescriptionQuality,
+  fullDescriptionMeetsEvidenceBar,
   isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
@@ -118,7 +118,7 @@ export function proseValueIsUseful(
     ? shortDescriptionQuality(value, context.fullContext ?? '', context.researchAreas, {
         entityType: context.entityType,
       }).isUseful
-    : fullDescriptionQuality(value, context.researchAreas, context.entityType).isUseful;
+    : fullDescriptionMeetsEvidenceBar(value, context.researchAreas, context.entityType);
 }
 
 /**

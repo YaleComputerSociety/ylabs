@@ -79,13 +79,14 @@ const input = (resolverObs: ResolverObservation[]): ProjectFromLogInput => ({
 });
 
 describe('full description adoption asks the serving check (#3437)', () => {
-  it('starts from a body the quality bar passes and the serving check refuses', () => {
-    expect(fullDescriptionQuality(TOPIC_ECHO_BODY).isUseful).toBe(true);
-    expect(servingBarAcceptsFullDescription(entityDoc, {}, TOPIC_ECHO_BODY, '')).toBe(false);
+  it('starts from a thin body that serves beside a richer body that also serves', () => {
+    expect(fullDescriptionQuality(TOPIC_ECHO_BODY, TOPICS).flags).toContain('area-echo-fallback');
+    expect(servingBarAcceptsFullDescription(entityDoc, {}, TOPIC_ECHO_BODY, '')).toBe(true);
+    expect(fullDescriptionQuality(RESEARCH_BODY, TOPICS).flags).toEqual([]);
     expect(servingBarAcceptsFullDescription(entityDoc, {}, RESEARCH_BODY, '')).toBe(true);
   });
 
-  it('adopts a lower-ranked body that serves over a winner the serving check refuses', async () => {
+  it('adopts a lower-ranked richer body over a winner that serves only as a thin body', async () => {
     const result = await projectFromLog(
       'researchEntity',
       input([
