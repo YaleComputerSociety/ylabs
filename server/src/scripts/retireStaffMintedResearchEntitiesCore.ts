@@ -4,10 +4,11 @@
  * non-research staff role (#3410), a student or graduate title, or a trainee rank the
  * owner ruled cannot host a student's research.
  *
- * Those four classes are the whole population. The student and trainee classes are
- * decided before the faculty-keyword yield below, because `FACULTY_KEYWORDS` spells
- * `postdoctoral` and a hyphen would otherwise decide an irreversible archive; each has
- * its own predicate instead, and `docs/research-data-pipeline.md` records why.
+ * Those four classes are the whole population. The trainee class is decided before the
+ * faculty-keyword yield below, because `FACULTY_KEYWORDS` spells `postdoctoral` and a
+ * hyphen would otherwise decide an irreversible archive; the student class runs after
+ * it, because no faculty keyword spells a student rank. Each has its own predicate, and
+ * `docs/research-data-pipeline.md` records why.
  *
  * The pass is strictly more conservative than the mint gate: any title that states a
  * faculty appointment anywhere yields, because minting is reversible by the next run
@@ -41,6 +42,7 @@ import {
 } from '../scrapers/sources/yaleDirectoryScraper';
 import {
   namesARankItServesRatherThanHolds,
+  titleRankSpans,
   titleResearchOwnership,
 } from '../scrapers/utils/titleResearchOwnership';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
@@ -144,29 +146,29 @@ function statesOnlyThatItsHolderIsAStudent(title: string | undefined | null): bo
   return !ADMINISTRATIVE_HEAD_NOUN.test(stripInvisibleFormatCharacters(String(title)));
 }
 
-const RESEARCH_SCIENTIST_RANK = /\bresearch scientist\b/i;
 // The ranks the owner ruled cannot host a student's research (2026-10-04). Clinical
-// fellows, residents, staff affiliates and postgraduate associates await a ruling, so they
-// stay out of an irreversible archive rather than riding on the trainee lattice.
+// fellows, residents, staff affiliates and postgraduate associates await a ruling, so a
+// title naming any of them beside a ruled rank stays out of an irreversible archive.
 const OWNER_RULED_NON_HOSTING_RANK =
-  /\bpost-?doc(?:toral)?\b|\bresearch (?:associate|assistant)\b|\bvisiting (?:fellow|scholar|researcher)\b/i;
+  /^(?:post-?doc(?:toral)?|research (?:associate|assistant)|visiting (?:fellow|scholar|researcher))$/i;
 
 /**
  * A rank that cannot host a student's research, on two witnesses that must agree: the
  * rank lattice finds no span that owns research anywhere in the title, and the mint
  * vocabulary names a rank held inside someone else's group. The lattice is the reason a
  * hyphen cannot decide this the way it decided the faculty-keyword yield, because both
- * spellings of a rank live in one pattern there. A research scientist hosts by the
- * owner's rule even where the lattice reads an associate one as working in another
- * group.
+ * spellings of a rank live in one pattern there. Every rank span must be one the owner
+ * ruled on, so a research scientist, which hosts by the owner's rule even where the
+ * lattice reads an associate one as working in another group, spares the title.
  */
 function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boolean {
   const clean = stripInvisibleFormatCharacters(String(title ?? ''));
   if (!clean.trim()) return false;
   if (titleResearchOwnership(clean) !== 'works_in_another_group') return false;
   if (!isSubordinateResearchRank(clean)) return false;
-  if (RESEARCH_SCIENTIST_RANK.test(clean)) return false;
-  if (!OWNER_RULED_NON_HOSTING_RANK.test(clean)) return false;
+  if (!titleRankSpans(clean).every((span) => OWNER_RULED_NON_HOSTING_RANK.test(span.text))) {
+    return false;
+  }
   if (namesARankItServesRatherThanHolds(clean)) return false;
   return !ADMINISTRATIVE_HEAD_NOUN.test(clean);
 }
@@ -174,11 +176,11 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
 export function staffMintedEntityReasonFor(
   title: string | undefined | null,
 ): StaffMintedEntityReason | undefined {
-  if (statesOnlyThatItsHolderIsAStudent(title)) return 'student_title';
   if (statesOnlyANonHostingTraineeRank(title)) return 'non_hosting_trainee_title';
   if (statesAnyFacultyAppointment(title)) return undefined;
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
+  if (statesOnlyThatItsHolderIsAStudent(title)) return 'student_title';
   return undefined;
 }
 

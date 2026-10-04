@@ -60,11 +60,9 @@ describe('staffMintedEntityReasonFor', () => {
     }
   });
 
-  // A trainee rank is out of the population entirely, however it is spelled. The
-  // hyphenated pair is the reason: `FACULTY_KEYWORDS` holds `postdoc` but not
-  // `post-doc`, so a rank-based population archived one spelling and spared the other,
-  // and no irreversible archive should turn on a hyphen. Those rows need their own
-  // issue.
+  // A ruled trainee rank retires however it is spelled. The hyphenated pair is the
+  // reason it is decided before the faculty-keyword yield: `FACULTY_KEYWORDS` holds
+  // `postdoc` but not `post-doc`, and no irreversible archive should turn on a hyphen.
   it('retires every rank the owner ruled cannot host, whatever its spelling', () => {
     for (const title of [
       'Postdoctoral Associate',
@@ -103,6 +101,21 @@ describe('staffMintedEntityReasonFor', () => {
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBeUndefined();
     }
+  });
+
+  it('spares a ruled rank named beside a rank still awaiting a ruling', () => {
+    for (const title of [
+      'Postdoctoral Associate and Clinical Fellow',
+      'Research Associate; Resident',
+      'Visiting Fellow and Staff Affiliate',
+      'Postdoctoral Associate and Research Fellow',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBeUndefined();
+    }
+  });
+
+  it('keeps the faculty-keyword yield ahead of the student class', () => {
+    expect(staffMintedEntityReasonFor('PhD Student and Research Fellow')).toBeUndefined();
   });
 
   it('spares a trainee rank named as the population an administrator serves', () => {
