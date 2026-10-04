@@ -295,6 +295,87 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
   });
 });
 
+describe('descriptionExtractionToObservations personal page of a LAB-typed row', () => {
+  const BODY =
+    'I use statistical and computational methods to study social networks, human behavior, and their interplay, developing tools to study them more efficiently.';
+
+  function identityValues(
+    name: string,
+    context: { entityType: string; personName?: string; entityKey?: string },
+  ) {
+    return descriptionExtractionToObservations(
+      { fullDescription: BODY, shortDescription: '', topics: [], methods: [], name },
+      {
+        sourceUrl: 'https://quillamarrow.github.io/',
+        entityKey: context.entityKey ?? 'nsf-pi-0123456789abcdef01234567',
+        entityType: context.entityType,
+        personName: context.personName,
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+      },
+    )
+      .filter((o) => ['name', 'displayName', 'entityType', 'kind'].includes(o.field))
+      .map((o) => [o.field, o.value]);
+  }
+
+  it('asserts faculty research and the person-scoped name when the site names only the lead', () => {
+    expect(
+      identityValues('Quilla Marrowbane', { entityType: 'LAB', personName: 'Quilla Marrowbane' }),
+    ).toEqual([
+      ['name', 'Quilla Marrowbane Faculty Research'],
+      ['displayName', 'Quilla Marrowbane Faculty Research'],
+      ['entityType', 'FACULTY_RESEARCH_AREA'],
+    ]);
+  });
+
+  it('accepts the lead name with a middle initial', () => {
+    expect(
+      identityValues('Quilla J. Marrowbane', {
+        entityType: 'LAB',
+        personName: 'Quilla Marrowbane',
+      }).find(([field]) => field === 'entityType'),
+    ).toEqual(['entityType', 'FACULTY_RESEARCH_AREA']);
+  });
+
+  it('leaves the type alone when the bare name is somebody other than the lead', () => {
+    expect(
+      identityValues('Orlen Vasquith', { entityType: 'LAB', personName: 'Quilla Marrowbane' }),
+    ).toEqual([
+      ['name', 'Orlen Vasquith'],
+      ['displayName', 'Orlen Vasquith'],
+    ]);
+  });
+
+  it('leaves the type alone when no lead is resolved', () => {
+    expect(identityValues('Quilla Marrowbane', { entityType: 'LAB' })).toEqual([
+      ['name', 'Quilla Marrowbane'],
+      ['displayName', 'Quilla Marrowbane'],
+    ]);
+  });
+
+  it('keeps the bare name on a row already typed as faculty research', () => {
+    expect(
+      identityValues('Quilla Marrowbane', {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        personName: 'Quilla Marrowbane',
+      }),
+    ).toEqual([
+      ['name', 'Quilla Marrowbane'],
+      ['displayName', 'Quilla Marrowbane'],
+    ]);
+  });
+
+  it('keeps a lab-named site on a LAB row as a lab', () => {
+    expect(
+      identityValues('Marrowbane Lab', { entityType: 'LAB', personName: 'Quilla Marrowbane' }),
+    ).toEqual([
+      ['name', 'Marrowbane Lab'],
+      ['displayName', 'Marrowbane Lab'],
+      ['entityType', 'LAB'],
+      ['kind', 'lab'],
+    ]);
+  });
+});
+
 describe('descriptionExtractionToObservations third-party organization body (#2480)', () => {
   const INSTITUTIONAL_BODY =
     'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';

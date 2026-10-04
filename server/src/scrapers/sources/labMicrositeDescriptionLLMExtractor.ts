@@ -97,8 +97,10 @@ import {
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
+  nameIsOnlyTheLeadPersonsName,
   namesASelfDeclaredLaboratory,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
+  personScopedResearchEntityNameFromPersonName,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -1433,6 +1435,9 @@ function labNameObservations(
   context: ExtractedPageIdentityContext,
 ): ObservationInput[] {
   const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
+  if (isLabTypedRowsPersonalPage(labName, context)) {
+    return personalPageObservations(labName, nameBase);
+  }
   const observations: ObservationInput[] = [
     { ...nameBase, field: 'name', value: labName },
     { ...nameBase, field: 'displayName', value: labName },
@@ -1446,6 +1451,37 @@ function labNameObservations(
     observations.push({ ...nameBase, field: 'kind', value: 'lab' });
   }
   return observations;
+}
+
+// The mirror of the self-declared-laboratory arm: a LAB row whose own site is titled
+// with nothing but its lead's name is a personal homepage, so the research is
+// person-scoped. Left alone, the bare name is re-suffixed "<person> Lab" from the
+// stored type, which on a grant-minted shell is the residue of the retired mint (#3160).
+function isLabTypedRowsPersonalPage(
+  labName: string,
+  context: ExtractedPageIdentityContext,
+): boolean {
+  return (
+    textValue(context.entityType).toUpperCase() === 'LAB' &&
+    nameIsOnlyTheLeadPersonsName({ name: labName, personName: context.personName })
+  );
+}
+
+function personalPageObservations(
+  personName: string,
+  nameBase: Omit<ObservationInput, 'field' | 'value'>,
+): ObservationInput[] {
+  const entityType = 'FACULTY_RESEARCH_AREA';
+  const name = personScopedResearchEntityNameFromPersonName({
+    candidateName: personName,
+    entityType,
+  });
+  if (!name) return [];
+  return [
+    { ...nameBase, field: 'name', value: name },
+    { ...nameBase, field: 'displayName', value: name },
+    { ...nameBase, field: 'entityType', value: entityType },
+  ];
 }
 
 const PAGE_HEADING_CHROME_SUFFIX_RE =

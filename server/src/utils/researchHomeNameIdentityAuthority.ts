@@ -1175,6 +1175,19 @@ export function entityKeyNamesOnlyThisPerson(args: {
   return keyTokens.every((token) => eponymMatchesIdentity(token, personTokens));
 }
 
+export function nameIsOnlyTheLeadPersonsName(args: {
+  name: unknown;
+  personName?: unknown;
+}): boolean {
+  if (!isBarePersonNameEntityName(args.name)) return false;
+  const leadTokens = personIdentityTokens(normalizeName(textValue(args.personName)));
+  if (leadTokens.length < 2) return false;
+  const nameTokens = personIdentityTokens(args.name);
+  const surname = leadTokens[leadTokens.length - 1];
+  if (!nameTokens.some((token) => eponymMatchesIdentity(token, [surname]))) return false;
+  return nameTokens.every((token) => eponymMatchesIdentity(token, leadTokens));
+}
+
 /**
  * The surname each display name ends on, as the eponym corroboration vocabulary.
  *
