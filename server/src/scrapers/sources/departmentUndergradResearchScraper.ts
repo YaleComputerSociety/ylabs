@@ -41,6 +41,11 @@ import {
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
 import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
@@ -91,6 +96,7 @@ interface DepartmentCourseCreditRead {
 export interface DepartmentUndergradResearchScraperDeps {
   pageConfigs?: DepartmentUndergradResearchPageConfig[];
   fetchHtml?: FetchHtml;
+  probePage?: LanePageProbe;
 }
 
 /**
@@ -914,10 +920,12 @@ export class DepartmentUndergradResearchScraper implements IScraper {
   readonly displayName = 'Department undergraduate research pages';
   private readonly pageConfigs: DepartmentUndergradResearchPageConfig[];
   private readonly fetchHtml: FetchHtml;
+  private readonly probePage?: LanePageProbe;
 
   constructor(deps: DepartmentUndergradResearchScraperDeps = {}) {
     this.pageConfigs = deps.pageConfigs || DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES;
     this.fetchHtml = deps.fetchHtml || defaultFetchHtml;
+    this.probePage = deps.probePage;
   }
 
   /**
@@ -1030,6 +1038,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     const summaries: string[] = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
     const courseCreditReads = new Map<string, DepartmentCourseCreditRead[]>();
+    const pageReads = new LanePageReads();
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
@@ -1040,7 +1049,9 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       let html: string;
       try {
         html = await this.fetchHtml(page.url, ctx.options.useCache);
+        pageReads.recordRead(page.url);
       } catch (err: unknown) {
+        pageReads.recordFailure(page.url, err);
         failedPages += 1;
         fetchAttempts.push({
           ...buildFetchAttemptMetrics({ fetchMode: 'http', success: false, startedAt }),
@@ -1110,6 +1121,8 @@ export class DepartmentUndergradResearchScraper implements IScraper {
 
     const courseCreditRoutes = await this.emitCourseCreditRoutes(ctx, courseCreditReads);
     totalObs += courseCreditRoutes.stated + courseCreditRoutes.withdrawn;
+    const pageHealth = await emitLanePageHealthForCitedPages(ctx, pageReads, this.probePage);
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     const failureNote =
       failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';

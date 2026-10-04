@@ -33,6 +33,11 @@ import {
   YSM_LAB_INDEX_HEALTH_FIELD,
 } from '../ysmLabDelistingReconciler';
 import { fetchFailureMessage } from '../utils/fetchFailure';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonName } from '../utils/personNameCasing';
@@ -126,7 +131,7 @@ export function inferPiNameFromLabName(name: string): PiNameHint | null {
   };
 }
 
-async function fetchPage(useCache: boolean): Promise<string> {
+async function fetchPage(useCache: boolean, pageReads: LanePageReads): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(PAGE_URL);
   const agents = ssrfSafeAgents();
   if (useCache) {
@@ -142,6 +147,7 @@ async function fetchPage(useCache: boolean): Promise<string> {
       httpsAgent: agents.httpsAgent,
     }),
   );
+  pageReads.recordRead(PAGE_URL, res.request?.res?.responseUrl || PAGE_URL);
   const html = res.data as string;
   if (useCache) await setCached('ysm-atoz-index', 'page', html);
   return html;
@@ -151,6 +157,7 @@ async function fetchLabHomepage(
   url: string,
   useCache: boolean,
   log: (message: string) => void,
+  pageReads: LanePageReads,
 ): Promise<string | null> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -171,10 +178,12 @@ async function fetchLabHomepage(
         httpsAgent: agents.httpsAgent,
       }),
     );
+    pageReads.recordRead(url, res.request?.res?.responseUrl || url);
     const html = res.data as string;
     if (useCache) await setCached('ysm-atoz-index', cacheKey, html);
     return html;
   } catch (error) {
+    pageReads.recordFailure(url, error);
     log(`Lab page fetch failed: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`);
     return null;
   }
@@ -682,6 +691,8 @@ export class YsmAtoZScraper implements IScraper {
   readonly name = 'ysm-atoz-index';
   readonly displayName = 'YSM A-to-Z Lab Websites';
 
+  constructor(private readonly probePage?: LanePageProbe) {}
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const offsetOption = ctx.options.offset;
     if (offsetOption !== undefined && (!Number.isSafeInteger(offsetOption) || offsetOption < 0)) {
@@ -693,7 +704,8 @@ export class YsmAtoZScraper implements IScraper {
     }
 
     ctx.log(`Fetching ${PAGE_URL}`);
-    const html = await fetchPage(ctx.options.useCache);
+    const pageReads = new LanePageReads();
+    const html = await fetchPage(ctx.options.useCache, pageReads);
     const labs = parseLabs(html);
     ctx.log(`Parsed ${labs.length} labs from index`);
 
@@ -731,7 +743,12 @@ export class YsmAtoZScraper implements IScraper {
 
     for (const { lab, piOnly } of work) {
       const observations = piOnly ? [] : labToObservations(lab, PAGE_URL);
-      const homepageHtml = await fetchLabHomepage(lab.url, ctx.options.useCache, ctx.log);
+      const homepageHtml = await fetchLabHomepage(
+        lab.url,
+        ctx.options.useCache,
+        ctx.log,
+        pageReads,
+      );
       if (homepageHtml === null) pageFetchFailures++;
       if (!piOnly) {
         const homepageDescription = homepageHtml
@@ -745,7 +762,7 @@ export class YsmAtoZScraper implements IScraper {
       if (homepageHtml) {
         const researchFacultyUrl = extractResearchFacultyUrl(homepageHtml, lab.url);
         const researchFacultyHtml = researchFacultyUrl
-          ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache, ctx.log)
+          ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache, ctx.log, pageReads)
           : null;
         if (researchFacultyUrl && researchFacultyHtml === null) pageFetchFailures++;
         const researchFacultyProfile = researchFacultyHtml
@@ -808,6 +825,9 @@ export class YsmAtoZScraper implements IScraper {
         `A-Z index snapshot marked incomplete (parsed=${labs.length}, narrowed=${indexNarrowed}); delisting detection will not act on this run`,
       );
     }
+
+    const pageHealth = await emitLanePageHealthForCitedPages(ctx, pageReads, this.probePage);
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);
     ctx.log(`Inferred PI for ${piMatched}/${work.length} labs`);

@@ -66,6 +66,11 @@ import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescrip
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   labUrlUnusabilityFor,
   loadLabUrlEvidenceBySlug,
   type LabUrlEvidenceLoader,
@@ -583,6 +588,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly pause: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
+    private readonly probePage?: LanePageProbe,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -639,6 +645,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       return refusal.length;
     };
 
+    const pageReads = new LanePageReads();
     const refusedProfiles: RawYsmFaculty[] = [];
     let refusedProfilesRecovered = 0;
     const fetchProfile = (faculty: RawYsmFaculty) =>
@@ -647,6 +654,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       (pass: 'first' | 'retry') =>
       async (faculty: RawYsmFaculty, fetched: PromiseSettledResult<string>): Promise<void> => {
         if (pass === 'first') profilesScanned += 1;
+        if (fetched.status === 'rejected')
+          pageReads.recordFailure(faculty.profileUrl, fetched.reason);
+        else pageReads.recordRead(faculty.profileUrl);
         if (fetched.status === 'rejected') {
           const status = fetchFailureStatusCode(fetched.reason);
           if (pass === 'first' && status !== undefined && REFUSAL_STATUS_CODES.has(status)) {
@@ -728,6 +738,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       );
     }
     const refusedProfilesLost = refusedProfiles.length - refusedProfilesRecovered;
+    const pageHealth = await emitLanePageHealthForCitedPages(ctx, pageReads, this.probePage);
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
