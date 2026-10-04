@@ -128,6 +128,42 @@ describe('recastUnbackedLabSelfDescription', () => {
     ).toBe(text);
   });
 
+  it('recasts the full-name form even when a non-LLM source recorded it', () => {
+    expect(
+      recast('The Wren Okonkwo-Vale Lab studies estuaries.', {
+        fieldProvenance: { fullDescription: { sourceName: 'manual-admin-edit' } },
+      }),
+    ).toBe('Wren Okonkwo-Vale studies estuaries.');
+  });
+
+  it('does not count a non-LLM full-name mention as lab evidence for another field', () => {
+    expect(
+      recast('The Okonkwo-Vale Lab studies estuaries.', {
+        shortDescription: 'The Wren Okonkwo-Vale Lab maps estuaries.',
+        fieldProvenance: {
+          fullDescription: { sourceName: 'lab-microsite-description-llm' },
+          shortDescription: { sourceName: 'official-profile-enrichment' },
+        },
+      }),
+    ).toBe('Wren Okonkwo-Vale studies estuaries.');
+  });
+
+  it('recasts a lab identity sentence onto the research program the person leads', () => {
+    expect(
+      recast(
+        'The Okonkwo-Vale Lab is a coastal geology lab studying estuaries. Its research spans marsh erosion.',
+      ),
+    ).toBe(
+      'Wren Okonkwo-Vale leads a coastal geology research program studying estuaries. This research spans marsh erosion.',
+    );
+  });
+
+  it('recasts the full-name form on a row with no provenance at all', () => {
+    expect(recast('The Wren Okonkwo-Vale Lab studies estuaries.', { fieldProvenance: {} })).toBe(
+      'Wren Okonkwo-Vale studies estuaries.',
+    );
+  });
+
   it('leaves the row alone when a non-LLM description names the lab', () => {
     const text = 'The Okonkwo-Vale Lab studies estuaries.';
     expect(
