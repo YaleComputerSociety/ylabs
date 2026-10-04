@@ -34,6 +34,7 @@ export interface FacultyDepartureLaneFacts {
   plan?: FacultyRosterDeparturePlan;
   governedDepartments: number;
   unresolvedDepartments: number;
+  undeclaredUnresolvedDepartments?: number;
   frozenDepartments: number;
   regressedDepartments?: number;
   incompleteReadDepartments?: number;
@@ -234,5 +235,54 @@ export function summarizeStandingRosterFreezes(
       byDepartment.size - departmentsWithAnyAuthoritativeSnapshot,
     standingFreezes,
     longestStandingFreezeDays: standingFreezes[0]?.standingForDays ?? 0,
+  };
+}
+
+export interface RosterRunCandidate {
+  runId: string;
+  startedAt: Date | null;
+  status?: string;
+  invalidated?: boolean;
+  options?: Record<string, unknown> | null;
+}
+
+export interface DepartureAuditRunSelection {
+  runId: string;
+  startedAt: string | null;
+  scope: string[];
+  newerRunsSkipped: number;
+  reason: 'newest-unscoped-successful-run' | 'no-unscoped-successful-run';
+}
+
+const ROSTER_RUN_SCOPING_OPTIONS = ['only', 'limit'] as const;
+
+export function rosterRunScope(options: Record<string, unknown> | null | undefined): string[] {
+  if (!options) return [];
+  return ROSTER_RUN_SCOPING_OPTIONS.filter((key) => {
+    const value = options[key];
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+    if (typeof value === 'string') return value.trim().length > 0;
+    return value !== undefined && value !== null && value !== false;
+  });
+}
+
+export function selectDepartureAuditRun(
+  candidates: RosterRunCandidate[],
+): DepartureAuditRunSelection | undefined {
+  const live = candidates
+    .filter((candidate) => candidate.invalidated !== true)
+    .sort((left, right) => (right.startedAt?.getTime() ?? 0) - (left.startedAt?.getTime() ?? 0));
+  if (live.length === 0) return undefined;
+  const fullIndex = live.findIndex(
+    (candidate) => candidate.status === 'success' && rosterRunScope(candidate.options).length === 0,
+  );
+  const chosen = fullIndex >= 0 ? live[fullIndex] : live[0];
+  return {
+    runId: chosen.runId,
+    startedAt: chosen.startedAt ? chosen.startedAt.toISOString() : null,
+    scope: rosterRunScope(chosen.options),
+    newerRunsSkipped: fullIndex >= 0 ? fullIndex : 0,
+    reason: fullIndex >= 0 ? 'newest-unscoped-successful-run' : 'no-unscoped-successful-run',
   };
 }

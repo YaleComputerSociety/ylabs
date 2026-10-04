@@ -930,6 +930,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       },
       governedDepartments: [],
       unresolvedDepartments: [],
+      undeclaredUnresolvedDepartments: [],
     });
     const gone = await readEntity('lab-gone');
     expect(gone?.lastSeenInCompleteRosterAt).toBeUndefined();
@@ -1085,6 +1086,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.unresolvedDepartments).toEqual(['Ministry of Magic']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual(['Ministry of Magic']);
     expect(result.governedDepartments).toEqual([]);
     expect(result.outcome).toBe('no-authoritative-departments');
     expect(result.suppressed).toBe(0);
@@ -1108,12 +1110,73 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     });
     resetOrgUnitCanonicalizerCache();
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: [], discoveredCount: 0 }, 'Divinity');
+    await seedDeptHealth(
+      run,
+      { deptKey: 'divinity', discoveredEntityKeys: [], discoveredCount: 0 },
+      'Divinity',
+    );
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.unresolvedDepartments).toEqual(['Divinity']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual([]);
     expect(result.suppressed).toBe(0);
+  });
+
+  it('does not govern a declared roster even when an OrgUnit names its department', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Stem Cell Center',
+      slug: 'stem-cell-center',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedEntity({ slug: 'lab-present', departments: ['Stem Cell Center'] });
+    await seedEntity({
+      slug: 'lab-gone',
+      departments: ['Stem Cell Center'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedPriorRunThatReadAbsent(
+      ['lab-present', 'lab-gone'],
+      ['lab-present'],
+      'Stem Cell Center',
+    );
+    await seedDeptHealth(
+      run,
+      { deptKey: 'stem-cell-center', ...rosterRead(['lab-present']) },
+      'Stem Cell Center',
+    );
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.governedDepartments).toEqual([]);
+    expect(result.undeclaredUnresolvedDepartments).toEqual([]);
+    expect(result.suppressed).toBe(0);
+    expect(await readEntity('lab-gone')).toMatchObject({ archived: false });
+  });
+
+  it('keeps reporting an unresolved roster department whose key nobody declared', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Physics',
+      slug: 'physics',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedDeptHealth(
+      run,
+      { deptKey: 'not-a-declared-roster-key', discoveredEntityKeys: [], discoveredCount: 0 },
+      'Stem Cell Center',
+    );
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.unresolvedDepartments).toEqual(['Stem Cell Center']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual(['Stem Cell Center']);
   });
 });

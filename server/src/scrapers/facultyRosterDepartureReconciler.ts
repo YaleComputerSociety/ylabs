@@ -15,6 +15,7 @@ import {
 } from '../services/studentVisibilityGateService';
 import { runCarriesAbsenceClaimFix, type AbsenceClaimCutoff } from './fieldRetraction';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
+import { rosterDepartmentOutsideDepartureLaneReason } from './rosterDepartmentsOutsideDepartureLane';
 import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import { fetchPageWithPolicy } from './utils/httpFetch';
 import { withoutSweepPageReuse } from './utils/sweepPageReuse';
@@ -50,6 +51,7 @@ export interface DepartmentRosterHealthSnapshotRead {
 }
 
 export interface DepartmentRosterHealthSnapshot {
+  deptKey?: unknown;
   deptName?: unknown;
   status?: unknown;
   complete?: unknown;
@@ -544,6 +546,7 @@ export interface FacultyRosterDepartureResult {
   governedDepartments: string[];
   /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
   unresolvedDepartments: string[];
+  undeclaredUnresolvedDepartments: string[];
   /**
    * One entry per decided row, so an operator can answer "why this row" from the
    * plan alone.
@@ -768,6 +771,7 @@ export interface RunDepartmentEvidence {
   previouslyListedByDept: Map<string, Set<string>>;
   snapshotObservedAtByDept: Map<string, Date>;
   unresolvedDepartments: string[];
+  undeclaredUnresolvedDepartments: string[];
   readProvenanceCounts: Record<RosterHealthReadProvenance, number>;
   admissibilityCounts: Record<string, number>;
   frozenDepartments: number;
@@ -866,6 +870,7 @@ export async function readRunDepartmentEvidence(
   // was stamped with whichever department happened to be last in the cursor (#3251).
   const snapshotObservedAtByDept = new Map<string, Date>();
   const unresolvedDepartments: string[] = [];
+  const undeclaredUnresolvedDepartments: string[] = [];
   const readProvenanceCounts: Record<RosterHealthReadProvenance, number> = {
     ...EMPTY_READ_PROVENANCE,
   };
@@ -889,9 +894,16 @@ export async function readRunDepartmentEvidence(
       (snapshotObservation.observedAt instanceof Date ? snapshotObservation.observedAt : null);
     if (snapshotObservedAt) latestObservedAt = snapshotObservedAt;
 
+    if (
+      rosterDepartmentOutsideDepartureLaneReason(snapshot.deptKey ?? snapshotObservation.entityKey)
+    ) {
+      unresolvedDepartments.push(rawDeptName);
+      continue;
+    }
     const deptName = await resolveGovernedDepartmentName(rawDeptName);
     if (!deptName) {
       unresolvedDepartments.push(rawDeptName);
+      undeclaredUnresolvedDepartments.push(rawDeptName);
       warn(
         `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
       );
@@ -998,6 +1010,7 @@ export async function readRunDepartmentEvidence(
     ),
     snapshotObservedAtByDept,
     unresolvedDepartments,
+    undeclaredUnresolvedDepartments,
     readProvenanceCounts,
     admissibilityCounts,
     frozenDepartments,
@@ -1085,6 +1098,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     regatedEntities: 0,
     governedDepartments: [] as string[],
     unresolvedDepartments: [] as string[],
+    undeclaredUnresolvedDepartments: [] as string[],
     plannedRows: [] as FacultyRosterDepartureRowExplanation[],
     evidenceFreshness: {
       snapshotsRead: 0,
@@ -1130,6 +1144,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     regressedDepartments,
     incompleteReadDepartments: evidence.incompleteReadDepartments,
     unresolvedDepartments: evidence.unresolvedDepartments,
+    undeclaredUnresolvedDepartments: evidence.undeclaredUnresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };
   if (healthyDiscoveredByDept.size === 0 && frozenDepartments === 0 && regressedDepartments === 0) {
