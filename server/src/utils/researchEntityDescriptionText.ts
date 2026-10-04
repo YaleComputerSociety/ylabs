@@ -730,9 +730,18 @@ const NAME_LEAD_TITLE_PATTERN = new RegExp(
 const GRADUATE_OF_LEAD_PATTERN =
   /\bDr\.\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s+a\s+graduate\s+of\b/iu;
 
+// Scoped to a whole body of one sentence: stripping that sentence leaves nothing, so
+// a thin but accurate description would be blanked (#4635). A longer body keeps the
+// opener strip, because there the stripper also removes the CV sentences that follow
+// the opener, and exempting the opener re-served them on 2 of 5 rows measured.
+function isSingleTopicNamingSentence(value: string): boolean {
+  return sentenceEndIndex(value, 0) >= value.trimEnd().length && namesResearchTopics(value);
+}
+
 export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
+  if (isSingleTopicNamingSentence(cleaned)) return false;
   const opening = cleaned.slice(0, 260);
   return NAME_LEAD_TITLE_PATTERN.test(opening) || GRADUATE_OF_LEAD_PATTERN.test(opening);
 }
