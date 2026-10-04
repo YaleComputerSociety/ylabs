@@ -22,6 +22,7 @@ import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk, isLikelyOfficialPersonProfileUrl } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
+import { genericYaleWebsiteSubdomains } from '../utils/researchHomeWebsiteUrl';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import {
@@ -355,15 +356,6 @@ const nameTokensOf = (value: unknown): string[] =>
       !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
   );
 
-/**
- * A website specific enough to stand for this lab or this person: any non-Yale host, or a
- * Yale URL that names a laboratory, is an official person profile, or carries a token of
- * the row's own name as a whole host label or path word. Any other Yale page, whether a
- * school section ("/opportunities", "/pediatrics/") or a department host's listing, is
- * shared by rows with different leads, so it is evidence of neither a lab nor this row
- * and backs no lab name (measured on Development: one such page was the only website of
- * four served rows with four different leads).
- */
 // A personal-site platform publishes one person's site under its own path, and a lab
 // or person site on Yale is its own subdomain (`<name>.yale.edu`,
 // `<name>.research.yale.edu`). A school or department host publishes shared sections.
@@ -391,24 +383,34 @@ const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
   'engineering',
 ]);
 
+const isSchoolOrDepartmentLabel = (label: string): boolean =>
+  SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(label) || genericYaleWebsiteSubdomains.has(label);
+
 function isYaleOwnSite(url: URL): boolean {
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
-  if (PERSONAL_SITE_PLATFORM_HOSTS.has(host))
-    return url.pathname.split('/').filter(Boolean).length > 0;
+  if (PERSONAL_SITE_PLATFORM_HOSTS.has(host)) {
+    const [siteName] = url.pathname.toLowerCase().split('/').filter(Boolean);
+    return Boolean(siteName) && !isSchoolOrDepartmentLabel(siteName);
+  }
   const labels = host
     .replace(/\.?yale\.edu$/, '')
     .split('.')
     .filter(Boolean);
-  if (labels.length === 0) return false;
+  if (labels.length === 0 || isSchoolOrDepartmentLabel(labels[0])) return false;
   if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
-  return (
-    labels.length === 1 &&
-    !SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(labels[0]) &&
-    /^[a-z]+$/.test(labels[0]) &&
-    labels[0].length > 4
-  );
+  return labels.length === 1 && /^[a-z]+$/.test(labels[0]) && labels[0].length > 4;
 }
 
+/**
+ * A website specific enough to stand for this lab or this person: any non-Yale host, or a
+ * Yale URL that names a laboratory, is an official person profile, is a lab's or person's
+ * own site (`isYaleOwnSite`), or carries a token of the row's own name as a whole host
+ * label or path word. Any other Yale page, whether a
+ * school section ("/opportunities", "/pediatrics/") or a department host's listing, is
+ * shared by rows with different leads, so it is evidence of neither a lab nor this row
+ * and backs no lab name (measured on Development: one such page was the only website of
+ * four served rows with four different leads).
+ */
 function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
   const text = textValue(value);
   if (!hasHttpUrl(text)) return false;
