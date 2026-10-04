@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -1512,6 +1513,12 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     isResearchEntityObservationType(entityType) &&
     observation.field === REFUSED_WEBSITE_URL_FIELD
+  ) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    isGrantLaneObservationOutsideEnrichment(observation)
   ) {
     return true;
   }

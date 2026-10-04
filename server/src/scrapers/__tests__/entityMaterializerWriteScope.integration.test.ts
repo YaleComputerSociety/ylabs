@@ -107,7 +107,7 @@ describe('a materialize pass scoped by writeOnlyFields writes only its scope (#3
       field: 'name',
       value: RENAMED,
       sourceId: new mongoose.Types.ObjectId(),
-      sourceName: 'nih-reporter',
+      sourceName: 'department-directory',
       sourceUrl: 'https://example.edu/lab/write-scope',
       confidence: 0.95,
       observedAt: new Date('2026-01-01T00:00:00Z'),
