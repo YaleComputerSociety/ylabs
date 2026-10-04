@@ -95,6 +95,7 @@ import {
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
+  isPrincipalInvestigatorLedUnitName,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
   nameIsOnlyTheLeadPersonsName,
@@ -1329,7 +1330,8 @@ function extractedFullDescription(
  * always agree, and prove nothing.
  */
 function ledUnitName(labName: string, context: ExtractedPageIdentityContext): string | undefined {
-  return isUmbrellaOrganizationName(labName) && context.pageStatesLeadAsPrincipalInvestigator
+  return isPrincipalInvestigatorLedUnitName(labName) &&
+    context.pageStatesLeadAsPrincipalInvestigator
     ? labName
     : undefined;
 }
@@ -1719,7 +1721,7 @@ function classifyExtractedPageAttribution(
   if (isPersonCmsProfileUrl(context.sourceUrl)) return 'AFFILIATED_ORGANIZATION';
   if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
   if (!labName) return 'THIS_ENTITY';
-  if (isUmbrellaOrganizationName(labName) && !context.pageStatesLeadAsPrincipalInvestigator) {
+  if (isUmbrellaOrganizationName(labName) && !ledUnitName(labName, context)) {
     return 'AFFILIATED_ORGANIZATION';
   }
   // A shared academic host's own organization name, refused before the eponym arms:

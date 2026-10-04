@@ -310,6 +310,25 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
   return UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
 }
 
+const UMBRELLA_ORGANIZATION_HEAD_GLOBAL_RE = new RegExp(
+  `\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}\\b`,
+  'gi',
+);
+
+/**
+ * An umbrella-headed name whose only organizational noun is "Unit", the one head a
+ * single investigator's lab takes. A centre, institute, core or office keeps refusing
+ * even when its page credits a Principal Investigator, because those credit the lead
+ * of a shared organization rather than of the person's own lab.
+ */
+export function isPrincipalInvestigatorLedUnitName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!isUmbrellaOrganizationName(name) || WORKING_GROUP_RE.test(name)) return false;
+  return Array.from(name.matchAll(UMBRELLA_ORGANIZATION_HEAD_GLOBAL_RE)).every((match) =>
+    /^units?$/i.test(match[0]),
+  );
+}
+
 /**
  * Whether a name declares an organization a student could join, of any shape, as
  * against a topic a professor works on. This is the union of the two head-noun
@@ -1619,7 +1638,10 @@ function personScopedNameIdentityPrelude(
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
   if (
     isUmbrellaOrganizationName(name) &&
-    !organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+    !(
+      isPrincipalInvestigatorLedUnitName(name) &&
+      organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+    )
   ) {
     return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };
   }
@@ -1656,10 +1678,16 @@ const PRINCIPAL_INVESTIGATOR_LABEL_RE =
 const PRINCIPAL_INVESTIGATOR_TRAILING_RE =
   /([^\n.;:|,]{1,40})\s*(?:,|[\u2013\u2014|-])\s*(?<!\bco[-\s])principal\s+investigator\b(?!s)/gi;
 
+const CREDITED_NAME_JOIN_RE = /\s*(?:,|&|\/|\band\b|\bprincipal\s+investigators?\b)\s*/i;
+const PERSON_NAME_SHAPED_RE =
+  /^(?:(?:dr|prof(?:essor)?)\.?\s+)?[A-Z][\w'’-]+(?:\s+[A-Z]\.?)*\s+[A-Z][\w'’-]+$/;
+
 /**
- * Whether a page names this person as its Principal Investigator, either as a label
- * ("Principal Investigator: Jane Doe, Ph.D.") or as a trailing title ("Jane Doe,
- * Principal Investigator"). Judged on the surname, the token every byline keeps.
+ * Whether a page names this person as its single Principal Investigator, either as a
+ * label ("Principal Investigator: Jane Doe, Ph.D.") or as a trailing title ("Jane Doe,
+ * Principal Investigator"). Judged on the surname, the token every byline keeps. Every
+ * credit on the page must name the person and no one beside them, so a unit listing
+ * several investigators, on separate lines or joined in one credit, does not count.
  */
 export function pageStatesPersonAsPrincipalInvestigator(
   pageText: unknown,
@@ -1669,9 +1697,17 @@ export function pageStatesPersonAsPrincipalInvestigator(
   const text = textValue(pageText);
   if (!surname || !text) return false;
   const surnameRe = new RegExp(`\\b${surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-  return [PRINCIPAL_INVESTIGATOR_LABEL_RE, PRINCIPAL_INVESTIGATOR_TRAILING_RE].some((pattern) =>
-    Array.from(text.matchAll(pattern)).some((match) => surnameRe.test(match[1] || '')),
+  const credits = [PRINCIPAL_INVESTIGATOR_LABEL_RE, PRINCIPAL_INVESTIGATOR_TRAILING_RE].flatMap(
+    (pattern) => Array.from(text.matchAll(pattern), (match) => (match[1] || '').trim()),
   );
+  const creditsOnlyThisPerson = (credit: string): boolean => {
+    const parts = credit.split(CREDITED_NAME_JOIN_RE);
+    return (
+      parts.some((part) => surnameRe.test(part)) &&
+      !parts.some((part) => !surnameRe.test(part) && PERSON_NAME_SHAPED_RE.test(part.trim()))
+    );
+  };
+  return credits.length > 0 && credits.every(creditsOnlyThisPerson);
 }
 
 export function personScopedResearchEntityNameNamesSomethingElseByUrlPath(

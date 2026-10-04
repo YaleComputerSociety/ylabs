@@ -195,6 +195,30 @@ describe('the microsite lane emits the page-stated lab name on every description
     expect(valueOf('name')).toBeUndefined();
   });
 
+  it('withholds a core title from a page naming the lead as its Principal Investigator', async () => {
+    const core = 'Fixture Proteomics Core';
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(core)
+        .replace(LAB_NAME, core)
+        .replace('<ul>', '<p>Principal Investigator: Ada Quill, Ph.D.</p><ul>'),
+      extraction: extraction({ name: core, subject: 'organization' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+  });
+
+  it('withholds a unit title from a page crediting several Principal Investigators', async () => {
+    const unit = 'Fixture Computation Unit';
+    const { valueOf } = await runLane({
+      html: newsFeedHtml(unit)
+        .replace(LAB_NAME, unit)
+        .replace('<ul>', '<p>Principal Investigator: Ben Moreau and Ada Quill</p><ul>'),
+      extraction: extraction({ name: unit, subject: 'organization' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+  });
+
   it("withholds another person's eponymous lab", async () => {
     const foreign = 'Moreau Lab';
     const { valueOf } = await runLane({
