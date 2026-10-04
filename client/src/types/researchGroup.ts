@@ -47,11 +47,6 @@ export interface StudentDecisionExplanation {
   reviewFlags?: string[];
 }
 
-export interface TimeCommitmentRange {
-  min?: number;
-  max?: number;
-}
-
 export interface PastUndergradAdvisee {
   year?: number;
   programName?: string;
@@ -99,7 +94,6 @@ export interface ResearchGroup {
   // callers must use it directly rather than re-deriving from raw fields.
   cardDescription?: { text: string; state: 'complete' | 'sparse'; label: string };
   websiteUrl: string;
-  location: string;
   departments: string[];
   researchAreas: string[];
   methods?: string[];
@@ -119,10 +113,6 @@ export interface ResearchGroup {
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  prerequisiteCourses: string[];
-  creditOptions: string[];
-  fundingPrograms: string[];
-  timeCommitmentHoursPerWeek?: TimeCommitmentRange;
   contactEmail?: string;
   contactName?: string;
   contactRole?: string;

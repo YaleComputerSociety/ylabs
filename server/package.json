@@ -26,6 +26,7 @@
     "retire:stale-access-signal-fields": "tsx src/scripts/retireStaleAccessSignalFields.ts",
     "retire:stale-saved-plan-fields": "tsx src/scripts/retireStaleSavedPlanFields.ts",
     "retire:undergraduate-logistics-fields": "tsx src/scripts/retireUndergraduateLogisticsFields.ts",
+    "retire:research-entity-residue-fields": "tsx src/scripts/retireResearchEntityResidueFields.ts",
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
     "research-entity:union-stranded-merge-funding": "tsx src/scripts/unionStrandedMergeFunding.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
