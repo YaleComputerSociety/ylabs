@@ -3133,6 +3133,10 @@ describe('possessive and next-source narration is not a research description (#4
     for (const value of [
       "Dr. Example's Yale School of Medicine profile lists interests in sleep and memory.",
       'Her Yale profile lists research on coastal sediment transport.',
+      "Dr. Example's profile lists interests in tidal hydrology.",
+      "Dr. Example's Yale School of Public Health profile lists interests in air quality.",
+      'Her Yale School of Public Health profile describes work on vaccine uptake.',
+      'The Yale School of Public Health profile lists projects on maternal health.',
       'His faculty profile describes work on Byzantine manuscripts.',
       'The profile lists clinical interests in pediatric cardiology.',
       'The site presents projects on urban heat islands.',
