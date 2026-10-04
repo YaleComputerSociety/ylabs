@@ -136,6 +136,11 @@ export async function loadStoredLaneDescription(
   }
 }
 
+const eitherIdentityForm = (entity: ContentHashEntityRef): Record<string, string>[] => [
+  ...(entity.entityId ? [{ entityId: entity.entityId }] : []),
+  ...(entity.entityKey ? [{ entityKey: entity.entityKey }] : []),
+];
+
 /**
  * This lane's own live description for the row and the page it was read from.
  * Matches either identity form, because an observation can be keyed by
@@ -148,17 +153,13 @@ export async function loadStoredLaneDescriptionObservation(
   if (!entity.entityId && !entity.entityKey) return undefined;
   if (isBenchmarkModeActive()) return undefined;
   if (mongoose.connection.readyState !== 1) return undefined;
-  const identity = [
-    ...(entity.entityId ? [{ entityId: entity.entityId }] : []),
-    ...(entity.entityKey ? [{ entityKey: entity.entityKey }] : []),
-  ];
   try {
     const row = await Observation.findOne({
       entityType: entity.entityType,
       sourceName,
       field: 'fullDescription',
       superseded: false,
-      $or: identity,
+      $or: eitherIdentityForm(entity),
     })
       .sort({ observedAt: -1 })
       .select('value sourceUrl')
@@ -170,6 +171,33 @@ export async function loadStoredLaneDescriptionObservation(
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * How many of this lane's reads of `sourceUrl` attested every one of `fields` empty for the
+ * row, superseded ones included, because each is a distinct read the refusal pass counts.
+ * A lookup that cannot answer reports none, which keeps a re-read open rather than closing it.
+ */
+export async function countAttestedEmptyLaneReads(
+  sourceName: string,
+  entity: ContentHashEntityRef,
+  sourceUrl: string,
+  fields: readonly string[],
+): Promise<number> {
+  if (!entity.entityId && !entity.entityKey) return 0;
+  if (isBenchmarkModeActive()) return 0;
+  if (mongoose.connection.readyState !== 1) return 0;
+  try {
+    return await Observation.countDocuments({
+      entityType: entity.entityType,
+      sourceName,
+      sourceUrl,
+      assertsNoValueFor: { $all: [...fields] },
+      $or: eitherIdentityForm(entity),
+    });
+  } catch {
+    return 0;
   }
 }
 

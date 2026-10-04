@@ -110,10 +110,12 @@ import {
   loadResearchEntityLeadPersonNames,
 } from '../../utils/researchHomeNameIdentityRoster';
 import {
+  computeContentHash,
   computePageSetTextDigest,
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
+  countAttestedEmptyLaneReads,
   descriptionHashObservations,
   loadStoredLaneDescription,
   loadStoredLaneDescriptionObservation,
@@ -946,6 +948,32 @@ async function storedDescriptionIsRelatedUnitTeaser(
   const stored = await loadStoredLaneDescriptionObservation(sourceName, entityRef);
   if (!stored || comparableUrl(stored.sourceUrl) !== comparableUrl(page.url)) return false;
   return isRelatedEntityTeaserTextOnPage(page.html, page.url, stored.value);
+}
+
+const TEASER_RETRACTION_PENDING = 'teaser-retraction-pending';
+
+/**
+ * The refusal pass refuses a stored description only after `MIN_ATTESTED_EMPTY_READS` (2)
+ * attested-empty reads in distinct runs, but the content-hash gate would stop the lane
+ * after the first. So the first teaser read records a marked hash the next ordinary run
+ * cannot match, and the second records the real one: exactly two reads, then the gate
+ * closes again.
+ */
+async function teaserRetractionContentHash(
+  sourceName: string,
+  entityRef: ContentHashEntityRef,
+  sourceUrl: string,
+  contentHash: string,
+): Promise<string> {
+  const priorAttestedReads = await countAttestedEmptyLaneReads(
+    sourceName,
+    entityRef,
+    sourceUrl,
+    DESCRIPTION_SLOT_FIELDS,
+  );
+  return priorAttestedReads === 0
+    ? computeContentHash(`${contentHash} ${TEASER_RETRACTION_PENDING}`)
+    : contentHash;
 }
 
 export function withDescriptionSlotAttestation(
@@ -2303,9 +2331,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // (#2180). A crawled page the primary page cannot vouch for may only FILL
         // a description, never replace one worth keeping.
         const storedDescription = textValue(lab.fullDescription);
+        const storedLaneDescriptionIsTeaser = await storedDescriptionIsRelatedUnitTeaser(
+          this.name,
+          entityRef,
+          primaryPage,
+        );
         const unopposedCrawledProseSuppressed =
           bestCrawledProse !== null &&
           primaryCandidate === null &&
+          !storedLaneDescriptionIsTeaser &&
           storedDescriptionIsWorthKeeping(storedDescription);
         if (unopposedCrawledProseSuppressed) {
           ctx.log(
@@ -2478,14 +2512,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
-          const slotAttestation = descriptionSlotAttestation({
-            primaryPageTextLength: primaryPageText.length,
-            llmRan: llmExtraction !== null,
-            crawlIncomplete,
-            unopposedCrawledProseSuppressed,
-            foreignLabPage,
-            guardRefusal,
-          });
+          const slotAttestation = storedLaneDescriptionIsTeaser
+            ? 'empty'
+            : descriptionSlotAttestation({
+                primaryPageTextLength: primaryPageText.length,
+                llmRan: llmExtraction !== null,
+                crawlIncomplete,
+                unopposedCrawledProseSuppressed,
+                foreignLabPage,
+                guardRefusal,
+              });
           recordDescriptionSlotAttestation(
             slotAttestationMetrics,
             slotAttestation,
@@ -2497,10 +2533,21 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                   : undefined),
           );
           const attestedHashObservations = withDescriptionSlotAttestation(
-            hashObservations,
-            (await storedDescriptionIsRelatedUnitTeaser(this.name, entityRef, primaryPage))
-              ? 'empty'
-              : slotAttestation,
+            storedLaneDescriptionIsTeaser
+              ? [
+                  contentHashObservation(
+                    entityRef,
+                    primaryPage.url,
+                    await teaserRetractionContentHash(
+                      this.name,
+                      entityRef,
+                      primaryPage.url,
+                      contentHash,
+                    ),
+                  ),
+                ]
+              : hashObservations,
+            slotAttestation,
           );
           const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
           const methodsObservation: ObservationInput | null =
