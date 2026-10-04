@@ -121,12 +121,12 @@ function foldDiacritics(value: string | undefined): string {
 
 /**
  * A department site that publishes a person's page at a bare name path
- * (`appliedphysics.yale.edu/daniel-e-prober`) carries none of the profile markers above,
+ * (`appliedphysics.yale.edu/ada-b-lovelace`) carries none of the profile markers above,
  * so it read as the row's own lab website. That made a person-scoped shell look
  * concrete, and the eponymous merge never folded it into the person's real lab. The
  * test is the row's own name: a last path segment containing every word of it names
  * the person, not a research website, and so does one spelling the name run together
- * (`faculty.som.yale.edu/peterschott`).
+ * (`faculty.som.yale.edu/adalovelace`).
  */
 function urlPathNamesEntityPerson(value: string, entity: ProfileAreaDuplicateEntity): boolean {
   const nameWords = entityNameWordsWithoutKindNouns(entity.name);

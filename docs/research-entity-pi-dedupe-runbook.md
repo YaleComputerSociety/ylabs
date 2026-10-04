@@ -49,6 +49,7 @@ A group merges only when the identity is corroborated by a shared distinctive Ya
 The survivor is the more complete catalog entity (members, departments, description), and the real dedicated website is carried over a generic index URL, failing closed to no website when no dedicated home exists in evidence.
 - `--shared-person-id` keys on the canonical person id across any PI `RoleAssignment` state, including historical or unknown, and treats each person's entities as one cluster, so a professor minted as several differently-named entities merges regardless of name; it also carries the fullest description across the group and reports a same-name/different-person quarantine so distinct people who happen to share a lab name are surfaced and never merged.
 It drops the organizational types the `--org-name-only` lane owns (`CENTER`, `INSTITUTE`, `INITIATIVE`, `CORE_FACILITY`) from each person's cluster, keyed on that lane's `ORG_NAME_DEDUPE_ENTITY_TYPES`, because a person holding a PI edge to an organization is not that organization being duplicated: on Development the lane planned an `INSTITUTE` and a `CENTER` as the survivor of a person row (#3706).
+- `--require-name-agreement` narrows `--shared-person-id` to one cluster per lead, entity type and name, and is the form the Development sweep runs unattended; see [Rows that share a lead but no URL](#rows-that-share-a-lead-but-no-url).
 - `--slug=<slug>` restricts the plan to a single canonical or duplicate slug.
 
 ## Lane-agnostic refusals
@@ -88,6 +89,7 @@ It runs before never-demote, which still hydrates and re-checks the served tier,
 
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
 An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
+For a profile-area shell, a URL whose last path segment names the row's own person (every name word, or the name run together) is a person page rather than a lab website, so a department page at a bare name path does not make the shell concrete and the eponymous merge can still fold it (#4652).
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
 The one exception is a never-demote swap, which archives the planned canonical and keeps a higher-tier twin instead; it is refused rather than performed whenever the planned canonical is pinned by `--accepted-decisions` or by `--delete-duplicates`, so no run ever deletes the entity the plan named as the survivor.
 
@@ -222,7 +224,7 @@ A deferred group re-plans on every subsequent run, because the plan builder does
 
 Both URL stages need the two rows to share an address, so one lab listed by a school's lab index and by its own domain stayed two rows under one lead, the extra one held at `operator_review` with `duplicate_risk` (#4651).
 `shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement --apply --confirm-research-entity-pi-dedupe --limit=10000 --max-apply=<max>`) reaches them through the lead person.
-`--require-name-agreement` groups each lead's rows by `entityType` and by name after folding diacritics, punctuation and the kind nouns (lab, laboratory, research, faculty, group), so only rows agreeing on all three merge and a lead's other rows neither join nor block the group, because a shared lead alone does not make two rows one entity (#3279): one person can lead a lab and an unrelated project under another name.
+`--require-name-agreement` groups each lead's rows by `entityType` and by name after folding diacritics and punctuation and dropping `the` and the kind nouns (lab, laboratory, research, faculty, group), so only rows agreeing on all three merge and a lead's other rows neither join nor block the group, because a shared lead alone does not make two rows one entity (#3279): one person can lead a lab and an unrelated project under another name.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 
