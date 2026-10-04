@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import { brokerSocketPath } from '../../scrapers/utils/hostSlotBroker';
@@ -49,6 +49,10 @@ import {
   validateScraperSweepEnvironment,
   validateScraperSweepManifest,
   validateScraperSweepSourceRows,
+  assertSweepSourceOrdering,
+  runScraperSweep,
+  sweepSourceOrderingViolations,
+  type ScraperSweepSource,
 } from '../runScraperSweep';
 import { SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS } from '../backfillSourceLinkHealthCore';
 
@@ -368,10 +372,68 @@ describe('runScraperSweep', () => {
     expect(orderedScraperSweepPhases()).toEqual([
       'identity',
       'discovery',
+      'discovery-readers',
       'funding',
       'relationships',
       'content-access',
     ]);
+  });
+
+  it.each([
+    ['bbs-research-track', 'ysm-faculty-directory'],
+    ['department-research-areas', 'dept-faculty-roster'],
+    ['directory-alias-resolution', 'dept-faculty-roster'],
+  ])('starts %s only after the phase that runs %s has finished', (reader, producer) => {
+    const phases = orderedScraperSweepPhases(RESEARCH_SWEEP_SOURCES);
+    const phaseOf = (name: string) => {
+      const source = RESEARCH_SWEEP_SOURCES.find((candidate) => candidate.name === name);
+      expect(source).toBeDefined();
+      return phases.indexOf(source!.phase);
+    };
+    expect(phaseOf(reader)).toBeGreaterThan(phaseOf(producer));
+    expect(
+      RESEARCH_SWEEP_SOURCES.find((source) => source.name === reader)?.readsRowsWrittenBy,
+    ).toContain(producer);
+  });
+
+  it('declares no reader that could start before its producer is terminal', () => {
+    expect(sweepSourceOrderingViolations(RESEARCH_SWEEP_SOURCES)).toEqual([]);
+    expect(sweepSourceOrderingViolations(FELLOWSHIP_SWEEP_SOURCES)).toEqual([]);
+  });
+
+  it('flags a reader that shares a phase with its producer or names a producer the sweep lacks', () => {
+    const sources: ScraperSweepSource[] = [
+      { name: 'producer', phase: 'discovery' },
+      { name: 'same-phase-reader', phase: 'discovery', readsRowsWrittenBy: ['producer'] },
+      { name: 'later-reader', phase: 'funding', readsRowsWrittenBy: ['producer'] },
+      { name: 'orphan-reader', phase: 'funding', readsRowsWrittenBy: ['absent-producer'] },
+    ];
+    expect(sweepSourceOrderingViolations(sources)).toEqual([
+      {
+        reader: 'same-phase-reader',
+        producer: 'producer',
+        reason: 'producer-not-in-an-earlier-phase',
+      },
+      { reader: 'orphan-reader', producer: 'absent-producer', reason: 'producer-not-in-sweep' },
+    ]);
+    expect(() => assertSweepSourceOrdering(sources)).toThrow(/same-phase-reader reads producer/);
+  });
+
+  it('refuses to start a sweep whose manifest lets a reader run beside its producer', async () => {
+    const childRunner = vi.fn();
+    await expect(
+      runScraperSweep(
+        { mode: 'development-plan', confirmations: new Set() },
+        {
+          childRunner,
+          sweepSources: [
+            { name: 'producer', phase: 'discovery' },
+            { name: 'reader', phase: 'discovery', readsRowsWrittenBy: ['producer'] },
+          ],
+        },
+      ),
+    ).rejects.toThrow(/reader reads producer/);
+    expect(childRunner).not.toHaveBeenCalled();
   });
 
   it('caps LLM phases, honors an override, and never drops below one', () => {

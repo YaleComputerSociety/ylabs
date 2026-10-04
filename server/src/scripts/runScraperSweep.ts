@@ -85,7 +85,15 @@ export type ScraperSweepMode =
 
 export interface ScraperSweepSource {
   name: string;
-  phase: 'identity' | 'discovery' | 'funding' | 'relationships' | 'content-access' | 'scholarly';
+  phase:
+    | 'identity'
+    | 'discovery'
+    | 'discovery-readers'
+    | 'funding'
+    | 'relationships'
+    | 'content-access'
+    | 'scholarly';
+  readsRowsWrittenBy?: string[];
 }
 
 export const FELLOWSHIP_SWEEP_SOURCES: ScraperSweepSource[] = [
@@ -104,9 +112,17 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-research-official', phase: 'discovery' },
   { name: 'centers-institutes-index', phase: 'discovery' },
   { name: 'dept-faculty-roster', phase: 'discovery' },
-  { name: 'bbs-research-track', phase: 'discovery' },
-  { name: 'department-research-areas', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
+  {
+    name: 'bbs-research-track',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['ysm-faculty-directory'],
+  },
+  {
+    name: 'department-research-areas',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['dept-faculty-roster'],
+  },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },
@@ -116,7 +132,11 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
   // resolve the previous sweep's keys. It leads `relationships` because the lanes below it read
   // the person key it repairs.
-  { name: 'directory-alias-resolution', phase: 'relationships' },
+  {
+    name: 'directory-alias-resolution',
+    phase: 'relationships',
+    readsRowsWrittenBy: ['dept-faculty-roster'],
+  },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
@@ -564,6 +584,47 @@ export function orderedScraperSweepPhases(
     }
   }
   return phases;
+}
+
+export interface SweepSourceOrderingViolation {
+  reader: string;
+  producer: string;
+  reason: 'producer-not-in-sweep' | 'producer-not-in-an-earlier-phase';
+}
+
+export function sweepSourceOrderingViolations(
+  sources: ScraperSweepSource[] = RESEARCH_SWEEP_SOURCES,
+): SweepSourceOrderingViolation[] {
+  const phaseIndex = new Map(orderedScraperSweepPhases(sources).map((phase, index) => [phase, index]));
+  const sourcePhaseIndex = new Map(
+    sources.map((source) => [source.name, phaseIndex.get(source.phase) ?? -1]),
+  );
+  const violations: SweepSourceOrderingViolation[] = [];
+  for (const reader of sources) {
+    const readerIndex = sourcePhaseIndex.get(reader.name) ?? -1;
+    for (const producer of reader.readsRowsWrittenBy ?? []) {
+      const producerIndex = sourcePhaseIndex.get(producer);
+      if (producerIndex === undefined) {
+        violations.push({ reader: reader.name, producer, reason: 'producer-not-in-sweep' });
+      } else if (producerIndex >= readerIndex) {
+        violations.push({
+          reader: reader.name,
+          producer,
+          reason: 'producer-not-in-an-earlier-phase',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+export function assertSweepSourceOrdering(sources: ScraperSweepSource[]): void {
+  const violations = sweepSourceOrderingViolations(sources);
+  if (violations.length === 0) return;
+  const detail = violations
+    .map((violation) => `${violation.reader} reads ${violation.producer} (${violation.reason})`)
+    .join('; ');
+  throw new Error(`Sweep source ordering is unsafe: ${detail}`);
 }
 
 export function resolvePhaseConcurrency(
@@ -1954,6 +2015,8 @@ export async function runScraperSweep(
     sweepSources?: ScraperSweepSource[];
   } = {},
 ): Promise<ScraperSweepSummary> {
+  const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
+  assertSweepSourceOrdering(sweepSources);
   const config = MODE_CONFIG[options.mode];
   validateScraperSweepEnvironment(options.mode);
   declareMaterializationReadScopeForChildren();
@@ -2009,7 +2072,6 @@ export async function runScraperSweep(
     console.error(`[sweep-code] ${refusal.message}`);
     return { status: 1, error: new Error(refusal.message) };
   };
-  const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
 
   if (resumed && sweepSources.some((source) => !store.isDone(sourceStepId(source.name)))) {

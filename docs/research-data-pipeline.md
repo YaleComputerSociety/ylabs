@@ -64,7 +64,9 @@ A `facilities` record is instrument time at a user facility rather than funding,
 A fellowship or salary award names the trainee rather than the lab head, so it attaches only through an ORCID match and never through the name matcher.
 
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
-The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
+The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `discovery-readers`, `funding`, `relationships`, and `content-access`.
+A source that reads rows another sweep source writes declares that producer in `readsRowsWrittenBy`, and the sweep refuses to start unless every declared producer runs in an earlier phase, because sources within one phase run in parallel and a reader that finishes first reads the previous sweep's rows (#4609).
+`discovery-readers` exists for that reason: `bbs-research-track` reads the rows `ysm-faculty-directory` writes, and `department-research-areas` reads the rows `dept-faculty-roster` writes.
 The fellowship engine currently only spans the `discovery` phase.
 The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
 Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.

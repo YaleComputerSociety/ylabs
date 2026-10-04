@@ -38,7 +38,7 @@ Owner: `server/src/scrapers/entityMaterializer.ts`.
 
 **Sweep.**
 The batch run, `scrape:sweep`.
-It spawns one fault-isolated subprocess per source in ordered phases (`identity`, `discovery`, `funding`, `relationships`, `content-access`), then runs a chain of post-run stages.
+It spawns one fault-isolated subprocess per source in ordered phases (`identity`, `discovery`, `discovery-readers`, `funding`, `relationships`, `content-access`), then runs a chain of post-run stages.
 Owner: `server/src/scripts/runScraperSweep.ts`.
 
 **fieldProvenance.**
