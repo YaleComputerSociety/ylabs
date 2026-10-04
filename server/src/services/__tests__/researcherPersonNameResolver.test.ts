@@ -108,12 +108,6 @@ describe('resolveResearcherIdForPersonName', () => {
 
 describe('resolveResearcherIdForOrcid', () => {
   const ORCID = '0000-0000-0000-0028';
-  const orcidDeps = (holders: Record<string, ResearcherNameCandidate>) => ({
-    findResearcherByOrcid: async (orcid: string) => holders[orcid],
-    findResearchersBySurname: async () => {
-      throw new Error('name matching must not run when the ORCID decides');
-    },
-  });
 
   it('normalizes a bare or URL ORCID and rejects a bad checksum', () => {
     expect(normalizeOrcid(`https://orcid.org/${ORCID}`)).toBe(ORCID);
@@ -139,26 +133,5 @@ describe('resolveResearcherIdForOrcid', () => {
       findResearcherByOrcid: async () => candidate('Avery Placeholder'),
     });
     expect(result).toEqual({ status: 'ambiguous' });
-  });
-
-  it('decides the person-name resolution before any name matching', async () => {
-    const holder = candidate('Avery Placeholder');
-    const result = await resolveResearcherIdForPersonName('Avery Placeholder', {
-      orcid: ORCID,
-      deps: orcidDeps({ [ORCID]: holder }),
-    });
-    expect(result).toEqual({ status: 'matched', researcherId: holder._id });
-  });
-
-  it('falls back to name matching when no researcher holds the ORCID', async () => {
-    const holder = candidate('Avery Placeholder');
-    const result = await resolveResearcherIdForPersonName('Avery Placeholder', {
-      orcid: ORCID,
-      deps: {
-        findResearcherByOrcid: async () => undefined,
-        findResearchersBySurname: async () => [holder],
-      },
-    });
-    expect(result).toEqual({ status: 'matched', researcherId: holder._id });
   });
 });

@@ -20,6 +20,7 @@ function grantItem(overrides: {
   award?: string;
   fundingType?: string;
   funder?: string;
+  funderDoi?: string;
   start?: number[];
   end?: number[];
   lead?: Record<string, unknown> | null;
@@ -42,7 +43,10 @@ function grantItem(overrides: {
         funding: [
           {
             type: overrides.fundingType ?? 'award',
-            funder: { name: overrides.funder ?? 'American Cancer Society' },
+            funder: {
+              name: overrides.funder ?? 'American Cancer Society',
+              ...(overrides.funderDoi ? { id: [{ id: overrides.funderDoi }] } : {}),
+            },
           },
         ],
         'lead-investigator': lead as any,
@@ -123,6 +127,25 @@ describe('extractCrossrefGrant', () => {
     });
   });
 
+  it('refuses a record from a funder a federal lane already reports', () => {
+    const federal = { kind: 'refused', reason: 'federalFunder' };
+    expect(
+      extractCrossrefGrant(
+        grantItem({ funder: 'Synthetic federal office', funderDoi: '10.13039/100000015' }),
+        2020,
+      ),
+    ).toEqual(federal);
+    expect(extractCrossrefGrant(grantItem({ funder: 'U.S. Department of Energy' }), 2020)).toEqual(
+      federal,
+    );
+    expect(
+      extractCrossrefGrant(grantItem({ funder: 'National Science Foundation' }), 2020),
+    ).toEqual(federal);
+    expect(
+      extractCrossrefGrant(grantItem({ funder: 'Swiss National Science Foundation' }), 2020).kind,
+    ).toBe('grant');
+  });
+
   it('refuses a record whose lead investigator is not at Yale', () => {
     expect(
       extractCrossrefGrant(
@@ -200,6 +223,7 @@ describe('CrossrefGrantScraper.run', () => {
       currentYear: 2026,
     }).run(ctx);
     expect(emitted).toHaveLength(0);
+    expect(result.failedClosed).toBe(true);
     expect(result.notes).toMatch(/served 1 of 5 reported records\); failed closed/);
   });
 

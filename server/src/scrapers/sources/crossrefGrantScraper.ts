@@ -55,6 +55,16 @@ const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_ROW = 10;
 const NON_FUNDING_TYPES = new Set(['facilities']);
 const TRAINEE_FUNDING_TYPES = new Set(['fellowship', 'salary-award']);
+// Adding a federal lane to GRANT_LANE_SOURCE_NAMES requires adding its funder here, or
+// an award both lanes report counts twice under two agency labels.
+const FEDERAL_LANE_FUNDER_DOIS = new Set([
+  '10.13039/100000001',
+  '10.13039/100000002',
+  '10.13039/100000015',
+  '10.13039/100000048',
+]);
+const FEDERAL_LANE_FUNDER_NAME =
+  /^(?:u\.?\s?s\.?\s+|united states\s+)?(?:department of energy|national science foundation|national endowment for the humanities|national institutes of health)$/i;
 
 interface CrossrefDateParts {
   'date-parts'?: unknown[][];
@@ -74,7 +84,7 @@ export interface CrossrefInvestigator {
 
 interface CrossrefFunding {
   type?: string;
-  funder?: { name?: string };
+  funder?: { name?: string; id?: Array<{ id?: string }> };
 }
 
 interface CrossrefProject {
@@ -114,7 +124,13 @@ export interface CrossrefGrant {
 }
 
 export type CrossrefGrantRefusal =
-  'nonFunding' | 'noYaleLead' | 'noFunder' | 'noAwardNumber' | 'undated' | 'outsideWindow';
+  | 'nonFunding'
+  | 'federalFunder'
+  | 'noYaleLead'
+  | 'noFunder'
+  | 'noAwardNumber'
+  | 'undated'
+  | 'outsideWindow';
 
 export type CrossrefGrantExtraction =
   { kind: 'grant'; grant: CrossrefGrant } | { kind: 'refused'; reason: CrossrefGrantRefusal };
@@ -182,6 +198,15 @@ export function crossrefDate(value: CrossrefDateParts | undefined): Date | undef
   return Number.isFinite(date.getTime()) ? date : undefined;
 }
 
+export function isFederalLaneFunder(funder: CrossrefFunding['funder']): boolean {
+  if (
+    (funder?.id ?? []).some((entry) => FEDERAL_LANE_FUNDER_DOIS.has(collapseWhitespace(entry.id)))
+  ) {
+    return true;
+  }
+  return FEDERAL_LANE_FUNDER_NAME.test(collapseWhitespace(funder?.name));
+}
+
 export function extractCrossrefGrant(
   item: CrossrefGrantItem,
   cutoffYear: number,
@@ -192,6 +217,9 @@ export function extractCrossrefGrant(
   );
   if (fundingTypes.some((type) => NON_FUNDING_TYPES.has(type))) {
     return { kind: 'refused', reason: 'nonFunding' };
+  }
+  if ((project.funding ?? []).some((funding) => isFederalLaneFunder(funding.funder))) {
+    return { kind: 'refused', reason: 'federalFunder' };
   }
   const lead = yaleLeadInvestigator(project);
   const family = collapseWhitespace(lead?.family);
@@ -398,7 +426,8 @@ export async function readCrossrefGrantCorpus(
 }
 
 const summarizeRefusals = (refusals: Record<CrossrefGrantRefusal, number>): string =>
-  `${refusals.nonFunding} non-funding (facilities), ${refusals.noYaleLead} no Yale lead investigator, ` +
+  `${refusals.nonFunding} non-funding (facilities), ` +
+  `${refusals.federalFunder} from a funder a federal lane reports, ${refusals.noYaleLead} no Yale lead investigator, ` +
   `${refusals.noFunder} no funder, ${refusals.noAwardNumber} no award number, ` +
   `${refusals.undated} undated, ${refusals.outsideWindow} outside the window`;
 
@@ -433,11 +462,12 @@ export class CrossrefGrantScraper implements IScraper {
     if (corpus.kind === 'incomplete') {
       const notes = `Crossref grant corpus incomplete after ${corpus.pages} page(s) (${corpus.reason}); failed closed with no writes rather than undercount grants`;
       ctx.log(notes);
-      return { observationCount: 0, entitiesObserved: 0, notes };
+      return { observationCount: 0, entitiesObserved: 0, notes, failedClosed: true };
     }
 
     const refusals: Record<CrossrefGrantRefusal, number> = {
       nonFunding: 0,
+      federalFunder: 0,
       noYaleLead: 0,
       noFunder: 0,
       noAwardNumber: 0,

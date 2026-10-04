@@ -96,7 +96,7 @@ export async function resolveResearcherIdForOrcid(
 
 export async function resolveResearcherIdForPersonName(
   name: string,
-  opts: { netid?: string; orcid?: string; deps?: Partial<ResearcherPersonNameResolverDeps> } = {},
+  opts: { netid?: string; deps?: Partial<ResearcherPersonNameResolverDeps> } = {},
 ): Promise<ResearcherPersonNameResolution> {
   const findResearchersBySurname =
     opts.deps?.findResearchersBySurname ?? defaultFindResearchersBySurname;
@@ -108,9 +108,6 @@ export async function resolveResearcherIdForPersonName(
     const researcherId = await resolveResearcherIdByNetid(netid);
     if (researcherId) return { status: 'matched', researcherId };
   }
-
-  const byOrcid = await resolveResearcherIdForOrcid(opts.orcid, name, opts.deps);
-  if (byOrcid.status !== 'absent') return byOrcid;
 
   if (!name) return { status: 'absent' };
   let { first, last } = splitName(name);
