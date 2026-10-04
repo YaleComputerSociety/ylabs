@@ -41,6 +41,10 @@ They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one fiel
   Label lists ("Medical Research Interests ...", "Interests ...", "Area of interest: ..."), sentences without terminal punctuation, and a "Studies" sentence ending on a label stay held.
   `biography_without_research` holds (never suppresses) a person-scoped row whose served body is a CV or biography that, after narrowing to research sentences, states no research, unless the served card states it (owner decision, 2026-10-04).
   A person-scoped body pasted from a CV or a biography (degree lines, dated book lists, awards, past appointments) is served as its research-statement sentences when that narrowed body still serves a card, and whole otherwise (owner decision, 2026-10-04); the narrowing runs on the stored text inside `buildResearchEntityPublicDescriptionRepresentation`, so the gate, the card and the detail page read one body.
+  A card line that is not about research is refused at the card sanitizer, so every card surface and the gate fall back to the next derived line (`isNonResearchCardSentence`).
+  The refused shapes are a site tagline or welcome banner, a "has presented at conferences" remark, a "Studies <X> Prize." topic, an honours list with no research verb, and a citation shaped as title words around a volume number.
+  A trailing "(now <PROGRAM>)" rename note is stripped rather than refused.
+  Calibrated on Development on 2026-10-04: 8 of 3,543 served cards changed, and all 8 were non-research on a read.
 `missing_card_description` is exempt for an organizational or program-like home, which is described by what it is and does rather than by a lab-style research focus (#1872).
 That exemption has to reach the TIER as well as the recorded reason: `quality.cardState` applies it only to program-like rows, so reading it raw as a tier input held 7 organizational rows at `operator_review` with no blocker recorded anywhere (#2818).
 `studentVisibilityTier`'s `hasRequiredResearchFocusCard`, its `missing_card_description` push, and `researchEntityPublicDescription`'s `cardIsOptional` must answer this question the same way.

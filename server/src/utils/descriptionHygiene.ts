@@ -12,6 +12,7 @@
  * payload uses it as a second line of defense over already-stored records.
  */
 import { redactDirectContactInfo } from './contactRedaction';
+import { isNonResearchCardSentence, stripProgramRenameNote } from './nonResearchCardSentence';
 
 export function normalizeHygieneWhitespace(value: string): string {
   return String(value || '')
@@ -1494,24 +1495,26 @@ const truncationEllipsisTailPattern = /(?:\.{3}|…)\s*$/;
  * voice check so a bare keyword list behind a `Bio` label survives (#1077).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  const cleaned = stripUrlTopicsFromCardSummary(
-    collapseDoubledConjunction(
-      stripTrailingResearchHomeAffiliationClause(
-        collapseDoubledSynthesisVerb(
-          stripTrailingSourceLayoutLabelSection(
-            stripGluedProfileSectionLabel(
-              stripGluedResearchRoleTrackToken(
-                stripDirectoryResearcherNavChrome(
-                  stripGluedProfileRoleLabel(
-                    stripLeadingArtCommentaryPrefix(
-                      stripLeadingPageChrome(
-                        stripTrailingContactAddress(
-                          stripBibliographicReferenceArtifacts(
-                            stripInternalConfidenceHedge(
-                              stripCatalogChrome(
-                                evergreenizeStaleCycleDatePhrase(
-                                  repairMissingSpaceAfterSentence(
-                                    redactDirectContactInfo(String(text || '')),
+  const cleaned = stripProgramRenameNote(
+    stripUrlTopicsFromCardSummary(
+      collapseDoubledConjunction(
+        stripTrailingResearchHomeAffiliationClause(
+          collapseDoubledSynthesisVerb(
+            stripTrailingSourceLayoutLabelSection(
+              stripGluedProfileSectionLabel(
+                stripGluedResearchRoleTrackToken(
+                  stripDirectoryResearcherNavChrome(
+                    stripGluedProfileRoleLabel(
+                      stripLeadingArtCommentaryPrefix(
+                        stripLeadingPageChrome(
+                          stripTrailingContactAddress(
+                            stripBibliographicReferenceArtifacts(
+                              stripInternalConfidenceHedge(
+                                stripCatalogChrome(
+                                  evergreenizeStaleCycleDatePhrase(
+                                    repairMissingSpaceAfterSentence(
+                                      redactDirectContactInfo(String(text || '')),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1540,6 +1543,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
+  if (isNonResearchCardSentence(cleaned)) return '';
   if (truncationEllipsisTailPattern.test(cleaned)) return '';
   return clampShortDescriptionToWholeSentences(cleaned);
 }
