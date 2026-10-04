@@ -28,6 +28,7 @@
  * untouched so nothing this layer does can corrupt a field that legitimately
  * carries a value it would otherwise redact.
  */
+import { withoutGluedLeadingHeading } from '../utils/gluedLeadingHeading';
 import type { ObservedEntityType } from '../models/observation';
 import {
   sanitizePersonTitle,
@@ -273,7 +274,9 @@ function sanitizeMethodListField(value: unknown): SanitizedObservationField {
 }
 
 function sanitizeProseField(value: string): SanitizedObservationField {
-  const cleaned = normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value)));
+  const cleaned = withoutGluedLeadingHeading(
+    normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value))),
+  );
   if (!cleaned) return rejected('prose-chrome-only');
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) {
     return rejected('contentless-research-projects-boilerplate');

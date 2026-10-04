@@ -178,6 +178,31 @@ describe('ResearchHomeComparison', () => {
     expect(container.textContent).not.toContain('coastal sediment');
   });
 
+  it('casts every topic chip in one casing, as the other chip surfaces do (#4644)', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        researchAreas: [
+          'Mathematical Statistics',
+          'computational algorithms',
+          'Endothelium, Vascular',
+        ],
+      },
+      'lab-b': entityB,
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Computational Algorithms');
+    expect(screen.getByText('Mathematical Statistics')).toBeTruthy();
+    expect(screen.getByText('Vascular Endothelium')).toBeTruthy();
+    expect(screen.queryByText('computational algorithms')).toBeNull();
+  });
+
   it('truncates an over-long description on a word boundary', async () => {
     const longDescription =
       'The laboratory investigates autonomous robotic perception, developing vision algorithms and probabilistic mapping methods for mobile platforms operating in unstructured outdoor environments, and it evaluates those methods on field trials with undergraduate researchers contributing to sensor calibration and dataset annotation workflows.';
