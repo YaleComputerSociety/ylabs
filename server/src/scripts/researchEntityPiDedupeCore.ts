@@ -309,8 +309,6 @@ function isFundingSourceUrl(value: string | undefined): boolean {
       host.endsWith('.nih.gov') ||
       host === 'nsf.gov' ||
       host.endsWith('.nsf.gov') ||
-      host === 'usaspending.gov' ||
-      host.endsWith('.usaspending.gov') ||
       host === 'osti.gov' ||
       host.endsWith('.osti.gov')
     );

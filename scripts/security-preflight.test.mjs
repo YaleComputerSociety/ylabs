@@ -4527,7 +4527,6 @@ const SCRAPER_SOURCE_DIRECTORY = '../server/src/scrapers/sources';
 // scraper that grows a dynamic fetch fails here rather than silently opting out.
 const FIXED_ENDPOINT_SCRAPER_HOSTS = new Map([
   ['doeOstiGrantScraper', 'https://www.osti.gov'],
-  ['federalAwardScraper', 'https://api.usaspending.gov'],
   ['nehGrantScraper', 'https://awardsearch.neh.gov'],
   ['nihReporterScraper', 'https://api.reporter.nih.gov'],
   ['nsfAwardScraper', 'https://api.nsf.gov'],

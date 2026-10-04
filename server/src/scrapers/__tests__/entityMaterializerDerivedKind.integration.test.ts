@@ -125,7 +125,7 @@ describe('materializeEntity keeps the persisted kind derived from entityType (#2
     await seedObservation({
       field: 'kind',
       value: 'lab',
-      sourceName: 'federal-award-usaspending',
+      sourceName: 'nsf-award-search',
       confidence: 0.95,
     });
 

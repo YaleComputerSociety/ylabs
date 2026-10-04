@@ -75,14 +75,10 @@ describe('runScraperSweep', () => {
     expect(union.has('undergrad-fellowships-recipients')).toBe(false);
   });
 
-  it('keeps the usaspending lane registered and seeded but out of the sweep', () => {
+  it('keeps every manual-only lane registered and seeded', () => {
     const registeredNames = buildOrchestrator()
       .list()
       .map((source) => source.name);
-    expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('federal-award-usaspending');
-    expect(RESEARCH_SWEEP_SOURCES.map((source) => source.name)).not.toContain(
-      'federal-award-usaspending',
-    );
     for (const name of MANUAL_ONLY_SWEEP_SOURCES) {
       expect(registeredNames).toContain(name);
       expect(ACTIVE_SOURCE_NAMES).toContain(name);
@@ -154,9 +150,9 @@ describe('runScraperSweep', () => {
     const registeredNames = buildOrchestrator()
       .list()
       .map((source) => source.name)
-      .filter((name) => name !== 'federal-award-usaspending');
+      .filter((name) => name !== 'undergrad-research-posting');
     expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
-      /manual-only sources that are not registered: federal-award-usaspending/,
+      /manual-only sources that are not registered: undergrad-research-posting/,
     );
   });
 
@@ -164,10 +160,10 @@ describe('runScraperSweep', () => {
     const registeredNames = buildOrchestrator()
       .list()
       .map((source) => source.name);
-    RESEARCH_SWEEP_SOURCES.push({ name: 'federal-award-usaspending', phase: 'funding' });
+    RESEARCH_SWEEP_SOURCES.push({ name: 'undergrad-research-posting', phase: 'content-access' });
     try {
       expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
-        /manual-only sources must stay out of the sweep manifest: federal-award-usaspending/,
+        /manual-only sources must stay out of the sweep manifest: undergrad-research-posting/,
       );
     } finally {
       RESEARCH_SWEEP_SOURCES.pop();

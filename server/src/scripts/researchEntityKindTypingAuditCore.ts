@@ -57,7 +57,6 @@ export const NON_ORGANIZATION_ASSERTING_LANES: readonly string[] = [
   'nih-reporter',
   'nsf-award-search',
   'doe-osti',
-  'federal-award-search',
   'neh-grants',
 ];
 
