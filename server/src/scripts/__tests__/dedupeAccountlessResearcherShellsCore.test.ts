@@ -387,7 +387,13 @@ describe('decideShellMerge netid arm (#3166)', () => {
 describe('decideShellMerge verified-profile arm', () => {
   const page = 'https://medicine.example.edu/profile/alex-rivera/';
   const verified = (url: string) => [
-    { kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url, verifiedAt: new Date() },
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
   ];
   const account = (over: Record<string, unknown> = {}) => ({
     id: 'c'.repeat(24),
@@ -416,12 +422,14 @@ describe('decideShellMerge verified-profile arm', () => {
     });
   });
 
-  it('ignores an unverified or non-primary link', () => {
-    const unverified = [{ kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url: page }];
-    expect(decide(shell({ profileLinks: unverified }), [account()]).reason).toBe('NO_CANONICAL');
-    const secondary = [
-      { kind: 'YALE_OFFICIAL', purpose: 'SECONDARY', url: page, verifiedAt: new Date() },
-    ];
+  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])('ignores a link whose health is %s', (status) => {
+    const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
+    expect(decide(shell({ profileLinks: unhealthy }), [account()]).reason).toBe('NO_CANONICAL');
+    expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('ignores a non-primary link', () => {
+    const secondary = verified(page).map((link) => ({ ...link, purpose: 'SECONDARY' }));
     expect(decide(shell(), [account({ profileLinks: secondary })]).reason).toBe('NO_CANONICAL');
   });
 
