@@ -20,8 +20,9 @@ import {
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
-import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { detectProfileIdentityRisk, isLikelyOfficialPersonProfileUrl } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
+import { genericYaleWebsiteSubdomains } from '../utils/researchHomeWebsiteUrl';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import {
@@ -344,6 +345,91 @@ function citedUrls(entity: Record<string, any>): string[] {
   return [...entityUrls(entity), ...provenanceUrls].filter((value) => hasHttpUrl(value));
 }
 
+const YALE_HOST = /(?:^|\.)yale\.edu$/i;
+
+const letterTokensOf = (value: string): string[] => value.toLowerCase().split(/[^a-z]+/);
+
+const nameTokensOf = (value: unknown): string[] =>
+  letterTokensOf(textValue(value)).filter(
+    (token) =>
+      token.length >= 3 &&
+      !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
+  );
+
+// A personal-site platform publishes one person's site under its own path, and a lab
+// or person site on Yale is its own subdomain (`<name>.yale.edu`,
+// `<name>.research.yale.edu`). A school or department host publishes shared sections.
+// Measured on Development, those two shapes covered every served Yale lab or personal
+// site whose address spells a netid or an abbreviation rather than the row's name.
+const PERSONAL_SITE_PLATFORM_HOSTS = new Set(['campuspress.yale.edu', 'sites.yale.edu']);
+const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
+  'www',
+  'm',
+  'art',
+  'medicine',
+  'ysph',
+  'law',
+  'som',
+  'environment',
+  'divinity',
+  'nursing',
+  'music',
+  'drama',
+  'architecture',
+  'news',
+  'college',
+  'gsas',
+  'seas',
+  'engineering',
+]);
+
+const isSchoolOrDepartmentLabel = (label: string): boolean =>
+  SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(label) || genericYaleWebsiteSubdomains.has(label);
+
+function isYaleOwnSite(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (PERSONAL_SITE_PLATFORM_HOSTS.has(host)) {
+    const [siteName] = url.pathname.toLowerCase().split('/').filter(Boolean);
+    return Boolean(siteName) && !isSchoolOrDepartmentLabel(siteName);
+  }
+  const labels = host
+    .replace(/\.?yale\.edu$/, '')
+    .split('.')
+    .filter(Boolean);
+  if (labels.length === 0 || isSchoolOrDepartmentLabel(labels[0])) return false;
+  if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
+  return labels.length === 1 && /^[a-z]+$/.test(labels[0]) && labels[0].length > 4;
+}
+
+/**
+ * A website specific enough to stand for this lab or this person: any non-Yale host, or a
+ * Yale URL that names a laboratory, is an official person profile, is a lab's or person's
+ * own site (`isYaleOwnSite`), or carries a token of the row's own name as a whole host
+ * label or path word. Any other Yale page, whether a
+ * school section ("/opportunities", "/pediatrics/") or a department host's listing, is
+ * shared by rows with different leads, so it is evidence of neither a lab nor this row
+ * and backs no lab name (measured on Development: one such page was the only website of
+ * four served rows with four different leads).
+ */
+function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
+  const text = textValue(value);
+  if (!hasHttpUrl(text)) return false;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  if (!YALE_HOST.test(url.hostname)) return true;
+  if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
+  if (isYaleOwnSite(url)) return true;
+  const urlWords = new Set([
+    ...url.hostname.toLowerCase().split('.'),
+    ...letterTokensOf(url.pathname),
+  ]);
+  return nameTokensOf(entity.name || entity.displayName).some((token) => urlWords.has(token));
+}
+
 /**
  * A row whose heading claims a laboratory that nothing it cites names, and whose
  * `name` no lane recorded together with its `LAB` type (#4050).
@@ -376,7 +462,11 @@ function citedUrls(entity: Record<string, any>): string[] {
 export function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
-  if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
+  if (
+    [entity.websiteUrl, entity.website].some((value) => isSpecificResearchWebsite(value, entity))
+  ) {
+    return false;
+  }
   if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
   if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
   if (labNameBackedByOwnOfficialText(entity)) return false;
