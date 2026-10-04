@@ -9,10 +9,10 @@
  * states, then on served enrichment (a live research website, methods, a
  * description of substance, a current grant), plus a small umbrella-type
  * demotion. The gate already requires the completeness terms of every served
- * row, so on their own they tie nearly the whole served corpus (#4547). Access-plausibility signals do not contribute to
- * rank (see the 2026-08-25 "Simple Directory First" decision): reaching out is
- * the universal action, so ordering is by data quality and relevance, not by a
- * computed access grade.
+ * row, so on their own they tie nearly the whole served corpus (#4547).
+ * Access-plausibility signals do not contribute to rank (see the 2026-08-25
+ * "Simple Directory First" decision): reaching out is the universal action, so
+ * ordering is by data quality and relevance, not by a computed access grade.
  *
  * Higher score = better. Pure function (no DB access) so it is fully testable;
  * persistence/sync orchestration lives in researchEntityBrowseRankService.ts.
