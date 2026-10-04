@@ -70,7 +70,7 @@ describe('dedupe merge description hydration (#2208)', () => {
     }
   });
 
-  it('carries the archived twin richer full description without neverDemote', async () => {
+  it('keeps the survivor its own prose instead of the archived twin richer paragraph', async () => {
     const survivorId = new mongoose.Types.ObjectId();
     const twinId = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db;
@@ -99,7 +99,70 @@ describe('dedupe merge description hydration (#2208)', () => {
     const twin = await ResearchEntity.findById(twinId).lean<PersistedEntity>();
     expect(twin?.archived).toBe(true);
     expect(survivor?.archived).not.toBe(true);
+    expect(survivor?.fullDescription).toBe(THIN_FULL);
+    expect(survivor?.shortDescription).toBe(SHARED_SHORT);
+  });
+
+  it('keeps the survivor its own prose under neverDemote', async () => {
+    const survivorId = new mongoose.Types.ObjectId();
+    const twinId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('research_entities').insertMany([
+      {
+        ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', THIN_FULL),
+        studentVisibilityTier: 'suppressed',
+      },
+      {
+        ...entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
+        shortDescription: '',
+        studentVisibilityTier: 'suppressed',
+      },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: survivorId.toHexString(),
+        duplicateEntityIds: [twinId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: false, relinkReferences: true, neverDemote: true, pinnedCanonical: true },
+    );
+
+    expect((result as { deferredAsWouldDemote?: boolean }).deferredAsWouldDemote).not.toBe(true);
+    const survivor = await ResearchEntity.findById(survivorId).lean<PersistedEntity>();
+    expect(survivor?.fullDescription).toBe(THIN_FULL);
+    expect(survivor?.shortDescription).toBe(SHARED_SHORT);
+  });
+
+  it('fills a survivor that states no prose from the archived twin', async () => {
+    const survivorId = new mongoose.Types.ObjectId();
+    const twinId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db
+      .collection('research_entities')
+      .insertMany([
+        { ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', ''), shortDescription: '' },
+        entityDoc(twinId, 'dept-mcdb-ada-lovelace', RICH_FULL),
+      ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: survivorId.toHexString(),
+        duplicateEntityIds: [twinId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const survivor = await ResearchEntity.findById(survivorId).lean<PersistedEntity>();
     expect(survivor?.fullDescription).toBe(RICH_FULL);
+    expect(survivor?.shortDescription).toBe(SHARED_SHORT);
   });
 
   it('never promotes a low-trust area or funding shell paragraph onto the survivor', async () => {

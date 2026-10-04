@@ -2226,6 +2226,16 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
   return pool.sort((a, b) => b.length - a.length)[0] || '';
 }
 
+const MERGE_SURVIVOR_PROSE_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
+
+// Mirrors the materializer's merged-survivor prose rule (#3584, #4742): a merged-in
+// row's prose fills a survivor only when the survivor states none of its own, so a
+// merge that wrote a twin's paragraph over the survivor's would serve text no
+// resolve re-derives, credited to the survivor's page.
+export function mergeSurvivorHoldsOwnProse(doc: Record<string, any> | null | undefined): boolean {
+  return MERGE_SURVIVOR_PROSE_FIELDS.some((field) => String(doc?.[field] ?? '').trim().length > 0);
+}
+
 /**
  * Mirrors the plan builders' `trustedAreaShellEntities` guard: an area or funding
  * shell's generated blurb must never be promoted onto a real research home. Falls
@@ -2376,10 +2386,11 @@ export async function resolveNonDemotingMerge(
   for (const candidateId of candidateOrder) {
     const doc = docById.get(String(candidateId));
     if (!doc) continue;
+    const keepsOwnProse = mergeSurvivorHoldsOwnProse(doc);
     const hypothetical = {
       ...doc,
-      fullDescription: bestFull || doc.fullDescription,
-      shortDescription: bestShort || doc.shortDescription,
+      fullDescription: keepsOwnProse ? doc.fullDescription : bestFull || doc.fullDescription,
+      shortDescription: keepsOwnProse ? doc.shortDescription : bestShort || doc.shortDescription,
       researchAreas: storedAfterMerge(doc, 'researchAreas'),
       sourceUrls: storedAfterMerge(doc, 'sourceUrls'),
       departments: storedAfterMerge(doc, 'departments'),
@@ -2541,8 +2552,13 @@ export async function applyResearchEntityDedupeMergeGroup(
     (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
   const carriedShortDescription =
     (hydratedShortDescription || '').trim() || String(group.canonicalShortDescription || '').trim();
-  if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
-  if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  const survivorProse = await ResearchEntity.findById(canonicalId)
+    .select(MERGE_SURVIVOR_PROSE_FIELDS.join(' '))
+    .lean<Record<string, unknown>>();
+  if (!mergeSurvivorHoldsOwnProse(survivorProse)) {
+    if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
+    if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  }
   if (group.mergedRecentGrants && group.mergedRecentGrants.length > 0) {
     canonicalIdentitySet.recentGrants = group.mergedRecentGrants;
   }
