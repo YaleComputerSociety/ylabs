@@ -786,6 +786,21 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 
+## The weekly sweep runs from an image
+
+The weekly Development sweep runs on Render from `deploy/sweep-runner/Dockerfile`, which Render rebuilds from `beta` on every push while auto-deploy is on, so the engine and every lane are the same code a laptop sweep runs.
+A change to a lane, the engine, a materializer or a post-run stage needs no image change.
+The image needs a matching change only when a lane starts depending on something outside `server/` and its Node dependencies:
+
+- a new system binary, Python package, or browser requirement (the image pins Scrapling and Meilisearch versions);
+- a file outside `server/`, `package.json`, `.yarnrc.yml` and `deploy/sweep-runner/`, because `.dockerignore` is an allowlist and anything else is absent from the image;
+- a hand-placed input file, which must get a durable home or stay manual-only, because the image has no laptop paths;
+- a new required secret, which also belongs in the weekly job's preflight (`weeklySweepEnvironmentProblems`) and the runbook's Render settings;
+- a new Node major, because the image hard-codes `FROM node:26-bookworm-slim` rather than reading the `engines` range in `package.json`.
+
+After such a change, build the image locally (`docker build -f deploy/sweep-runner/Dockerfile .`, with at least 6 GB of VM memory) and run its `--dry-run` before merging.
+`docs/data-refresh-runbook.md` owns the Render settings and the runbook for the job.
+
 ## Active source scrapers (`server/src/scrapers/sources/`)
 
 All 31 sources below are registered in `registry.ts`, which is the full registry. Descriptions are grouped by what they produce.
