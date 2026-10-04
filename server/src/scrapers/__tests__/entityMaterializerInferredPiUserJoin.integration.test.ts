@@ -15,8 +15,8 @@ import {
 describe('userEntityKeyForInferredPiUserKey', () => {
   it('reads a bare roster alias and a Yale email as the netid user key', () => {
     expect(userEntityKeyForInferredPiUserKey('Tamsin.Quorvale')).toBe('netid:tamsin.quorvale');
-    expect(userEntityKeyForInferredPiUserKey('tamsin.quorvale@yale.edu')).toBe(
-      'netid:tamsin.quorvale',
+    expect(userEntityKeyForInferredPiUserKey('tamsin.quorvale1@yale.edu')).toBe(
+      'netid:tamsin.quorvale1',
     );
     expect(userEntityKeyForInferredPiUserKey('tq417@med.yale.edu')).toBe('netid:tq417');
   });
