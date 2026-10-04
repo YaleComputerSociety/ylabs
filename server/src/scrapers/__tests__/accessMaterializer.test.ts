@@ -672,6 +672,205 @@ describe('deriveAccessArtifactsFromObservations', () => {
     });
   });
 
+  describe("application routes judged on the lane's own quote and cited to the join page (#4543)", () => {
+    const LANE = 'lab-microsite-undergrad-llm';
+    const access = (quote: string, quoteSourceUrl: string, id = 'obs-access') =>
+      obs({
+        _id: id,
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: quote,
+          quoteSourceUrl,
+        },
+        sourceName: LANE,
+        sourceUrl: quoteSourceUrl,
+        confidence: 0.5,
+      });
+    const join = (value: string, readFrom: string) =>
+      obs({
+        _id: 'obs-join',
+        field: 'joinPageUrl',
+        value,
+        sourceName: LANE,
+        sourceUrl: readFrom,
+        confidence: 0.5,
+      });
+    const derive = (
+      observations: AccessObservation[],
+      entity?: Parameters<typeof deriveAccessArtifactsFromObservations>[2],
+    ) =>
+      deriveAccessArtifactsFromObservations('64f000000000000000000001', observations, entity)
+        .accessSignals;
+    const application = (signals: ReturnType<typeof derive>) =>
+      signals.find((signal) => signal.type === 'APPLICATION_FORM_EXISTS');
+    const labRow = { entityType: 'LAB', kind: 'lab', websiteUrl: 'https://examplelab.yale.edu/' };
+
+    it('cites the join page the lane found, not the page it was reading', () => {
+      const signals = derive(
+        [
+          access(
+            'Interested undergraduate students are encouraged to contact the PI.',
+            'https://examplelab.yale.edu/join-our-lab',
+          ),
+          join('https://examplelab.yale.edu/join-our-lab', 'https://examplelab.yale.edu/'),
+        ],
+        labRow,
+      );
+      expect(application(signals)?.sourceUrl).toBe('https://examplelab.yale.edu/join-our-lab');
+    });
+
+    it('leaves a generic recruiting line to the contact signal and mints no application route', () => {
+      const signals = derive(
+        [
+          access(
+            'We are always looking for enthusiastic individuals to join our group!',
+            'https://examplelab.yale.edu/join-us',
+          ),
+          join('https://examplelab.yale.edu/join-us', 'https://examplelab.yale.edu/join-us'),
+          obs({
+            field: 'contactInstructionsQuote',
+            value: 'Individuals interested in joining should email the PI directly.',
+            sourceName: LANE,
+            confidence: 0.5,
+          }),
+        ],
+        labRow,
+      );
+      expect(signals.map((signal) => signal.type).sort()).toEqual([
+        'CONTACT_INSTRUCTIONS_EXIST',
+        'REACH_OUT_PLAUSIBLE',
+      ]);
+    });
+
+    it("refuses the row's home page and a member listing that invite no undergraduate by name", () => {
+      expect(
+        application(
+          derive(
+            [
+              access(
+                'We are hiring at all levels! Please check our open positions!',
+                labRow.websiteUrl,
+              ),
+              join(labRow.websiteUrl, labRow.websiteUrl),
+            ],
+            labRow,
+          ),
+        ),
+      ).toBeUndefined();
+      expect(
+        application(
+          derive(
+            [
+              access('Undergraduate Students Jordan Example', 'https://examplelab.yale.edu/people'),
+              join('https://examplelab.yale.edu/people', labRow.websiteUrl),
+            ],
+            labRow,
+          ),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('refuses a faculty profile with no joining content and keeps one that invites undergraduates', () => {
+      const profile = 'https://medicine.yale.edu/profile/avery-example/';
+      const faculty = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+      expect(
+        application(
+          derive(
+            [
+              access(
+                'The team has a long history of mentoring Yale undergraduate students.',
+                profile,
+              ),
+              join(profile, profile),
+            ],
+            faculty,
+          ),
+        ),
+      ).toBeUndefined();
+      expect(
+        application(
+          derive(
+            [
+              access(
+                'Undergraduate and graduate students interested in joining my research group should contact me directly.',
+                profile,
+              ),
+              join(profile, profile),
+            ],
+            faculty,
+          ),
+        )?.sourceUrl,
+      ).toBe(profile);
+    });
+
+    it("cites the row's inviting profile when the lane named its department's jobs page", () => {
+      const profile = 'https://earth.yale.edu/profile/avery-example';
+      const signals = derive(
+        [
+          access(
+            'For Yale undergraduates I have research project ideas, so please feel free to contact me.',
+            profile,
+          ),
+          join('https://earth.yale.edu/opportunities-0', profile),
+        ],
+        {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          departments: ['Earth and Planetary Sciences'],
+        },
+      );
+      expect(application(signals)?.sourceUrl).toBe(profile);
+    });
+
+    it('admits a join page on the invitation the lane recorded from it, whatever quote the model chose', () => {
+      const joinUrl = 'https://examplelab.yale.edu/join-the-lab';
+      const verdict = obs({
+        _id: 'obs-access',
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'members_section',
+          evidenceQuote: 'Undergraduate Students and Staff',
+          quoteSourceUrl: 'https://examplelab.yale.edu/people',
+          joinPageUrl: joinUrl,
+          joinPageInvitation:
+            'Undergraduate research assistants commit to the lab for two semesters.',
+        },
+        sourceName: LANE,
+        confidence: 0.5,
+      });
+      expect(application(derive([verdict, join(joinUrl, joinUrl)], labRow))?.sourceUrl).toBe(
+        joinUrl,
+      );
+      const withoutInvitation = obs({
+        ...verdict,
+        value: { ...(verdict.value as object), joinPageInvitation: undefined },
+      });
+      expect(
+        application(derive([withoutInvitation, join(joinUrl, joinUrl)], labRow)),
+      ).toBeUndefined();
+    });
+
+    it("keeps a department's own undergraduate research page on that department's faculty row", () => {
+      const programme =
+        'https://physics.yale.edu/undergraduate-academics/undergraduate-research-opportunities';
+      const profile = 'https://physics.yale.edu/profile/avery-example';
+      const faculty = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+      const observations = [
+        access('Avery Example Assistant Professor', profile),
+        join(programme, profile),
+      ];
+      expect(
+        application(derive(observations, { ...faculty, departments: ['Physics'] }))?.sourceUrl,
+      ).toBe(programme);
+      expect(
+        application(derive(observations, { ...faculty, departments: ['Chemistry'] })),
+      ).toBeUndefined();
+    });
+  });
+
   it('does not derive official application artifacts from a bare join page without undergraduate access evidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({

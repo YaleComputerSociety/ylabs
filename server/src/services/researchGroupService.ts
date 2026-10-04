@@ -29,7 +29,7 @@ import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
 import {
   foreignContactFieldSignalIds,
-  underivedAccessSignalIds,
+  judgeReDerivedAccessSignals,
 } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
@@ -3329,6 +3329,28 @@ const servedAccessSignalStandsWithItsPage = (served: {
   !ACCESS_SIGNAL_TYPES_CLAIMING_THEIR_PAGE.has(String(served.signalType)) ||
   Boolean(served.sourceUrl);
 
+// A row can hold the join-page signal and an older backfilled one of the same type; once
+// both cite the derived join page they make one claim, so it is served once (#4543).
+const withoutRepeatedPageClaims = <T extends { signalType?: unknown; sourceUrl?: string }>(
+  served: T[],
+): T[] => {
+  const seen = new Set<string>();
+  return served.filter((signal) => {
+    if (!ACCESS_SIGNAL_TYPES_CLAIMING_THEIR_PAGE.has(String(signal.signalType))) return true;
+    const key = `${String(signal.signalType)}:${signal.sourceUrl}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+// A stored application signal cites the page its last materialization recorded; the
+// live derivation's join page replaces it, so a re-cite reaches students with no write.
+const withReDerivedCitation = (signal: any, citations: ReadonlyMap<string, string>) => {
+  const citation = citations.get(String(signal._id));
+  return citation ? { ...signal, source: { ...signal.source, url: citation } } : signal;
+};
+
 // Kept as a single object literal because `security-preflight` pins this serializer's
 // shape with a literal `=> ({ ... })` pattern, and a block body reads to that gate as the
 // serializer having been deleted. The withhold lives in the helper above.
@@ -3657,19 +3679,22 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     ...publicGroup,
     fieldProvenance: (group as any).fieldProvenance,
   });
-  const [foreignContactSignalIds, underivedSignalIds] = await Promise.all([
+  const [foreignContactSignalIds, reDerived] = await Promise.all([
     foreignContactFieldSignalIds(accessSignals as any[], [group as any]),
-    underivedAccessSignalIds(accessSignals as any[], [group as any]),
+    judgeReDerivedAccessSignals(accessSignals as any[], [group as any]),
   ]);
-  const publicAccessSignals = (accessSignals as any[])
-    .filter(
-      (signal) =>
-        !foreignContactSignalIds.has(String(signal._id)) &&
-        !underivedSignalIds.has(String(signal._id)),
-    )
-    .filter((signal) => !signalIsWithheldWayIn(signal, emeritusWayIn))
-    .map((signal) => publicAccessSignalForResearchDetail(signal, group))
-    .filter(servedAccessSignalStandsWithItsPage);
+  const publicAccessSignals = withoutRepeatedPageClaims(
+    (accessSignals as any[])
+      .filter(
+        (signal) =>
+          !foreignContactSignalIds.has(String(signal._id)) &&
+          !reDerived.underived.has(String(signal._id)),
+      )
+      .filter((signal) => !signalIsWithheldWayIn(signal, emeritusWayIn))
+      .map((signal) => withReDerivedCitation(signal, reDerived.citations))
+      .map((signal) => publicAccessSignalForResearchDetail(signal, group))
+      .filter(servedAccessSignalStandsWithItsPage),
+  );
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
     ...relationshipPayload.relatedResearchEntities,

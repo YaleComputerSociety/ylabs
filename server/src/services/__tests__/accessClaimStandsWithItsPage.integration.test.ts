@@ -30,6 +30,7 @@ interface SeedOptions {
   websiteUrl?: string;
   joinCitation?: string;
   joinPageUrl?: string;
+  accessQuote?: string;
   countCitation?: string;
   sourceLinkHealth?: unknown[];
   withLead?: boolean;
@@ -55,6 +56,7 @@ const seed = async ({
   websiteUrl = WEBSITE,
   joinCitation = JOIN_PAGE,
   joinPageUrl = joinCitation,
+  accessQuote = 'Undergraduates are welcome to apply.',
   countCitation = MEMBERS_PAGE,
   sourceLinkHealth = [],
   withLead = false,
@@ -102,7 +104,7 @@ const seed = async ({
   }
   const access = observation(
     'undergradAccessEvidence',
-    { openToUndergrads: 'yes', evidenceQuote: 'Undergraduates are welcome to apply.' },
+    { openToUndergrads: 'yes', evidenceQuote: accessQuote, quoteSourceUrl: joinPageUrl },
     joinCitation,
   );
   const join = observation('joinPageUrl', joinPageUrl, joinCitation);
@@ -225,6 +227,36 @@ describe('a join-page claim is served only with the page it names (#4430)', () =
     await mongoose.connection
       .db!.collection('observations')
       .updateMany({ field: 'joinPageUrl' }, { $set: { superseded: true } });
+
+    expect(await servedJoinClaims()).toEqual([]);
+  });
+
+  it('serves the join page the lane found when the claim was stored with the page it read (#4543)', async () => {
+    await seed({ joinCitation: WEBSITE, joinPageUrl: JOIN_PAGE });
+
+    expect(await servedJoinClaims()).toEqual([{ excerpt: JOIN_EXCERPT, sourceUrl: JOIN_PAGE }]);
+  });
+
+  it('serves an older backfilled copy of the claim once it cites the same join page (#4543)', async () => {
+    const entityId = await seed({ joinCitation: WEBSITE, joinPageUrl: JOIN_PAGE });
+    await mongoose.connection.db!.collection('signals').insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      researchEntityId: entityId,
+      type: 'APPLICATION_FORM_EXISTS',
+      derivationKey: 'application-route-backfill:fixture:APPLICATION_FORM_EXISTS',
+      archived: false,
+      confidence: 'MEDIUM',
+      observedAt: new Date('2026-08-01T00:00:00Z'),
+      source: { url: WEBSITE, excerpt: JOIN_EXCERPT, evidenceIds: [] },
+    });
+
+    expect(await servedJoinClaims()).toEqual([{ excerpt: JOIN_EXCERPT, sourceUrl: JOIN_PAGE }]);
+  });
+
+  it('withholds the claim when the join page recruits no undergraduate audience (#4543)', async () => {
+    await seed({
+      accessQuote: 'We are always looking for enthusiastic individuals to join our group!',
+    });
 
     expect(await servedJoinClaims()).toEqual([]);
   });

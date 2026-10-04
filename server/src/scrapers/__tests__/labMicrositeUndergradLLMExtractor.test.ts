@@ -21,6 +21,7 @@ import {
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
+  admissibleJoinRoute,
   extractionToObservations,
   joinPageRecruitsOnlyNonUndergraduates,
   laneJoinPageRefusal,
@@ -2910,11 +2911,11 @@ describe('join pages that are not an undergraduate route (#4430)', () => {
   });
 
   it('keeps a join page that invites students without naming their level', () => {
-    const people = {
-      url: 'https://examplelab.org/people/',
-      text: 'People. Join our group: I am always looking for highly-motivated students and postdocs.',
+    const joinUs = {
+      url: 'https://examplelab.org/join-us/',
+      text: 'Join us. Join our group: I am always looking for highly-motivated students and postdocs.',
     };
-    expect(laneJoinPageRefusal(people.url, [home, people])).toBeNull();
+    expect(laneJoinPageRefusal(joinUs.url, [home, joinUs])).toBeNull();
   });
 
   it('keeps a join page that welcomes members at all levels', () => {
@@ -2975,6 +2976,186 @@ describe('join pages that are not an undergraduate route (#4430)', () => {
       { sourcePages: [home], readIsComplete: false },
     );
     expect(obs.find((o) => o.field === 'joinPageUrl')).toBeUndefined();
+  });
+});
+
+describe('join routes a hand-read found standing in for an application page (#4543)', () => {
+  const labRow = { entityType: 'LAB', kind: 'lab', websiteUrl: 'https://examplelab.org/' };
+  const facultyRow = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+  const home = {
+    url: 'https://examplelab.org/',
+    text: 'Example Lab studies example systems. Join our lab. We are hiring at all levels! Please check our open positions!',
+  };
+
+  it("refuses the row's home page when it carries only a menu link or a hiring line", () => {
+    const sectionHome = {
+      url: 'https://medicine.yale.edu/lab/example/',
+      text: 'Example Lab. Join the Lab! We are hiring at all levels! Please check our open positions!',
+    };
+    expect(
+      laneJoinPageRefusal(sectionHome.url, [sectionHome], {
+        ...labRow,
+        websiteUrl: sectionHome.url,
+      }),
+    ).toBe('home-profile-or-member-listing-does-not-invite-undergraduates');
+  });
+
+  it('refuses a faculty profile with no joining content', () => {
+    const profile = {
+      url: 'https://medicine.yale.edu/profile/avery-example/',
+      text: 'Avery Example, MD. The team has a long history of mentoring Yale undergraduate students, medical students and residents. Recruiting participants for a study.',
+    };
+    expect(laneJoinPageRefusal(profile.url, [profile], facultyRow)).toBe(
+      'home-profile-or-member-listing-does-not-invite-undergraduates',
+    );
+  });
+
+  it('keeps a profile whose own text invites undergraduates to join', () => {
+    const profile = {
+      url: 'https://earth.yale.edu/profile/avery-example',
+      text: 'Avery Example. Undergraduate and graduate students interested in joining my research group should contact me directly.',
+    };
+    expect(laneJoinPageRefusal(profile.url, [profile], facultyRow)).toBeNull();
+  });
+
+  it('refuses a member listing that lists undergraduates but invites no one by name', () => {
+    const people = {
+      url: 'https://examplelab.org/people',
+      text: 'People. Undergraduate Students Jordan Example. Positions Available.',
+    };
+    expect(laneJoinPageRefusal(people.url, [home, people], labRow)).toBe(
+      'home-profile-or-member-listing-does-not-invite-undergraduates',
+    );
+  });
+
+  it('refuses a join page whose audience is only graduate or postdoctoral, read from its text', () => {
+    const join = {
+      url: 'https://examplelab.org/join-us',
+      text: 'Join Us. We are always looking for enthusiastic individuals to join our group! Applications should be made through the respective PhD program. Individuals interested in postdoctoral positions should email the PI directly.',
+    };
+    expect(laneJoinPageRefusal(join.url, [home, join], labRow)).toBe(
+      'join-page-recruits-only-non-undergraduates',
+    );
+    const postdocOnly = {
+      url: 'https://examplelab.org/join-the-lab/',
+      text: 'WELCOME TO JOIN THE LAB! We are currently searching for a postdoctoral associate. Interested personnel should send their CV directly to the PI.',
+    };
+    expect(laneJoinPageRefusal(postdocOnly.url, [home, postdocOnly], labRow)).toBe(
+      'join-page-names-no-undergraduate-audience',
+    );
+  });
+
+  it('refuses a generic "anyone interested, contact" page that names no undergraduates', () => {
+    const contact = {
+      url: 'https://examplelab.org/contact/',
+      text: 'Contact/Join. The lab is an interdisciplinary group, and we welcome inquiries from people of all backgrounds. If you are interested in joining, please contact the PI.',
+    };
+    expect(laneJoinPageRefusal(contact.url, [home, contact], labRow)).toBe(
+      'join-page-names-no-undergraduate-audience',
+    );
+  });
+
+  it("refuses a department's job listings and another lab's page", () => {
+    const jobs = {
+      url: 'https://physics.yale.edu/opportunities',
+      text: 'Opportunities. Postdoctoral Associate Positions. Undergraduate students should contact faculty.',
+    };
+    expect(
+      laneJoinPageRefusal(jobs.url, [home, jobs], { ...facultyRow, departments: ['Physics'] }),
+    ).toBe('department-jobs-page');
+    const otherLab = {
+      url: 'https://otherhost.example.org/lab/quillfeather/',
+      text: 'Quillfeather Lab. Undergraduate students interested in research should contact us. A postdoctoral position is available.',
+    };
+    expect(
+      laneJoinPageRefusal(otherLab.url, [otherLab], { ...facultyRow, name: 'Avery Example' }),
+    ).toBe('page-of-another-lab');
+  });
+
+  it('still keeps a real undergraduate join page and cites it as the observation source', () => {
+    const join = {
+      url: 'https://examplelab.org/join-our-lab',
+      text: 'Join our lab. Interested undergraduate students are encouraged to contact the PI and inquire about opportunities.',
+    };
+    expect(laneJoinPageRefusal(join.url, [home, join], labRow)).toBeNull();
+    const observations = extractionToObservations(
+      'example-lab',
+      home.url,
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: 'Interested undergraduate students are encouraged to contact the PI',
+        evidenceSource: 'explicit_text',
+        joinPageUrl: join.url,
+      },
+      new Date(),
+      { sourcePages: [home, join], entityShape: labRow },
+    );
+    expect(observations.find((o) => o.field === 'joinPageUrl')).toMatchObject({
+      value: join.url,
+      sourceUrl: join.url,
+    });
+  });
+
+  it("records the join page's own invitation beside a verdict quoted from elsewhere", () => {
+    const join = {
+      url: 'https://examplelab.org/join-the-lab',
+      text: 'Join the Lab. Undergraduate research assistants commit to the lab for two semesters and attend the weekly lab meeting.',
+    };
+    const people = {
+      url: 'https://examplelab.org/people',
+      text: 'People. Undergraduate Students and Staff. Jordan Example.',
+    };
+    const observations = extractionToObservations(
+      'example-lab',
+      home.url,
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: 'Undergraduate Students and Staff',
+        evidenceSource: 'members_section',
+        joinPageUrl: join.url,
+      },
+      new Date(),
+      { sourcePages: [home, people, join], entityShape: labRow },
+    );
+    expect(observations.find((o) => o.field === 'undergradAccessEvidence')?.value).toMatchObject({
+      joinPageUrl: join.url,
+      joinPageInvitation:
+        'Undergraduate research assistants commit to the lab for two semesters and attend the weekly lab meeting.',
+    });
+  });
+
+  it("falls back to the row's profile when the model named its department's jobs page", () => {
+    const profile = {
+      url: 'https://earth.yale.edu/profile/avery-example',
+      text: 'Avery Example. For Yale undergraduates I have research project ideas, so please feel free to contact me.',
+    };
+    const jobs = {
+      url: 'https://earth.yale.edu/opportunities-0',
+      text: 'Opportunities. Working at Yale. Postdoctoral fellowship applications are open.',
+    };
+    const row = { ...facultyRow, departments: ['Earth and Planetary Sciences'] };
+    const extraction = { joinPageUrl: jobs.url, openToUndergrads: 'yes' as const };
+    expect(
+      admissibleJoinRoute(
+        extraction,
+        {
+          text: 'For Yale undergraduates I have research project ideas, so please feel free to contact me.',
+          sourceUrl: profile.url,
+        },
+        [profile, jobs],
+        row,
+      ),
+    ).toBe(profile.url);
+    expect(
+      admissibleJoinRoute(
+        extraction,
+        { text: 'Avery Example.', sourceUrl: profile.url },
+        [profile, jobs],
+        row,
+      ),
+    ).toBe('');
   });
 });
 
