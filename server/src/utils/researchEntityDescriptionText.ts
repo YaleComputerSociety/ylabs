@@ -2237,6 +2237,17 @@ export function researchEntitySubjectPersonNames(
   return Array.from(new Set(names.map(textValue).filter(Boolean)));
 }
 
+/**
+ * A card that is the paper title of a citation stored as the body. The body
+ * sanitizer withholds the citation, and the extraction that stored it took its
+ * title as the card, so the card is a fragment of refused evidence (#4623).
+ */
+function isTitleOfCitationBody(shortDescription: unknown, fullDescription: unknown): boolean {
+  const card = textValue(shortDescription);
+  if (!card || typeof fullDescription !== 'string') return false;
+  return isCitationAuthorListDumpText(fullDescription) && fullDescription.includes(card);
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -2244,6 +2255,10 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   let changed = false;
   const next: Record<string, any> = { ...entity };
   const subjectNames = researchEntitySubjectPersonNames(next, leadMemberNames);
+  if (isTitleOfCitationBody(next.shortDescription, next.fullDescription)) {
+    next.shortDescription = '';
+    changed = true;
+  }
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {

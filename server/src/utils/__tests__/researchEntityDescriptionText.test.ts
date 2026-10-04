@@ -3010,3 +3010,29 @@ describe('the revoicer never emits a broken agreement (#3451)', () => {
     expect(revoiced).toContain('"I want them to be safe,"');
   });
 });
+
+describe('a card that is the title of a citation body (#4623)', () => {
+  const CITATION =
+    'Avery Quill, Blake Rowan, Casey Marrow, Devon Pellis. Mean-field inference for sparse linear models: Geometric and statistical properties.';
+  const TITLE =
+    'Mean-field inference for sparse linear models: Geometric and statistical properties.';
+
+  it('withholds the card alongside the citation body', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription: CITATION,
+      shortDescription: TITLE,
+    });
+    expect(sanitized.shortDescription).toBe('');
+  });
+
+  it('keeps a card the citation does not contain', () => {
+    const card = 'Studies statistical inference for high-dimensional linear models.';
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription: CITATION,
+      shortDescription: card,
+    });
+    expect(sanitized.shortDescription).toBe(card);
+  });
+});
