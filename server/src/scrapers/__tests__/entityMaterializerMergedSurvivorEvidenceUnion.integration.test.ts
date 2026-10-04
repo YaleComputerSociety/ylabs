@@ -337,6 +337,29 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     expect(stored?.departments).toEqual(['Example Studies', 'Law']);
   });
 
+  it('appends a merged-in roster appointment when another merged-in source wins the departments', async () => {
+    const survivor = await seedMerge('dept-example-lead');
+    await seedObservation(
+      'dept-example-lead',
+      'departments',
+      ['Example Studies'],
+      'ysm-faculty-directory',
+      {
+        confidence: 0.95,
+        observedAt: new Date('2026-06-01T00:00:00Z'),
+      },
+    );
+    await seedObservation('dept-example-lead', 'departments', ['Law'], 'dept-faculty-roster', {
+      confidence: 0.6,
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
+
+    expect(stored?.departments).toEqual(['Example Studies', 'Law']);
+  });
+
   it('drops a stale merged-in appointment an earlier rebuild appended to the stored departments', async () => {
     const survivor = await seedMerge('dept-example-lead');
     await ResearchEntity.updateOne(

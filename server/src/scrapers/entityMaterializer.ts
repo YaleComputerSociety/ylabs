@@ -5224,6 +5224,7 @@ export interface MergedSurvivorEvidence {
   survivorLaneOwnsWebsite: boolean;
   droppedLoserWebsiteValues: unknown[];
   loserRosterAppointments: any[];
+  survivorReadOnARoster: boolean;
   mergedInSourceUrlValues: string[];
 }
 
@@ -5283,6 +5284,7 @@ export async function mergedSurvivorEvidence(
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
+    survivorReadOnARoster: false,
     mergedInSourceUrlValues: [],
   };
   if (!survivorId) return unmerged;
@@ -5502,6 +5504,7 @@ export async function mergedSurvivorEvidence(
       (value) => !survivorStatedWebsites.has(websiteIdentity(value)),
     ),
     loserRosterAppointments,
+    survivorReadOnARoster,
   };
 }
 
@@ -6325,6 +6328,7 @@ export interface ProjectFromLogInput {
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
+  survivorReadOnARoster?: boolean;
   rosterPersonKeys?: readonly unknown[];
   chunkPrefetch?: MaterializationReadSource;
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
@@ -6698,6 +6702,7 @@ async function combineDepartmentRosterAppointments(input: {
   entityDoc: any;
   rosterReads: readonly ResolverObservation[];
   mergedInRosterReads: readonly ResolverObservation[];
+  survivorReadOnARoster: boolean;
   rosterPersonKeys: readonly unknown[];
   chunkPrefetch?: MaterializationReadSource;
   manuallyLockedFields: string[];
@@ -6714,12 +6719,9 @@ async function combineDepartmentRosterAppointments(input: {
       ? entityDoc[field]
       : undefined;
   if (!Array.isArray(winnerValue)) return;
-  const survivorReadsARoster = input.rosterReads.some(
-    (observation) =>
-      observation.field === field &&
-      observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
-  );
-  if (!winnerIsARoster && (survivorReadsARoster || input.mergedInRosterReads.length === 0)) return;
+  if (!winnerIsARoster && (input.survivorReadOnARoster || input.mergedInRosterReads.length === 0)) {
+    return;
+  }
   const rosterReads = refusedResolverObservations(
     (winnerIsARoster
       ? [...input.rosterReads, ...input.mergedInRosterReads]
@@ -6732,18 +6734,20 @@ async function combineDepartmentRosterAppointments(input: {
     ),
     entityDoc?.fieldValueRefusals,
   ).kept;
-  const personReads = await personKeyedRosterDepartmentReads(
-    [...input.rosterPersonKeys],
-    input.chunkPrefetch,
-  );
-  const readTime = (observation: ResolverObservation) =>
-    rosterAppointmentReadTime(observation, personReads);
   const ownReadTime = (observation: ResolverObservation) =>
     new Date(observation.observedAt as any).getTime() || 0;
   // The floor stays on each read's own date, so a person-keyed read can only bring an
   // appointment back into the window, never push another one out of it.
   const newestRead = Math.max(0, ...rosterReads.map(ownReadTime));
   const currencyFloor = newestRead - DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS * 86_400_000;
+  const anyReadIsStale = [...rosterReads, ...input.mergedInRosterReads].some(
+    (observation) => ownReadTime(observation) < currencyFloor,
+  );
+  const personReads = anyReadIsStale
+    ? await personKeyedRosterDepartmentReads([...input.rosterPersonKeys], input.chunkPrefetch)
+    : [];
+  const readTime = (observation: ResolverObservation) =>
+    rosterAppointmentReadTime(observation, personReads);
   const namesADepartment = await departmentValueNamesADepartment(
     'school' in set ? set.school : entityDoc?.school,
   );
@@ -7275,6 +7279,7 @@ export async function projectFromLog(
     mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
     loserRosterReads = [],
+    survivorReadOnARoster = false,
     rosterPersonKeys = [],
     chunkPrefetch,
   } = input;
@@ -7432,6 +7437,7 @@ export async function projectFromLog(
       entityDoc,
       rosterReads: resolverObs,
       mergedInRosterReads: loserRosterReads,
+      survivorReadOnARoster,
       rosterPersonKeys,
       chunkPrefetch,
       manuallyLockedFields,
@@ -8776,6 +8782,7 @@ export async function materializeEntity(
   let droppedLoserWebsiteValues: unknown[] = [];
   let mergedInLeadProfileUrls: string[] = [];
   let loserRosterReads: ResolverObservation[] = [];
+  let survivorReadOnARoster = false;
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
     obs = merged.observations;
@@ -8794,6 +8801,7 @@ export async function materializeEntity(
       confidence: o.confidence,
       observedAt: o.observedAt,
     }));
+    survivorReadOnARoster = merged.survivorReadOnARoster;
     if (obs.length === 0) {
       return {
         entityType,
@@ -9119,6 +9127,7 @@ export async function materializeEntity(
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     loserRosterReads,
+    survivorReadOnARoster,
     rosterPersonKeys: researchAreaEvidenceObservations
       .filter((observation: any) => observation.field === 'inferredPiUserKey')
       .map((observation: any) => observation.value),
