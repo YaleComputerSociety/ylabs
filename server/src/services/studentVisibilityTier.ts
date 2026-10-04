@@ -364,6 +364,51 @@ const nameTokensOf = (value: unknown): string[] =>
  * and backs no lab name (measured on Development: one such page was the only website of
  * four served rows with four different leads).
  */
+// A personal-site platform publishes one person's site under its own path, and a lab
+// or person site on Yale is its own subdomain (`<name>.yale.edu`,
+// `<name>.research.yale.edu`). A school or department host publishes shared sections.
+// Measured on Development, those two shapes covered every served Yale lab or personal
+// site whose address spells a netid or an abbreviation rather than the row's name.
+const PERSONAL_SITE_PLATFORM_HOSTS = new Set(['campuspress.yale.edu', 'sites.yale.edu']);
+const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
+  'www',
+  'm',
+  'art',
+  'medicine',
+  'ysph',
+  'law',
+  'som',
+  'environment',
+  'divinity',
+  'nursing',
+  'music',
+  'drama',
+  'architecture',
+  'news',
+  'college',
+  'gsas',
+  'seas',
+  'engineering',
+]);
+
+function isYaleOwnSite(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (PERSONAL_SITE_PLATFORM_HOSTS.has(host))
+    return url.pathname.split('/').filter(Boolean).length > 0;
+  const labels = host
+    .replace(/\.?yale\.edu$/, '')
+    .split('.')
+    .filter(Boolean);
+  if (labels.length === 0) return false;
+  if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
+  return (
+    labels.length === 1 &&
+    !SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(labels[0]) &&
+    /^[a-z]+$/.test(labels[0]) &&
+    labels[0].length > 4
+  );
+}
+
 function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
   const text = textValue(value);
   if (!hasHttpUrl(text)) return false;
@@ -375,6 +420,7 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
   }
   if (!YALE_HOST.test(url.hostname)) return true;
   if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
+  if (isYaleOwnSite(url)) return true;
   const urlWords = new Set([
     ...url.hostname.toLowerCase().split('.'),
     ...letterTokensOf(url.pathname),

@@ -3242,6 +3242,9 @@ describe('a lab name backed only by a school section page', () => {
     'https://fixture.research.yale.edu/',
     'https://www.fixture.yale.edu/',
     'https://campuspress.yale.edu/fixture/',
+    'https://campuspress.yale.edu/rf123/',
+    'https://rfix.research.yale.edu/',
+    'https://tidalmechanics.yale.edu/',
     'https://medicine.yale.edu/lab/fixture/',
     'https://example.org/',
   ])('is backed by a lab or person site: %s', (url) => {
