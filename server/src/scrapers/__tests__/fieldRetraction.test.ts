@@ -153,7 +153,7 @@ describe('completeReadsAcrossMergedEvidence', () => {
   it('shares a survivor read with a key merged into it', () => {
     const shared = completeReadsAcrossMergedEvidence(
       [read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl'])],
-      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
     );
     expect(shared).toEqual(
       expect.arrayContaining([
@@ -173,12 +173,22 @@ describe('completeReadsAcrossMergedEvidence', () => {
         read('merged-key', 'run-2', '2026-03-01T00:00:00Z'),
         read('survivor-key', 'run-2', '2026-03-02T00:00:00Z', ['websiteUrl']),
       ],
-      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
     );
     const forMerged = shared.filter((entry) => entry.entityKey === 'merged-key');
     expect(forMerged).toHaveLength(1);
     expect(forMerged[0].assertsNoValueFor).toEqual(['websiteUrl']);
     expect(forMerged[0].observedAt).toEqual(new Date('2026-03-02T00:00:00Z'));
+  });
+
+  it('never gives a merged-in read to the survivor or to a sibling merged-in key', () => {
+    const reads = [read('merged-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl'])];
+    const shared = completeReadsAcrossMergedEvidence(reads, [
+      { entityKey: 'survivor-key', survivorKey: 'survivor-key' },
+      { entityKey: 'merged-key', survivorKey: 'survivor-key' },
+      { entityKey: 'sibling-key', survivorKey: 'survivor-key' },
+    ]);
+    expect(shared).toEqual(reads);
   });
 
   it('leaves a key with no merged evidence unchanged', () => {
@@ -197,7 +207,7 @@ describe('completeReadsAcrossMergedEvidence', () => {
         read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl']),
         read('survivor-key', 'run-3', '2026-04-01T00:00:00Z', ['websiteUrl']),
       ],
-      [{ entityKey: 'merged-key', evidenceKeys: ['survivor-key', 'merged-key'] }],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
     ).filter((entry) => entry.entityKey === 'merged-key');
     expect(classifyFieldRetraction({ observation, completeReads: [] })).toBe(
       'source-has-not-reread',

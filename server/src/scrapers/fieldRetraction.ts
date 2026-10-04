@@ -424,7 +424,7 @@ export interface FieldRetractionEntityState {
   manuallyLockedFields: string[];
   storedValues: Record<string, unknown>;
   liveObservationCountByField: Record<string, number>;
-  evidenceKeys?: string[];
+  survivorKey?: string;
 }
 
 export type FieldRetractionVerdict =
@@ -459,12 +459,13 @@ export function completeReadsSupportingRetraction(
 /**
  * A merged-in key's state is its survivor's (#3560), and so is its re-read: the source reads
  * the survivor under the survivor's own key, so matching reads by the exact key the old
- * observation was filed under judged it `source-has-not-reread` forever (#4568). Each read is
- * shared with every key in its survivor's evidence group, and every other guard is unchanged.
+ * observation was filed under judged it `source-has-not-reread` forever (#4568). A survivor's
+ * read is shared with each key merged into it, never the reverse or between merged-in keys, so
+ * a duplicate's absence claim never judges the survivor; every other guard is unchanged.
  */
 export function completeReadsAcrossMergedEvidence(
   reads: readonly FieldRetractionCompleteRead[],
-  entities: readonly Pick<FieldRetractionEntityState, 'entityKey' | 'evidenceKeys'>[],
+  entities: readonly Pick<FieldRetractionEntityState, 'entityKey' | 'survivorKey'>[],
 ): FieldRetractionCompleteRead[] {
   const readsByKey = new Map<string, FieldRetractionCompleteRead[]>();
   for (const read of reads) {
@@ -491,10 +492,8 @@ export function completeReadsAcrossMergedEvidence(
   };
   for (const read of reads) add(read.entityKey, read);
   for (const entity of entities) {
-    for (const memberKey of entity.evidenceKeys ?? []) {
-      if (memberKey === entity.entityKey) continue;
-      for (const read of readsByKey.get(memberKey) ?? []) add(entity.entityKey, read);
-    }
+    if (!entity.survivorKey || entity.survivorKey === entity.entityKey) continue;
+    for (const read of readsByKey.get(entity.survivorKey) ?? []) add(entity.entityKey, read);
   }
   return [...merged.values()];
 }
@@ -1262,7 +1261,8 @@ async function loadEntityStates(
     states.push({
       entityId,
       entityKey,
-      evidenceKeys: [...(evidenceKeysByStoredRow.get(entityId)?.keys ?? [])],
+      survivorKey:
+        typeof storedRow.slug === 'string' && storedRow.slug ? storedRow.slug : undefined,
       manuallyLockedFields: Array.isArray(storedRow.manuallyLockedFields)
         ? storedRow.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
         : [],
@@ -1348,7 +1348,7 @@ export async function reconcileFieldRetractions(options: {
     await loadCompleteReads(options.sourceName, contract.witnessFields, [
       ...new Set([
         ...candidateEntityKeys,
-        ...entities.flatMap((entity) => entity.evidenceKeys ?? []),
+        ...entities.flatMap((entity) => (entity.survivorKey ? [entity.survivorKey] : [])),
       ]),
     ]),
     entities,
