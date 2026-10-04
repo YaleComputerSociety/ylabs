@@ -7726,11 +7726,18 @@ export async function projectFromLog(
                 normalizeOfficialProfileDestination(url),
           ),
       );
-      if (missingLeadProfiles.length > 0) {
+      const seenLeadProfileDestinations = new Set<string>();
+      const distinctMissingLeadProfiles = missingLeadProfiles.filter((url) => {
+        const destination = normalizeOfficialProfileDestination(url);
+        if (seenLeadProfileDestinations.has(destination)) return false;
+        seenLeadProfileDestinations.add(destination);
+        return true;
+      });
+      if (distinctMissingLeadProfiles.length > 0) {
         stageSourceUrls(
           sanitizeResearchEntitySourceUrlsForMaterialization([
             ...citedNow(),
-            ...missingLeadProfiles,
+            ...distinctMissingLeadProfiles,
           ]),
         );
         fieldsWritten++;
