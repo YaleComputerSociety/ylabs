@@ -99,6 +99,16 @@ A reordering while the corpus fingerprint moved is inconclusive, since a rescore
 The case also fails when either walk is degraded, which is what an index that has not had `browseTiebreakKey` pushed to its sortable attributes returns.
 The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours; the grant term is weighted 0 while grant coverage is uneven, and `skills/search-data/SKILL.md` records when it returns.
 
+## A sorted browse sorts on a fresh index
+
+The `sorted-browse-keeps-order` and `title-sorted-browse-follows-card-title` cases check the order a student sees, and each also carries `indexed-sort-key-is-fresh` (#4746).
+The route sorts in Meilisearch on the indexed key and then hydrates every card from Mongo, so a row written after its index document serves its new value at its old position, and the order check reports an inversion that no ranking change caused.
+The freshness invariant reads the attribute the route's own `meiliSortEntries` sorts on (`lastObservedAt`, or `sortTitle` for A-Z), and compares the indexed value with the one `buildResearchEntitySearchIndexDocument` derives from the stored row now.
+It compares against the stored row rather than the card because the card's title can carry a page-local disambiguation suffix that the index cannot hold.
+A row whose stored `updatedAt` falls within a minute of the read is counted under `writtenDuringRead` rather than as stale, since its index task may still be in flight.
+A failure names a stale index, and the remedy is a rebuild per `docs/meilisearch-reindex-runbook.md`, not a change to the sort.
+The usual cause on Development is a writer whose index syncs reach a different Meilisearch, such as the hosted weekly runner in `docs/data-refresh-runbook.md`.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

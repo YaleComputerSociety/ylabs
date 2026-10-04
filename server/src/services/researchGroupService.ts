@@ -949,7 +949,7 @@ const isMissingMeiliEmbedderError = (error: unknown): boolean => {
 const SORT_TITLE_ATTRIBUTE = 'sortTitle';
 const SORT_TITLE_QUALIFIER_ATTRIBUTE = 'sortTitleQualifier';
 
-const meiliSortEntries = (
+export const meiliSortEntries = (
   sortBy: NonNullable<ResearchGroupSearchSort['sortBy']>,
   order: 'asc' | 'desc',
 ): string[] =>

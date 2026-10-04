@@ -10,7 +10,10 @@ import {
   buildResearchEntitySearchIndexDocument,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 } from '../../services/researchEntitySearchIndexService';
-import { normalizeResearchSearchQuery } from '../../services/researchGroupService';
+import {
+  meiliSortEntries,
+  normalizeResearchSearchQuery,
+} from '../../services/researchGroupService';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import {
   attributeTopicDrops,
@@ -19,6 +22,7 @@ import {
   buildRate,
   checkExpectedNoResults,
   checkFacetAgreement,
+  checkIndexedSortKeyMatchesStored,
   checkConstantReportedTotal,
   checkCreativePracticeLabelAttribution,
   checkDefaultBrowseOrderIsRepeatable,
@@ -79,6 +83,11 @@ export type BrowseFn = (request: BrowseRequest) => Promise<ServedBrowseResult>;
 
 export type ReadStoredRowsFn = (rowKeys: string[]) => Promise<Map<string, Record<string, unknown>>>;
 
+export type ReadIndexedSortKeysFn = (
+  sortAttribute: string,
+  rowKeys: string[],
+) => Promise<Map<string, unknown>>;
+
 export interface LeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
   unavailable: boolean;
@@ -100,6 +109,7 @@ export interface JourneyEvalContext {
   undergradEvidenceJudgements?: UndergradEvidenceJudgementSet | null;
   undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
   readStoredRows: ReadStoredRowsFn;
+  readIndexedSortKeys: ReadIndexedSortKeysFn;
   readLeadMemberNames?: ReadLeadMemberNamesFn;
   readCorpusFingerprint: () => Promise<CorpusFingerprint>;
   readOwnedSlotSurvivorWebsites: () => Promise<{
@@ -479,10 +489,59 @@ const textQueryTotalIsStable: JourneyCase = {
   },
 };
 
+const INDEX_SYNC_GRACE_MS = 60_000;
+
+type ResearchSortBy = Parameters<typeof meiliSortEntries>[0];
+
+const indexedSortAttribute = (sortBy: ResearchSortBy, order: 'asc' | 'desc'): string =>
+  meiliSortEntries(sortBy, order)[0].split(':')[0];
+
+const sameSortKey = (indexed: unknown, derived: unknown): boolean => {
+  const indexedMillis = epochMillis(indexed);
+  const derivedMillis = epochMillis(derived);
+  if (indexedMillis !== null && derivedMillis !== null) return indexedMillis === derivedMillis;
+  return indexed === derived;
+};
+
+async function checkServedRowsSortOnAFreshIndexedKey(
+  context: JourneyEvalContext,
+  sortBy: ResearchSortBy,
+  order: 'asc' | 'desc',
+  rows: Array<Record<string, unknown>>,
+  readStartedAt: number,
+): Promise<InvariantResult> {
+  const sortAttribute = indexedSortAttribute(sortBy, order);
+  const keys = rows.map(rowKey).filter(Boolean);
+  const [indexed, stored] = await Promise.all([
+    context.readIndexedSortKeys(sortAttribute, keys),
+    context.readStoredRows(keys),
+  ]);
+  return checkIndexedSortKeyMatchesStored(
+    sortAttribute,
+    rows.map((row) => {
+      const key = rowKey(row);
+      const storedRow = stored.get(key);
+      const storedUpdatedAt = epochMillis(storedRow?.updatedAt);
+      return {
+        inIndex: indexed.has(key),
+        matchesStored: sameSortKey(
+          indexed.get(key),
+          storedRow
+            ? buildResearchEntitySearchIndexDocument(storedRow)?.[sortAttribute]
+            : undefined,
+        ),
+        writtenDuringRead:
+          storedUpdatedAt !== null && storedUpdatedAt >= readStartedAt - INDEX_SYNC_GRACE_MS,
+      };
+    }),
+  );
+}
+
 const sortedBrowseKeepsOrder: JourneyCase = {
   id: 'sorted-browse-keeps-order',
   title: 'A browse sorted by last observation is ordered and does not silently degrade',
   run: async (context) => {
+    const readStartedAt = Date.now();
     const result = await context.browse({
       page: 1,
       pageSize: context.window,
@@ -501,6 +560,13 @@ const sortedBrowseKeepsOrder: JourneyCase = {
           rows.map((row) => epochMillis(row.lastObservedAt)),
           'desc',
         ),
+        await checkServedRowsSortOnAFreshIndexedKey(
+          context,
+          'lastObservedAt',
+          'desc',
+          rows,
+          readStartedAt,
+        ),
       ],
       rates: [],
     };
@@ -513,8 +579,9 @@ const titleSortedBrowseFollowsCardTitle: JourneyCase = {
   run: async (context) => {
     const reachablePages = maxReachableResearchSearchPage(context.window);
     const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
+    const readStartedAt = Date.now();
     const corpusBefore = await context.readCorpusFingerprint();
-    const sortTitles: string[] = [];
+    const walkedRows: Array<Record<string, unknown>> = [];
     let degradedPages = 0;
     for (let page = 1; page <= pagesToWalk; page += 1) {
       const result = await context.browse({
@@ -523,8 +590,9 @@ const titleSortedBrowseFollowsCardTitle: JourneyCase = {
         sort: { sortBy: 'name', sortOrder: 'asc' },
       });
       if (result.degraded !== false) degradedPages += 1;
-      sortTitles.push(...servedRows(result).map((row) => researchEntitySortTitle(row)));
+      walkedRows.push(...servedRows(result));
     }
+    const sortTitles = walkedRows.map((row) => researchEntitySortTitle(row));
     const corpusAfter = await context.readCorpusFingerprint();
 
     return {
@@ -536,6 +604,13 @@ const titleSortedBrowseFollowsCardTitle: JourneyCase = {
           { pagesWalked: pagesToWalk, degradedPages },
         ),
         checkTitleSortOrdering(sortTitles, 'asc', corpusBefore, corpusAfter),
+        await checkServedRowsSortOnAFreshIndexedKey(
+          context,
+          'name',
+          'asc',
+          walkedRows,
+          readStartedAt,
+        ),
       ],
       rates: [],
     };

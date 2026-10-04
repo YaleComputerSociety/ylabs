@@ -261,6 +261,7 @@ describe('undergrad-evidence-quote-precision case', () => {
     topicQueryJudgements: null,
     readStoredRows: async (keys) =>
       new Map(keys.map((key) => [key, storedRows.get(key) as Record<string, unknown>])),
+    readIndexedSortKeys: async () => new Map(),
     readCorpusFingerprint: async () => still,
     readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
     window: 100,

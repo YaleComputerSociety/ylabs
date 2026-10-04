@@ -427,6 +427,41 @@ export function checkSortOrdering(
   );
 }
 
+export interface IndexedSortKeyObservation {
+  inIndex: boolean;
+  matchesStored: boolean;
+  writtenDuringRead: boolean;
+}
+
+export function checkIndexedSortKeyMatchesStored(
+  sortAttribute: string,
+  observations: readonly IndexedSortKeyObservation[],
+): InvariantResult {
+  const settled = observations.filter((observation) => !observation.writtenDuringRead);
+  const stale = settled.filter(
+    (observation) => observation.inIndex && !observation.matchesStored,
+  ).length;
+  const tally = {
+    sortAttribute,
+    compared: settled.length,
+    stale,
+    missingFromIndex: settled.filter((observation) => !observation.inIndex).length,
+    writtenDuringRead: observations.length - settled.length,
+  };
+  return buildInvariant(
+    'indexed-sort-key-is-fresh',
+    `Every served row is sorted on the ${sortAttribute} its stored row derives now`,
+    stale === 0,
+    stale === 0
+      ? tally
+      : {
+          ...tally,
+          remedy:
+            'The index predates these rows, so rebuild it per docs/meilisearch-reindex-runbook.md',
+        },
+  );
+}
+
 export function checkTitleSortOrdering(
   sortTitles: readonly string[],
   order: 'asc' | 'desc',

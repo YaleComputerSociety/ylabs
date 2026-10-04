@@ -24,6 +24,7 @@ import {
   type SurvivorWebsiteObservation,
 } from './journeyEvalMetrics';
 import { Observation } from '../../models/observation';
+import { readIndexedFieldByDocumentId } from '../../services/meiliSyncService';
 import {
   materializationReadScopeFilter,
   mergedSurvivorEvidence,
@@ -206,6 +207,20 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
     readStoredRows: async (rowKeys: string[]) => {
       const rows = await collection.find({ slug: { $in: rowKeys } }).toArray();
       return new Map(rows.map((row) => [String(row.slug), row as Record<string, unknown>]));
+    },
+    readIndexedSortKeys: async (sortAttribute: string, rowKeys: string[]) => {
+      const [rows, indexedByDocumentId] = await Promise.all([
+        collection.find({ slug: { $in: rowKeys } }, { projection: { slug: 1 } }).toArray(),
+        readIndexedFieldByDocumentId('researchEntity', sortAttribute),
+      ]);
+      return new Map(
+        rows.flatMap((row) => {
+          const documentId = String(row._id);
+          return indexedByDocumentId.has(documentId)
+            ? [[String(row.slug), indexedByDocumentId.get(documentId)] as const]
+            : [];
+        }),
+      );
     },
     readLeadMemberNames: (storedRows) => optionalPublicLeadMemberNames(storedRows),
     readOwnedSlotSurvivorWebsites: async () => {
