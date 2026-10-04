@@ -56,7 +56,7 @@ The one recorded suppression of `react-hooks/set-state-in-effect` is the URL-to-
 Any new suppression of either rule needs the same written rationale on the line above it.
 Expect a lint error to fail the required check before any suite runs.
 `yarn verify` runs steps 2-12, with the full server suite unsharded as step 7; keep it in sync with this list if `ci.yml` changes.
-`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, the guard step's position after lint, the shard divisor matching the matrix, and every job sitting in `test-and-build`'s `needs`, so a change that contradicts this list fails step 12.
+`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, the guard step's position after lint, the shard divisor matching the matrix, every job sitting in `test-and-build`'s `needs`, and that gate script failing on any failed, cancelled, or skipped result, so a change that contradicts this list fails step 12.
 
 Steps 12 and 13 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
