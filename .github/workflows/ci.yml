@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-build:
+  checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Operator escape hatch for an advisory-registry outage. Absent or anything
@@ -95,21 +95,18 @@ jobs:
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
-      # A step inside test-and-build rather than a separate job, so it reports
-      # under the required `test-and-build` context. A new job would report under
-      # a new context name that no ruleset requires, and so could not block a
-      # merge until someone added it to the ruleset.
+      # A step inside `checks` rather than a new job, because only jobs listed in
+      # `test-and-build`'s `needs` can block a merge, and that is the one context
+      # the rulesets require.
       - name: Run client typecheck
         run: npx tsc --noEmit -p client/tsconfig.json
 
-      # Registration and inventory guards report in seconds, so they run ahead of
-      # the full server suite, which still runs them again (#3737). Changing this
-      # order also requires updating the step list in skills/finishing-work/SKILL.md.
+      # Registration and inventory guards report in seconds, so a guard failure
+      # surfaces here before the sharded server suite in `server-tests` finishes,
+      # which still runs them again (#3737). Changing this order also requires
+      # updating the step list in skills/finishing-work/SKILL.md.
       - name: Run server guard tests
         run: yarn --cwd server test:guards
-
-      - name: Run server tests
-        run: yarn --cwd server test
 
       - name: Run model inventory operator tests
         run: yarn model-refactor:inventory:test-operator-tools
@@ -149,3 +146,63 @@ jobs:
 
       - name: Build server and client
         run: yarn build
+
+  # The server suite is most of the wall time of one run (8.6 of 14.7 minutes on
+  # one runner), and every pull request runs CI twice on its way in: once on the
+  # pull request and once in the merge queue (#4666). Vitest's --shard splits the
+  # test files into disjoint slices whose union is the whole suite, so four
+  # parallel slices run every file exactly once. Changing the shard count
+  # requires changing both the matrix list and the `/4` divisor together.
+  server-tests:
+    name: server-tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Run server tests
+        run: yarn --cwd server test --shard=${{ matrix.shard }}/4
+
+  # The one context the beta and main rulesets require. It reports success only
+  # when every job above succeeded, so a failed, cancelled, or skipped shard
+  # fails it. `if: always()` makes it report rather than be skipped when a
+  # needed job fails, because a skipped required context reads as passing.
+  # Adding a job above also requires adding it to `needs`.
+  test-and-build:
+    needs: [checks, server-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done
