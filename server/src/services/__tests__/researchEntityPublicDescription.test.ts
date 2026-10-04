@@ -678,6 +678,19 @@ describe('a biography whose research sits among career facts serves its research
     expect(body).not.toMatch(/joined the faculty|Example Prize/);
   });
 
+  it('keeps research sentences that share a verb or a place with a career record', () => {
+    const representation = served(
+      'Robin Fixture joined the faculty in 2010. She studies cardiac gene regulation. We have edited the genomes of zebrafish to model heart disease. We have translated these findings into a clinical trial. We worked with farmers in Kenya to measure soil carbon. The project traces the legacy of the London 2012 Games. She won the Example Prize in 2015.',
+      'Studies cardiac gene regulation in zebrafish models of heart disease.',
+    );
+    const body = representation.entity.fullDescription;
+    expect(body).toContain('edited the genomes of zebrafish');
+    expect(body).toContain('translated these findings');
+    expect(body).toContain('worked with farmers');
+    expect(body).toContain('London 2012 Games');
+    expect(body).not.toMatch(/joined the faculty|Example Prize/);
+  });
+
   it('still narrows a CV whose only CV signal is the leading degree run', () => {
     const representation = served(
       'Ph.D., History, Example University, 2004 M.A., History, Another University, 1999 B.A., History, Example College, 1997 Robin Fixture studies the labor history of early modern ports. She has also taught at Example College and Another College.',
