@@ -1168,6 +1168,30 @@ describe('nodePersonCardExtractor never takes a photo scene description as a nam
     });
     expect(entry.name).toBe('Sam Fixture');
   });
+
+  const runSceneRoster = async (corpusSlugs: string[]) => {
+    const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+    const htmlFetcher = vi.fn(async () => sceneCard('Sam Fixture'));
+    const scraper = new DepartmentRosterScraper(
+      [{ ...music, renderedExtractor: undefined }],
+      null,
+      htmlFetcher,
+      async () => new Map(corpusSlugs.map((slug) => [slug, {}])),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return new Set(emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey));
+  };
+
+  it('never mints a new row key from a scene alt text', async () => {
+    expect(await runSceneRoster([])).toEqual(new Set(['dept:school-of-music:sam-fixture']));
+  });
+
+  it('keeps the scene-derived key of a row the corpus already holds under it', async () => {
+    expect(
+      await runSceneRoster(['dept-school-of-music-man-in-a-grey-suit-holding-a-cello']),
+    ).toEqual(new Set(['dept:school-of-music:man-in-a-grey-suit-holding-a-cello']));
+  });
 });
 
 describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {

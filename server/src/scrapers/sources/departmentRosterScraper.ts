@@ -4026,6 +4026,21 @@ export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig):
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
 }
 
+/**
+ * A scene alt text keeps its key only for a row the corpus already holds under it,
+ * so an existing row is not re-keyed while a new one is never minted from a scene.
+ */
+function withoutUnheldSceneIdentity(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  corpusRowsBySlug: ReadonlyMap<string, unknown>,
+): FacultyEntry {
+  if (!entry.identityName || !isPhotoSceneDescription(entry.identityName)) return entry;
+  if (corpusRowsBySlug.has(rosterResearchEntitySlug(entry, dept))) return entry;
+  const { identityName: _sceneIdentity, ...rest } = entry;
+  return rest;
+}
+
 function rosterIdentityNameSlug(entry: FacultyEntry): string {
   return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
 }
@@ -4291,7 +4306,7 @@ export class DepartmentRosterScraper implements IScraper {
         const entry = withoutAnotherRosterPersonsStatedLab(
           withoutOffsiteInstitutionWebsite(
             await enrichEntryFromOfficialProfile(
-              rawEntry,
+              withoutUnheldSceneIdentity(rawEntry, dept, labUrlEvidenceBySlug),
               this.name,
               ctx.options.useCache,
               this.htmlFetcher,

@@ -22,7 +22,7 @@ const presentationRemarkPattern =
 const strayLeadingPunctuationPattern = /^[)\]}>,;:.!?%/|\\*&+=-]/;
 
 const websiteNewsNotePattern =
-  /^(?:new|update[sd]?|news|announcement|coming\s+soon|now\s+available|just\s+(?:published|released|posted))\s*[:!—–-]|^(?:i|we)\s+(?:have\s+)?(?:just\s+)?(?:added|updated|posted|uploaded|launched|released)\b|^coming\s+soon\b/i;
+  /^(?:new|update[sd]?|news|announcement|coming\s+soon|now\s+available|just\s+(?:published|released|posted))(?:\s*[:!]|\s+[—–-]\s)|^(?:i|we)\s+(?:have\s+)?(?:just\s+)?(?:added|updated|posted|uploaded|launched|released)\b|^coming\s+soon\b/i;
 
 const programRenameNotePattern = /\s*\(now\s+[A-Z][A-Z0-9&-]{2,}\)/g;
 
