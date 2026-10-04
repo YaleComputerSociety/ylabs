@@ -800,7 +800,25 @@ describe('a past visiting post is a career record, not research', () => {
           "Robin Fixture's research, begun as a Fulbright scholar abroad, focuses on how coastal towns adapt to repeated flooding.",
       },
     });
-    expect(representation.entity.fullDescription).toMatch(/adapt to repeated flooding/);
+    expect(`${representation.entity.fullDescription} ${representation.servedCard}`).toMatch(
+      /adapt to repeated flooding/,
+    );
     expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
+  });
+});
+
+describe('serving the card in place of a researchless biography', () => {
+  it('keeps the whole body when the card would stop counting as a card once it is also the body', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        fullDescription:
+          'I’m Robin Fixture, an associate professor of economics at Example University studying microeconomic theory. My interests include information design, dynamic games, and strategic uncertainty.',
+        shortDescription: 'Studies information design, dynamic games, and strategic uncertainty.',
+      },
+    });
+    expect(representation.invariant.cardDescriptionUseful).toBe(true);
   });
 });

@@ -178,7 +178,10 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
         ...input,
         entity: { ...input.entity, fullDescription: cardBody },
       });
-      return cardOnly.invariant.pass && cardOnly.quality.full.isUseful ? cardOnly : whole;
+      // Served only when the row keeps a card: a card that becomes the body can stop
+      // counting as one, and trading the career text for a held row costs the student
+      // the page (#4829).
+      return representationServesCard(cardOnly) ? cardOnly : whole;
     }
     const narrowed = derivePublicDescriptionRepresentation({
       ...input,
