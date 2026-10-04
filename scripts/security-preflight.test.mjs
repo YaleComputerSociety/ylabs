@@ -991,10 +991,14 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
 
   // A lint error is seconds to report and the suites are minutes, so the gate
   // is worth nothing behind them.
-  const lintAt = ciWorkflow.search(lintRun);
-  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
-  assert.ok(firstSuiteAt > 0, 'ci.yml must still run the server suite');
-  assert.ok(lintAt > 0 && lintAt < firstSuiteAt, 'the lint step must run before the server suite');
+  const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run ?? '');
+  const lintAt = checksSteps.findIndex((run) => run.trim() === 'yarn lint');
+  const firstSuiteAt = checksSteps.findIndex((run) => /^\s*yarn (--cwd \w+ )?test\b/m.test(run));
+  assert.ok(lintAt >= 0, 'the checks job must run yarn lint');
+  assert.ok(
+    lintAt < firstSuiteAt,
+    'the lint step must run before the first suite in the checks job',
+  );
 
   // verify:fast is the documented pre-push predictor of CI's cheap gates, so a
   // gate CI enforces and verify:fast omits would surprise every author.
@@ -1002,15 +1006,61 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   assert.match(packageJson.scripts.verify, /verify:fast/);
 });
 
-test('CI runs the server registration guards ahead of the full server suite', () => {
-  const guardRun = /^\s*run:\s*yarn --cwd server test:guards\s*$/m;
-  const guardAt = ciWorkflow.search(guardRun);
-  const lintAt = ciWorkflow.search(/^\s*run:\s*yarn lint\s*$/m);
-  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
-  assert.ok(guardAt > 0, 'ci.yml must run the server guard tests (ylabs#3737)');
+test('CI runs the server registration guards right after lint, beside the sharded suite', () => {
+  const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run?.trim() ?? '');
+  const guardAt = checksSteps.indexOf('yarn --cwd server test:guards');
+  const lintAt = checksSteps.indexOf('yarn lint');
+  assert.ok(guardAt >= 0, 'the checks job must run the server guard tests (ylabs#3737)');
   assert.ok(lintAt < guardAt, 'the guard step runs after lint');
-  assert.ok(guardAt < firstSuiteAt, 'the guard step must run before the full server suite');
   assert.match(packageJson.scripts['verify:fast'], /yarn --cwd server test:guards/);
+});
+
+test('the server suite runs as disjoint shards that together cover every file', () => {
+  const { jobs } = yaml.load(ciWorkflow);
+  const shards = jobs['server-tests'].strategy.matrix.shard;
+  const suiteRuns = jobs['server-tests'].steps
+    .map((step) => step.run?.trim())
+    .filter((run) => run?.startsWith('yarn --cwd server test'));
+  assert.deepEqual(
+    suiteRuns,
+    [`yarn --cwd server test --shard=\${{ matrix.shard }}/${shards.length}`],
+    'each shard must run exactly its slice, and the divisor must equal the number of shards, or some files run nowhere (#4666)',
+  );
+  assert.deepEqual(
+    shards,
+    Array.from({ length: shards.length }, (_, index) => index + 1),
+    'the shard indexes must be 1..N with no gap, or a slice runs nowhere',
+  );
+  assert.equal(jobs['server-tests'].strategy['fail-fast'], false);
+  for (const [jobId, job] of Object.entries(jobs)) {
+    for (const step of job.steps ?? []) {
+      assert.doesNotMatch(
+        step.run ?? '',
+        /^\s*yarn --cwd server test\s*$/m,
+        `${jobId} must not also run the whole server suite unsharded`,
+      );
+    }
+  }
+});
+
+test('test-and-build is an aggregate that fails unless every other CI job succeeded', () => {
+  const { jobs } = yaml.load(ciWorkflow);
+  const gate = jobs['test-and-build'];
+  assert.deepEqual(
+    [...gate.needs].sort(),
+    Object.keys(jobs)
+      .filter((jobId) => jobId !== 'test-and-build')
+      .sort(),
+    'every CI job must be in test-and-build needs, because only that context is required by the rulesets',
+  );
+  assert.equal(
+    gate.if,
+    'always()',
+    'without always() a failed job skips the gate, and a skipped required context reads as passing',
+  );
+  const verdict = gate.steps.map((step) => step.run ?? '').join('\n');
+  assert.match(verdict, /\[ "\$result" = success \] \|\| exit 1/);
+  assert.equal(gate.steps[0].env.RESULTS, "${{ join(needs.*.result, ' ') }}");
 });
 
 const everyWorkflowFile = () => {

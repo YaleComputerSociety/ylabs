@@ -29,7 +29,10 @@ Treat a failure that appears only when that file exists as a hole in the fence r
 
 **Before pushing, run `yarn verify:fast` at minimum.** `format:check` is CI's first step and takes about three seconds, and it has been the sole cause of otherwise-green PRs failing (#2305, #2322, #2327, #2334 - see #2335). Running `security:preflight` alone is not enough: it sits late in CI and does not check formatting.
 
-CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
+CI (`.github/workflows/ci.yml`) runs three jobs.
+`checks` and `server-tests` run in parallel, and `test-and-build`, the one context the rulesets require, waits for both and fails unless every one of them succeeded (#4666).
+`server-tests` is a four-way matrix: each shard runs step 1 and then `yarn --cwd server test --shard=<n>/4`, and the four disjoint slices together run every server test file once.
+`checks` runs, in this order:
 
 1. checkout -> Node from `.node-version` -> pinned Corepack -> immutable root, server, and client installs
 2. `yarn format:check`
@@ -37,7 +40,7 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 4. `npx tsc --noEmit -p server/tsconfig.json`
 5. `npx tsc --noEmit -p client/tsconfig.json`
 6. `yarn --cwd server test:guards` (registration and inventory guards, seconds long, ahead of the full suite; #3737)
-7. `yarn --cwd server test`
+7. (the full server suite runs in `server-tests`, beside this job)
 8. `yarn model-refactor:inventory:test-operator-tools`
 9. `yarn test:data-profiles`
 10. `yarn test:scripts` (every `scripts/*.test.mjs`, so a new one cannot be orphaned; #4199)
@@ -52,8 +55,8 @@ Use `client/src/hooks/useLoadEffect.ts` for a loader effect and `client/src/hook
 The one recorded suppression of `react-hooks/set-state-in-effect` is the URL-to-state reconcile in `client/src/pages/research.tsx`, which must run in effect order with the paging effects and carries its rationale beside the `eslint-disable-next-line`.
 Any new suppression of either rule needs the same written rationale on the line above it.
 Expect a lint error to fail the required check before any suite runs.
-`yarn verify` runs steps 2-12; keep it in sync with this list if `ci.yml` changes.
-`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, and the guard step's position between lint and the full suite, so a step reordering that contradicts this list fails step 12.
+`yarn verify` runs steps 2-12, with the full server suite unsharded as step 7; keep it in sync with this list if `ci.yml` changes.
+`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, the guard step's position after lint, the shard divisor matching the matrix, and every job sitting in `test-and-build`'s `needs`, so a change that contradicts this list fails step 12.
 
 Steps 12 and 13 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
