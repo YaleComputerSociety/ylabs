@@ -491,6 +491,8 @@ export function withAffiliationLabel(labels: string[], label?: string): string[]
   return labels.some((value) => value.toLocaleLowerCase() === key) ? labels : [...labels, label];
 }
 
+export const SCHOOL_OF_MEDICINE_NAME = 'School of Medicine';
+
 /**
  * Yale school subdomains that name exactly one school, so a profile hosted there
  * is first-party evidence of that school. Generic research portals
@@ -498,8 +500,6 @@ export function withAffiliationLabel(labels: string[], label?: string): string[]
  * centers are deliberately absent: the host only sets a school when the host
  * itself names one, keeping the fallback fail-closed (issue #1182).
  */
-export const SCHOOL_OF_MEDICINE_NAME = 'School of Medicine';
-
 export const SCHOOL_PROFILE_HOSTS: Record<string, string> = {
   'medicine.yale.edu': SCHOOL_OF_MEDICINE_NAME,
   'ysph.yale.edu': 'School of Public Health',

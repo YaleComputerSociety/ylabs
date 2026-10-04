@@ -2277,6 +2277,14 @@ export interface NonDemotingMergeResolution {
   simulatedTier: string;
 }
 
+export type PlannedMergeCarry = Pick<
+  ResearchEntityDedupeMergeGroup,
+  'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
+>;
+
+const carriedStrings = (values: unknown): string[] =>
+  Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
+
 /**
  * A merge keeps one survivor and archives the rest, so keeping a survivor that
  * is less student-visible than one of its twins silently drops a lab from
@@ -2289,14 +2297,6 @@ export interface NonDemotingMergeResolution {
  * twins are tried; if none holds the tier the merge is deferred rather than
  * demoting.
  */
-export type PlannedMergeCarry = Pick<
-  ResearchEntityDedupeMergeGroup,
-  'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
->;
-
-const carriedStrings = (values: unknown): string[] =>
-  Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
-
 export async function resolveNonDemotingMerge(
   preferredCanonicalId: mongoose.Types.ObjectId,
   duplicateIds: mongoose.Types.ObjectId[],
