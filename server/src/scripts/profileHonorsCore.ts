@@ -52,8 +52,6 @@ export function parseProfileHonorsArgs(argv: readonly string[]): ProfileHonorsAr
   return args;
 }
 
-const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
 /** The lead the row's title names, the only person whose page may supply its honors. */
 export function profileHonorsLead(
   entity: ProfileHonorsEntity,
