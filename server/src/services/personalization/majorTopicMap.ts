@@ -562,7 +562,8 @@ export const MAJOR_TOPIC_MAP: Readonly<Record<string, MajorTopicMapping>> = {
   },
   'South Asian Studies': {
     researchAreas: [],
-    departments: ['South Asian Studies'],
+    departments: [],
+    noSignalReason: 'no served topic or department holds enough rows',
   },
   'Urban Studies': {
     researchAreas: [

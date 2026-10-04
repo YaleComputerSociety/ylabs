@@ -13,33 +13,29 @@ import catalogMajors from './fixtures/yaleCollegeCatalogMajors.json';
 import precisionLabels from './fixtures/majorTopicPrecisionLabels.json';
 
 const MAX_RESEARCH_AREAS_PER_MAJOR = 40;
-const MIN_MAPPED_RESEARCH_AREA_ROWS = 5;
+const MIN_MAPPED_VALUE_ROWS = 5;
 const MIN_SAMPLED_PRECISION = 0.8;
 const SAMPLE_SIZE = 15;
 
 const mappings = Object.entries(MAJOR_TOPIC_MAP);
 
+const valuesBelowRowFloor = (
+  field: 'researchAreas' | 'departments',
+  counts: Record<string, number>,
+): string[] =>
+  mappings.flatMap(([major, mapping]) =>
+    mapping[field]
+      .filter((value) => (counts[value] ?? 0) < MIN_MAPPED_VALUE_ROWS)
+      .map((value) => `${major}: ${value}`),
+  );
+
 describe('MAJOR_TOPIC_MAP', () => {
   it('maps only research areas the served snapshot holds with enough rows to survive corpus churn', () => {
-    const tooRare = mappings.flatMap(([major, mapping]) =>
-      mapping.researchAreas
-        .filter(
-          (area) =>
-            ((snapshot.researchAreas as Record<string, number>)[area] ?? 0) <
-            MIN_MAPPED_RESEARCH_AREA_ROWS,
-        )
-        .map((area) => `${major}: ${area}`),
-    );
-    expect(tooRare).toEqual([]);
+    expect(valuesBelowRowFloor('researchAreas', snapshot.researchAreas)).toEqual([]);
   });
 
-  it('maps only departments the served snapshot holds', () => {
-    const unknown = mappings.flatMap(([major, mapping]) =>
-      mapping.departments
-        .filter((department) => !(department in snapshot.departments))
-        .map((department) => `${major}: ${department}`),
-    );
-    expect(unknown).toEqual([]);
+  it('maps only departments the served snapshot holds with enough rows to survive corpus churn', () => {
+    expect(valuesBelowRowFloor('departments', snapshot.departments)).toEqual([]);
   });
 
   it(`keeps every major at or under ${MAX_RESEARCH_AREAS_PER_MAJOR} research areas`, () => {
