@@ -520,3 +520,161 @@ export function applyUnionPlanToSnapshot(
     profile: { ...(canonical.profile ?? {}), ...plan.profileGapFills },
   };
 }
+
+export interface AccountlessClusterMember {
+  id: string;
+  displayName?: unknown;
+  netid?: unknown;
+  orcid?: unknown;
+  title?: unknown;
+  primaryDepartment?: unknown;
+  profileLinks?: unknown;
+  liveRoleEdges: number;
+}
+
+export type AccountlessClusterRefusal =
+  'NETID_CONFLICT' | 'ORCID_CONFLICT' | 'TITLE_CONFLICT' | 'SURNAME_CONFLICT';
+
+export interface AccountlessClusterPlan {
+  /** Each folding member mapped to the survivor of its group. */
+  foldTargetById: Map<string, string>;
+  groups: number;
+  foldedGroups: number;
+  refusedGroups: Record<AccountlessClusterRefusal, number>;
+}
+
+const departmentKey = (value: unknown): string =>
+  typeof value === 'string'
+    ? value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+    : '';
+
+function nameAndDepartmentKey(member: AccountlessClusterMember): string | undefined {
+  const name = normalizeResearcherName(member.displayName);
+  const department = departmentKey(member.primaryDepartment);
+  return name && department ? `${name}::${department}` : undefined;
+}
+
+function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
+  return new Set(values.filter((value): value is string => Boolean(value))).size;
+}
+
+function clusterRefusal(
+  members: ReadonlyArray<AccountlessClusterMember>,
+): AccountlessClusterRefusal | undefined {
+  if (distinctNonEmpty(members.map((member) => bareNetid(member.netid))) > 1) {
+    return 'NETID_CONFLICT';
+  }
+  if (distinctNonEmpty(members.map((member) => cleanOrcid(member.orcid))) > 1) {
+    return 'ORCID_CONFLICT';
+  }
+  const verdicts = new Set(
+    members
+      .map((member) => (typeof member.title === 'string' ? member.title.trim() : ''))
+      .filter(Boolean)
+      .map((title) => titleResearchOwnership(title))
+      .filter((verdict) => verdict !== 'states_no_rank'),
+  );
+  if (verdicts.size > 1) return 'TITLE_CONFLICT';
+  const surnames = members.map((member) => clusterSurname(member.displayName)).filter(Boolean);
+  if (surnames.some((surname) => !surnamesCompatible(surname, surnames[0]))) {
+    return 'SURNAME_CONFLICT';
+  }
+  return undefined;
+}
+
+const GENERATIONAL_SUFFIX = /^(?:jr|sr|ii|iii|iv)$/i;
+
+// Copies of one record differ only in roster noise after the name: a credential after a
+// comma, a generational suffix, a trailing period.
+function clusterSurname(displayName: unknown): string {
+  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  const tokens = beforeCredentials
+    .split(/\s+/)
+    .map((token) => token.replace(/\.+$/, ''))
+    .filter(Boolean);
+  while (tokens.length > 1 && GENERATIONAL_SUFFIX.test(tokens[tokens.length - 1])) tokens.pop();
+  return splitName(tokens.join(' ')).last;
+}
+
+const objectIdSeconds = (id: string): number =>
+  /^[0-9a-f]{24}$/i.test(id) ? parseInt(id.slice(0, 8), 16) : Number.MAX_SAFE_INTEGER;
+
+/**
+ * The survivor is the record the corpus already leans on: the most live role edges, then
+ * the most healthy verified primary links, then the oldest record, so the choice is
+ * reproducible and never alphabetical.
+ */
+export function accountlessClusterSurvivor(
+  members: ReadonlyArray<AccountlessClusterMember>,
+): AccountlessClusterMember {
+  return [...members].sort(
+    (left, right) =>
+      right.liveRoleEdges - left.liveRoleEdges ||
+      verifiedPrimaryProfileKeys(right.profileLinks).length -
+        verifiedPrimaryProfileKeys(left.profileLinks).length ||
+      objectIdSeconds(left.id) - objectIdSeconds(right.id) ||
+      left.id.localeCompare(right.id),
+  )[0];
+}
+
+/**
+ * Groups of accountless records with no account-backed member, which the outranking arms
+ * cannot fold because nobody outranks anybody. A group is the records that share a
+ * healthy verified primary profile, or the same normalized full name together with the
+ * same stated primary department. A whole group is refused on any netid, ORCID, title
+ * rank or surname disagreement, because one wrong join merges two people for good.
+ */
+export function planAccountlessClusterFolds(
+  members: ReadonlyArray<AccountlessClusterMember>,
+): AccountlessClusterPlan {
+  const parent = new Map<string, string>(members.map((member) => [member.id, member.id]));
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root) as string;
+    parent.set(id, root);
+    return root;
+  };
+  const firstByKey = new Map<string, string>();
+  for (const member of members) {
+    const keys = [
+      ...verifiedPrimaryProfileKeys(member.profileLinks).map((key) => `page::${key}`),
+      ...[nameAndDepartmentKey(member)].filter(Boolean).map((key) => `name::${key}`),
+    ];
+    for (const key of keys) {
+      const first = firstByKey.get(key);
+      if (first) parent.set(find(member.id), find(first));
+      else firstByKey.set(key, member.id);
+    }
+  }
+
+  const groupsByRoot = new Map<string, AccountlessClusterMember[]>();
+  for (const member of members) {
+    const root = find(member.id);
+    groupsByRoot.set(root, [...(groupsByRoot.get(root) ?? []), member]);
+  }
+
+  const plan: AccountlessClusterPlan = {
+    foldTargetById: new Map(),
+    groups: 0,
+    foldedGroups: 0,
+    refusedGroups: { NETID_CONFLICT: 0, ORCID_CONFLICT: 0, TITLE_CONFLICT: 0, SURNAME_CONFLICT: 0 },
+  };
+  for (const group of groupsByRoot.values()) {
+    if (group.length < 2) continue;
+    plan.groups += 1;
+    const refusal = clusterRefusal(group);
+    if (refusal) {
+      plan.refusedGroups[refusal] += 1;
+      continue;
+    }
+    const survivor = accountlessClusterSurvivor(group);
+    for (const member of group) {
+      if (member.id !== survivor.id) plan.foldTargetById.set(member.id, survivor.id);
+    }
+    plan.foldedGroups += 1;
+  }
+  return plan;
+}
