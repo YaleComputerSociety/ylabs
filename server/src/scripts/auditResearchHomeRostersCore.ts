@@ -42,6 +42,13 @@ export interface OfficialRosterMemberEvidence {
   membershipKey: string;
 }
 
+/** One live source-owned `CURRENT` role assignment on the lane's research entity. */
+export interface OfficialRosterMaterializedRow {
+  membershipKey: string;
+  personId: string;
+  observedAt?: string;
+}
+
 export interface OfficialRosterLaneEvidence {
   researchEntityKey: string;
   url: string;
@@ -71,6 +78,8 @@ export interface OfficialRosterLaneEvidence {
   materializedMembershipKeys: string[];
   /** Materialized source-owned rows whose freshness window has lapsed. */
   expiredMaterializedRows: number;
+  /** The live source-owned `CURRENT` rows themselves, one per role assignment. */
+  materializedRows?: OfficialRosterMaterializedRow[];
   error?: string;
 }
 
@@ -83,6 +92,8 @@ export type OfficialRosterVerdict =
   | 'stale-publish-date'
   | 'member-precision-defect'
   | 'membership-not-materialized'
+  | 'membership-not-refreshed'
+  | 'membership-edge-surplus'
   | 'snapshot-expired'
   | 'uncovered-section';
 
@@ -95,6 +106,8 @@ const VERDICT_SEVERITY: readonly OfficialRosterVerdict[] = [
   'stale-publish-date',
   'member-precision-defect',
   'membership-not-materialized',
+  'membership-not-refreshed',
+  'membership-edge-surplus',
   'snapshot-expired',
   'uncovered-section',
   'ok',
@@ -119,6 +132,8 @@ const ALARMING_VERDICTS: readonly OfficialRosterVerdict[] = [
   'stale-publish-date',
   'member-precision-defect',
   'membership-not-materialized',
+  'membership-not-refreshed',
+  'membership-edge-surplus',
 ];
 
 export interface OfficialRosterPrecision {
@@ -212,6 +227,56 @@ export function uncoveredCurrentSections(evidence: OfficialRosterLaneEvidence): 
 export function unmaterializedMembershipKeys(evidence: OfficialRosterLaneEvidence): string[] {
   const materialized = new Set(evidence.materializedMembershipKeys.map((key) => key.toLowerCase()));
   return evidence.storedMembershipKeys.filter((key) => !materialized.has(key.toLowerCase()));
+}
+
+const observedTime = (value: string | undefined): number => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+};
+
+function rowsByMembershipKey(
+  evidence: OfficialRosterLaneEvidence,
+): Map<string, OfficialRosterMaterializedRow[]> {
+  const byKey = new Map<string, OfficialRosterMaterializedRow[]>();
+  for (const row of evidence.materializedRows ?? []) {
+    const key = row.membershipKey.toLowerCase();
+    byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  return byKey;
+}
+
+/**
+ * Snapshot keys whose live rows all predate the snapshot, so the run that stored the
+ * snapshot re-listed the member and never refreshed its edge (#4758). A key with no
+ * live row at all is `unmaterializedMembershipKeys`, not this.
+ */
+export function unrefreshedMembershipKeys(evidence: OfficialRosterLaneEvidence): string[] {
+  const snapshotTime = observedTime(evidence.storedObservedAt);
+  if (snapshotTime === Number.NEGATIVE_INFINITY) return [];
+  const byKey = rowsByMembershipKey(evidence);
+  return evidence.storedMembershipKeys.filter((key) => {
+    const rows = byKey.get(key.toLowerCase()) ?? [];
+    return rows.length > 0 && rows.every((row) => observedTime(row.observedAt) < snapshotTime);
+  });
+}
+
+/** Membership keys held by live rows on more than one researcher record (#4758). */
+export function twinMembershipKeys(evidence: OfficialRosterLaneEvidence): string[] {
+  return Array.from(rowsByMembershipKey(evidence).entries())
+    .filter(([, rows]) => new Set(rows.map((row) => row.personId)).size > 1)
+    .map(([key]) => key);
+}
+
+/**
+ * Live rows whose key a complete snapshot no longer lists. Only a complete snapshot
+ * retires what it omits, so a partial one is expected to leave such rows behind.
+ */
+export function liveRowsOutsideSnapshot(evidence: OfficialRosterLaneEvidence): number {
+  if (evidence.storedSnapshotState !== 'current') return 0;
+  const stored = new Set(evidence.storedMembershipKeys.map((key) => key.toLowerCase()));
+  return (evidence.materializedRows ?? []).filter(
+    (row) => !stored.has(row.membershipKey.toLowerCase()),
+  ).length;
 }
 
 export interface OfficialRosterSnapshotDrift {
@@ -314,6 +379,23 @@ export function classifyOfficialRosterLane(
     });
   }
 
+  const unrefreshed = unrefreshedMembershipKeys(evidence);
+  if (unrefreshed.length > 0) {
+    findings.push({
+      verdict: 'membership-not-refreshed',
+      detail: `${unrefreshed.length} membership key(s) in the latest stored snapshot carry only live rows observed before the snapshot, so the run that re-listed them never refreshed their edges`,
+    });
+  }
+
+  const twins = twinMembershipKeys(evidence);
+  const outsideSnapshot = liveRowsOutsideSnapshot(evidence);
+  if (twins.length > 0 || outsideSnapshot > 0) {
+    findings.push({
+      verdict: 'membership-edge-surplus',
+      detail: `${(evidence.materializedRows ?? []).length} live row(s) against ${evidence.storedMembershipKeys.length} snapshot key(s): ${twins.length} key(s) held by more than one researcher record, ${outsideSnapshot} row(s) on a key the complete snapshot no longer lists`,
+    });
+  }
+
   if (snapshotExpired(evidence, now)) {
     findings.push({
       verdict: 'snapshot-expired',
@@ -362,6 +444,10 @@ export interface OfficialRosterAuditRow {
   storedMembershipKeys: number;
   materializedMembershipKeys: number;
   unmaterializedMembershipKeys: number;
+  unrefreshedMembershipKeys: number;
+  twinMembershipKeys: number;
+  liveRows: number;
+  liveRowsOutsideSnapshot: number;
   expiredMaterializedRows: number;
   snapshotExpired: boolean;
   snapshotDrift: OfficialRosterSnapshotDrift;
@@ -397,6 +483,8 @@ export interface ResearchHomeRosterAuditReport {
   brokenLanes: number;
   expiredSnapshots: number;
   unmaterializedMembershipKeys: number;
+  unrefreshedMembershipKeys: number;
+  twinMembershipKeys: number;
   lanes: OfficialRosterAuditRow[];
   sample?: OfficialRosterSampleRow[];
 }
@@ -452,6 +540,10 @@ export function summarizeResearchHomeRosterAudit(
       storedMembershipKeys: lane.storedMembershipKeys.length,
       materializedMembershipKeys: lane.materializedMembershipKeys.length,
       unmaterializedMembershipKeys: unmaterializedMembershipKeys(lane).length,
+      unrefreshedMembershipKeys: unrefreshedMembershipKeys(lane).length,
+      twinMembershipKeys: twinMembershipKeys(lane).length,
+      liveRows: (lane.materializedRows ?? []).length,
+      liveRowsOutsideSnapshot: liveRowsOutsideSnapshot(lane),
       expiredMaterializedRows: lane.expiredMaterializedRows,
       snapshotExpired: snapshotExpired(lane, now),
       snapshotDrift: snapshotDrift(lane),
@@ -493,6 +585,11 @@ export function summarizeResearchHomeRosterAudit(
       (total, lane) => total + lane.unmaterializedMembershipKeys,
       0,
     ),
+    unrefreshedMembershipKeys: lanes.reduce(
+      (total, lane) => total + lane.unrefreshedMembershipKeys,
+      0,
+    ),
+    twinMembershipKeys: lanes.reduce((total, lane) => total + lane.twinMembershipKeys, 0),
     lanes,
     ...(sample.length > 0 ? { sample } : {}),
   };

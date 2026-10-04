@@ -139,6 +139,7 @@ async function readStoredLaneState(
     | 'storedFreshnessExpiresAt'
     | 'materializedMembershipKeys'
     | 'expiredMaterializedRows'
+    | 'materializedRows'
   >
 > {
   const entity = await ResearchEntity.findOne({ slug: config.researchEntityKey })
@@ -157,25 +158,40 @@ async function readStoredLaneState(
         state: 'CURRENT',
         archived: { $ne: true },
       })
-        .select('rosterProvenance')
+        .select('personId rosterProvenance')
         .lean()
     : [];
   const now = Date.now();
   const provenance = roleRows.map(
     (row) => (row as { rosterProvenance?: Record<string, unknown> }).rosterProvenance ?? {},
   );
+  const isoTime = (value: unknown): string | undefined => {
+    const time = value instanceof Date ? value : value ? new Date(String(value)) : null;
+    return time && !Number.isNaN(time.getTime()) ? time.toISOString() : undefined;
+  };
   return {
     entityExists: Boolean(entity),
     entityArchived: Boolean((entity as { archived?: boolean } | null)?.archived),
     ...(typeof snapshot?.state === 'string' ? { storedSnapshotState: snapshot.state } : {}),
     storedMembershipKeys,
-    ...(snapshot?.observedAt ? { storedObservedAt: String(snapshot.observedAt) } : {}),
+    ...(isoTime(snapshot?.observedAt) ? { storedObservedAt: isoTime(snapshot?.observedAt) } : {}),
     ...(snapshot?.freshnessExpiresAt
       ? { storedFreshnessExpiresAt: String(snapshot.freshnessExpiresAt) }
       : {}),
     materializedMembershipKeys: provenance
       .map((row) => String(row.membershipKey ?? ''))
       .filter(Boolean),
+    materializedRows: roleRows
+      .map((row) => {
+        const typed = row as { personId?: unknown; rosterProvenance?: Record<string, unknown> };
+        const observedAt = isoTime(typed.rosterProvenance?.observedAt);
+        return {
+          membershipKey: String(typed.rosterProvenance?.membershipKey ?? ''),
+          personId: String(typed.personId ?? ''),
+          ...(observedAt ? { observedAt } : {}),
+        };
+      })
+      .filter((row) => row.membershipKey),
     expiredMaterializedRows: provenance.filter((row) => {
       const expiresAt = row.freshnessExpiresAt ? new Date(String(row.freshnessExpiresAt)) : null;
       return (

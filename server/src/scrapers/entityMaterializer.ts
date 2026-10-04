@@ -2574,6 +2574,44 @@ async function endMisattributedProfileUrlHolderEdges(
   return ended.modifiedCount ?? 0;
 }
 
+/**
+ * A roster membership key names one listed person, so once a listing resolved by name alone
+ * has written its edge, another person's live edge under the same source and key is an
+ * earlier resolution of the same listing: a name-only holder whose stored name drifted, so
+ * the next read minted a second row and left the first one's edge CURRENT (#4758). It is
+ * ended on the read, which is derivation rather than repair. A listing whose identity the
+ * lane proved leaves the twin to the accountless-shell dedupe, which folds that shell into
+ * the proven holder through this very edge (#3802), and a profile URL that two listings on
+ * the entity share is left alone, because there the key does not name one person (#4500).
+ */
+async function endSupersededListingHolderEdges(
+  researchEntityId: string,
+  plan: RosterMemberCanonicalPlan,
+  keptPersonId: mongoose.Types.ObjectId,
+  scope: RosterListingScope,
+): Promise<number> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  const provenance = plan.facts.rosterProvenance;
+  const sourceName = textValue(provenance?.sourceName);
+  const membershipKey = textValue(provenance?.membershipKey);
+  if (!entityObjectId || !sourceName || !membershipKey) return 0;
+  const profileUrl = textValue(provenance?.profileUrl);
+  if (profileUrl && (await listingsSharingProfileUrl(profileUrl, scope)).length > 1) return 0;
+  const ended = await RoleAssignment.updateMany(
+    {
+      personId: { $ne: keptPersonId },
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityObjectId,
+      'rosterProvenance.sourceName': sourceName,
+      'rosterProvenance.membershipKey': membershipKey,
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    },
+    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+  );
+  return ended.modifiedCount ?? 0;
+}
+
 async function listingWouldMintANamesake(
   plan: RosterMemberCanonicalPlan,
   identity: RosterMemberIdentity,
@@ -2851,11 +2889,12 @@ async function materializeRosterMember(
   const listedName =
     textValue(resolved.name?.value) ||
     memberNameFromInferredUserName(resolved.inferredUserName?.value);
-  const identity = await resolveRosterMemberIdentity(resolved, listedName, {
+  const listingScope: RosterListingScope = {
     researchGroupKey,
     sourceName: textValue(resolved.role?.sourceName),
     now: options.now ?? new Date(),
-  });
+  };
+  const identity = await resolveRosterMemberIdentity(resolved, listedName, listingScope);
   const researcher = identity.researcher;
   const memberIdentity = researcher?._id
     ? await canonicalResearcherIdentity(idValue(researcher._id))
@@ -2983,6 +3022,9 @@ async function materializeRosterMember(
         : undefined,
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
+  if (personId && !('basis' in identity)) {
+    await endSupersededListingHolderEdges(researchEntityId, plan, personId, listingScope);
+  }
   return {
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
