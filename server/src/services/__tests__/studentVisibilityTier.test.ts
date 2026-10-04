@@ -3122,7 +3122,6 @@ describe('a department research guidance page (#4285)', () => {
   });
 });
 
-<<<<<<< HEAD
 describe('a stored card that repeats a useful body', () => {
   const lead = [
     { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
@@ -3131,18 +3130,10 @@ describe('a stored card that repeats a useful body', () => {
     computeResearchEntityStudentVisibility({
       entity: {
         _id: 'card-repeats-body-fixture',
-=======
-describe('a thin but accurate body', () => {
-  const visibility = (fullDescription: string, shortDescription: string) =>
-    computeResearchEntityStudentVisibility({
-      entity: {
-        _id: 'thin-body-fixture',
->>>>>>> 59532b37c (fix(gate): show a thin but accurate research description)
         name: 'Robin Fixture Faculty Research',
         slug: 'robin-fixture-research',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
-<<<<<<< HEAD
         shortDescription,
         fullDescription,
         researchAreas: ['Glaciology'],
@@ -3167,7 +3158,18 @@ describe('a thin but accurate body', () => {
     const text =
       'Studies glaciology, including research in the group is currently focused on three themes: ice flow, calving, and meltwater routing.';
     expect(visibility(text, text).reasons).toContain('missing_card_description');
-=======
+  });
+});
+
+describe('a thin but accurate body', () => {
+  const visibility = (fullDescription: string, shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'thin-body-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
         fullDescription,
         shortDescription,
         researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
@@ -3201,6 +3203,5 @@ describe('a thin but accurate body', () => {
       'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
     );
     expect(result.tier).not.toBe('student_ready');
->>>>>>> 59532b37c (fix(gate): show a thin but accurate research description)
   });
 });
