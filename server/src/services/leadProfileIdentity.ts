@@ -325,17 +325,15 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
 };
 
 // Shared surname or suffix tokens alone (a compound surname, `jr`) are also
-// carried by a different person, so the slug's given name must be the lead's
-// given name, or a shortened form of it (Nick/Nicholas), and not merely a prefix
-// of one of the lead's surname tokens.
+// carried by a different person, so the slug's given name must be exactly the
+// given name on the lead's own profile.
 const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[]): boolean => {
   const [slugGiven] = nameTokensFrom(slug);
   const [leadGiven] = orderedNameTokens;
-  if (!slugGiven || !leadGiven || !givenNamesAbbreviationMatch(slugGiven, leadGiven)) return false;
-  const nameTokens = new Set(orderedNameTokens);
-  const sharedBesidesGiven =
-    sharedNameTokenCount(slug, nameTokens) - (nameTokens.has(slugGiven) ? 1 : 0);
-  return sharedBesidesGiven + 1 >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE;
+  if (!slugGiven || slugGiven !== leadGiven) return false;
+  return (
+    sharedNameTokenCount(slug, new Set(orderedNameTokens)) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+  );
 };
 
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;

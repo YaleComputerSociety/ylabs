@@ -175,16 +175,24 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(false);
   });
 
-  it('corroborates an abbreviated given name with a compound surname', () => {
+  it('still flags a given name the lead own profile only abbreviates', () => {
     expect(
       detectProfileIdentityRisk({
         entity: {
-          entityType: 'LAB',
-          sourceUrls: ['https://medicine.yale.edu/profile/nicholas-fixture-example/'],
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-fixture/'],
         },
-        leadMembers: [{ user: { displayName: 'Nick Fixture-Example' } }],
+        leadMembers: [
+          {
+            user: {
+              fname: 'Robin',
+              lname: 'Fixture',
+              profileUrls: { official: 'https://ysph.yale.edu/people/jo-fixture' },
+            },
+          },
+        ],
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('still flags a same-surname profile whose given name appears nowhere on the lead', () => {
