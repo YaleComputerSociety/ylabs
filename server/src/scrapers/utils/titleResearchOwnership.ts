@@ -83,7 +83,8 @@ const RANK_PATTERNS: readonly RankPattern[] = [
     verdict: 'works_in_another_group',
   },
   {
-    pattern: /\b(?:graduate|doctoral|phd|medical|undergraduate) student\b/i,
+    pattern:
+      /\b(?:graduate(?: school)?|doctoral|ph\.?\s?d\.?|medical|undergraduate|ide|master'?s)\s+student\b/i,
     verdict: 'works_in_another_group',
   },
   { pattern: /\bstudent researcher\b/i, verdict: 'works_in_another_group' },

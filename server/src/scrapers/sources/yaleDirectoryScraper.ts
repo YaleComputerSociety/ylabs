@@ -121,6 +121,23 @@ export function looksLikeNonResearchTitle(title: string | undefined | null): boo
   return NON_FACULTY_TITLE_PATTERNS.some((rx) => rx.test(clean));
 }
 
+// A degree programme's people page lists students and graduates in its faculty card
+// markup, spelled the programme's way (`Ph.D. Student`, `IDE Alumni`).
+const STUDENT_TITLE_PATTERNS: RegExp[] = [
+  /\b(?:graduate(?: school)?|doctoral|ph\.?\s?d\.?|medical|undergraduate|ide|master'?s)\s+student\b/i,
+  /^\s*(?:ide\s+)?alumn(?:i|us|a|ae)\s*$/i,
+];
+
+/**
+ * Whether a title states that its holder is enrolled in, or has graduated from, a
+ * degree programme rather than holding an appointment.
+ */
+export function isStudentTitle(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  return STUDENT_TITLE_PATTERNS.some((rx) => rx.test(clean));
+}
+
 // Ranks held inside somebody else's research group. Kept separate from
 // NON_FACULTY_TITLE_PATTERNS on purpose: these people ARE researchers and must
 // keep their Researcher record and their lab membership, so the researcher-identity
@@ -135,7 +152,7 @@ const SUBORDINATE_RESEARCH_RANK_PATTERNS: RegExp[] = [
   /\bresearch affiliate\b/i,
   /\bstaff affiliate\b/i,
   /\bvisiting (?:scholar|fellow|researcher|student|assistant)\b/i,
-  /\b(?:graduate|doctoral|phd|medical|undergraduate) student\b/i,
+  ...STUDENT_TITLE_PATTERNS,
   /\bstudent researcher\b/i,
   /\bclinical fellow\b/i,
   /\b(?:resident|intern)\b/i,

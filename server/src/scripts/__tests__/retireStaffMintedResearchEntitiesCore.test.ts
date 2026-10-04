@@ -75,7 +75,6 @@ describe('staffMintedEntityReasonFor', () => {
       'Visiting Scholar',
       'Visiting Researcher',
       'Associate Research Scientist in Neurology',
-      'Graduate Student',
       'Resident',
       'Trainee',
       'Clinical Fellow',
@@ -96,6 +95,47 @@ describe('staffMintedEntityReasonFor', () => {
     expect(staffMintedEntityReasonFor('Athletic Operations Coordinator')).toBe(
       'non_research_staff_title',
     );
+  });
+
+  it('refuses every spelling a degree programme gives its students and graduates', () => {
+    for (const title of [
+      'Ph.D. Student',
+      'PhD Student',
+      'Graduate Student',
+      'Graduate School Student',
+      'IDE Student',
+      'IDE Alumni',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBe('student_title');
+    }
+  });
+
+  it('spares a student title held beside a faculty appointment, and a postdoc', () => {
+    expect(staffMintedEntityReasonFor('Lecturer and Ph.D. Student')).toBeUndefined();
+    expect(staffMintedEntityReasonFor('Postdoctoral Associate')).toBeUndefined();
+  });
+
+  it('spares a title that names students as the population it serves', () => {
+    for (const title of [
+      'Associate Director, PhD Graduate Student Affairs',
+      'Associate Dean for Medical Student Affairs',
+      'Chair, Graduate Student Committee',
+      'Director of Medical Student Education',
+      'Graduate Student Advisor',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).not.toBe('student_title');
+    }
+  });
+
+  it('archives no row whose only title administers students', () => {
+    for (const title of [
+      'Associate Dean for Medical Student Affairs',
+      'Chair, Graduate Student Committee',
+      'Director of Medical Student Education',
+    ]) {
+      const plan = planStaffMintedEntityRetirement([candidate({ storedTitles: [title] })]);
+      expect(plan.toArchive).toEqual([]);
+    }
   });
 });
 
@@ -196,7 +236,6 @@ describe('planStaffMintedEntityRetirement', () => {
       'Postdoctoral Associate',
       'Post-Doctoral Fellow',
       'Associate Research Scientist in Neurology',
-      'Graduate Student',
     ]) {
       const plan = planStaffMintedEntityRetirement([candidate({ storedTitles: [title] })]);
       expect(plan.toArchive).toEqual([]);
