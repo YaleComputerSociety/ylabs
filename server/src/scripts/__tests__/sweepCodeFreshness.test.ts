@@ -83,7 +83,11 @@ describe('readSweepCodeFreshness', () => {
   it('sees a lane commit merged after the checkout was made, because it fetches beta itself', () => {
     const repo = makeOrigin();
     const checkout = repo.checkoutAt(repo.clientOnly);
-    const later = commitFile(repo.authoring, 'server/src/scrapers/lane.ts', 'export const v = 3;\n');
+    const later = commitFile(
+      repo.authoring,
+      'server/src/scrapers/lane.ts',
+      'export const v = 3;\n',
+    );
     git(repo.authoring, 'push', '--quiet', repo.origin, 'beta');
 
     const freshness = readSweepCodeFreshness({ git: gitRunnerIn(checkout) });

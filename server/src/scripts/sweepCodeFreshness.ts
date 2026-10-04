@@ -32,8 +32,7 @@ export interface SweepCodeFreshness {
   refusal?: string;
 }
 
-const remoteBranchRef = (remote: string): string =>
-  `refs/remotes/${remote}/${SWEEP_TARGET_BRANCH}`;
+const remoteBranchRef = (remote: string): string => `refs/remotes/${remote}/${SWEEP_TARGET_BRANCH}`;
 
 export function readSweepCodeFreshness(input: {
   git: GitRunner;

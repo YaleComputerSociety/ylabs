@@ -395,8 +395,7 @@ export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
 export const DEVELOPMENT_SEARCH_RESYNC_COMMAND = 'yarn development:search:rebuild';
 
 export type SweepSearchIndexOutcome =
-  | { status: 'written' }
-  | { status: 'resync-required'; remedy: string };
+  { status: 'written' } | { status: 'resync-required'; remedy: string };
 
 export function sweepSearchIndexOutcome(
   env: NodeJS.ProcessEnv = process.env,
