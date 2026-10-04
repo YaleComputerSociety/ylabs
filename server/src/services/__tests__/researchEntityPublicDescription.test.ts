@@ -367,6 +367,32 @@ describe('organizational card exemption agrees with the gate (#1872)', () => {
   });
 });
 
+describe('a thin first-person appointment line that names its topics serves (#4635)', () => {
+  it('revoices the line and passes the public description invariant', () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      name: 'Alex Rivera Faculty Research',
+      fullDescription:
+        'I am a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      shortDescription:
+        "Alex Rivera's research studies representation theory and algebraic geometry.",
+      researchAreas: ['Representation Theory', 'Algebraic Geometry'],
+      sourceUrls: ['https://math.example.yale.edu/profile/alex-rivera'],
+    };
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity,
+      leadMemberNames: ['Alex Rivera'],
+    });
+
+    expect(representation.entity.fullDescription).toBe(
+      'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+    );
+    expect(representation.invariant.pass).toBe(true);
+  });
+});
+
 describe('the serve refusal asks what renders, not how the card scores (#2597)', () => {
   const body =
     'The group studies coastal erosion, sediment transport and shoreline adaptation across the Atlantic seaboard, combining field surveys with numerical modelling.';

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LEAD_SUBJECT_MARKER_PATTERN,
   isAcademicAppointmentDescription,
+  namesResearchTopics,
   isCredentialOrAwardLeadBiography,
   isCredentialOrTitleLeadBiography,
   isDeceasedOrEmeritusLeadBiography,
@@ -64,6 +65,56 @@ describe('isAcademicAppointmentDescription', () => {
     const description =
       'Anjelica L. Gonzalez is Associate Professor of Biomedical Engineering. Her appointment in Biomedical Engineering, in association with the Vascular Biology and Therapeutics Program, has provided a supportive and convenient platform for her research, focused on the development of biomaterials for use as investigational tools, particularly for the investigation of immunological responses to inflammatory signals from endogenous and exogenous sources. Gonzalez has a dedicated interest in training the next generation of scientists to think with an interdisciplinary approach to problems and to have a scientifically global perspective. The Gonzalez lab combines organic chemistry, molecular biology, mathematics, computational modeling and image analysis to develop human tissue-based biomimetic scaffolds to better understand healthy and diseased states.';
     expect(isAcademicAppointmentDescription(description)).toBe(false);
+  });
+
+  it('does not flag an appointment line that names the research topics (#4635)', () => {
+    for (const description of [
+      'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      'Alex Rivera is an Associate Professor of Physics who studies quantum materials.',
+      'Alex Rivera is an Assistant Professor of Chemistry working on catalytic polymer synthesis.',
+      "Alex Rivera is Professor of Law. Rivera's subject areas are antitrust and economic regulation.",
+    ]) {
+      expect(isAcademicAppointmentDescription(description)).toBe(false);
+      expect(publicResearchEntityDescriptionText(description)).toBe(description);
+    }
+  });
+
+  it('still flags an appointment line whose only clause is where the person studied (#4635)', () => {
+    for (const description of [
+      'Jane Doe is Associate Professor of History.',
+      'Jane Doe is an Associate Professor of History at Yale after studying at Harvard.',
+      'Jane Doe is an Assistant Professor of Music working on behalf of the department.',
+    ]) {
+      expect(isAcademicAppointmentDescription(description)).toBe(true);
+    }
+  });
+});
+
+describe('namesResearchTopics', () => {
+  it('recognizes a research-topic clause in each supported form (#4635)', () => {
+    for (const description of [
+      'I am a professor at Yale studying representation theory.',
+      'A historian who studies medieval trade networks.',
+      'Our group is working on battery chemistry.',
+      'A chemist whose research focuses on catalysis.',
+      'A sociologist with research in urban inequality.',
+      'This research is in mathematical optimization and statistical learning.',
+      "Alex Rivera's research is in mathematical optimization.",
+      'His subject areas are antitrust and economic regulation.',
+    ]) {
+      expect(namesResearchTopics(description)).toBe(true);
+    }
+  });
+
+  it('ignores a study or work clause that names a place, person, or purpose (#4635)', () => {
+    for (const description of [
+      'Associate Professor of History.',
+      'She is a lecturer after studying at Harvard.',
+      'He is a professor studying under a senior mentor.',
+      'She is working on behalf of the department.',
+    ]) {
+      expect(namesResearchTopics(description)).toBe(false);
+    }
   });
 });
 
