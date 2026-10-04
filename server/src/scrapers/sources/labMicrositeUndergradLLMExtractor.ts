@@ -31,6 +31,12 @@ import axios from 'axios';
 import mongoose, { type QueryFilter } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import * as cheerio from 'cheerio';
 import { plainTextContent } from '../utils/htmlText';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -1570,6 +1576,7 @@ export const defaultCallLLM: CallLLMFn = async ({
 
 export interface LabMicrositeUndergradLLMExtractorDeps {
   fetchPage?: FetchPageFn;
+  probePage?: LanePageProbe;
   renderedFetcher?: RenderedFetcher | null;
   callLLM?: CallLLMFn;
   workPlanLoader?: WorkPlanLoaderFn;
@@ -1655,6 +1662,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   readonly displayName = 'Lab microsite LLM (undergrad signals)';
 
   private readonly fetchPage: FetchPageFn;
+  private readonly probePage?: LanePageProbe;
   private readonly renderedFetcher: RenderedFetcher | null;
   private readonly callLLM: CallLLMFn;
   private readonly workPlanLoader: WorkPlanLoaderFn;
@@ -1666,6 +1674,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
   constructor(deps: LabMicrositeUndergradLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
+    this.probePage = deps.probePage;
     this.renderedFetcher = deps.renderedFetcher ?? createScraplingRenderedFetcher();
     this.callLLM = deps.callLLM ?? defaultCallLLM;
     this.workPlanLoader = deps.workPlanLoader ?? defaultWorkPlanLoader;
@@ -1730,6 +1739,8 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let evidenceQuotesWithdrawn = 0;
     let evidenceQuotesRecited = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const pageReads = new LanePageReads();
+    const readPage = fetchRecordedBy(pageReads, this.fetchPage);
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
@@ -1760,7 +1771,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
 
         const measuredHomePage = await measureRenderedFetch(lab.websiteUrl, 'http', () =>
-          this.fetchPage(lab.websiteUrl),
+          readPage(lab.websiteUrl),
         );
         fetchAttempts.push(measuredHomePage.metric);
         let homePage: FetchedPage | null = measuredHomePage.result;
@@ -1797,7 +1808,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
           if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
           const measuredSubPage = await measureRenderedFetch(candidate, 'http', () =>
-            this.fetchPage(candidate),
+            readPage(candidate),
           );
           fetchAttempts.push(measuredSubPage.metric);
           const fetched = measuredSubPage.result;
@@ -1824,7 +1835,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             const measuredCitedPage = await measureRenderedFetch(
               liveEvidenceQuote.sourceUrl,
               'http',
-              () => this.fetchPage(liveEvidenceQuote.sourceUrl),
+              () => readPage(liveEvidenceQuote.sourceUrl),
             );
             fetchAttempts.push(measuredCitedPage.metric);
             if (measuredCitedPage.result) {
@@ -1978,6 +1989,16 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         );
       }
     });
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      ctx.options.only?.length
+        ? { entityKeys: [...ctx.options.only, ...labs.map((lab) => lab.slug).filter(Boolean)] }
+        : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(
       `Done. processed=${processed}, succeeded=${succeeded}, fetchFailed=${fetchFailed}, llmFailed=${llmFailed}, processingFailed=${processingFailed}, observations=${totalObs}`,

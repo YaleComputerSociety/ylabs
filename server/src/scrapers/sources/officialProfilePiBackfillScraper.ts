@@ -61,6 +61,12 @@ import {
 } from '../researchAreaLabels';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   isLikelyPersonSpecificYaleEmail,
   normalizeName,
   slugify,
@@ -3584,9 +3590,16 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       limit: number,
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectSourceUrlWebsiteTargets,
+    private readonly probePage?: LanePageProbe,
   ) {}
 
+  private pageReads = new LanePageReads();
+
+  private readonly readHtml = (url: string, useCache: boolean, sourceName: string) =>
+    fetchRecordedBy(this.pageReads, this.htmlFetcher)(url, useCache, sourceName);
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    this.pageReads = new LanePageReads();
     const onlyValues = (ctx.options.only || [])
       .map((value) => value.toLowerCase().trim())
       .filter(Boolean);
@@ -3698,7 +3711,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           const owned = await candidateWebsiteOwnedByLead(
             websiteUrl,
             leadNames,
-            this.htmlFetcher,
+            this.readHtml,
             ctx.options.useCache,
           );
           if (!owned) {
@@ -3732,7 +3745,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       )) {
         try {
           await awaitFetchTurn();
-          const html = await this.htmlFetcher(candidateProfileUrl, ctx.options.useCache, this.name);
+          const html = await this.readHtml(candidateProfileUrl, ctx.options.useCache, this.name);
           return { profileUrl: candidateProfileUrl, html, failures };
         } catch (err: any) {
           failures.push({ profileUrl: candidateProfileUrl, error: sanitizeLogValue(err) });
@@ -3923,6 +3936,24 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       adopted: homesAdopted,
       refused: homesRefusedByReason,
     });
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      this.pageReads,
+      this.probePage,
+      targetKeys.length
+        ? {
+            entityKeys: [
+              ...targetKeys,
+              ...entities.flatMap((entity) => {
+                const slug = textValue(entity.slug);
+                return slug ? [slug] : [];
+              }),
+            ],
+          }
+        : undefined,
+    );
+    emitted += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount: emitted,

@@ -400,6 +400,39 @@ describe('a lane withdraws what a page it still cites but no longer reads suppli
     expect(emitted).toEqual([]);
   });
 
+  it("reaches a row's observations filed under a former key when a narrowed run names its slug", async () => {
+    await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityId: rowId,
+          entityKey: 'synthetic-former-key',
+          sourceUrl: GONE_PAGE,
+          field: 'departments',
+          value: [DEPARTMENT],
+          observedAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ],
+      {
+        scrapeRunId: new mongoose.Types.ObjectId().toString(),
+        sourceId: new mongoose.Types.ObjectId().toString(),
+        sourceName: 'ysm-atoz-index',
+        sourceWeight: 0.8,
+        dryRun: false,
+      },
+    );
+    await storeGoneHealth(GONE_PAGE);
+    const { ctx, emitted } = laneContext('ysm-atoz-index');
+
+    await emitLanePageHealthForCitedPages(ctx, new LanePageReads(), goneProbe(), {
+      entityKeys: [SLUG],
+    });
+
+    expect(pageVerdicts(emitted)).toEqual([
+      expect.objectContaining({ entityId: rowId, entityKey: 'synthetic-former-key' }),
+    ]);
+  });
+
   it('restores the row behind the profile a narrowed faculty-directory run names', async () => {
     await recordGoneVerdict('ysm-faculty-directory', FACULTY_PROFILE_PAGE);
     const directory = `<html><body><script id='page-data' type='application/json'>${JSON.stringify({

@@ -12,6 +12,12 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   createWorkPlannerMetrics,
   getWorkPlannerSourcePolicy,
   loadEntityWorkPlan,
@@ -82,6 +88,7 @@ export type AreaWorkPlanLoaderFn = (
 
 export interface ResearchAreaSourceExtractorDeps {
   fetchPage?: FetchAreaPageFn;
+  probePage?: LanePageProbe;
   canonicalizerLoader?: () => Promise<ResearchAreaCanonicalizer>;
   entityFinder?: (options?: {
     only?: string[];
@@ -572,6 +579,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
   readonly displayName = 'Research-area source extractor (empty-area entities)';
 
   private readonly fetchPage: FetchAreaPageFn;
+  private readonly probePage?: LanePageProbe;
   private readonly canonicalizerLoader: () => Promise<ResearchAreaCanonicalizer>;
   private readonly entityFinder: (options?: {
     only?: string[];
@@ -581,6 +589,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
 
   constructor(deps: ResearchAreaSourceExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
+    this.probePage = deps.probePage;
     this.canonicalizerLoader = deps.canonicalizerLoader || getResearchAreaCanonicalizer;
     this.entityFinder = deps.entityFinder || findResearchAreaCandidateEntities;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
@@ -616,6 +625,8 @@ export class ResearchAreaSourceExtractor implements IScraper {
       .slice(offset, offset + limit);
 
     let observationCount = 0;
+    const pageReads = new LanePageReads();
+    const readPage = fetchRecordedBy(pageReads, this.fetchPage);
     let entitiesObserved = 0;
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
@@ -652,7 +663,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
         for (const sourceUrl of urls) {
           let page: FetchedAreaPage | null = null;
           try {
-            page = await this.fetchPage(sourceUrl);
+            page = await readPage(sourceUrl);
           } catch (error) {
             ctx.log(
               `[${entity.slug || 'candidate'}] area source failed: ${sanitizeLogValue(error)}`,
@@ -683,6 +694,21 @@ export class ResearchAreaSourceExtractor implements IScraper {
         );
       }
     });
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length
+        ? {
+            entityKeys: [
+              ...only,
+              ...candidates.flatMap((entity) => (entity.slug ? [entity.slug] : [])),
+            ],
+          }
+        : undefined,
+    );
+    observationCount += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount,

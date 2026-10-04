@@ -72,6 +72,13 @@ import {
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchHomeWebsiteUrlRefusal,
 } from '../../utils/researchHomeWebsiteUrl';
+import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  trackingEmittedEntityKeys,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -1961,9 +1968,17 @@ export class CentersInstitutesScraper implements IScraper {
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly memberPageFetcher: MemberPageFetcher = fetchMemberProfilePage,
+    private readonly probePage?: LanePageProbe,
   ) {}
 
-  async run(ctx: ScraperContext): Promise<ScraperResult> {
+  private pageReads = new LanePageReads();
+
+  private readonly readHtml: HtmlFetcher = (...args) =>
+    fetchRecordedBy(this.pageReads, this.htmlFetcher)(...args);
+
+  async run(laneCtx: ScraperContext): Promise<ScraperResult> {
+    const { ctx, entityKeys: emittedEntityKeys } = trackingEmittedEntityKeys(laneCtx);
+    this.pageReads = new LanePageReads();
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
@@ -1982,6 +1997,7 @@ export class CentersInstitutesScraper implements IScraper {
     const fetchAttempts: ScraperFetchMetric[] = [];
     const rosterSiteRefusals: Array<{ key: string; reason: CenterRosterSiteRefusal }> = [];
     const survivorRoutes: Array<{ key: string; from: string; to: string }> = [];
+    const selectedEntityKeys = new Set<string>();
 
     const refuseRosterSite = (
       config: CenterConfig,
@@ -2114,6 +2130,8 @@ export class CentersInstitutesScraper implements IScraper {
       if (centersProcessed >= limit) break;
 
       const route = routes[index];
+      selectedEntityKeys.add(centerEntityKey(configured));
+      if ('config' in route) selectedEntityKeys.add(centerEntityKey(route.config));
       if ('refusal' in route) {
         ctx.log(
           `[${configured.centerKey}] refused - its row ${sanitizeLogValue(centerEntityKey(configured))} is archived (${route.refusal}); nothing read`,
@@ -2219,7 +2237,7 @@ export class CentersInstitutesScraper implements IScraper {
         if (!firstPageUrl) firstPageUrl = pageUrl;
         let html: string;
         try {
-          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+          html = await this.readHtml(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
           ctx.log(
             `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
@@ -2315,6 +2333,14 @@ export class CentersInstitutesScraper implements IScraper {
       );
     }
 
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      this.pageReads,
+      this.probePage,
+      onlyFilter ? { entityKeys: [...selectedEntityKeys, ...emittedEntityKeys] } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
+
     return {
       observationCount: totalObs,
       entitiesObserved: centersProcessed + totalMembers + totalChildCenters,
@@ -2389,7 +2415,7 @@ export class CentersInstitutesScraper implements IScraper {
   ): Promise<{ engagementUrl?: string; members: CenterMember[] }> {
     let homepageHtml: string;
     try {
-      homepageHtml = await this.htmlFetcher(child.url, ctx.options.useCache, this.name);
+      homepageHtml = await this.readHtml(child.url, ctx.options.useCache, this.name);
     } catch (err: any) {
       ctx.log(`[child ${slugify(child.name)}] homepage fetch failed: ${sanitizeLogValue(err)}`);
       return { members: [] };
@@ -2403,7 +2429,7 @@ export class CentersInstitutesScraper implements IScraper {
     for (const candidate of deriveChildEngagementCandidates(homepageHtml, child.url)) {
       let html: string;
       try {
-        html = await this.htmlFetcher(candidate, ctx.options.useCache, this.name);
+        html = await this.readHtml(candidate, ctx.options.useCache, this.name);
       } catch {
         continue;
       }
