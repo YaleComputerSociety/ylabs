@@ -54,6 +54,7 @@ const laneBenchmarkSchema = new mongoose.Schema(
     labels: { type: [benchmarkLabelSchema], default: [] },
     goldLabels: { type: [goldLabelSchema], default: [] },
     goldLabeledAt: { type: Date, required: false },
+    supersedes: { type: String, required: false },
   },
   { timestamps: true },
 );

@@ -24,6 +24,27 @@ Capture misses every cache read, so each page is a live fetch, and `runLaneDry` 
 It also freezes the live refusals on every row the lane planned a value for, so a refusal recorded next week does not move this benchmark's score.
 A benchmark is frozen once captured: the command refuses an id that already exists, and a new scope is a new benchmark.
 
+### Recapturing a stale benchmark
+
+A lane change can stale a benchmark, so a replay asks for pages or model answers it never froze and is reported unscored (#4776).
+Recapture it under a new id with the stored lane and scope rather than reconstructing its key set by hand:
+
+```bash
+yarn --cwd server lane:benchmark-capture --recapture=<old-id> --id=<new-id>
+yarn --cwd server lane:benchmark-capture --recapture=<old-id> --id=<new-id> --apply --confirm-lane-benchmark-capture
+```
+
+The new benchmark records `supersedes: <old-id>`, and an unnamed `lane:scorecard` run then replays only the newest benchmark of each chain and lists the rest under `superseded`.
+`--benchmark=<old-id>` still replays a superseded benchmark, and the old benchmark, its pages, and its replay history are never changed.
+`--recapture` refuses `--source`, `--only` and `--limit`, and refuses a benchmark that already has a successor.
+A gold label judged one frozen page, so the successor carries it only when the recapture froze that `judgedPageUrl` again with the same text and status, and the report prints `goldLabelsCarried` and `goldLabelsDropped`.
+A dropped label must be judged again against the new pages with `lane:benchmark-label`, and the superseded benchmark keeps every label it had.
+A gold recapture that would carry no label is refused unless `--without-gold` is passed.
+A recapture that plans no values where the superseded capture planned some is refused, because the lane no longer reaches that scope and the successor would measure nothing; that benchmark needs a new scope instead.
+The report prints the old capture's `supersededPlannedObservationCount` beside the new `plannedObservationCount`, so a replay that planned nothing can be compared with what the lane plans today before the old benchmark stops being replayed.
+A benchmark already recaptured under a new id before this existed is linked with `--mark-successor-of=<old-id> --id=<existing-id>`, which captures nothing and refuses a successor with a different lane or scope, a successor that already supersedes another benchmark, and a successor the old benchmark already descends from, because that would close a cycle and neither would replay.
+Capture fetches live pages and makes live model calls, so recapture only when no Development sweep is running.
+
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
