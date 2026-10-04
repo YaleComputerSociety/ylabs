@@ -224,7 +224,7 @@ function surnameOf(personName: string): string {
 
 function sentencesOf(text: string): string[] {
   return collapse(text)
-    .split(/(?<=[.!?;])\s+(?=[A-Z“"(])/)
+    .split(/(?<!\b(?:Dr|Prof|Mr|Ms|Mrs|St|[A-Z])\.)(?<=[.!?;])\s+(?=[A-Z“"(])/)
     .map(collapse)
     .filter((sentence) => sentence.length >= 12);
 }

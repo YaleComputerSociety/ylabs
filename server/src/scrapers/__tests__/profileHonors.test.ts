@@ -19,6 +19,17 @@ describe('extractProfileHonors', () => {
     ]);
   });
 
+  it('keeps the year when an honorific or initial precedes the name', () => {
+    const dated = (body: string) =>
+      extractProfileHonors(page(body), 'Avery Placeholder', 2026).map((h) => [h.key, h.year]);
+    expect(dated('<p>In 2023, Dr. Placeholder was named a Sloan Research Fellow.</p>')).toEqual([
+      ['sloan', 2023],
+    ]);
+    expect(
+      dated('<p>In 2024, Prof. A. Placeholder received a Guggenheim Fellowship.</p>'),
+    ).toEqual([['guggenheim', 2024]]);
+  });
+
   it('reads support statements about the person and every honor they list', () => {
     expect(
       keys(
