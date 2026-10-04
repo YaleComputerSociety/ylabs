@@ -140,10 +140,10 @@ const servedDescriptionText = (served: Record<string, any>): string =>
 const servesASubstantialDescription = (served: Record<string, any>): boolean =>
   servedDescriptionText(served).length >= SUBSTANTIAL_DESCRIPTION_MIN_CHARACTERS;
 
-const servesALiveWebsite = (entity: Record<string, any>, served: Record<string, any>): boolean => {
-  const website = served.websiteUrl || served.website;
-  return Boolean(website) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, website);
-};
+const servesALiveWebsite = (entity: Record<string, any>, served: Record<string, any>): boolean =>
+  [served.websiteUrl, served.website].some(
+    (website) => Boolean(website) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, website),
+  );
 
 const servesACurrentGrant = (served: Record<string, any>): boolean =>
   (typeof served.recentGrantCount === 'number' && served.recentGrantCount > 0) ||

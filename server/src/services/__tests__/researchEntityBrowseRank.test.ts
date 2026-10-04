@@ -232,6 +232,24 @@ describe('computeResearchEntityBrowseRank', () => {
       expect(deadWebsite).toBe(noWebsite);
     });
 
+    it('keeps website points when another served website is not known to be gone', () => {
+      const legacyLive = rank({
+        ...completeEntity(),
+        website: 'https://example.yale.edu/legacy-lab',
+        sourceLinkHealth: [
+          {
+            url: 'https://example.yale.edu/smith-lab',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+            checkedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      expect(legacyLive).toBe(
+        rank({ ...completeEntity(), website: 'https://example.yale.edu/legacy-lab' }),
+      );
+    });
+
     it('keeps website points when link health is only inconclusive', () => {
       const throttled = rank({
         ...completeEntity(),

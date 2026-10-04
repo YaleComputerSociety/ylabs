@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
+import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -564,6 +565,7 @@ export async function runSourceLinkHealthBackfill(options: {
 
         if (!options.dryRun) {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });
+          await recomputeBrowseRankForEntities([entity._id]);
         }
         result.updated += 1;
       } catch (error) {
