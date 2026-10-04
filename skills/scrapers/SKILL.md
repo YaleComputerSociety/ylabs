@@ -1246,7 +1246,16 @@ It reads adoption off `fieldProvenance.fullDescription.sourceName` and then chec
 The gap is real rather than theoretical: the lane records at 0.48, `confidenceResolver` demotes person-bio groups but has no rule for a value it stores that no surface shows, so a row whose 0.55 body the serve layer withholds serves nothing before the run and nothing after it.
 Read `adopted`, not `written`, when deciding whether the cohort was actually converted, and treat `written` far above `adopted` as a resolver gap to raise rather than a lane bug to retry.
 
-Dry-run by default and needs `OPENAI_API_KEY` in either mode; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
+A body this lane wrote can now be taken back, and only on a statement the pages make (#4561).
+Every run re-reads all candidate pages of each row whose stored body has the lane's provenance, without a model call, and withdraws that body when `profileStatesCareerInsteadOfResearch` holds: no page carries admissible research prose or lists a publication, and at least one narrates the posts the person held.
+Never widen that to "the page yields no research snippet".
+On Development 85 of the 715 rows holding a synthesized body reach that state, and reading them, most carry a correct body built from the person's own publication feed; the feed cannot tell those from a namesake's papers, so absence would withdraw correct bodies and hide real people.
+The namesake shape is therefore an operator judgement on one row, not a predicate.
+The snippet selector refuses publication records (citations, author runs, dated venues, a title printed beside its record, title-case headings) and career-history sentences (`isCareerHistorySentence`, which ignores a research job title or a quoted course name when it looks for a research claim), so a new synthesis can no longer be built from either.
+Withdrawal retires the lane's own observations, re-resolves the row, unsets a body or derived card still resting on a retired observation, and re-gates; a failed fetch licenses nothing, the drop guard freezes a pass that would withdraw more than half of 20 or more complete reads, and `--max-withdraw <n>` caps it.
+Run `--revalidate-only` to re-read without synthesizing.
+
+Dry-run by default and needs `OPENAI_API_KEY` in either mode unless `--revalidate-only` is set; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
 Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
 
 A synthesis lane cannot outrank a biography on confidence alone.

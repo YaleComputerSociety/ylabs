@@ -17,13 +17,17 @@ import {
 } from './fraProfileSynthesisCore';
 import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  applyFraProfileSynthesisWithdrawals,
   fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
   profileUrlsOf,
+  revalidateFraProfileSynthesisEntity,
   runFraProfileSynthesisEntity,
+  selectFraProfileSynthesisRevalidationTargets,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
   type FraProfileSynthesisEntityReport,
+  type FraProfileSynthesisRevalidationReport,
 } from './fraProfileSynthesisLane';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,8 +48,10 @@ async function main(): Promise<void> {
   });
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('research-entity:fra-profile-synthesis requires OPENAI_API_KEY');
-  const callLLM = defaultCoverageSynthesisLLM(apiKey);
+  if (!apiKey && !args.revalidateOnly) {
+    throw new Error('research-entity:fra-profile-synthesis requires OPENAI_API_KEY');
+  }
+  const callLLM = apiKey ? defaultCoverageSynthesisLLM(apiKey) : null;
 
   await initializeConnections();
   const source = args.apply ? await getSourceByName(FRA_PROFILE_SYNTHESIS_SOURCE_NAME) : null;
@@ -70,7 +76,7 @@ async function main(): Promise<void> {
       leads: leadsByEntityId.get(String(entity._id)) ?? [],
     })),
   );
-  const targets = args.limit > 0 ? scoped.slice(0, args.limit) : scoped;
+  const targets = args.revalidateOnly ? [] : args.limit > 0 ? scoped.slice(0, args.limit) : scoped;
 
   const reports: FraProfileSynthesisEntityReport[] = [];
   let written = 0;
@@ -81,24 +87,62 @@ async function main(): Promise<void> {
   let revertLeftRowUnserved = 0;
   const runId = newFraProfileSynthesisRunId();
 
-  for (const entity of targets) {
-    const report = await runFraProfileSynthesisEntity({
-      entity,
-      profileUrls: profileUrlsOf(entity),
-      callLLM,
-      fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
-      apply: args.apply,
-      runId,
-      sourceId: source?._id,
-    });
-    reports.push(report);
-    if (report.synthesized) synthesized += 1;
-    if (report.written) written += 1;
-    if (report.adopted) adopted += 1;
-    if (report.reverted) reverted += 1;
-    if (report.regated) regated += 1;
-    if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
+  if (callLLM) {
+    for (const entity of targets) {
+      const report = await runFraProfileSynthesisEntity({
+        entity,
+        profileUrls: profileUrlsOf(entity),
+        callLLM,
+        fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
+        apply: args.apply,
+        runId,
+        sourceId: source?._id,
+      });
+      reports.push(report);
+      if (report.synthesized) synthesized += 1;
+      if (report.written) written += 1;
+      if (report.adopted) adopted += 1;
+      if (report.reverted) reverted += 1;
+      if (report.regated) regated += 1;
+      if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
+    }
   }
+
+  const revalidationFilter: Record<string, unknown> = {
+    'fieldProvenance.fullDescription.sourceName': FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+    archived: { $ne: true },
+    ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
+  };
+  const holders = (await ResearchEntity.find(revalidationFilter)
+    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
+    .lean()) as FraProfileSynthesisEntity[];
+  const holderLeads = await fraProfileSynthesisLeads(holders);
+  const revalidationScope = selectFraProfileSynthesisRevalidationTargets(
+    holders.map((entity) => ({ ...entity, leads: holderLeads.get(String(entity._id)) ?? [] })),
+  );
+  const revalidationTargets =
+    args.limit > 0 ? revalidationScope.slice(0, args.limit) : revalidationScope;
+  const revalidations: FraProfileSynthesisRevalidationReport[] = [];
+  for (const entity of revalidationTargets) {
+    revalidations.push(
+      await revalidateFraProfileSynthesisEntity({
+        entity,
+        profileUrls: profileUrlsOf(entity),
+        fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
+      }),
+    );
+    if (revalidations.length % 50 === 0) {
+      console.log(`revalidated ${revalidations.length}/${revalidationTargets.length}`);
+    }
+  }
+  const withdrawalPlans = revalidations.flatMap((report) =>
+    report.withdrawal ? [report.withdrawal] : [],
+  );
+  const withdrawal = await applyFraProfileSynthesisWithdrawals(withdrawalPlans, {
+    apply: args.apply,
+    completeReads: revalidations.filter((report) => report.completeRead).length,
+    maxWithdraw: args.maxWithdraw,
+  });
 
   const summary = {
     generatedAt: new Date().toISOString(),
@@ -113,8 +157,19 @@ async function main(): Promise<void> {
     regated,
     revertLeftRowUnserved,
     skipped: reports.filter((report) => report.skipped).length,
+    revalidation: {
+      holders: revalidationTargets.length,
+      incompleteReads: revalidations.filter((report) => !report.completeRead).length,
+      statesCareer: revalidations.filter((report) => report.statesCareer).length,
+      ...withdrawal,
+    },
   };
   console.log(JSON.stringify(summary, null, 2));
+  for (const report of revalidations.filter((entry) => entry.statesCareer)) {
+    console.log(
+      `  ${report.withdrawal ? 'withdraw' : 'hold    '} ${sanitizeLogValue(report.slug)}${report.skipped ? `  (${report.skipped})` : ''}`,
+    );
+  }
   for (const report of reports) {
     const outcome = report.reverted
       ? `  (reverted: ${report.revertedReason}${report.revertRestoredServedCard ? '' : '; row still serves no card'})`
@@ -128,7 +183,10 @@ async function main(): Promise<void> {
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, `${JSON.stringify({ summary, reports }, null, 2)}\n`);
+    fs.writeFileSync(
+      outputPath,
+      `${JSON.stringify({ summary, reports, revalidations }, null, 2)}\n`,
+    );
     console.log(`report written: ${outputPath}`);
   }
 }

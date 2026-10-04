@@ -35,11 +35,15 @@ import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import {
+  FRA_PROFILE_SYNTHESIS_WITHDRAWAL_REASON,
+  applyFraProfileSynthesisWithdrawals,
   fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
   servedFullDescription,
   profileUrlsOf,
+  revalidateFraProfileSynthesisEntity,
   runFraProfileSynthesisEntity,
+  selectFraProfileSynthesisRevalidationTargets,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
 } from '../fraProfileSynthesisLane';
@@ -1043,5 +1047,179 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(report.reverted).toBeUndefined();
     const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
     expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  describe('withdrawing a body an earlier run wrote (#4561)', () => {
+    const CAREER_PAGE_TEXT = [
+      'YSM Home INFORMATION FOR Find People Organization Charts Departments & Centers',
+      'Jordan Vale was the director of public policy for an example health alliance, where the organization’s advocacy efforts focused on expanding federal support for global vaccine programs.',
+      'Prior to the alliance, Vale was a senior policy officer at an example pediatric foundation, where the work focused on global funding for child health programs.',
+    ].join(' ');
+    const FEED_PAGE_TEXT = `${CAREER_PAGE_TEXT} Selective recruitment of mural cells to assembling endothelial tubes Quill K, Vale J, Moss D, Reyes S. Selective recruitment of mural cells to assembling endothelial tubes. Example Cell Biology 2024, 12: 1389607.`;
+
+    const writeLaneBody = async () => {
+      const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+      expect(report).toMatchObject({ written: true, adopted: true });
+      return (await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity;
+    };
+
+    const revalidate = async (
+      entity: FraProfileSynthesisEntity,
+      fetchProfileText: (url: string) => Promise<string>,
+    ) =>
+      revalidateFraProfileSynthesisEntity({
+        entity,
+        profileUrls: profileUrlsOf(entity),
+        fetchProfileText,
+      });
+
+    it('reaches a row the lane wrote even though its body now reads as research', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+
+      expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
+      expect(selectFraProfileSynthesisRevalidationTargets([entity])).toHaveLength(1);
+    });
+
+    it('retires its own body and clears the stored value when the pages state a career', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+
+      const before = (entity.fieldProvenance ?? {}) as Record<string, any>;
+      expect(before.shortDescription?.sourceName).toBe(FRA_PROFILE_SYNTHESIS_SOURCE_NAME);
+      expect(String(before.shortDescription?.observationId)).toBe(
+        String(before.fullDescription?.observationId),
+      );
+
+      const report = await revalidate(entity, async () => CAREER_PAGE_TEXT);
+      expect(report).toMatchObject({ completeRead: true, statesCareer: true });
+      expect(report.withdrawal?.observationIds).toHaveLength(1);
+
+      const result = await applyFraProfileSynthesisWithdrawals([report.withdrawal!], {
+        apply: true,
+        completeReads: 1,
+      });
+      expect(result).toMatchObject({
+        outcome: 'applied',
+        withdrawn: 1,
+        storedBodiesCleared: 1,
+        regated: 1,
+      });
+
+      const retired = await Observation.findOne({
+        entityKey: SLUG,
+        sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+        field: 'fullDescription',
+      }).lean();
+      expect(retired?.superseded).toBe(true);
+      expect((retired as Record<string, any> | null)?.rollback?.reason).toBe(
+        FRA_PROFILE_SYNTHESIS_WITHDRAWAL_REASON,
+      );
+      const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<
+        string,
+        any
+      >;
+      expect(persisted.fullDescription).toBeUndefined();
+      expect(persisted.fieldProvenance?.fullDescription).toBeUndefined();
+      expect(persisted.fieldProvenance?.shortDescription?.sourceName).not.toBe(
+        FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+      );
+    });
+
+    it('hands the field back to a rival observation instead of blanking it', async () => {
+      await seedFra({ fullDescription: '' });
+      await seedFullDescriptionObservation(
+        OFFICIAL_RESEARCH_STATEMENT,
+        'ysm-faculty-directory',
+        0.4,
+      );
+      const entity = await writeLaneBody();
+
+      const report = await revalidate(entity, async () => CAREER_PAGE_TEXT);
+      const result = await applyFraProfileSynthesisWithdrawals([report.withdrawal!], {
+        apply: true,
+        completeReads: 1,
+      });
+
+      expect(result).toMatchObject({ withdrawn: 1, storedBodiesCleared: 0 });
+      const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<
+        string,
+        any
+      >;
+      expect(persisted.fieldProvenance?.fullDescription?.sourceName).toBe('ysm-faculty-directory');
+    });
+
+    it('re-derives the same answer on a second run without writing anything', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+      const first = await revalidate(entity, async () => CAREER_PAGE_TEXT);
+      await applyFraProfileSynthesisWithdrawals([first.withdrawal!], {
+        apply: true,
+        completeReads: 1,
+      });
+
+      const after = (await ResearchEntity.findOne({
+        slug: SLUG,
+      }).lean()) as FraProfileSynthesisEntity;
+      expect(selectFraProfileSynthesisRevalidationTargets([after])).toEqual([]);
+      const second = await revalidate(entity, async () => CAREER_PAGE_TEXT);
+      expect(second).toMatchObject({ statesCareer: true });
+      expect(second.withdrawal).toBeUndefined();
+    });
+
+    it('keeps a body a publication feed may support', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+
+      const report = await revalidate(entity, async () => FEED_PAGE_TEXT);
+
+      expect(report).toMatchObject({ completeRead: true, statesCareer: false });
+      expect(report.withdrawal).toBeUndefined();
+    });
+
+    it('keeps a body any candidate page still supports with research prose', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+
+      const report = await revalidate(entity, async () => PROFILE_PAGE_TEXT);
+
+      expect(report).toMatchObject({ completeRead: true, statesCareer: false });
+    });
+
+    it('licenses nothing when a candidate page fails to load', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+
+      const report = await revalidate(entity, async () => {
+        throw new Error('fetch failed');
+      });
+
+      expect(report).toMatchObject({ completeRead: false, statesCareer: false });
+      expect(report.withdrawal).toBeUndefined();
+    });
+
+    it('applies nothing in a dry run or above the operator ceiling', async () => {
+      await seedFra({ fullDescription: '' });
+      const entity = await writeLaneBody();
+      const report = await revalidate(entity, async () => CAREER_PAGE_TEXT);
+
+      const dry = await applyFraProfileSynthesisWithdrawals([report.withdrawal!], {
+        apply: false,
+        completeReads: 1,
+      });
+      const capped = await applyFraProfileSynthesisWithdrawals([report.withdrawal!], {
+        apply: true,
+        completeReads: 1,
+        maxWithdraw: 0,
+      });
+
+      expect(dry).toMatchObject({ outcome: 'planned', withdrawn: 0 });
+      expect(capped).toMatchObject({ outcome: 'frozen', withdrawn: 0 });
+      const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<
+        string,
+        any
+      >;
+      expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+    });
   });
 });
