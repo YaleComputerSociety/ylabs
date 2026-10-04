@@ -4872,7 +4872,8 @@ test('public research detail bounds slug input before service and Mongo work', (
 
   assert.match(controller, /normalizeResearchDetailSlug/);
   assert.match(controller, /return response\.status\(400\)\.json\(\{ error: 'Invalid slug' \}\)/);
-  assert.match(controller, /const detail = await getResearchGroupDetail\(slug\)/);
+  assert.match(controller, /const detail = await getResearchGroupDetail\(slug, \{/);
+  assert.match(controller, /includeWithheldForOperator: hasAdminAuthority,/);
   assert.match(service, /MAX_RESEARCH_DETAIL_SLUG_LENGTH = 160/);
   assert.match(service, /RESEARCH_DETAIL_SLUG_PATTERN = \/\^\[a-z0-9\]\[a-z0-9_-\]\{0,159\}\$\/i/);
   assert.match(
