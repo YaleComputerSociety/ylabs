@@ -738,6 +738,44 @@ async function fetchPage({
   return payload;
 }
 
+async function fetchAffiliationPage(
+  batch: number[],
+  offset: number,
+  useCache: boolean,
+): Promise<NihPage> {
+  const cacheKey = `copi-affiliations:profiles=${batch.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
+  if (useCache) {
+    const cached = await getCached<NihPage>('nih-reporter', cacheKey);
+    if (cached) return cached;
+  }
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(
+      REPORTER_ENDPOINT,
+      {
+        criteria: { pi_profile_ids: batch, exclude_subprojects: true },
+        include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
+        offset,
+        limit: PAGE_SIZE,
+      },
+      {
+        timeout: FETCH_TIMEOUT_MS,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      },
+    ),
+  );
+  const results = (res.data?.results as NihGrant[]) || [];
+  const payload: NihPage = {
+    meta: { total: res.data?.meta?.total ?? results.length, offset, limit: PAGE_SIZE },
+    results,
+  };
+  if (useCache) await setCached('nih-reporter', cacheKey, payload);
+  return payload;
+}
+
 async function fetchContactPiAffiliations(
   profileIds: number[],
   ctx: ScraperContext,
@@ -748,27 +786,8 @@ async function fetchContactPiAffiliations(
     let offset = 0;
     let total = Infinity;
     for (let page = 0; offset < total && page < MAX_PAGES; page++) {
-      const res = await retryOnRetryableStatus(() =>
-        axios.post(
-          REPORTER_ENDPOINT,
-          {
-            criteria: { pi_profile_ids: batch, exclude_subprojects: true },
-            include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
-            offset,
-            limit: PAGE_SIZE,
-          },
-          {
-            timeout: FETCH_TIMEOUT_MS,
-            headers: {
-              'User-Agent': USER_AGENT,
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-            },
-          },
-        ),
-      );
-      const results = (res.data?.results as NihGrant[]) || [];
-      total = res.data?.meta?.total ?? results.length;
+      const { meta, results } = await fetchAffiliationPage(batch, offset, ctx.options.useCache);
+      total = meta.total;
       projects.push(...results);
       if (results.length === 0) break;
       offset += results.length;
