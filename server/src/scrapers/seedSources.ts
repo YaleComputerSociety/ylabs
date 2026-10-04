@@ -2,8 +2,9 @@
  * Idempotent seed for the Source registry. Run with:
  *   npx tsx server/src/scrapers/seedSources.ts
  *
- * Adds new sources, updates existing ones in place (preserves enabled/cadence overrides
- * unless you pass --reset, in which case rows are fully replaced).
+ * Adds new sources and updates existing ones in place, or fully replaces them with --reset.
+ * `enabled` means "not retired" and is re-derived on every apply, so it never acts as a
+ * run switch: the sweep manifests and MANUAL_ONLY_SWEEP_SOURCES decide what runs (#4025).
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -18,7 +19,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 import { isDirectScriptInvocation } from '../scripts/directScriptInvocation';
 import { getSourceCoverage } from './sourceCoverageRegistry';
-import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
+import { RETIRED_SOURCE_NAMES, isRetiredSourceName } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 import { connectScriptMongo } from '../db/connections';
 
@@ -32,7 +33,6 @@ interface SourceSeed {
   defaultWeight: number;
   isManualLock?: boolean;
   cadence: string;
-  enabled?: boolean;
   coverage?: SourceCoverageMetadata;
 }
 
@@ -46,6 +46,7 @@ export interface SeedSourcesCliOptions {
 interface SeedSourceRow {
   name: string;
   action: 'created' | 'updated' | 'reset' | 'would_create' | 'would_update' | 'would_reset';
+  changedFields?: string[];
 }
 
 interface RetiredSourceSummary {
@@ -193,11 +194,10 @@ const SOURCES: SourceSeed[] = [
     name: 'undergrad-research-posting',
     displayName: 'Undergraduate research postings',
     description:
-      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry, and the detail page stops serving the signal once that expiry passes (#4628). Disabled by default until an operator confirms each page is reliably public on Development. No page is configured today: the one page configured at launch never existed, and no official public Yale page publishes postings in this shape (#3550).',
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry, and the detail page stops serving the signal once that expiry passes (#4628). Manual-only and out of the sweep while no page is configured. No page is configured today: the one page configured at launch never existed, and no official public Yale page publishes postings in this shape (#3550).',
     baseUrl: '',
     defaultWeight: 0.9,
     cadence: 'weekly',
-    enabled: false,
   },
   {
     name: 'yale-directory',
@@ -379,11 +379,10 @@ const SOURCES: SourceSeed[] = [
     name: 'student-grants-database',
     displayName: 'Yale Student Grants Database (CommunityForce)',
     description:
-      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Disabled by default until an operator confirms the rendered catalog is reliably public on Development; contact and unresolved funds fail closed.",
+      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Runs in the fellowship sweep as an official Yale source; contact and unresolved funds fail closed.",
     baseUrl: 'https://yale.communityforce.com/Funds/Search.aspx',
     defaultWeight: 0.95,
     cadence: 'daily-during-cycle',
-    enabled: false,
   },
   {
     name: 'nih-reporter',
@@ -432,11 +431,10 @@ const SOURCES: SourceSeed[] = [
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:
-      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded.',
+      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded. Manual-only and out of the sweep until a sampled roster precision review is recorded.',
     baseUrl: 'https://medicine.yale.edu/lab/',
     defaultWeight: 0.95,
     cadence: 'weekly',
-    enabled: false,
   },
   {
     name: 'lab-site-lead-verification',
@@ -588,13 +586,53 @@ export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.
 
 export { RETIRED_SOURCE_NAMES };
 
+export function seededSourceEnabled(name: string): boolean {
+  return !isRetiredSourceName(name);
+}
+
+function plannedSourceSeedFields(seed: SourceSeed) {
+  return {
+    displayName: seed.displayName,
+    description: seed.description,
+    baseUrl: seed.baseUrl,
+    defaultWeight: seed.defaultWeight,
+    isManualLock: !!seed.isManualLock,
+    cadence: seed.cadence,
+    coverage: seed.coverage,
+    enabled: seededSourceEnabled(seed.name),
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === 'object' && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : inner,
+  );
+}
+
+export function changedSourceSeedFields(
+  existing: Record<string, unknown>,
+  planned: Record<string, unknown>,
+): string[] {
+  return Object.keys(planned)
+    .filter((field) => canonicalJson(existing[field]) !== canonicalJson(planned[field]))
+    .sort();
+}
+
 export async function seedSources(options: SeedSourcesCliOptions) {
   const sources: SeedSourceRow[] = [];
 
   for (const seed of SOURCES_WITH_COVERAGE) {
     if (options.reset) {
       if (options.apply) {
-        await Source.replaceOne({ name: seed.name }, seed, { upsert: true });
+        await Source.replaceOne(
+          { name: seed.name },
+          { ...seed, ...plannedSourceSeedFields(seed) },
+          { upsert: true },
+        );
       }
       sources.push({
         name: seed.name,
@@ -604,30 +642,19 @@ export async function seedSources(options: SeedSourcesCliOptions) {
     }
 
     const existing = await Source.findOne({ name: seed.name }).lean();
+    const planned = plannedSourceSeedFields(seed);
     if (existing) {
       if (options.apply) {
-        await Source.updateOne(
-          { name: seed.name },
-          {
-            $set: {
-              displayName: seed.displayName,
-              description: seed.description,
-              baseUrl: seed.baseUrl,
-              defaultWeight: seed.defaultWeight,
-              isManualLock: !!seed.isManualLock,
-              cadence: seed.cadence,
-              coverage: seed.coverage,
-            },
-          },
-        );
+        await Source.updateOne({ name: seed.name }, { $set: planned });
       }
       sources.push({
         name: seed.name,
         action: options.apply ? 'updated' : 'would_update',
+        changedFields: changedSourceSeedFields(existing as Record<string, unknown>, planned),
       });
     } else {
       if (options.apply) {
-        await Source.create({ ...seed, enabled: seed.enabled ?? true });
+        await Source.create({ ...seed, ...planned });
       }
       sources.push({
         name: seed.name,
