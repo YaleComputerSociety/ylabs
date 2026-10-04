@@ -7,6 +7,7 @@ import {
 } from '../entityMaterializer';
 import type { ResolvedField, ResolverObservation } from '../confidenceResolver';
 import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
 
@@ -22,6 +23,9 @@ const ORGANIZATION_GRAFT =
   'Synthetic Translational Imaging Center was founded in 2010 to facilitate translational animal research. The facility centralizes imaging instrumentation and provides services to investigators across the university.';
 
 const THIN_BODY = 'Synthetic Scholar studies economics.';
+
+const THIN_ACCURATE_BODY =
+  "Synthetic Scholar's research focuses on labor economics, applied econometrics, and child development.";
 
 const CAREER_BIOGRAPHY =
   'Synthetic Scholar is Professor of Economics and Chair of Public Policy at a university in New England. Synthetic Scholar completed a BA in Mathematics in 1990 and a PhD in Economics in 1997, and teaches a wide variety of courses on labor markets and statistics. Synthetic Scholar was appointed to an endowed chair in 2011 and has served as Deputy Dean. Current research interests include the economics of early childhood and household investment.';
@@ -196,6 +200,24 @@ describe('full description adoption asks the serving check (#3437)', () => {
       ...input(resolverObs),
       resolved: { fullDescription: resolvedField(ORGANIZATION_GRAFT, 0.82) },
       entityDoc: { ...entityDoc, fullDescription: ORGANIZATION_GRAFT },
+    });
+    expect(result.set.fullDescription).toBe(RESEARCH_BODY);
+  });
+
+  it('still adopts richer prose over a thin but accurate body the served page shows', async () => {
+    const thinRow = { ...entityDoc, fullDescription: THIN_ACCURATE_BODY };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity: thinRow });
+    expect(representation.quality.full.isUseful).toBe(true);
+    expect(representation.strictQuality.full.isUseful).toBe(false);
+    expect(servingBarAcceptsFullDescription(thinRow, {}, THIN_ACCURATE_BODY, '')).toBe(false);
+
+    const result = await projectFromLog('researchEntity', {
+      ...input([
+        observation(THIN_ACCURATE_BODY, 'synthetic-page-source', 0.82),
+        observation(RESEARCH_BODY, 'synthetic-signal-source', 0.55),
+      ]),
+      resolved: { fullDescription: resolvedField(THIN_ACCURATE_BODY, 0.82) },
+      entityDoc: thinRow,
     });
     expect(result.set.fullDescription).toBe(RESEARCH_BODY);
   });

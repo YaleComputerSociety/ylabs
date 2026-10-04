@@ -3160,3 +3160,48 @@ describe('a stored card that repeats a useful body', () => {
     expect(visibility(text, text).reasons).toContain('missing_card_description');
   });
 });
+
+describe('a thin but accurate body', () => {
+  const visibility = (fullDescription: string, shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'thin-body-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription,
+        shortDescription,
+        researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+
+  it('does not hold a row whose short accurate body restates its topics', () => {
+    const result = visibility(
+      "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
+      'Studies how ice sheets respond to ocean warming and what that means for sea level rise.',
+    );
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('still holds a thin body that is a page fragment', () => {
+    const result = visibility(
+      'Studies glaciology, including research areas:.',
+      'Studies how ice sheets respond to ocean warming and what that means for sea level rise.',
+    );
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('still holds a thin body whose card opens on a glued dateline', () => {
+    const result = visibility(
+      "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
+      'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
+    );
+    expect(result.tier).not.toBe('student_ready');
+  });
+});

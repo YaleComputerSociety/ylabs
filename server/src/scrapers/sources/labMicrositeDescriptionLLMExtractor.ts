@@ -1170,7 +1170,7 @@ function bodyForBiography(raw: string, context: { entityType?: string; kind?: st
     },
     leadMemberNames: [],
   });
-  return served.quality.full.isUseful ? research : raw;
+  return served.strictQuality.full.isUseful ? research : raw;
 }
 
 // The serve sanitizer blanks a card the quality bar alone accepts, a first-person line

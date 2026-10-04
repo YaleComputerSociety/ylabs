@@ -668,7 +668,7 @@ Read the served output afterwards with `yarn --cwd server research-entity:served
   It drops the whole incoming pair when the source's current pair builds a complete card and the incoming one does not, filling a field the batch does not refresh from the current value.
   When the incoming card still builds a complete card under the current body, only the incoming body is dropped and the card is kept (#4299).
   That is the owner's choice for a biography whose only research statement is a topic list: the biography stays the body, and the row serves a research card instead of a sentence from the biography.
-  The verdict comes from the gate's own `buildResearchEntityPublicDescriptionRepresentation` with the row's stored fields and its gate lead members, not from the raw prose checks, because a keyword list, a citation or a recruiting line can pass those and still build no card.
+  The verdict is the `strictQuality.cardState` of the gate's own `buildResearchEntityPublicDescriptionRepresentation` with the row's stored fields and its gate lead members, not the raw prose checks, because a keyword list, a citation or a recruiting line can pass those and still build no card.
   An equal or better pair still replaces the current one, and a row the judge cannot load raises no objection.
   It is one of the two write-path/collapse asymmetries recorded above.
 - `retireObservations` (#1966) is a primitive that bulk-supersedes the observations matching a filter (for example an entity's active rows) and stamps a `rollback` marker with an audit reason, without deleting evidence.

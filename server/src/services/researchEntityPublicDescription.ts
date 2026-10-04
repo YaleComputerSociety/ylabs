@@ -1,5 +1,7 @@
 import {
   assessResearchEntityDescriptionQuality,
+  isCardPageFragment,
+  isThinButAccurateBody,
   withMemoizedDescriptionQuality,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
@@ -91,6 +93,11 @@ export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];
   quality: ResearchEntityDescriptionQuality;
+  /**
+   * The strict verdict before a thin but accurate body is admitted. A lane choosing
+   * between two bodies to store reads this, so it still prefers the richer one.
+   */
+  strictQuality: ResearchEntityDescriptionQuality;
   /**
    * The card line resolved from the copy the canonical serve sanitizer produces,
    * which is what every verdict in this representation is computed on. It is not
@@ -244,7 +251,7 @@ function derivePublicDescriptionRepresentation({
   const servedCard = servedResearchEntityCardWithoutLastResort(servedCopy, resolvedEntityType);
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
-  const quality = assessResearchEntityDescriptionQuality({
+  const strictQuality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: servedCard,
     researchAreas: sanitizedEntity.researchAreas,
@@ -254,6 +261,7 @@ function derivePublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
+  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -314,6 +322,7 @@ function derivePublicDescriptionRepresentation({
     entity: sanitizedEntity,
     leadMemberNames: resolvedLeadMemberNames,
     quality,
+    strictQuality,
     servedCard,
     fullDescription: quality.full.text,
     cardDescription: quality.short.text,
@@ -376,3 +385,29 @@ function derivePublicDescriptionRepresentation({
 export const researchEntityServesPublicDetail = (entity: Record<string, any>): boolean =>
   buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
   !researchEntityHasDeceasedLead(entity);
+
+/**
+ * The gate and the served page show a thin but accurate body (owner decision,
+ * 2026-10-04), and a card refused only because that body was judged unusable is
+ * re-judged on its own text, still refusing a card that is a page fragment. Write
+ * paths keep `assessResearchEntityDescriptionQuality`.
+ */
+function withThinButAccurateBodyUsable(
+  quality: ResearchEntityDescriptionQuality,
+  programLike: boolean,
+): ResearchEntityDescriptionQuality {
+  if (!isThinButAccurateBody(quality.full)) return quality;
+  const full = { ...quality.full, isUseful: true };
+  const cardFlags = quality.short.flags.filter((flag) => flag !== 'full-not-useful');
+  const cardIsSound =
+    Boolean(quality.short.text) &&
+    cardFlags.length === 0 &&
+    !isCardPageFragment(quality.short.text, quality.full.text);
+  const short = {
+    ...quality.short,
+    flags: cardFlags,
+    isUseful: quality.short.isUseful || cardIsSound,
+  };
+  const cardComplete = short.isUseful || (programLike && !short.text);
+  return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
+}

@@ -31,6 +31,8 @@ These are genuine correctness or quality failures - the entity as shown would be
 They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one field of `ResearchEntityStudentReadyCorrectness` (or is applied one tier earlier at `suppressed`).
 
 - Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`, `public_description_invariant_failed`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
+  A thin but accurate body does not hold a row (owner decision, 2026-10-04): at the gate and on the served page, a body refused only for `too-short` (at least six words) or `area-echo-fallback` is usable when it states research and is not a page fragment, and a card refused only because of that body is re-judged on its own text (`isThinButAccurateBody`, `isCardPageFragment`).
+  Write paths read `strictQuality` and keep preferring richer prose.
 `missing_card_description` is exempt for an organizational or program-like home, which is described by what it is and does rather than by a lab-style research focus (#1872).
 That exemption has to reach the TIER as well as the recorded reason: `quality.cardState` applies it only to program-like rows, so reading it raw as a tier input held 7 organizational rows at `operator_review` with no blocker recorded anywhere (#2818).
 `studentVisibilityTier`'s `hasRequiredResearchFocusCard`, its `missing_card_description` push, and `researchEntityPublicDescription`'s `cardIsOptional` must answer this question the same way.

@@ -117,7 +117,7 @@ export async function planCardBackfillRow(
       leadMemberNames: entity.leadMemberNames ?? [],
     });
   const servedCardIsComplete = (candidateShort: string): boolean =>
-    servedRepresentation(candidateShort).quality.cardState === 'complete';
+    servedRepresentation(candidateShort).strictQuality.cardState === 'complete';
 
   // A complete card is not an acceptable card when it is a career biography with no
   // research focus in it: it tells a student where the person trained and what they
