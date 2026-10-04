@@ -5842,10 +5842,7 @@ export async function joinUserIdentityToExistingResearcher(
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
     servedUserName('displayName') ||
-      [servedUserName('fname'), servedUserName('lname')]
-        .filter(Boolean)
-        .join(' ')
-        .trim(),
+      [servedUserName('fname'), servedUserName('lname')].filter(Boolean).join(' ').trim(),
   );
   const title = textValue(resolvedValue('title')) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;

@@ -404,13 +404,6 @@ export function personNameNoiseShapes(value: string | null | undefined): PersonN
   return shapes;
 }
 
-/**
- * Returns the name to store and serve, or `undefined` when the value is not a
- * person's name at all. Callers decide what `undefined` means for them: ingest
- * rejects the observation, and a repair pass leaves the stored value alone and
- * reports it, because blanking a lead's name would strip the lead rather than fix
- * it (#2385).
- */
 const CAPTION_GIVEN_NAME_HONORIFIC_LEAD_IN = /^(?:dean|dr\.?|prof\.?|professor)\s+(?=\S)/i;
 
 /**
@@ -430,6 +423,13 @@ export function sanitizePersonGivenName(value: string | null | undefined): strin
   return sanitizePersonName(given || caption[1]);
 }
 
+/**
+ * Returns the name to store and serve, or `undefined` when the value is not a
+ * person's name at all. Callers decide what `undefined` means for them: ingest
+ * rejects the observation, and a repair pass leaves the stored value alone and
+ * reports it, because blanking a lead's name would strip the lead rather than fix
+ * it (#2385).
+ */
 export function sanitizePersonName(value: string | null | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
   const collapsed = value.replace(/\s+/g, ' ').trim();
