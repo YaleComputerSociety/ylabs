@@ -1,4 +1,5 @@
 import { dedupeLeadMembers, memberPersonName } from '../utils/leadMemberDedupe';
+import { formatLeadHonors } from '../utils/leadHonors';
 import {
   resolveResearchDetailActionLinkContext,
   resolveResearchDetailActionLinks,
@@ -480,6 +481,7 @@ const DecisionSummary = ({
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
+  const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
     principalInvestigator?.user?.displayName?.trim() ||
@@ -505,7 +507,8 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
+  const hasEvidenceDetail =
+    Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -622,9 +625,11 @@ const DecisionSummary = ({
           {hasEvidenceDetail && (
             <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-              {(grantSummary || pastAdvisees) && (
+              {hasEvidenceDetail && (
                 <ul className="mt-3 space-y-1 text-xs text-muted">
                   {grantSummary && <li>• {grantSummary}</li>}
+                  {honors.recent && <li>• {honors.recent}</li>}
+                  {honors.other && <li>• {honors.other}</li>}
                   {pastAdvisees && <li>• {pastAdvisees}</li>}
                 </ul>
               )}

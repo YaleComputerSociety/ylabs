@@ -1,0 +1,108 @@
+import { describe, expect, it } from 'vitest';
+import { extractProfileHonors } from '../utils/profileHonors';
+
+const page = (body: string) =>
+  `<html><body><nav>Guggenheim Fellowship menu</nav><main>${body}</main></body></html>`;
+const keys = (html: string) =>
+  extractProfileHonors(html, 'Avery Placeholder', 2026).map((h) => h.key);
+
+describe('extractProfileHonors', () => {
+  it('reads an honor the page states its person received, with the year beside it', () => {
+    expect(
+      extractProfileHonors(
+        page('<p>In 2024, she was awarded a John Simon Guggenheim Fellowship for her work.</p>'),
+        'Avery Placeholder',
+        2026,
+      ),
+    ).toEqual([
+      { key: 'guggenheim', label: 'Guggenheim Fellowship', kind: 'fellowship', year: 2024 },
+    ]);
+  });
+
+  it('reads support statements about the person and every honor they list', () => {
+    expect(
+      keys(
+        page(
+          '<p>Her research has been supported by the National Endowment for the Humanities and the American Council of Learned Societies.</p>',
+        ),
+      ).sort(),
+    ).toEqual(['acls', 'neh']);
+  });
+
+  it('reads items under an honors heading without a receipt verb', () => {
+    expect(
+      extractProfileHonors(
+        page(
+          '<h3>Honors &amp; Awards</h3><ul><li>Rome Prize, 2023</li><li>Bancroft Prize</li></ul>',
+        ),
+        'Avery Placeholder',
+        2026,
+      ).map((h) => [h.key, h.year]),
+    ).toEqual([
+      ['rome-prize', 2023],
+      ['bancroft', undefined],
+    ]);
+  });
+
+  it('refuses programs the person advises, judges, or was only nominated for', () => {
+    expect(
+      keys(page('<p>She advises students applying for the Fulbright and Rhodes.</p>')),
+    ).toEqual([]);
+    expect(keys(page('<p>He served on the jury for the Pulitzer Prize in History.</p>'))).toEqual(
+      [],
+    );
+    expect(keys(page('<p>His book was a finalist for the National Book Award.</p>'))).toEqual([]);
+  });
+
+  it('refuses a journal title, a museum, and the undergraduate Mellon Mays program', () => {
+    expect(
+      keys(
+        page(
+          '<p>His work has appeared in the Proceedings of the National Academy of Sciences.</p>',
+        ),
+      ),
+    ).toEqual([]);
+    expect(keys(page('<p>She received a fellowship at the Guggenheim Museum.</p>'))).toEqual([]);
+    expect(keys(page('<p>She was named a Mellon Mays fellow.</p>'))).toEqual([]);
+  });
+
+  it('does not read the Radcliffe Institute for Advanced Study as the Princeton institute', () => {
+    expect(
+      keys(
+        page(
+          '<p>She held a fellowship at the Radcliffe Institute for Advanced Study at Harvard.</p>',
+        ),
+      ),
+    ).toEqual(['radcliffe']);
+  });
+
+  it('needs the sentence to be about the person', () => {
+    expect(keys(page('<p>The department was awarded an NEH grant for its archive.</p>'))).toEqual(
+      [],
+    );
+  });
+
+  it('keeps one entry per honor, preferring the latest dated mention', () => {
+    expect(
+      extractProfileHonors(
+        page(
+          '<p>She received a Guggenheim Fellowship.</p><p>In 2021, she was awarded a second Guggenheim Fellowship.</p>',
+        ),
+        'Avery Placeholder',
+        2026,
+      ).map((h) => [h.key, h.year]),
+    ).toEqual([['guggenheim', 2021]]);
+  });
+
+  it('ignores a year later than the current one', () => {
+    expect(
+      extractProfileHonors(
+        page(
+          '<p>She was elected to the American Academy of Arts and Sciences, effective 2030.</p>',
+        ),
+        'Avery Placeholder',
+        2026,
+      )[0]?.year,
+    ).toBeUndefined();
+  });
+});

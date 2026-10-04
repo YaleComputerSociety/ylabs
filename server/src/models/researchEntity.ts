@@ -346,6 +346,18 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Number,
       default: 0,
     },
+    leadHonors: {
+      type: [
+        {
+          _id: false,
+          key: { type: String },
+          label: { type: String },
+          kind: { type: String, enum: ['fellowship', 'prize', 'membership'] },
+          year: { type: Number },
+        },
+      ],
+      default: undefined,
+    },
     fundingAgencies: {
       type: [String],
       default: [],

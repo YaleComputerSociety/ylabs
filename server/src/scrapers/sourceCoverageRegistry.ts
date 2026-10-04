@@ -458,6 +458,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Research description synthesized from the faculty member's own official Yale profile page, for FACULTY_RESEARCH_AREA entities currently serving a biography. Ranks above the grant-corpus synthesis lane and below every official-profile extraction source. Career, credential, and navigation text is stripped before synthesis, and the lane fails closed when the output is not grounded in the retained research prose or still reads as a person biography. Never creates access, route, opportunity, or contact evidence.",
   },
+  'official-profile-honors': {
+    priority: 7,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Major fellowships, prizes and academy memberships stated on the lead's own official Yale profile page, read deterministically against a fixed catalog. Pages are selected as the FRA profile synthesis lane selects them, so an honor never comes from a page about someone else. A recognition signal for research that rarely holds multi-year grants; never undergraduate-access evidence.",
+  },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;
