@@ -78,6 +78,9 @@ Where one person leads both, the 2026-08-25 precedence applies: the `FACULTY_RES
   Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
   Use a `Signal` row (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
+- A signal past its `expiresAt` is not served, so a posted opening stops reading as open once its deadline passes rather than when its source is next re-materialized (#4628).
+  Every student-facing signal query spreads `unexpiredSignalClause` from `server/src/services/servedSignalExpiry.ts` into the query itself, so expired rows cannot crowd live ones out of a capped read, and a signal with no `expiresAt` never expires.
+  Today that is the detail page's access signals and its inherited department course-credit routes; browse, search and the Meili documents carry no signal data.
 - `sourceCoverageArtifactTypes` no longer lists `EntryPathway`, `AccessSignal`, `ContactRoute`, `PostedOpportunity` or `UndergraduateLogisticsClaim` (#2829).
   This doc already described them as consolidated into `Signal`; the coverage registry had not caught up, so 15 sources declared a capability nothing could materialize and every successful scrape run warned that expected access artifacts were missing.
   A permanent warning is what a real coverage gap would have had to be noticed against.

@@ -4,6 +4,7 @@ import { orgUnitMatchKey } from '../scrapers/orgUnitCanonicalization';
 import { readOrgUnitCourseCreditRouteValue } from '../scrapers/orgUnitSignalMaterializer';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { unexpiredSignalClause } from './servedSignalExpiry';
 
 /**
  * Department context a research entity inherits from its department (#2214).
@@ -83,6 +84,7 @@ export async function listDepartmentCourseCreditRoutes(
     orgUnitId: { $in: (orgUnits as any[]).map((unit) => unit._id) },
     type: 'COURSE_CREDIT_PATHWAY',
     archived: { $ne: true },
+    ...unexpiredSignalClause(new Date()),
   })
     .select('orgUnitId value source observedAt')
     .sort({ observedAt: -1 })

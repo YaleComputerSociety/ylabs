@@ -138,6 +138,7 @@ import {
   titleHoldsOnlyEmeritusAppointments,
   type EmeritusWayInDecision,
 } from './emeritusLeadWayIn';
+import { unexpiredSignalClause } from './servedSignalExpiry';
 
 /**
  * The page's lead display names, batched for the whole hit set in one roster read
@@ -3725,6 +3726,7 @@ export async function getResearchGroupDetail(
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
       archived: false,
+      ...unexpiredSignalClause(new Date()),
     })
       .sort({ observedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
