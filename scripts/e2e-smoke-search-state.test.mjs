@@ -18,7 +18,15 @@ test('a settled search reports no problems', () => {
 });
 
 test('any loading label fails the check without naming that label', () => {
-  for (const buttonName of ['Searching…', 'Searching...', 'Loading', 'SEARCH', ' Search ', '', null]) {
+  for (const buttonName of [
+    'Searching…',
+    'Searching...',
+    'Loading',
+    'SEARCH',
+    ' Search ',
+    '',
+    null,
+  ]) {
     const problems = stuckSearchProblems({ ...settled, buttonName });
     assert.equal(problems.length, 1, `expected ${JSON.stringify(buttonName)} to be flagged`);
     assert.match(problems[0], /stuck in its loading state/);
