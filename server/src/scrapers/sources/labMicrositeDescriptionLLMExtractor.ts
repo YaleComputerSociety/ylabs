@@ -97,8 +97,10 @@ import {
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
+  nameIsOnlyTheLeadPersonsName,
   namesASelfDeclaredLaboratory,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
+  personScopedResearchEntityNameFromPersonName,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -132,7 +134,7 @@ const MIN_LLM_PAGE_TEXT_CHARS = 120;
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
 // (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
 const LAB_NAME_CONFIDENCE = 0.95;
-export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v2';
+export const LAB_NAME_EMISSION_CONTRACT = 'lab-name-page-stated-v3';
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
@@ -1433,6 +1435,9 @@ function labNameObservations(
   context: ExtractedPageIdentityContext,
 ): ObservationInput[] {
   const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
+  if (isLabTypedRowsPersonalPage(labName, context)) {
+    return personalPageObservations(labName, nameBase);
+  }
   const observations: ObservationInput[] = [
     { ...nameBase, field: 'name', value: labName },
     { ...nameBase, field: 'displayName', value: labName },
@@ -1446,6 +1451,37 @@ function labNameObservations(
     observations.push({ ...nameBase, field: 'kind', value: 'lab' });
   }
   return observations;
+}
+
+// The mirror of the self-declared-laboratory arm: a LAB row whose own site is titled
+// with nothing but its lead's name is a personal homepage, so the research is
+// person-scoped. Left alone, the bare name is re-suffixed "<person> Lab" from the
+// stored type, which on a grant-minted shell is the residue of the retired mint (#3160).
+function isLabTypedRowsPersonalPage(
+  labName: string,
+  context: ExtractedPageIdentityContext,
+): boolean {
+  return (
+    textValue(context.entityType).toUpperCase() === 'LAB' &&
+    nameIsOnlyTheLeadPersonsName({ name: labName, personName: context.personName })
+  );
+}
+
+function personalPageObservations(
+  personName: string,
+  nameBase: Omit<ObservationInput, 'field' | 'value'>,
+): ObservationInput[] {
+  const entityType = 'FACULTY_RESEARCH_AREA';
+  const name = personScopedResearchEntityNameFromPersonName({
+    candidateName: personName,
+    entityType,
+  });
+  if (!name) return [];
+  return [
+    { ...nameBase, field: 'name', value: name },
+    { ...nameBase, field: 'displayName', value: name },
+    { ...nameBase, field: 'entityType', value: entityType },
+  ];
 }
 
 const PAGE_HEADING_CHROME_SUFFIX_RE =
@@ -1491,7 +1527,8 @@ export function labNameIsStatedInPageHeadings(labName: string, html: string): bo
  * description screens cannot run without a description, so the name has to be
  * stated in the page's `<title>`, `og:site_name` or first `<h1>` instead, and it
  * has to name a laboratory or group: on a personal homepage the model returns the
- * person's own name, which the title states too.
+ * person's own name, which the title states too. The one exception is a LAB row's
+ * personal homepage naming only its lead, which re-types the row instead (#4786).
  */
 export function pageStatedLabNameObservations(
   extraction: Pick<DescriptionExtraction, 'name' | 'subject' | 'fullDescription'>,
@@ -1506,7 +1543,9 @@ export function pageStatedLabNameObservations(
   if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') return [];
   const labName = usefulLabName(extraction.name);
   if (!labName || classifyExtractedPageAttribution(labName, context) !== 'THIS_ENTITY') return [];
-  if (!namesASelfDeclaredLaboratory(labName)) return [];
+  if (!namesASelfDeclaredLaboratory(labName) && !isLabTypedRowsPersonalPage(labName, context)) {
+    return [];
+  }
   if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
   if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context)) return [];
