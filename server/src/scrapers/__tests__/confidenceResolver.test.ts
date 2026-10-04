@@ -909,6 +909,29 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.contributingSources).toEqual(['fra-profile-research-synthesis']);
   });
 
+  it('keeps titled-name research prose above a career biography re-read more recently (#4660)', () => {
+    const TITLED_NAME_RESEARCH =
+      'Dr. Halvard’s research integrates perspectives from developmental biology, behavioural neuroscience and clinical psychiatry to understand how early adversity shapes the regulation of stress in children and their parents.';
+    const CAREER_BIOGRAPHY =
+      'Dr. Rowan Halvard is the Example Endowed Professor of Child Psychiatry, Pediatrics, and Psychology in the Example Study Center at the university. Trained as a pediatrician, she has served as director of the center since 2010 and chairs its developmental science program. Her work examines how early adversity shapes stress regulation in young children and their parents, combining developmental assessment with behavioural neuroscience.';
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        {
+          ...obs(TITLED_NAME_RESEARCH, 'ysm-faculty-directory', 0.55),
+          observedAt: D('2026-02-01'),
+        },
+        {
+          ...obs(CAREER_BIOGRAPHY, 'lab-microsite-description-llm', 0.55),
+          observedAt: D('2026-02-07'),
+        },
+      ],
+      { now: D('2026-02-08'), descriptionEntityKind: 'person' },
+    );
+    expect(isHighConfidencePersonBio(TITLED_NAME_RESEARCH)).toBe(true);
+    expect(ranked.map((entry) => entry.value)).toEqual([TITLED_NAME_RESEARCH, CAREER_BIOGRAPHY]);
+  });
+
   it('demotes a career biography that is not person-voiced enough for the bio check', () => {
     // The bio-replacing lane selects its cohort on career facts, so a demotion
     // keyed only on person-voice shape left that cohort undemotable: the endowed

@@ -19,6 +19,14 @@ describe('withoutGluedLeadingHeading (#4660)', () => {
     ).toBe('Dr Fixture’s research is focused on chronic example disease.');
   });
 
+  it('strips a doubled heading run in one pass, so a second pass changes nothing', () => {
+    const once = withoutGluedLeadingHeading(
+      'Example Statement of Purpose Our Mission Our mission is to promote example research.',
+    );
+    expect(once).toBe('Our mission is to promote example research.');
+    expect(withoutGluedLeadingHeading(once)).toBe(once);
+  });
+
   it('leaves prose whose capitalised pronoun continues the sentence', () => {
     for (const text of [
       'Students and We the faculty study example systems together.',
