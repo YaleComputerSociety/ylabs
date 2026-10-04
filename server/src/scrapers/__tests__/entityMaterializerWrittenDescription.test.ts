@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   projectFromLog,
+  isRefusedWrittenBodyCard,
   writtenBodyCardBasis,
   type ProjectFromLogInput,
 } from '../entityMaterializer';
@@ -150,7 +151,7 @@ describe('writtenBodyCardBasis', () => {
     ).toEqual({ followsWrittenBody: false });
   });
 
-  it('re-derives when the stored card came from somewhere else', () => {
+  it('follows the written body when it is the body served', () => {
     expect(
       writtenBodyCardBasis({
         set: {
@@ -161,28 +162,206 @@ describe('writtenBodyCardBasis', () => {
         fullDescription: WRITTEN_BODY,
         cardLocked: false,
       }),
-    ).toEqual({ followsWrittenBody: true, currentCard: undefined });
+    ).toEqual({ followsWrittenBody: true });
+  });
+});
+
+describe('a written body never serves a chip echo or itself as its card (#4788 follow-up)', () => {
+  const TOPICS = ['Wetlands', 'Carbon Sequestration', 'Tidal Flooding'];
+  const ONE_SENTENCE_BODY =
+    'Studies how coastal salt marshes store carbon in sediment and how tidal flooding shapes the roots of marsh grasses along the Atlantic coast, using field plots, sediment cores and remote sensing of marsh loss.';
+  const LONG_ONE_SENTENCE_BODY =
+    'Studies how coastal salt marshes store carbon in sediment, how tidal flooding and sea level rise reshape the roots and stems of cordgrass and other marsh grasses, how grazing crabs and snails thin marsh platforms, and how nitrogen from upstream farms changes sediment microbes, using field plots, sediment cores, warming experiments and decades of remote sensing along the Atlantic coast.';
+  const CHIP_ECHO = 'Studies Wetlands, Carbon Sequestration, and Tidal Flooding.';
+  const GOOD_COPIED_CARD = 'Studies how coastal salt marshes store carbon in sediment.';
+  const SYNTHESIZED_CARD =
+    'Studies how coastal salt marshes store carbon and how tidal flooding shapes marsh grasses.';
+
+  const rowWith = (opts: {
+    body?: string;
+    storedCard: string;
+    copiedCard?: string;
+    synthesize: () => Promise<string>;
+  }): ProjectFromLogInput => {
+    const obs = [
+      observation('fullDescription', COPIED_BODY, COPIED_SOURCE, 0.82, 'a'.repeat(24)),
+      observation('fullDescription', opts.body ?? ONE_SENTENCE_BODY, WRITER, 0.5, 'c'.repeat(24)),
+      ...(opts.copiedCard
+        ? [observation('shortDescription', opts.copiedCard, COPIED_SOURCE, 0.82, 'b'.repeat(24))]
+        : []),
+    ];
+    const resolverRows: ResolverObservation[] = obs.map(
+      ({ field, value, sourceName, confidence, observedAt }) => ({
+        field,
+        value,
+        sourceName,
+        confidence,
+        observedAt,
+      }),
+    );
+    const entityDoc = {
+      ...baseEntityDoc,
+      researchAreas: TOPICS,
+      fullDescription: opts.body ?? ONE_SENTENCE_BODY,
+      shortDescription: opts.storedCard,
+      fieldProvenance: { fullDescription: { sourceName: WRITER } },
+    };
+    return {
+      ...input(entityDoc),
+      resolved: resolveAllFields(resolverRows, { now: FIXED_NOW }),
+      materializationObs: obs as unknown as ProjectFromLogInput['materializationObs'],
+      resolverObs: resolverRows,
+      synthesizeCardDescription: opts.synthesize,
+    };
+  };
+
+  it('replaces a stored chip echo with the grounded copied card', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({
+        storedCard: CHIP_ECHO,
+        copiedCard: GOOD_COPIED_CARD,
+        synthesize: async () => '',
+      }),
+    );
+    expect(result.set.shortDescription).toBe(GOOD_COPIED_CARD);
   });
 
-  it('keeps the stored card when it was derived from this written body', () => {
-    expect(
-      writtenBodyCardBasis({
-        set: {},
-        entityDoc: {
-          ...baseEntityDoc,
-          fullDescription: WRITTEN_BODY,
-          shortDescription: 'Studies how coastal salt marshes store carbon.',
-          fieldProvenance: {
-            fullDescription: writtenProvenance,
-            shortDescription: writtenProvenance,
-          },
+  it('never writes a chip echo when nothing else is available', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: '', synthesize: async () => '' }),
+    );
+    expect(result.set.shortDescription).not.toBe(CHIP_ECHO);
+    expect(String(result.set.shortDescription ?? '')).not.toMatch(/^Studies Wetlands/);
+  });
+
+  it('replaces a body-as-card with a card synthesized from the written body', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({ storedCard: ONE_SENTENCE_BODY, synthesize: async () => SYNTHESIZED_CARD }),
+    );
+    expect(result.set.fullDescription).toBe(ONE_SENTENCE_BODY);
+    expect(result.set.shortDescription).toBe(SYNTHESIZED_CARD);
+    expect((result.set['fieldProvenance.shortDescription'] as any)?.sourceName).toBe(WRITER);
+  });
+
+  it('never writes the body itself as the card', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({ storedCard: '', synthesize: async () => '' }),
+    );
+    expect(result.set.shortDescription).not.toBe(ONE_SENTENCE_BODY);
+  });
+
+  it.each([
+    ['a stored chip echo', LONG_ONE_SENTENCE_BODY, CHIP_ECHO],
+    ['a stored body-as-card', ONE_SENTENCE_BODY, ONE_SENTENCE_BODY],
+  ])('clears %s when every fallback and both syntheses fail', async (_label, body, storedCard) => {
+    let calls = 0;
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({
+        body,
+        storedCard,
+        synthesize: async () => {
+          calls += 1;
+          return calls === 1 ? CHIP_ECHO : body;
         },
-        fullDescription: WRITTEN_BODY,
-        cardLocked: false,
       }),
-    ).toEqual({
-      followsWrittenBody: true,
-      currentCard: 'Studies how coastal salt marshes store carbon.',
+    );
+    expect(calls).toBe(2);
+    expect(result.set.shortDescription).toBeUndefined();
+    expect(result.unset.shortDescription).toBe('');
+  });
+
+  it('spends no synthesis on a second pass over an unchanged written body with no card', async () => {
+    let calls = 0;
+    const synthesize = async () => {
+      calls += 1;
+      return '';
+    };
+    const first = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: CHIP_ECHO, synthesize }),
+    );
+    expect(first.unset.shortDescription).toBe('');
+    calls = 0;
+    const second = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: '', synthesize }),
+    );
+    expect(calls).toBe(0);
+    expect(second.set.shortDescription).toBeUndefined();
+  });
+
+  it('clears an ungrounded stored card after one synthesis pass and then settles', async () => {
+    expect(isRefusedWrittenBodyCard(COPIED_CARD, LONG_ONE_SENTENCE_BODY, TOPICS)).toBe(false);
+    let calls = 0;
+    const synthesize = async () => {
+      calls += 1;
+      return '';
+    };
+    const first = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: COPIED_CARD, synthesize }),
+    );
+    expect(calls).toBe(2);
+    expect(first.set.shortDescription).toBeUndefined();
+    expect(first.unset.shortDescription).toBe('');
+    calls = 0;
+    await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: '', synthesize }),
+    );
+    expect(calls).toBe(0);
+  });
+
+  it('synthesizes when the written body changed since the last pass', async () => {
+    let calls = 0;
+    const row = rowWith({
+      body: LONG_ONE_SENTENCE_BODY,
+      storedCard: '',
+      synthesize: async () => {
+        calls += 1;
+        return SYNTHESIZED_CARD;
+      },
     });
+    const result = await projectFromLog('researchEntity', {
+      ...row,
+      entityDoc: { ...row.entityDoc, fullDescription: COPIED_BODY },
+    });
+    expect(calls).toBe(1);
+    expect(result.set.shortDescription).toBe(SYNTHESIZED_CARD);
+  });
+
+  it('keeps a stored card already grounded in the written body without synthesizing', async () => {
+    let calls = 0;
+    const result = await projectFromLog(
+      'researchEntity',
+      rowWith({
+        storedCard: GOOD_COPIED_CARD,
+        synthesize: async () => {
+          calls += 1;
+          return SYNTHESIZED_CARD;
+        },
+      }),
+    );
+    expect(result.set.shortDescription ?? GOOD_COPIED_CARD).toBe(GOOD_COPIED_CARD);
+    expect(calls).toBe(0);
+  });
+});
+
+describe('isRefusedWrittenBodyCard', () => {
+  it('refuses a chip echo and the body, and keeps a real card', () => {
+    const body = 'Studies how coastal salt marshes store carbon in sediment.';
+    const areas = ['Wetlands', 'Carbon Sequestration'];
+    expect(
+      isRefusedWrittenBodyCard('Studies Wetlands and Carbon Sequestration.', body, areas),
+    ).toBe(true);
+    expect(isRefusedWrittenBodyCard(body, body, areas)).toBe(true);
+    expect(isRefusedWrittenBodyCard('Studies carbon storage in salt marshes.', body, areas)).toBe(
+      false,
+    );
   });
 });

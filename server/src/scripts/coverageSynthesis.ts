@@ -12,7 +12,11 @@ import {
   retireObservations,
 } from '../scrapers/observationStore';
 import { contentHashObservation } from '../scrapers/contentHashGate';
-import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
+import {
+  defaultMaterializerCardSynthesizer,
+  materializeEntity,
+  materializationReadScopeFilter,
+} from '../scrapers/entityMaterializer';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
@@ -40,6 +44,7 @@ import {
   writerObservationAnchors,
   writerWritesAfterBodyAttempt,
   writerWritesFor,
+  writtenBodyCardRepairFilter,
   type WriterStep,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
@@ -95,7 +100,16 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
-  const projection = 'slug name entityType researchAreas recentGrants manuallyLockedFields';
+  const projection =
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription';
+  if (args.rederiveCards) {
+    return (await ResearchEntity.find({
+      ...writtenBodyCardRepairFilter(SOURCE_NAME),
+      ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
+    })
+      .select(projection)
+      .lean()) as EntityRow[];
+  }
   if (args.slugs.length > 0) {
     return (await ResearchEntity.find({ slug: { $in: args.slugs }, archived: { $ne: true } })
       .select(projection)
@@ -123,13 +137,114 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
   return rows;
 }
 
-async function materializeWrittenRow(slug: string): Promise<string | undefined> {
+export function writtenRowMaterializeOptions(entityName: string) {
+  return {
+    dryRun: false,
+    synthesizeCardDescription: defaultMaterializerCardSynthesizer(entityName),
+  };
+}
+
+async function materializeWrittenRow(entity: EntityRow): Promise<string | undefined> {
   const materialized = await materializeEntity(
     'researchEntity',
-    { entityKey: slug },
-    { dryRun: false },
+    { entityKey: entity.slug },
+    writtenRowMaterializeOptions(typeof entity.name === 'string' ? entity.name : ''),
   );
   return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
+}
+
+interface CardRederivationReport {
+  slug: string;
+  cardPlanned?: boolean;
+  error?: boolean;
+}
+
+async function cardAfterMaterialize(
+  materialized: Awaited<ReturnType<typeof materializeEntity>>,
+  storedCard: unknown,
+  applied: boolean,
+): Promise<unknown> {
+  if (!applied) {
+    if (Object.hasOwn(materialized.plannedSet ?? {}, 'shortDescription')) {
+      return materialized.plannedSet?.shortDescription;
+    }
+    return Object.hasOwn(materialized.plannedUnset ?? {}, 'shortDescription')
+      ? undefined
+      : storedCard;
+  }
+  if (typeof materialized.entityId !== 'string') return storedCard;
+  const fresh = (await ResearchEntity.findById(materialized.entityId)
+    .select('shortDescription')
+    .lean()) as { shortDescription?: unknown } | null;
+  return fresh?.shortDescription;
+}
+
+async function rederiveWrittenBodyCards(
+  entities: EntityRow[],
+  args: ReturnType<typeof parseCoverageSynthesisArgs>,
+  dbLabel: string,
+): Promise<void> {
+  const reports: CardRederivationReport[] = [];
+  const materializedEntityIds: string[] = [];
+  await mapWithConcurrency(entities, args.concurrency, async (entity) => {
+    const report: CardRederivationReport = { slug: entity.slug };
+    reports.push(report);
+    try {
+      const options = writtenRowMaterializeOptions(
+        typeof entity.name === 'string' ? entity.name : '',
+      );
+      const materialized = await materializeEntity(
+        'researchEntity',
+        { entityKey: entity.slug },
+        { ...options, dryRun: !args.apply },
+      );
+      report.cardPlanned =
+        (await cardAfterMaterialize(materialized, entity.shortDescription, args.apply)) !==
+        entity.shortDescription;
+      if (args.apply && typeof materialized.entityId === 'string') {
+        materializedEntityIds.push(materialized.entityId);
+      }
+    } catch (error) {
+      report.error = true;
+      console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
+    }
+  });
+  const regates = [];
+  for (let index = 0; index < materializedEntityIds.length; index += REGATE_CHUNK) {
+    regates.push(
+      await regateRematerializedEntities(materializedEntityIds.slice(index, index + REGATE_CHUNK)),
+    );
+  }
+  const errors = reports.filter((report) => report.error).length;
+  const report = {
+    generatedAt: new Date().toISOString(),
+    mode: args.apply ? 'apply' : 'dry-run',
+    db: dbLabel,
+    scope: 'rederive-cards',
+    scanned: reports.length,
+    cardPlanned: reports.filter((entry) => entry.cardPlanned).length,
+    entityErrors: errors,
+    regated: regates.reduce((sum, entry) => sum + entry.scopedEntities, 0),
+    tierChanged: regates.reduce((sum, entry) => sum + entry.tierChanged, 0),
+    tierTransitions: regates.flatMap((entry) => entry.tierTransitions),
+    indexSyncFailures: regates.reduce((sum, entry) => sum + entry.indexSyncFailures, 0),
+    entities: reports,
+  };
+  console.log(
+    JSON.stringify(
+      {
+        ...report,
+        tierTransitions: report.tierTransitions.length,
+        entities: `${reports.length} rows`,
+      },
+      null,
+      2,
+    ),
+  );
+  if (args.output) {
+    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+  }
+  if (errors > 0) process.exitCode = 1;
 }
 
 async function main() {
@@ -148,6 +263,10 @@ async function main() {
   await initializeConnections();
 
   const entities = await loadTargetEntities(args);
+  if (args.rederiveCards) {
+    await rederiveWrittenBodyCards(entities, args, guard.dbLabel);
+    return;
+  }
   const source = args.apply ? await getSourceByName(SOURCE_NAME) : null;
   if (args.apply && !source) {
     throw new Error(
@@ -262,7 +381,7 @@ async function main() {
         retired += outcome.retired;
         if (outcome.retired > 0) changed = true;
       }
-      const materializedId = changed ? await materializeWrittenRow(entity.slug) : undefined;
+      const materializedId = changed ? await materializeWrittenRow(entity) : undefined;
       if (materializedId) materializedEntityIds.push(materializedId);
       if (writes.recordHash) {
         await appendObservations(
