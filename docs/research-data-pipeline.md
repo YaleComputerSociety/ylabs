@@ -1624,13 +1624,14 @@ The strict Beta data-quality scorecard includes this audit as an error-level che
 
 Access claim validation is the interpretation boundary before student-facing access artifacts are written. `accessMaterializer.ts` now treats derived access `Signal` rows as candidate claims and filters them through deterministic validation before upsert. The V1 contract is intentionally narrow: a candidate with no source evidence is rejected, and any candidate with source evidence is accepted. Operators can inspect current artifacts with `yarn --cwd server scraper:claim-gate --collection=research --include-samples`, or include the summary inside `scraper:integrity-gate --include-claim-gate`.
 
-The access pass retires what it stops deriving for every materializer key except the two #4430 owns (#3920).
+The access pass retires what it stops deriving for every materializer key except the join page (#3920, #4580).
 #3921 started this for the reach-out and microsite contact keys, archiving a signal with reason `access-materializer:evidence-withdrawn` when the pass's read holds its evidence fields but no longer derives it, and reviving it when a later pass derives it again.
 `EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS` now names the evidence fields of every other key the materializer produces, so the same archive and revive covers not-currently-available, credit formalization, senior-thesis supervision, past undergraduates, fellowship compatibility and the contact-field signal.
 A signal is also archived when the read holds none of its evidence fields but every observation it cites has been superseded or rolled back, which is how a signal minted by the retired `research-entity-cache-backfill` lane stays live forever otherwise: no lane will ever write that field on the row again.
 A signal citing a live observation the pass did not read is kept, because a pass entered through that observation's key is the one that derives it, and archiving it on the other pass would flip it on every alternate resolve.
 A cited observation that no longer exists proves nothing, so an empty store, which is what Beta and Production hold, archives nothing, and an empty read archives only signals whose cited evidence was withdrawn.
-`signal:CURRENT_UNDERGRADS` and `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` stay ungoverned while #4430 decides whether those types are admissible.
+`signal:CURRENT_UNDERGRADS` is governed by `currentUndergradCount` since #4580: #4430 settled that the type is admissible and derives it only from a positive count on a roster page, so a later zero or a count held only by the retired cache backfill withdraws the stored signal instead of leaving it withheld at serve time forever.
+`signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` stays ungoverned until a re-run of its lane is re-measured (#4562).
 
 Measured on Development on 2026-10-02 over the 3,459 `student_ready` rows, 587 live materializer-keyed signals on 553 rows were not derived by the materializer's own input.
 This was a retirement gap rather than a lane-reach gap: 437 came from the retired cache-backfill lane, which no lane will re-read, and of the 150 from live lanes 89 had been re-read by their lane since the signal was written, yet stayed because nothing archived them.

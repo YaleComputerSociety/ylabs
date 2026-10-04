@@ -129,9 +129,10 @@ export interface AccessSignalChangePlan {
 
 export const ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON = 'access-materializer:evidence-withdrawn';
 
-// `signal:CURRENT_UNDERGRADS` and `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` are absent
-// on purpose: #4430 owns whether those two types are admissible at all (#3920).
+// `signal:APPLICATION_FORM_EXISTS:JOIN_PAGE` is absent on purpose: #4562 left its stored
+// rows to be re-cited at serve time until a re-run of the lane is re-measured.
 export const EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  'signal:CURRENT_UNDERGRADS': ['currentUndergradCount'],
   'signal:CREDIT_FORMALIZATION_POSSIBLE': ['offersIndependentStudy', 'independentStudyCourses'],
   'signal:FACULTY_SUPERVISES_STUDENT_PROJECTS:SENIOR_THESIS': [
     'offersIndependentStudy',
@@ -864,10 +865,10 @@ export interface ReDerivedAccessSignalJudgement {
   citations: Map<string, string>;
 }
 
-// Upserted and never archived, so a stored signal this
-// materializer would no longer derive is withheld at serve time and not counted by the
-// gate; the stored row stays as history. A merged-in row's evidence still counts, because
-// the dedupe merge carries its signals onto the survivor.
+// A stored signal this materializer would no longer derive is withheld at serve time and
+// not counted by the gate. The next pass also withdraws a current-undergraduates one
+// (#4580); a join page's stored row stays as history. A merged-in row's evidence still
+// counts, because the dedupe merge carries its signals onto the survivor.
 export async function underivedAccessSignalIds(
   signals: readonly ReDerivedSignalLike[],
   rows: readonly AccessEvidenceRow[],

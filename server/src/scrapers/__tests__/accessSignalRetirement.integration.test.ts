@@ -165,14 +165,51 @@ describe('the access materializer retires a signal it no longer derives (#3920)'
     expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:PAST_UNDERGRADS');
   }, 120000);
 
-  it('leaves the two types another change owns live even when no longer derived', async () => {
+  it('retires the current-undergraduates signal once a later read counts zero, and restores it on a positive one (#4580)', async () => {
+    await seedLab('synthetic-tidepool-lab');
+    await resolve('synthetic-tidepool-lab');
+    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:CURRENT_UNDERGRADS');
+
+    await seed('synthetic-tidepool-lab', 'currentUndergradCount', 0, '2026-09-15', ROSTER);
+    await resolve('synthetic-tidepool-lab');
+    expect(await liveKeys('synthetic-tidepool-lab')).not.toContain('signal:CURRENT_UNDERGRADS');
+    const retired = await Signal.findOne({
+      derivationKey: 'signal:CURRENT_UNDERGRADS',
+    }).lean<any>();
+    expect(retired.archivedReason).toBe(ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON);
+
+    await seed('synthetic-tidepool-lab', 'currentUndergradCount', 3, '2026-09-20', ROSTER);
+    await resolve('synthetic-tidepool-lab');
+    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:CURRENT_UNDERGRADS');
+  }, 120000);
+
+  it('retires the current-undergraduates signal when its only count is from the retired cache backfill (#4580)', async () => {
     await seedLab('synthetic-tidepool-lab');
     await resolve('synthetic-tidepool-lab');
     await Observation.updateMany(
       { entityKey: 'synthetic-tidepool-lab', field: 'currentUndergradCount' },
-      { $set: { superseded: true } },
+      { $set: { sourceName: 'research-entity-cache-backfill' } },
     );
     await resolve('synthetic-tidepool-lab');
-    expect(await liveKeys('synthetic-tidepool-lab')).toContain('signal:CURRENT_UNDERGRADS');
+    expect(await liveKeys('synthetic-tidepool-lab')).not.toContain('signal:CURRENT_UNDERGRADS');
+  }, 120000);
+
+  it('leaves the join-page signal live even when no longer derived', async () => {
+    await seedLab('synthetic-tidepool-lab');
+    await resolve('synthetic-tidepool-lab');
+    const row = await ResearchEntity.findOne({ slug: 'synthetic-tidepool-lab' }).lean<any>();
+    await Signal.create({
+      researchEntityId: row._id,
+      type: 'APPLICATION_FORM_EXISTS',
+      derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
+      confidence: 'MEDIUM',
+      archived: false,
+      observedAt: new Date('2026-09-01T00:00:00Z'),
+      source: { name: LANE, url: PAGE },
+    });
+    await resolve('synthetic-tidepool-lab');
+    expect(await liveKeys('synthetic-tidepool-lab')).toContain(
+      'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
+    );
   }, 120000);
 });
