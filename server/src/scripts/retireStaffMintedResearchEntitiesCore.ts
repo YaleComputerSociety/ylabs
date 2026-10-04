@@ -1,9 +1,12 @@
 /**
  * Which live rows the mint gate would refuse today because the person profile that
- * gave the row its identity carries a research-support or technical title, or a
- * non-research staff role (#3410).
+ * gave the row its identity carries a research-support or technical title, a
+ * non-research staff role (#3410), or a student or graduate title.
  *
- * Those two classes are the whole population. A trainee rank is deliberately NOT in
+ * Those three classes are the whole population. A student title is its own predicate,
+ * `isStudentTitle`, rather than the trainee vocabulary, because no faculty keyword
+ * spells a student rank, so the yield below cannot disagree with it about a hyphen. A
+ * postdoctoral or other trainee rank is deliberately NOT in
  * it, even though every mint lane still refuses one: with a faculty-keyword yield,
  * whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to
  * spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does - `postdoc` yes,
@@ -35,19 +38,25 @@
  */
 import {
   isResearchSupportStaffTitle,
+  isStudentTitle,
   looksLikeNonResearchTitle,
   statesAnyFacultyAppointment,
 } from '../scrapers/sources/yaleDirectoryScraper';
+import { namesARankItServesRatherThanHolds } from '../scrapers/utils/titleResearchOwnership';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 export const STAFF_MINTED_ENTITY_ARCHIVE_REASON = 'research-entity:retire-staff-minted-entities';
 
-export type StaffMintedEntityReason = 'non_research_staff_title' | 'research_support_staff_title';
+export type StaffMintedEntityReason =
+  | 'non_research_staff_title'
+  | 'research_support_staff_title'
+  | 'student_title';
 
 export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityReason[] = [
   'non_research_staff_title',
   'research_support_staff_title',
+  'student_title',
 ];
 
 export type StaffMintedEntityRefusal =
@@ -129,6 +138,7 @@ export function staffMintedEntityReasonFor(
   if (statesAnyFacultyAppointment(title)) return undefined;
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
+  if (isStudentTitle(title) && !namesARankItServesRatherThanHolds(title)) return 'student_title';
   return undefined;
 }
 
@@ -253,6 +263,7 @@ export function summarizeStaffMintedEntityReasons(
   const counts: Record<StaffMintedEntityReason, number> = {
     non_research_staff_title: 0,
     research_support_staff_title: 0,
+    student_title: 0,
   };
   for (const entry of planned) counts[entry.reason] += 1;
   return counts;

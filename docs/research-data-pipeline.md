@@ -1979,12 +1979,17 @@ Unanimity, not recency, because several lanes write a `user` `title` against the
 On Development 1,343 identity pages carry more than one live title and 20 disagree about whether the person owns research, in both directions: a roster subheading that appends a second appointment to a professorship can read as refused, and `official-profile-pi-backfill` stores award names as titles, which read as owning research.
 One title saying the person owns research is `title-evidence-disagrees` and keeps the row, because a kept defect is re-readable and an archived professor is not.
 
-**The pass retires two classes only**: a research-support or technical title, and a non-research staff role.
+**The pass retires three classes only**: a research-support or technical title, a non-research staff role, and a student title.
 A trainee rank is deliberately not in the population, even though every mint lane still refuses one.
 With a faculty-keyword yield, whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, so `'Postdoctoral Fellow'` would have been spared while `'Post-Doctoral Fellow'` was archived.
 No irreversible archive should turn on a hyphen.
 That residue is pre-#2304 trainee data rather than the research-support class this pass exists for, and retiring it needs its own issue and its own predicate.
 `subordinate_research_rank` is therefore not a reason this pass can report.
+
+Student titles are the exception, because they have that predicate (#4654).
+`isStudentTitle` matches a stated enrollment in, or graduation from, a degree programme (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `Master's Student`, a bare `IDE Alumni`), and no `FACULTY_KEYWORDS` entry spells any of them, so the hyphen problem cannot arise.
+The pass reports them as `student_title`, after the same whole-title faculty yield, and spares a title that names students as the population it serves (`namesARankItServesRatherThanHolds`).
+The same spellings were added to the mint screen, which previously refused `PhD Student` but not `Ph.D. Student`.
 
 Any title that states a faculty appointment anywhere yields, and this is the one place the retirement side is deliberately stricter than the mint gate.
 `staffMintedEntityReasonFor` asks `statesAnyFacultyAppointment` on the WHOLE title, before any screen, and refuses the row as `title-owns-research`.
