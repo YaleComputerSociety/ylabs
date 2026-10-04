@@ -27,7 +27,6 @@ export default defineConfig({
     'mongoose',
     'express',
     'passport',
-    'passport-cas',
     'cookie-session',
     'cors',
     'express-rate-limit',

@@ -4,7 +4,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import passport from 'passport';
-import { Strategy } from 'passport-cas';
 import {
   lastKnownAccountUserType,
   recordAccountLogin,
@@ -37,7 +36,7 @@ import {
   classifyCasCallbackError,
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
-import { boundCasServerRequests, casStrategyHttpClient } from './utils/casValidationRequestBound';
+import { CasStrategy, presentedCasTicket } from './utils/casStrategy';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -507,14 +506,12 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
 
 const authConfig = resolveAuthConfig();
 
-boundCasServerRequests(casStrategyHttpClient(), authConfig.ssoBaseURL, CAS_VALIDATION_TIMEOUT_MS);
-
 passport.use(
-  new Strategy(
+  new CasStrategy(
     {
-      version: 'CAS1.0',
       ssoBaseURL: authConfig.ssoBaseURL,
       serverBaseURL: authConfig.serverBaseURL,
+      validationTimeoutMs: CAS_VALIDATION_TIMEOUT_MS,
     },
     async function (profile, done) {
       try {
@@ -593,7 +590,7 @@ const setPrivateAuthResponseHeaders = (res: express.Response): void => {
  * values, so a login started in one tab survives a later start in another.
  *
  * The value rides inside the request URL rather than beside it because
- * passport-cas derives the CAS `service` parameter from `req.originalUrl` and
+ * `CasStrategy` derives the CAS `service` parameter from `req.originalUrl` and
  * recomputes it when it validates the ticket. CAS refuses a ticket whose two
  * service URLs differ, so both legs must spell the same URL.
  */
@@ -662,8 +659,7 @@ const casLogin = function (
 ) {
   setPrivateAuthResponseHeaders(res);
 
-  // The same predicate passport-cas uses to tell a start leg from a callback.
-  if (!req.query?.ticket) {
+  if (!presentedCasTicket(req)) {
     beginCasLogin(req);
   } else if (!acceptsCasLoginCallback(req)) {
     console.log('CAS callback did not match a login started in this session');
@@ -735,7 +731,7 @@ const casLogin = function (
     });
   };
 
-  if (req.query?.ticket) {
+  if (presentedCasTicket(req)) {
     validationTimer = setTimeout(
       () => onVerdict(new CasValidationTimeoutError(), false),
       CAS_VALIDATION_TIMEOUT_MS,
