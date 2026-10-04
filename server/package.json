@@ -79,6 +79,7 @@
     "observations:retarget-foreign-lab-websites": "tsx src/scripts/retargetForeignLabWebsites.ts",
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:purge-unread-directory-contact": "tsx src/scripts/purgeUnreadDirectoryContactObservations.ts",
+    "accounts:merge-local-part-netid-twins": "tsx src/scripts/mergeLocalPartNetidAccounts.ts",
     "accounts:purge-retired-login-profile-fields": "tsx src/scripts/purgeRetiredLoginProfileFields.ts",
     "research-plans:expire-legacy-archived": "tsx src/scripts/expireLegacyArchivedResearchPlans.ts",
     "observations:repartition-fingerprint-index": "tsx src/scripts/repartitionFingerprintIndex.ts",

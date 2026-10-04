@@ -92,7 +92,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     const account = await Account.create({
-      netid: 'jane.smith',
+      netid: 'js1001',
       email: 'jane.smith@yale.edu',
       status: 'ACTIVE',
     });
@@ -189,7 +189,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
         .lean<Array<{ slug: string; departments?: string[] }>>();
 
     it('folds every row into the one that serves, so the person is one row across departments', async () => {
-      const researcher = await researcherNamed('jane.smith');
+      const researcher = await researcherNamed('js1001');
       const chemistry = await crossListedRow('Chemistry', {
         createdAt: new Date('2026-09-10T00:00:00Z'),
       });
@@ -225,7 +225,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     it('leaves no live role edge on a folded row, across a second materialize (#4752)', async () => {
-      const researcher = await researcherNamed('jane.smith');
+      const researcher = await researcherNamed('js1001');
       const chemistry = await crossListedRow('Chemistry');
       const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
       for (const row of [chemistry, physics]) await piEdge(researcher._id, row._id);
@@ -269,7 +269,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     it('folds into the oldest row when none serves yet', async () => {
-      const researcher = await researcherNamed('jane.smith');
+      const researcher = await researcherNamed('js1001');
       const chemistry = await crossListedRow('Chemistry', {
         createdAt: new Date('2026-09-10T00:00:00Z'),
       });
@@ -285,8 +285,8 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     it('folds nothing when the name belongs to two researchers', async () => {
-      const first = await researcherNamed('jane.smith');
-      await researcherNamed('jane.smith2');
+      const first = await researcherNamed('js1001');
+      await researcherNamed('js1002');
       const chemistry = await crossListedRow('Chemistry');
       const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
       for (const row of [chemistry, physics]) await piEdge(first._id, row._id);
@@ -300,7 +300,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     it('folds no person row into an organization the person directs', async () => {
-      const researcher = await researcherNamed('jane.smith');
+      const researcher = await researcherNamed('js1001');
       const chemistry = await crossListedRow('Chemistry');
       const center = await crossListedRow('Physics', {
         slug: 'dept-physics-jane-smith-center',
