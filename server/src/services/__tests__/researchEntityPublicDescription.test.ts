@@ -542,3 +542,40 @@ describe('one derivation scope shared across a page of rows', () => {
     expect(alone[0].card).not.toBe(alone[1].card);
   });
 });
+
+describe('a body pasted from a CV serves its research', () => {
+  const served = (fullDescription: string, shortDescription = '') =>
+    buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        name: 'Robin Fixture Faculty Research',
+        fullDescription,
+        shortDescription,
+      },
+    });
+
+  it('drops a dated book list and an award that follow the research statement', () => {
+    const representation = served(
+      "Robin Fixture's research explores how coastal towns adapt to repeated flooding, using archival records and household surveys to trace who moves and who stays. She is the author of Rising Water (2011), Salt Roads (2007), and Harbor Lines (2002). She was awarded an example prize for her scholarship in 2015.",
+      'Studies how coastal towns adapt to repeated flooding, using archival records and household surveys.',
+    );
+    expect(representation.entity.fullDescription).toContain('adapt to repeated flooding');
+    expect(representation.entity.fullDescription).not.toMatch(/author of|\(2011\)|awarded/);
+  });
+
+  it('anchors on a research activity sentence when the CV states no explicit research frame', () => {
+    const representation = served(
+      'Robin Fixture is Associate Professor of Example Studies. She studies the politics of river management in delta regions, comparing how agencies allocate water during drought. She is the author of Delta Rule (Example Press, 2020). She received a Ph.D. from Example University and a B.A. from Another University.',
+      'Studies the politics of river management in delta regions and how agencies allocate water during drought.',
+    );
+    expect(representation.entity.fullDescription).toContain('politics of river management');
+    expect(representation.entity.fullDescription).not.toMatch(/author of|Ph\.D\./);
+  });
+
+  it('keeps the whole body when the narrowed body would not serve', () => {
+    const body =
+      'Robin Fixture won an example prize for drama. Her plays include River Song (2019), Salt (2015), and Harbor (2012). She received grants from an example foundation.';
+    expect(served(body).entity.fullDescription).toBe(body);
+  });
+});

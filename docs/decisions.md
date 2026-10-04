@@ -175,6 +175,7 @@ Three body shapes passed the description quality bar and served as a row's descr
 
 - **`role-biography`**: a teaching-only or administrative biography that states no research, no creative practice and no clinical work, such as a career office director, a language lector or a diversity office lead.
   Any research or care word, a faculty rank, or one kind of creative practice evidence keeps the body, because refusing a real research biography costs the row.
+  The one exception is a career narrative whose every sentence is a past post or a degree and that names no current research, expertise or professorship: it is refused even when a research or care word sits inside one of those posts, because that word describes the old job (#4722).
   The research test is lower case on purpose, so a department name ("Africana Studies") is not read as a statement that the person studies something.
 - **`third-party-page`**: another organization's page text, meaning a call for submissions with its usage terms, an event's own page, or a site's section blurbs ("Highlights of ...", "Lists of ...").
 - **`instruction-offering`**: an education program's description, whose subject is the instruction it offers ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course rather than a group a student could join.
