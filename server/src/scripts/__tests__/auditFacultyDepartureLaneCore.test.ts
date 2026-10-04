@@ -236,8 +236,18 @@ describe('selectDepartureAuditRun', () => {
 
   it('keeps planning against the newest full run when a newer run was scoped to one department', () => {
     const selection = selectDepartureAuditRun([
-      { runId: 'full-older', startedAt: at('2026-09-28T01:00:00Z'), status: 'success', options: {} },
-      { runId: 'full-newest', startedAt: at('2026-10-03T03:54:00Z'), status: 'success', options: {} },
+      {
+        runId: 'full-older',
+        startedAt: at('2026-09-28T01:00:00Z'),
+        status: 'success',
+        options: {},
+      },
+      {
+        runId: 'full-newest',
+        startedAt: at('2026-10-03T03:54:00Z'),
+        status: 'success',
+        options: {},
+      },
       {
         runId: 'scoped-newer',
         startedAt: at('2026-10-03T21:31:00Z'),
