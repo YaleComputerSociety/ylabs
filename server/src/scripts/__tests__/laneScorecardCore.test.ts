@@ -8,6 +8,8 @@ import {
   type LaneReplayScore,
   allowedReplayMisses,
   staleReplayReason,
+  goldRegressions,
+  goldBaselineReplay,
 } from '../laneScorecardCore';
 
 const wrongSite = 'https://example.org/someone-elses-lab';
@@ -244,5 +246,70 @@ describe('staleReplayReason', () => {
 
   it('refuses any miss it cannot explain', () => {
     expect(staleReplayReason(2, undefined)).toMatch(/no clean baseline/);
+  });
+});
+
+describe('gold regressions against the previous replay (#4852)', () => {
+  const field = (
+    name: string,
+    labeled: number,
+    precision: number | null,
+    recall: number | null,
+  ) => ({
+    field: name,
+    labeled,
+    precision,
+    recall,
+  });
+
+  it('reports a precision or recall drop on a field judged over the same labels', () => {
+    expect(
+      goldRegressions(
+        [field('deadline', 20, 0.9, 0.8), field('mentor', 10, 0.5, 0.5), field('amount', 5, 1, 1)],
+        [field('deadline', 20, 0.85, 0.8), field('mentor', 12, 0.1, 0.1), field('amount', 5, 1, 1)],
+      ),
+    ).toEqual([{ field: 'deadline', metric: 'precision', previous: 0.9, current: 0.85 }]);
+  });
+
+  it('reports nothing without a previous replay or a rate on both sides', () => {
+    expect(goldRegressions(undefined, [field('deadline', 20, 0.1, 0.1)])).toEqual([]);
+    expect(
+      goldRegressions([field('deadline', 20, null, 0.9)], [field('deadline', 20, 0.1, 0.95)]),
+    ).toEqual([]);
+  });
+
+  it('compares with the newest replay that was itself a score', () => {
+    const runs = [
+      { measuredAt: new Date('2026-10-01T00:00:00Z'), pagesMissed: 0, gold: [] },
+      { measuredAt: new Date('2026-10-03T00:00:00Z'), pagesMissed: 9, gold: [] },
+      { measuredAt: new Date('2026-10-02T00:00:00Z'), pagesMissed: 1, gold: [] },
+    ];
+    expect(goldBaselineReplay(runs, 1)?.measuredAt).toEqual(new Date('2026-10-02T00:00:00Z'));
+    expect(goldBaselineReplay(runs, undefined)?.measuredAt).toEqual(
+      new Date('2026-10-01T00:00:00Z'),
+    );
+    expect(goldBaselineReplay([], 0)).toBeUndefined();
+  });
+
+  it('skips a replay that regressed, so an unfixed drop keeps failing', () => {
+    const accepted = {
+      measuredAt: new Date('2026-10-01T00:00:00Z'),
+      pagesMissed: 0,
+      gold: [field('deadline', 20, 0.9, 0.8)],
+    };
+    const regressed = {
+      measuredAt: new Date('2026-10-02T00:00:00Z'),
+      pagesMissed: 0,
+      gold: [field('deadline', 20, 0.7, 0.8)],
+    };
+    const baseline = goldBaselineReplay([regressed, accepted], 0);
+    expect(baseline).toBe(accepted);
+    expect(goldRegressions(baseline?.gold, [field('deadline', 20, 0.7, 0.8)])).toHaveLength(1);
+    const recovered = {
+      ...regressed,
+      measuredAt: new Date('2026-10-03T00:00:00Z'),
+      gold: [field('deadline', 20, 0.95, 0.8)],
+    };
+    expect(goldBaselineReplay([regressed, accepted, recovered], 0)).toBe(recovered);
   });
 });

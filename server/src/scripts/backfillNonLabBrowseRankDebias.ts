@@ -235,6 +235,7 @@ async function main(): Promise<void> {
       considered: applied.considered,
       updated: applied.updated,
       indexSyncFailures: applied.indexSyncFailures,
+      indexSyncDeferred: 'indexSyncDeferred' in applied ? (applied.indexSyncDeferred ?? 0) : 0,
       afterTierDistribution: options.apply ? tallyTiers(afterScores) : undefined,
     },
   };

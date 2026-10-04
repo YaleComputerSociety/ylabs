@@ -598,3 +598,62 @@ export function staleReplayReason(
     ? `replay missed ${pagesMissed} request(s) where the capture left ${allowedMisses} unfrozen; the lane now asks for something this benchmark never held, so recapture it`
     : undefined;
 }
+
+export interface GoldRegression {
+  field: string;
+  metric: 'precision' | 'recall';
+  previous: number;
+  current: number;
+}
+
+export interface ComparableReplayRun extends StoredReplayRun {
+  gold?: ReadonlyArray<Pick<GoldFieldScore, 'field' | 'labeled' | 'precision' | 'recall'>>;
+}
+
+/**
+ * The newest scored replay that did not itself regress, found by replaying the history in
+ * order, so an unfixed drop keeps failing until the field is back at the accepted value.
+ */
+export function goldBaselineReplay<T extends ComparableReplayRun>(
+  runs: readonly T[],
+  allowedMisses: number | undefined,
+): T | undefined {
+  const scored = runs
+    .filter(
+      (run) =>
+        typeof run.pagesMissed === 'number' &&
+        staleReplayReason(run.pagesMissed, allowedMisses) === undefined,
+    )
+    .sort((a, b) => measuredTime(a.measuredAt) - measuredTime(b.measuredAt));
+  let baseline: T | undefined;
+  for (const run of scored) {
+    if (!baseline || goldRegressions(baseline.gold, run.gold).length === 0) baseline = run;
+  }
+  return baseline;
+}
+
+const GOLD_RATE_EPSILON = 1e-9;
+
+/**
+ * A drop counts only against a field judged over the same labeled population, because a
+ * relabel moves precision and recall without any lane change.
+ */
+export function goldRegressions(
+  previous: ComparableReplayRun['gold'] | undefined,
+  current: ComparableReplayRun['gold'],
+): GoldRegression[] {
+  const previousByField = new Map((previous ?? []).map((score) => [score.field, score]));
+  const regressions: GoldRegression[] = [];
+  for (const score of current ?? []) {
+    const before = previousByField.get(score.field);
+    if (!before || before.labeled !== score.labeled) continue;
+    for (const metric of ['precision', 'recall'] as const) {
+      const was = before[metric];
+      const now = score[metric];
+      if (typeof was === 'number' && typeof now === 'number' && now < was - GOLD_RATE_EPSILON) {
+        regressions.push({ field: score.field, metric, previous: was, current: now });
+      }
+    }
+  }
+  return regressions;
+}

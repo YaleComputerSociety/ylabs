@@ -182,6 +182,7 @@ export interface SourceLinkHealthBackfillResult {
    */
   preservedDecisiveVerdicts: number;
   indexSyncFailures: number;
+  indexSyncDeferred: number;
   byStatus: Record<string, number>;
   samples: Array<{
     slug: string;
@@ -366,6 +367,7 @@ export async function runSourceLinkHealthBackfill(options: {
     errors: 0,
     preservedDecisiveVerdicts: 0,
     indexSyncFailures: 0,
+    indexSyncDeferred: 0,
     byStatus: {},
     samples: [],
   };
@@ -569,6 +571,7 @@ export async function runSourceLinkHealthBackfill(options: {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });
           const browseRank = await recomputeBrowseRankForEntities([entity._id]);
           result.indexSyncFailures += browseRank.indexSyncFailures;
+          result.indexSyncDeferred += browseRank.indexSyncDeferred ?? 0;
         }
         result.updated += 1;
       } catch (error) {
@@ -617,6 +620,11 @@ async function main(): Promise<void> {
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    if (result.indexSyncDeferred > 0) {
+      console.log(
+        `${result.indexSyncDeferred} updated row(s) were not resynced: index writes are deferred by SEARCH_INDEX_WRITES=deferred; re-sync the index from a checkout that reaches it (docs/data-refresh-runbook.md)`,
+      );
+    }
     if (result.indexSyncFailures > 0) {
       console.error(
         `${result.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,

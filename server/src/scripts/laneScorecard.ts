@@ -26,7 +26,11 @@ import {
 } from './laneBenchmarkRun';
 import {
   allowedReplayMisses,
+  goldRegressions,
+  goldBaselineReplay,
   staleReplayReason,
+  type ComparableReplayRun,
+  type GoldRegression,
   scoreGoldLabels,
   scoreLaneReplay,
   summarizeGoldRuns,
@@ -232,6 +236,7 @@ async function main(): Promise<void> {
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';
   const results: Array<Record<string, unknown>> = [];
   const unscored: Array<{ benchmarkId: string; reason: string }> = [];
+  const regressions: Array<GoldRegression & { benchmarkId: string }> = [];
   for (const benchmark of benchmarks) {
     const pages = (await LaneBenchmarkPage.find({ benchmarkId: benchmark.benchmarkId })
       .select('sourceName requestKey payload fetchedAt')
@@ -273,15 +278,20 @@ async function main(): Promise<void> {
     }
     const { score, gold, replay, truncated } = replayed;
     const priorRuns = (await LaneScorecardSnapshot.find({ benchmarkId: benchmark.benchmarkId })
-      .select('codeSha pagesMissed measuredAt')
-      .lean()) as unknown as Array<{ codeSha?: string; pagesMissed?: number; measuredAt?: Date }>;
+      .select('codeSha pagesMissed measuredAt gold')
+      .lean()) as unknown as ComparableReplayRun[];
+    const allowedMisses = allowedReplayMisses(benchmark, priorRuns);
     const emptyReason =
       emptyReplayReason(benchmark, score) ??
       unresolvedReplayReason(pages, replay) ??
-      staleReplayReason(replay.pagesMissed, allowedReplayMisses(benchmark, priorRuns));
+      staleReplayReason(replay.pagesMissed, allowedMisses);
     if (emptyReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
       continue;
+    }
+    const baseline = goldBaselineReplay(priorRuns, allowedMisses);
+    for (const regression of goldRegressions(baseline?.gold, gold)) {
+      regressions.push({ benchmarkId: benchmark.benchmarkId, ...regression });
     }
     const snapshot = {
       measuredAt: new Date(),
@@ -306,6 +316,7 @@ async function main(): Promise<void> {
     stored: options.dryRun ? 0 : results.length,
     superseded,
     unscored,
+    regressions,
     results,
   };
   console.log(JSON.stringify(report, null, 2));
@@ -314,7 +325,7 @@ async function main(): Promise<void> {
     fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   await mongoose.disconnect();
-  if (unscored.length > 0) process.exitCode = 1;
+  if (unscored.length > 0 || regressions.length > 0) process.exitCode = 1;
 }
 
 const invokedDirectly =

@@ -186,3 +186,93 @@ describe('formatWeeklySweepRunsComparison', () => {
     expect(formatWeeklySweepRun(legacy)).toContain('UTC  research+fellowship  failed');
   });
 });
+
+describe('formatWeeklySweepRun regressions and failure tails (#4852)', () => {
+  it('separates a regression from standing counts and prints why a step failed', () => {
+    const run = buildWeeklySweepRunRecord({
+      startedAt: new Date('2026-10-11T07:00:00Z'),
+      finishedAt: new Date('2026-10-11T14:00:00Z'),
+      databaseName: 'Development',
+      codeSha: 'abcdef1234567890',
+      exitCode: 1,
+      requestedModes: ['development-full'],
+      preflight: { ok: true, heldLockSources: [], snapshotCacheDropped: false },
+      outcomes: [
+        {
+          mode: 'development-full',
+          exitCode: 1,
+          summaryFound: true,
+          summary: sweepSummaryFixture({
+            rows: [
+              {
+                ...sweepSummaryFixture().rows[1],
+                error: 'scraper exited with status 1',
+                failureTail: 'ECONNRESET while fetching',
+              },
+            ],
+            postRun: {
+              status: 'failed',
+              stages: [
+                {
+                  name: 'integrity-gate',
+                  status: 'succeeded',
+                  exitCode: 1,
+                  counts: { duplicatePeople: 4, duplicateAccessSignals: 0 },
+                },
+                {
+                  name: 'trust-contract',
+                  status: 'failed',
+                  exitCode: 1,
+                  error: 'trust-contract regressed: violations 9 -> 11',
+                  failureKind: 'regression',
+                  counts: { violations: 11, publicVisibilityViolations: 0 },
+                  regressions: [{ name: 'violations', previous: 9, current: 11 }],
+                },
+                {
+                  name: 'lane-scorecard',
+                  status: 'succeeded',
+                  exitCode: 1,
+                  unscored: [
+                    { benchmarkId: 'synthetic-a', reason: 'replay served none of 3 pages' },
+                  ],
+                },
+                {
+                  name: 'source-link-health',
+                  status: 'failed',
+                  exitCode: 1,
+                  error: 'source-link-health exited with status 1',
+                  failureKind: 'crashed',
+                  failureTail: 'probing 12 links\nResolverUnhealthyError: Resolver looks unhealthy',
+                },
+              ],
+            },
+          }),
+        },
+      ],
+      corpusSnapshot: { status: 'skipped' },
+    });
+    const text = formatWeeklySweepRun(run);
+    expect(text).toContain(
+      'failed: source-b (exit 1), trust-contract (post-run, regression, exit 1), source-link-health (post-run, crashed, exit 1)',
+    );
+    expect(text).toContain('  regression: trust-contract violations 9 -> 11');
+    expect(text).toContain('  standing: integrity-gate duplicatePeople=4');
+    expect(text).toContain('  standing: trust-contract violations=11');
+    expect(text).toContain(
+      '  needs recapture: lane-scorecard 1 unscored: synthetic-a (replay served none of 3 pages)',
+    );
+    expect(text).toContain(
+      '  why source-b: scraper exited with status 1\n    | ECONNRESET while fetching',
+    );
+    expect(text).toContain(
+      '  why source-link-health (post-run): source-link-health exited with status 1\n    | probing 12 links\n    | ResolverUnhealthyError: Resolver looks unhealthy',
+    );
+  });
+
+  it('reads a run recorded before stages carried a failure kind', () => {
+    const text = formatWeeklySweepRun(runOn('2026-10-04', 120, 7));
+    expect(text).toContain('failed: source-b (exit 1)');
+    expect(text).not.toContain('regression:');
+    expect(text).not.toContain('standing:');
+  });
+});

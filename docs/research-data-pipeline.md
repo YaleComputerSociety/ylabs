@@ -233,6 +233,21 @@ The two exhaustive Development modes (`development-full`, `development-increment
 25. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 26. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
+Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
+`integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
+Each count is compared with the counts of the most recent prior `weekly_sweep_runs` row in which that stage succeeded, read when the sweep starts: the stage fails as a `regression` only when a count rose, and otherwise succeeds with its standing counts recorded on the stage row.
+A failed stage never becomes the baseline, so an unfixed regression keeps failing until its count is back at or below the last accepted value.
+A count no earlier run recorded is recorded and not judged, so a first run never fails on a standing count.
+`publicVisibilityViolations` is the exception: any nonzero value fails `trust-contract` outright as a `violation`, because it means a student can see a row that should not be shown, and `visibility-gate` runs earlier in the same sweep, so a healthy run reads 0.
+`lane-scorecard` lists each unscored benchmark, which needs a recapture or an environment fix, and fails only when a scored field's gold precision or recall dropped over the same labeled count, which `lane:scorecard` reports as `regressions`.
+Its baseline is the newest scored replay that did not itself regress, so the same rule holds there.
+A judged stage that exits without a result it can parse, or is killed, fails as `crashed`, and so does any other stage that exits nonzero.
+The scripts keep their own exit codes, because operators and the promotion gates read them directly; the history a regression is measured against belongs to the sweep, so the comparison lives there.
+
+A failed source or stage also carries a `failureTail`: the last 30 lines of its step log, led by the scalar fields of any JSON artifact it left, capped at 2,048 characters.
+Each line is passed through the log sanitizer and the contact redactor, and a labelled netid, a person-bearing JSON field value, and every URL path are replaced, so the tail carries no personal data into `summary.json`, `weekly_sweep_runs`, or the hosted log, where the sweep prints it beside the failure.
+A step killed by a signal or stopped by its timeout says so instead of reading as `exited with status 1`.
+
 The `researcher-dedupe`, `grant-shell-faculty-port`, `eponymous-fra-merge`, the URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe`, `website-url-identity-dedupe` and `shared-person-name-agreed-dedupe` are three keys onto one question and an operator suppressing those merges wants all three off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 
 #### Grant rows move onto a faculty research profile key

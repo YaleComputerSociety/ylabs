@@ -2808,7 +2808,7 @@ async function resyncMergeSurvivorSearchDocument(
   const survivor = await ResearchEntity.findById(survivorId).lean();
   if (!survivor || (survivor as { archived?: boolean }).archived === true) return false;
   const outcome = await syncResearchEntitiesWithOutcome([survivor]);
-  return outcome.indexSyncFailures === 0;
+  return outcome.indexSyncFailures === 0 && !outcome.indexSyncDeferred;
 }
 
 async function retireDuplicateCurrentMembers(

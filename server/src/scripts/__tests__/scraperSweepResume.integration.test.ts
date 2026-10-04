@@ -99,7 +99,12 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     checkpointPaths.clear();
   });
 
-  const makeChildRunner = (failingSources: Set<string>) => {
+  type StageStub = (stub: { outputPath?: string; logPath?: string }) => { status: number | null };
+
+  const makeChildRunner = (
+    failingSources: Set<string>,
+    stageStubs: Record<string, StageStub> = {},
+  ) => {
     const calls: RecordedChild[] = [];
     const runner = async (
       _command: string,
@@ -115,6 +120,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
         ...(pageReuse ? { pageReuse } : {}),
       });
       const sourceName = sourceNameFromArgs(args);
+      const stageStub = stageStubs[commandFromArgs(args) ?? ''];
+      if (stageStub) {
+        if (options.logPath) fs.mkdirSync(path.dirname(options.logPath), { recursive: true });
+        return stageStub({ outputPath: outputPathFromArgs(args), logPath: options.logPath });
+      }
       const failing = Boolean(sourceName && failingSources.has(sourceName));
       if (options.logPath) {
         fs.mkdirSync(path.dirname(options.logPath), { recursive: true });
@@ -179,6 +189,12 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             scanned: 0,
             lagging: 0,
             tally: { 'materialized-lead': 0, 'still-unresolved': 0 },
+            // The counting stages are judged from their artifact, so the stub answers
+            // integrity-gate, trust-contract and lane-scorecard too (#4852).
+            counts: { publicVisibilityViolations: 0 },
+            repairLanes: [],
+            unscored: [],
+            results: [],
           })}\n`,
         );
       }
@@ -605,4 +621,201 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(onMovedCheckout.codeDrift ?? []).toEqual([]);
     expect(onMovedCheckout.failed).toBe(0);
   }, 180_000);
+
+  describe('counting stages are judged against the last recorded counts (#4852)', () => {
+    const writeJson = (filePath: string | undefined, value: unknown) => {
+      if (!filePath) throw new Error('stage stub was given no --output');
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`);
+    };
+    const integrityGate =
+      (counts: Record<string, number>): StageStub =>
+      ({ outputPath }) => {
+        writeJson(outputPath, { status: 'failure', counts, samples: {} });
+        return { status: 1 };
+      };
+    const trustContract =
+      (lanes: Array<{ stage: string; count: number }>, publicVisibilityViolations = 0): StageStub =>
+      ({ outputPath }) => {
+        writeJson(outputPath, {
+          pass: false,
+          counts: { scanned: 40, publicVisibilityViolations },
+          repairLanes: lanes.map((lane) => ({ ...lane, samples: [] })),
+        });
+        return { status: 1 };
+      };
+    const laneScorecardNeedingRecapture: StageStub = ({ outputPath }) => {
+      writeJson(outputPath, {
+        unscored: [
+          {
+            benchmarkId: 'synthetic-lane-benchmark',
+            reason:
+              'replay requested a page or render the capture never froze, so the lane aborted',
+          },
+        ],
+        regressions: [],
+        results: [],
+      });
+      return { status: 1 };
+    };
+    const crashedLinkHealth: StageStub = ({ logPath }) => {
+      fs.appendFileSync(
+        logPath!,
+        [
+          'probing 12 links',
+          'probe failed for https://synthetic.example.edu/profile/zz-synthetic-person/ (contact zz99@example.edu, netid: zz99)',
+          'ResolverUnhealthyError: Resolver looks unhealthy: 5 distinct hosts failed to resolve within 60s',
+          '',
+        ].join('\n'),
+      );
+      return { status: 1 };
+    };
+    const options = {
+      mode: 'development-full' as const,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+      restart: true,
+    };
+    const stageNamed = (summary: Awaited<ReturnType<typeof runScraperSweep>>, name: string) =>
+      summary.postRun?.stages.find((stage) => stage.name === name);
+
+    afterEach(async () => {
+      await mongoose.connect(mongoUrl);
+      await mongoose.connection.db!.collection('weekly_sweep_runs').deleteMany({});
+      await mongoose.disconnect();
+    });
+
+    it('passes standing counts on a first run, lists unscored benchmarks, and fails only a crashed stage', async () => {
+      const { runner } = makeChildRunner(new Set(), {
+        'scraper:integrity-gate': integrityGate({ duplicatePeople: 4, duplicateAccessSignals: 0 }),
+        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 6 }]),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(summary.failed).toBe(0);
+      expect(summary.postRun?.status).toBe('succeeded');
+      expect(stageNamed(summary, 'integrity-gate')).toMatchObject({
+        status: 'succeeded',
+        exitCode: 1,
+        counts: { duplicatePeople: 4, duplicateAccessSignals: 0 },
+      });
+      expect(stageNamed(summary, 'trust-contract')).toMatchObject({
+        status: 'succeeded',
+        counts: { violations: 6, 'repairLane:pi_identity': 6, 'repairLane:suppression': 0 },
+      });
+      expect(stageNamed(summary, 'lane-scorecard')).toMatchObject({
+        status: 'succeeded',
+        unscored: [{ benchmarkId: 'synthetic-lane-benchmark' }],
+      });
+      expect(stageNamed(summary, 'lane-scorecard')?.regressions).toBeUndefined();
+      const written = JSON.parse(
+        fs.readFileSync(path.join(summary.outputDirectory, 'summary.json'), 'utf8'),
+      );
+      expect(written.postRun.status).toBe('succeeded');
+    }, 180_000);
+
+    it('fails a stage whose count rose over the last run that recorded it, and records why a crashed stage failed', async () => {
+      await mongoose.connect(mongoUrl);
+      await mongoose.connection.db!.collection('weekly_sweep_runs').insertMany([
+        {
+          startedAt: new Date('2026-09-27T07:00:00Z'),
+          status: 'succeeded',
+          stages: [
+            {
+              mode: 'development-full',
+              name: 'trust-contract',
+              status: 'succeeded',
+              counts: { publicVisibilityViolations: 0, violations: 9, 'repairLane:pi_identity': 9 },
+            },
+          ],
+        },
+        {
+          startedAt: new Date('2026-10-01T07:00:00Z'),
+          status: 'failed',
+          stages: [
+            {
+              mode: 'development-full',
+              name: 'integrity-gate',
+              status: 'succeeded',
+              counts: { duplicatePeople: 4, duplicateAccessSignals: 2 },
+            },
+            {
+              mode: 'development-full',
+              name: 'trust-contract',
+              status: 'failed',
+              counts: {
+                publicVisibilityViolations: 0,
+                violations: 12,
+                'repairLane:pi_identity': 12,
+              },
+            },
+          ],
+        },
+      ]);
+      await mongoose.disconnect();
+
+      const { runner } = makeChildRunner(new Set(['nih-reporter']), {
+        'scraper:integrity-gate': integrityGate({ duplicatePeople: 4, duplicateAccessSignals: 1 }),
+        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 10 }]),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+        'research-homes:backfill-source-link-health': crashedLinkHealth,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(summary.postRun?.status).toBe('failed');
+      expect(stageNamed(summary, 'integrity-gate')).toMatchObject({
+        status: 'succeeded',
+        counts: { duplicatePeople: 4, duplicateAccessSignals: 1 },
+      });
+      const trust = stageNamed(summary, 'trust-contract');
+      expect(trust).toMatchObject({ status: 'failed', failureKind: 'regression' });
+      expect(trust?.regressions).toEqual([
+        { name: 'violations', previous: 9, current: 10 },
+        { name: 'repairLane:pi_identity', previous: 9, current: 10 },
+      ]);
+      expect(trust?.error).toBe(
+        'trust-contract regressed: violations 9 -> 10, repairLane:pi_identity 9 -> 10',
+      );
+      expect(trust?.failureTail).toBeUndefined();
+
+      const linkHealth = stageNamed(summary, 'source-link-health');
+      expect(linkHealth).toMatchObject({ status: 'failed', failureKind: 'crashed', exitCode: 1 });
+      expect(linkHealth?.failureTail).toContain('ResolverUnhealthyError');
+      expect(linkHealth?.failureTail).toContain('https://synthetic.example.edu/[path redacted]');
+      expect(linkHealth?.failureTail).not.toContain('zz-synthetic-person');
+      expect(linkHealth?.failureTail).not.toContain('zz99@example.edu');
+      expect(linkHealth?.failureTail).toContain('netid: [netid redacted]');
+
+      const failedSource = summary.rows.find((row) => row.sourceName === 'nih-reporter');
+      expect(failedSource?.failureTail).toContain('ECONNRESET while fetching nih-reporter');
+    }, 180_000);
+
+    it('fails a counting stage that exited without its result as crashed, and any public visibility violation outright', async () => {
+      const { runner } = makeChildRunner(new Set(), {
+        'scraper:integrity-gate': ({ logPath }) => {
+          fs.appendFileSync(logPath!, 'MongoServerSelectionError: connection timed out\n');
+          return { status: 1 };
+        },
+        'launch:trust-contract': trustContract([], 2),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(stageNamed(summary, 'trust-contract')).toMatchObject({
+        status: 'failed',
+        failureKind: 'violation',
+        error: 'trust-contract found 2 publicly visible row(s) that are not launch-eligible',
+        counts: { publicVisibilityViolations: 2, violations: 0 },
+      });
+      const gate = stageNamed(summary, 'integrity-gate');
+      expect(gate).toMatchObject({ status: 'failed', failureKind: 'crashed' });
+      expect(gate?.error).toMatch(/exited with status 1 and its result could not be judged/);
+      expect(gate?.failureTail).toContain('MongoServerSelectionError');
+      expect(summary.postRun?.status).toBe('failed');
+    }, 180_000);
+  });
 });

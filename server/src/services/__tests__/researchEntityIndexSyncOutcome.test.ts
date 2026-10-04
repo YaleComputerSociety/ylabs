@@ -49,6 +49,26 @@ describe('syncResearchEntitiesWithOutcome', () => {
     });
   });
 
+  it('counts a batch as deferred, not failed, while index writes are deferred', async () => {
+    process.env.SEARCH_INDEX_WRITES = 'deferred';
+    try {
+      expect(await syncResearchEntitiesWithOutcome([{ _id: 'a' }, { _id: 'b' }])).toEqual({
+        resynced: 0,
+        indexSyncFailures: 0,
+        indexSyncDeferred: 2,
+      });
+      expect(meiliMocks.syncEntities).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.SEARCH_INDEX_WRITES;
+    }
+    expect(
+      addIndexSyncOutcomes(
+        { resynced: 1, indexSyncFailures: 0 },
+        { resynced: 0, indexSyncFailures: 0, indexSyncDeferred: 3 },
+      ),
+    ).toEqual({ resynced: 1, indexSyncFailures: 0, indexSyncDeferred: 3 });
+  });
+
   it('does not call the index for an empty batch', async () => {
     expect(await syncResearchEntitiesWithOutcome([])).toEqual({
       resynced: 0,

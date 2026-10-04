@@ -97,6 +97,9 @@ export type WeeklySweepCorpusSnapshotStatus = (typeof weeklySweepCorpusSnapshotS
 export const weeklySweepSearchIndexStatuses = ['written', 'resync-required'] as const;
 export type WeeklySweepSearchIndexStatus = (typeof weeklySweepSearchIndexStatuses)[number];
 
+export const weeklySweepStageFailureKinds = ['crashed', 'regression', 'violation'] as const;
+export type WeeklySweepStageFailureKind = (typeof weeklySweepStageFailureKinds)[number];
+
 export const scrapeRunInterruptionReasons = [
   'signal',
   'heartbeat_stale',
