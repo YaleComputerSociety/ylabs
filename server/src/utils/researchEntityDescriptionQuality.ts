@@ -372,6 +372,14 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
       value,
     ) ||
     /\bI\s+study\b/i.test(value) ||
+    // The progressive is how a lab's own page states its work as often as the simple
+    // present ("In the Yale Faboratory, we are developing intelligent materials"), and
+    // without it the page's research paragraph failed this test while a meta blurb passed
+    // on an unrelated phrase (#4809).
+    /\b(?:we|lab|laboratory|group|team|center|centre)\s+(?:is|are)\s+(?:currently\s+|actively\s+)?(?:developing|studying|investigating|exploring|examining|working\s+(?:on|towards?)|building|designing|discovering|engineering|pursuing|seeking\s+to|trying\s+to\s+understand)\b/i.test(
+      value,
+    ) ||
+    /\bfocuses\s+(?:its\s+)?(?:research|work)(?:,\s*[a-z]+)*,?\s+(?:and\s+[a-z]+\s+)?on\b/i.test(value) ||
     /\b(?:applies|combines)\b[^.]{0,160}\bto\s+(?:study|understand|investigate|examine|explore|model|measure)\b/i.test(
       value,
     ) ||

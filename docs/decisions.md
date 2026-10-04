@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Page's Own Research Paragraph In The Progressive Is Research (#4809)
+
+`describesResearchFocus` reads research from a closed list of phrasings, and it had the simple present ("we develop") without the progressive ("we are developing").
+A lab page whose only research paragraph read "In the Yale Faboratory, we are developing intelligent, multifunctional materials" therefore failed the floor, and its meta blurb won on a phrase listed for that blurb alone.
+The progressive with a research verb after a first-person or unit subject now counts, as does "focuses research, teaching, and outreach on".
+
+Measured before landing on Development on 2026-10-04: over 4,193 stored rows the change flips the focus verdict on 4 bodies, all research prose, and no body or card quality verdict.
+Over 668 fetched org pages it changes 10 deterministic picks: 7 pages that yielded nothing now yield their own paragraph, 1 replaces a question opener with the lab's statement, 1 lengthens the same text, and 1 now opens on two sentences of background before "We are currently investigating".
+
 ## 2026-10-04: A Card Line Is Produced To Fit The Browse Card (#4809)
 
 The 2026-09-22 entry below stopped the serve path from deleting a card line past 200 characters, and kept it whole instead.
