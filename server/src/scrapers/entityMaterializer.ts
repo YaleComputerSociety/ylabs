@@ -6326,6 +6326,7 @@ export interface ProjectFromLogInput {
   laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
   rosterPersonKeys?: readonly unknown[];
+  chunkPrefetch?: MaterializationReadSource;
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
@@ -6635,18 +6636,26 @@ export const DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS = 14;
  * the person (#4694). A person-keyed roster read naming the same department is therefore
  * a read of that appointment: it dates it, and it never adds a department of its own.
  */
-async function personKeyedRosterDepartmentReads(keys: unknown[]): Promise<ResolverObservation[]> {
+async function personKeyedRosterDepartmentReads(
+  keys: unknown[],
+  prefetch?: MaterializationReadSource,
+): Promise<ResolverObservation[]> {
   const personKeys = [...new Set(keys.map((key) => textValue(key)).filter(Boolean))];
   if (personKeys.length === 0) return [];
-  const reads = (await Observation.find({
-    entityType: 'user',
-    entityKey: { $in: personKeys },
-    field: 'departments',
-    sourceName: DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
-    ...materializationReadScopeFilter(),
-  })
-    .select('field value sourceName confidence observedAt scrapeRunId')
-    .lean()) as unknown as Array<ResolverObservation & { scrapeRunId?: unknown }>;
+  const personObservations =
+    routedObservationsForKeysAndIds('user', personKeys, [], prefetch) ??
+    (await Observation.find({
+      entityType: 'user',
+      entityKey: { $in: personKeys },
+      field: 'departments',
+      sourceName: DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+      ...materializationReadScopeFilter(),
+    }).lean());
+  const reads = (personObservations as any[]).filter(
+    (observation) =>
+      observation.field === 'departments' &&
+      observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE,
+  ) as Array<ResolverObservation & { scrapeRunId?: unknown }>;
   return partitionObservationsByInvalidatedRun(reads, await invalidatedScrapeRunIds()).kept;
 }
 
@@ -6690,6 +6699,7 @@ async function combineDepartmentRosterAppointments(input: {
   rosterReads: readonly ResolverObservation[];
   mergedInRosterReads: readonly ResolverObservation[];
   rosterPersonKeys: readonly unknown[];
+  chunkPrefetch?: MaterializationReadSource;
   manuallyLockedFields: string[];
 }): Promise<void> {
   const field = 'departments';
@@ -6722,7 +6732,10 @@ async function combineDepartmentRosterAppointments(input: {
     ),
     entityDoc?.fieldValueRefusals,
   ).kept;
-  const personReads = await personKeyedRosterDepartmentReads([...input.rosterPersonKeys]);
+  const personReads = await personKeyedRosterDepartmentReads(
+    [...input.rosterPersonKeys],
+    input.chunkPrefetch,
+  );
   const readTime = (observation: ResolverObservation) =>
     rosterAppointmentReadTime(observation, personReads);
   const ownReadTime = (observation: ResolverObservation) =>
@@ -7263,6 +7276,7 @@ export async function projectFromLog(
     laneWithdrawnWebsiteValues = [],
     loserRosterReads = [],
     rosterPersonKeys = [],
+    chunkPrefetch,
   } = input;
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};
@@ -7419,6 +7433,7 @@ export async function projectFromLog(
       rosterReads: resolverObs,
       mergedInRosterReads: loserRosterReads,
       rosterPersonKeys,
+      chunkPrefetch,
       manuallyLockedFields,
     });
   }
@@ -9107,6 +9122,7 @@ export async function materializeEntity(
     rosterPersonKeys: researchAreaEvidenceObservations
       .filter((observation: any) => observation.field === 'inferredPiUserKey')
       .map((observation: any) => observation.value),
+    chunkPrefetch: options.chunkPrefetch,
     mergedInRows,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
