@@ -1,3 +1,4 @@
+import type { PipelineStage } from 'mongoose';
 import {
   MATERIALIZER_MANAGED_FIELDS,
   materializerProjectionPathIsStorable,
@@ -308,6 +309,61 @@ export function parseProjectionDriftCensusArgs(argv: string[]): ProjectionDriftC
     throw new Error(`Unknown projection drift census argument: ${arg}`);
   }
   return args;
+}
+
+export const PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS = { allowDiskUse: true } as const;
+
+export const PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE = 200;
+
+export function projectionDriftCensusSamplePipeline(
+  sample: number,
+  includeArchived: boolean,
+): PipelineStage[] {
+  return [
+    { $match: includeArchived ? {} : { archived: { $ne: true } } },
+    { $project: { _id: 1 } },
+    { $sample: { size: sample } },
+  ];
+}
+
+export function chunkProjectionDriftCensusIds<T>(
+  ids: readonly T[],
+  size: number = PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE,
+): T[][] {
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('batch size must be positive');
+  const batches: T[][] = [];
+  for (let start = 0; start < ids.length; start += size) {
+    batches.push(ids.slice(start, start + size));
+  }
+  return batches;
+}
+
+export interface ProjectionDriftCensusRowReads {
+  aggregateIds(
+    pipeline: PipelineStage[],
+    options: typeof PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  ): PromiseLike<Array<{ _id: unknown }>>;
+  findRows(filter: Record<string, unknown>): PromiseLike<Array<Record<string, unknown>>>;
+}
+
+export async function* loadProjectionDriftCensusRows(
+  { sample, slugs, includeArchived }: { sample: number; slugs: string[]; includeArchived: boolean },
+  reads: ProjectionDriftCensusRowReads,
+): AsyncGenerator<Record<string, unknown>> {
+  if (slugs.length > 0) {
+    // The archived filter stays out of the slug query so a requested archived row
+    // loads and reports `skipped: archived-entity` rather than vanishing from the
+    // report with nothing saying it was asked for.
+    yield* await reads.findRows({ slug: { $in: slugs } });
+    return;
+  }
+  const sampledIds = await reads.aggregateIds(
+    projectionDriftCensusSamplePipeline(sample, includeArchived),
+    PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  );
+  for (const batch of chunkProjectionDriftCensusIds(sampledIds.map((row) => row._id))) {
+    yield* await reads.findRows({ _id: { $in: batch } });
+  }
 }
 
 export function scaleProjectionDriftRowCount(

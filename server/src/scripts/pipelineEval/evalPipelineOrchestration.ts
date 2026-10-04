@@ -328,7 +328,6 @@ async function main() {
   const HARD_BLOCKERS = new Set([
     ...DUPLICATE_BLOCKERS,
     ...LEAD_BLOCKERS,
-    'content_page_risk',
     'non_research_entity',
     'research_infrastructure_only',
     'inactive_at_yale',

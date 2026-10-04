@@ -102,11 +102,11 @@ export async function runSchoolHostMismatchBackfill(options: {
   if (options.limit) query.limit(options.limit);
   const entities = await query.lean();
 
-  const rows: SchoolHostMismatchPlanRow[] = [];
+  const plans: Array<SchoolHostMismatchPlanRow | null> = [];
   for (const entity of entities) {
-    const row = await planSchoolHostMismatchRow({ id: String(entity._id), ...entity });
-    if (row) rows.push(row);
+    plans.push(await planSchoolHostMismatchRow({ id: String(entity._id), ...entity }));
   }
+  const rows = plans.filter((row): row is SchoolHostMismatchPlanRow => row !== null);
 
   let schoolAssertionsRecorded = 0;
   const schoolAssertionsSkipped: Record<string, number> = {};
@@ -143,7 +143,7 @@ export async function runSchoolHostMismatchBackfill(options: {
     schoolAssertionsRecorded,
     schoolAssertionsSkipped,
     mode: options.dryRun ? 'dry-run' : 'apply',
-    summary: summarizeSchoolHostMismatch(rows),
+    summary: summarizeSchoolHostMismatch(plans),
     changes: rows,
 
     indexResynced: indexSync.resynced,

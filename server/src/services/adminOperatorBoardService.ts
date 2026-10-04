@@ -398,7 +398,6 @@ const evidenceReasons = new Set([
 const reviewDecisionReasons = new Set([
   'application_source_only',
   'archive_review',
-  'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
   'formalization_only',
@@ -411,7 +410,6 @@ export function classifyOperatorQueueReason(reason: string): QueueKind {
   if (
     reason.startsWith('missing_') ||
     [
-      'content_page_risk',
       'inactive_at_yale',
       'missing_card_description',
       'profile_fallback_only',

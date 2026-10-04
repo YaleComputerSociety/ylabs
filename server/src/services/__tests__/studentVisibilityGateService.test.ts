@@ -1261,7 +1261,6 @@ describe('studentVisibilityGateService', () => {
   it('classifies missing-data reasons as blockers and evidence reasons as signals', () => {
     expect(isBlockingVisibilityReason('missing_description')).toBe(true);
     expect(isBlockingVisibilityReason('thin_description')).toBe(true);
-    expect(isBlockingVisibilityReason('content_page_risk')).toBe(true);
     expect(isBlockingVisibilityReason('exact_url_duplicate_risk')).toBe(true);
     expect(isBlockingVisibilityReason('generic_directory_shell')).toBe(true);
     expect(isBlockingVisibilityReason('profile_biography_shell')).toBe(true);

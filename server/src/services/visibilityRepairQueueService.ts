@@ -222,7 +222,6 @@ const stagePriority: Record<VisibilityRepairStage, number> = {
 // into disagreeing about stage membership the way the stage sets did (#2818).
 export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
-  'content_page_risk',
   'exact_url_duplicate_risk',
   'generic_directory_shell',
   'inactive_at_yale',

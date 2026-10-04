@@ -25,7 +25,7 @@ const MAX_ROWS_PER_SCRIPT = 40;
  * fetch. Anything else is an `unknown` with its reason, because a script the audit cannot
  * dry-run is not a pass.
  */
-interface AuditableScript {
+export interface AuditableScript {
   script: string;
   plan?: () => Promise<PlannedFieldChange[]>;
   unknownReason?: string;
@@ -56,7 +56,7 @@ const liveRows = () =>
  * tests, which is the correct steady state once no repair is wrong. An entry gaining a
  * `plan` again is the signal that a repair has become auditable, not that this file regressed.
  */
-const SCRIPTS: AuditableScript[] = [
+export const AUDITED_REPAIR_SCRIPTS: AuditableScript[] = [
   {
     // Auditable now that `loadLeadNamesBySlug` is exported (#3398), but still not DECIDABLE
     // read-only. It appends its corrected name as an observation before writing the field, so
@@ -80,12 +80,12 @@ const SCRIPTS: AuditableScript[] = [
     unknownReason: 'no exported pure planner, and the apply path probes pages over the network',
   },
   {
-    script: 'research-entity:lab-branded-name-type-backfill',
+    script: 'research-entity:backfill-lab-branded-name-type',
     unknownReason:
       'planner needs harvested brand candidates the audit cannot reconstruct read-only',
   },
   {
-    script: 'research-homes:retype-from-declared-page-type',
+    script: 'research-entity:retype-from-declared-page-type',
     unknownReason: 'planner input comes from a page-type probe, which is a network read',
   },
 ];
@@ -148,7 +148,7 @@ export async function runPlanDeclineAudit(): Promise<{
   armControl: PlanAuditRow;
 }> {
   const rows: PlanAuditRow[] = [];
-  for (const entry of SCRIPTS) {
+  for (const entry of AUDITED_REPAIR_SCRIPTS) {
     if (!entry.plan) {
       rows.push({
         script: entry.script,
@@ -191,7 +191,7 @@ export async function runPlanDeclineAudit(): Promise<{
   }
   const control = await projectionAnswersControl();
   return {
-    scriptsExamined: SCRIPTS.length,
+    scriptsExamined: AUDITED_REPAIR_SCRIPTS.length,
     summary: summarizePlanAudit(rows),
     rows,
     armControl: control,
