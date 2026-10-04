@@ -1744,6 +1744,78 @@ describe('isCredentialOrAwardLeadBiography (#1745)', () => {
 });
 
 describe('revoiceFirstPersonResearchLead', () => {
+  const namedLab = {
+    entityType: 'LAB',
+    kind: 'lab',
+    name: 'Fixture Lab',
+    displayName: 'Fixture Lab',
+  };
+  const namedPerson = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    name: 'Robin Roster Faculty Research',
+  };
+
+  it("never makes a named lab the speaker of its lead's singular first person (#4809)", () => {
+    const revoiced = revoiceFirstPersonResearchLead(
+      'I am an evolutionary ornithologist with broad interests in avian biology. I have done research on avian phylogenetics.',
+      namedLab,
+    );
+
+    expect(revoiced).toBe(
+      'This researcher is an evolutionary ornithologist with broad interests in avian biology. This researcher has done research on avian phylogenetics.',
+    );
+    expect(revoiced).not.toMatch(/Fixture Lab is an/);
+  });
+
+  it("still names the lab when the lab speaks as 'we' (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We study how cells divide. Our lab uses imaging in Type I diabetes models.',
+        namedLab,
+      ),
+    ).toBe(
+      'The Fixture Lab studies how cells divide. The lab uses imaging in Type I diabetes models.',
+    );
+  });
+
+  it("names the lab for 'we' beside a numbered category in lowercase prose (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We study type I interferon signaling, class I molecules, phase I trials and complex I.',
+        namedLab,
+      ),
+    ).toBe(
+      'The Fixture Lab studies type I interferon signaling, class I molecules, phase I trials and complex I.',
+    );
+  });
+
+  it("treats 'where I' and ', I' as the lead speaking on a lab row (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We moved to the coast, where I went to study tides.',
+        namedLab,
+      ),
+    ).toBe('We moved to the coast, where I went to study tides.');
+    expect(revoiceFirstPersonResearchLead('In the lab, I study tides.', namedLab)).toBe(
+      'In the lab, this researcher studies tides.',
+    );
+  });
+
+  it('serves a life-story body as written rather than half converted (#4809)', () => {
+    const story =
+      'I was a city kid who left for a small rural college, where I went to study biology. Unfortunately, I was no good at field biology. An advisor told me to study neurobiology.';
+
+    expect(revoiceFirstPersonResearchLead(story, namedLab)).toBe(story);
+  });
+
+  it('abandons a named rewrite that leaves a first person behind (#4809)', () => {
+    const body =
+      'I am a clinical rheumatologist and educator. I did my training abroad and then I did internal medicine practice for many years.';
+
+    expect(revoiceFirstPersonResearchLead(body, namedPerson)).toBe(body);
+  });
+
   it('re-voices a bare first-person bio opener to third person', () => {
     expect(
       revoiceFirstPersonResearchLead('I am an immunologist studying tumor microenvironments.'),
