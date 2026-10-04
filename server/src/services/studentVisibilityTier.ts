@@ -351,7 +351,8 @@ const letterTokensOf = (value: string): string[] => value.toLowerCase().split(/[
 const nameTokensOf = (value: unknown): string[] =>
   letterTokensOf(textValue(value)).filter(
     (token) =>
-      token.length >= 3 && !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
+      token.length >= 3 &&
+      !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
   );
 
 /**
