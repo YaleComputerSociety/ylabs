@@ -23,6 +23,7 @@ import {
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   extractDescriptionPageProse,
+  groundingRereadContentHash,
   htmlToText,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -150,6 +151,71 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
     expect(result.notes).toContain('1 content-unchanged skipped');
     expect(logs.some((line) => /content unchanged/.test(line))).toBe(true);
+  });
+
+  describe('re-reads an unchanged page whose stored description it does not ground (#4809)', () => {
+    const url = 'https://medicine.yale.edu/lab/ashford/';
+    const pageHtml =
+      '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
+    const hashFor = () =>
+      contentHashGate.computeVersionedContentHash(
+        laneHashInput([{ url, html: pageHtml }]),
+        DESCRIPTION_EXTRACTION_PROMPT_HASH,
+        DEFAULT_MODEL,
+        CARD_SYNTHESIS_MODEL,
+        CARD_SYNTHESIS_PROMPT_HASH,
+        LAB_NAME_EMISSION_CONTRACT,
+      );
+
+    async function runWith(storedHash: string) {
+      vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(storedHash);
+      vi.spyOn(contentHashGate, 'loadStoredLaneDescriptionObservation').mockResolvedValue({
+        value:
+          'The Ashford Lab builds deep-sea autonomous submarines for oceanographic expeditions in polar waters.',
+        sourceUrl: url,
+      });
+      const callLLM = vi.fn<CallDescriptionLLMFn>().mockResolvedValue({
+        fullDescription:
+          'The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.',
+        shortDescription: 'Studies cellular signaling and immune response.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction);
+      const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          { _id: 'entity-ashford', slug: 'ashford-lab', name: 'Ashford Lab', websiteUrl: url },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({ url, html: pageHtml }),
+        callLLM,
+        callCardLLM: vi
+          .fn<CardSynthesisLLMFn>()
+          .mockResolvedValue('Studies cellular signaling and immune response for patient care.'),
+      });
+      const { ctx, emitted, logs } = makeContext();
+      await scraper.run(ctx);
+      return { emitted, skipped: logs.some((line) => /content unchanged/.test(line)) };
+    }
+
+    it('re-reads once and records the marked hash', async () => {
+      const { emitted, skipped } = await runWith(hashFor());
+
+      expect(skipped).toBe(false);
+      const hashes = emitted
+        .filter((o) => o.field === contentHashGate.SOURCE_CONTENT_HASH_FIELD)
+        .map((o) => o.value);
+      expect(hashes).toEqual([groundingRereadContentHash(hashFor())]);
+    });
+
+    it('skips once the marked hash is stored', async () => {
+      const { skipped } = await runWith(groundingRereadContentHash(hashFor()));
+
+      expect(skipped).toBe(true);
+    });
   });
 
   describe('gate input across two real runs of the lane (#3840)', () => {
