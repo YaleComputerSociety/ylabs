@@ -67,6 +67,7 @@ import {
   collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  stripResearchHomeNameCaptionWrapper,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
@@ -229,7 +230,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
 import {
   parseRosterMemberIdentityEvidence,
@@ -1577,7 +1578,9 @@ export function materializedFieldValue(
     return normalizeResearchEntityNameSmartQuotes(
       normalizeResearchEntityNameDashes(
         collapseDuplicateResearchHomeSuffix(
-          stripResearchHomeNamePersonCredentials(stripTrailingResearchHomeDescription(value)),
+          stripResearchHomeNamePersonCredentials(
+            stripResearchHomeNameCaptionWrapper(stripTrailingResearchHomeDescription(value)),
+          ),
         ),
       ),
     );
@@ -1587,7 +1590,9 @@ export function materializedFieldValue(
     (field === 'fname' || field === 'lname' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return sanitizePersonName(value) ?? normalizePersonNameCasing(value);
+    const sanitized =
+      field === 'fname' ? sanitizePersonGivenName(value) : sanitizePersonName(value);
+    return sanitized ?? normalizePersonNameCasing(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
     return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);

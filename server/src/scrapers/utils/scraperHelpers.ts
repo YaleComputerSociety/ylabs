@@ -6,6 +6,7 @@
  * external data (names, emails, URLs).
  */
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
+import { stripPersonNameCaptionWrapper } from '../../utils/personNameHygiene';
 
 export const SLUG_MAX_LENGTH = 100;
 
@@ -148,7 +149,9 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
-  let n = stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
+  let n = stripPersonNameCaptionWrapper(
+    stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim(),
+  );
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",

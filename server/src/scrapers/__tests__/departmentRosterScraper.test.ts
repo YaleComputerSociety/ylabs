@@ -42,6 +42,7 @@ import {
   nursingFacultyExtractor,
   referenceCardExtractor,
   rosterDeptNameNamesItsOwnSchool,
+  rosterResearchEntitySlug,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -1143,6 +1144,55 @@ describe('nodePersonCardExtractor', () => {
         imageUrl: 'https://music.yale.edu/img/robin-fixture.jpg',
       },
     ]);
+  });
+});
+
+describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {
+  const captionedCard = `
+    <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/robin-fixture.jpg" alt="Photo of Dean Robin Fixture."></div></div>
+      <div class="card-content"><h2> <span>Robin Fixture</span> </h2>
+        <div class="paragraph--type--title-affiliation">Dean, School of Synthetic Music</div></div>
+    </article>`;
+  const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+
+  it('takes the name from the heading when the alt text is a caption', () => {
+    const [entry] = nodePersonCardExtractor(captionedCard, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Fixture');
+  });
+
+  it('keeps the slug the caption-derived name first minted, so the row is not re-keyed', () => {
+    const [entry] = nodePersonCardExtractor(captionedCard, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(rosterResearchEntitySlug(entry, music)).toBe(
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    );
+  });
+
+  it('records no identity name when the alt text already is the name', () => {
+    const html = captionedCard.replace('Photo of Dean Robin Fixture.', 'Robin Fixture');
+    const [entry] = nodePersonCardExtractor(html, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.identityName).toBeUndefined();
+    expect(rosterResearchEntitySlug(entry, music)).toBe('dept-school-of-music-robin-fixture');
+  });
+});
+
+describe('normalizeName strips a headshot caption', () => {
+  it('drops the caption lead-in, its trailing period and a title inside it', () => {
+    expect(normalizeName('Photo of Robin Fixture.')).toBe('Robin Fixture');
+    expect(normalizeName('Image of Dean Robin Fixture.')).toBe('Robin Fixture');
+    expect(normalizeName('Headshot of Professor Robin Q. Fixture')).toBe('Robin Q. Fixture');
+  });
+
+  it('leaves a given name that reads like a title alone', () => {
+    expect(normalizeName('Dean Fixture')).toBe('Dean Fixture');
+    expect(normalizeName('Photo of Dean Fixture.')).toBe('Dean Fixture');
   });
 });
 

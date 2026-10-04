@@ -1,3 +1,5 @@
+import { stripPersonNameCaptionWrapper } from './personNameHygiene';
+
 const DASH_VARIANTS = /[‒–—―−]/g;
 
 export function normalizeResearchEntityNameDashes(value: string): string {
@@ -111,4 +113,22 @@ export function stripResearchHomeNamePersonCredentials(value: string): string {
 
 export function hasResearchHomeNamePersonCredentials(value: string): boolean {
   return typeof value === 'string' && stripResearchHomeNamePersonCredentials(value) !== value;
+}
+
+const CAPTIONED_PERSON_RESEARCH_NAME_RE =
+  /^((?:photo|photograph|portrait|picture|image|headshot|pic)\s+of\s+.+?)(\s+(?:faculty\s+research|research|lab|laboratory|group))?$/i;
+
+/**
+ * A roster that names people by their headshot's alt text yields "Photo of <name>."
+ * as the person's name, and a heading composed from it reads "Photo of Dean Robert
+ * Blocker. Faculty Research". The person half is cleaned by the same caption rule the
+ * person-name hygiene applies, so a heading and its lead's name cannot disagree.
+ */
+export function stripResearchHomeNameCaptionWrapper(value: string): string {
+  if (typeof value !== 'string') return value;
+  const match = value.trim().match(CAPTIONED_PERSON_RESEARCH_NAME_RE);
+  if (!match) return value;
+  const person = stripPersonNameCaptionWrapper(match[1]);
+  if (person === match[1].trim()) return value;
+  return `${person}${match[2] ?? ''}`;
 }

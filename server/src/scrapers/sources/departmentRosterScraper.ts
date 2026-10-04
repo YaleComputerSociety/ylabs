@@ -255,6 +255,13 @@ const STATED_LAB_NAME_CONFIDENCE = 0.8;
 export interface FacultyEntry {
   name: string;
   /**
+   * The name this row's slug and user key were first derived from, when the listing's
+   * readable name differs from it. Identity continuity: re-keying an existing row
+   * would retire it through the departure lane and mint a replacement without its
+   * evidence, so the key keeps its first spelling while `name` carries the real one.
+   */
+  identityName?: string;
+  /**
    * True when `name` is a slug-derived placeholder (the listing exposed only a
    * profile-URL slug, no readable name). Profile enrichment replaces it with the
    * real name read from the profile page. Used by thumbnail-only rosters.
@@ -1414,10 +1421,11 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
 /**
  * Yale School of Music Drupal `node--type-person` cards. The listing hydrates
  * client-side, so this runs against rendered HTML (renderedExtractor). Each
- * card carries the person on the article's `about` attribute and the name on
- * the profile image's alt text.
+ * card carries the person on the article's `about` attribute and the name in the
+ * card heading. The headshot's alt text is a caption, sometimes "Photo of <title>
+ * <name>.", so it is a fallback only (#4716).
  *   <article about="/people/<slug>" class="node node--type-person node--view-mode-card">
- *     <img alt="Name" src="...">
+ *     <img alt="Photo of Name." src="..."> <div class="card-content"><h2><span>Name</span></h2>
  */
 const nameFromPeopleSlug = (about: string): string => {
   const match = about.match(/\/people\/([^/?#]+)/);
@@ -1437,10 +1445,11 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
-    const name =
-      normalizeName(cleanText(card.find('img[alt]').first().attr('alt') || '')) ||
-      nameFromPeopleSlug(about);
+    const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
+    const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
+    const name = headingName || normalizeName(altText) || nameFromPeopleSlug(about);
     if (!name) return;
+    const identityName = altText && slugify(altText) !== slugify(name) ? altText : undefined;
 
     const profileUrl = about ? absolutize(about, ctx.pageUrl) : undefined;
     const title =
@@ -1454,7 +1463,13 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
       ) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      ...(identityName ? { identityName } : {}),
+      profileUrl,
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
 
   return out;
@@ -3852,7 +3867,7 @@ function entryToUserObservations(
     ? entry.email
     : undefined;
   const netid = netidFromEmail(personEmail);
-  const slug = slugify(cleaned);
+  const slug = rosterIdentityNameSlug(entry);
   const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
   const entityKey = netid ? `netid:${netid}` : `dept:${entityKeyNamespace}:${slug || 'unknown'}`;
 
@@ -4000,9 +4015,12 @@ export function rosterResearchEntityMint(
  * Sharing the formula is the point: a second copy would drift and the lookup would
  * silently miss.
  */
+function rosterIdentityNameSlug(entry: FacultyEntry): string {
+  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
+}
+
 export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
-  const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  const nameSlug = rosterIdentityNameSlug(entry) || (entry.labUrl ? slugify(entry.labUrl) : '');
   if (!nameSlug) return '';
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
 }
