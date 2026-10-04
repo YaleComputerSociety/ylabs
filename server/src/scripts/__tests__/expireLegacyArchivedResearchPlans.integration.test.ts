@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { MongoClient, type Collection } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -134,5 +136,17 @@ describe('expire legacy archived research plans arguments', () => {
     expect(resolveExpireMongoUrl('development', { MONGODBURL: 'mongodb://fixture/dev' })).toBe(
       'mongodb://fixture/dev',
     );
+  });
+});
+
+describe('the product archive of a research plan stamps a restore window', () => {
+  it('sets restorableUntil in every service write that archives a plan', () => {
+    const service = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'services', 'researchPlanService.ts'),
+      'utf8',
+    );
+    const archiveSets = [...service.matchAll(/\$set:\s*\{([^}]*archived:\s*true[^}]*)\}/gs)];
+    expect(archiveSets.length).toBeGreaterThan(0);
+    for (const [, body] of archiveSets) expect(body).toMatch(/restorableUntil:/);
   });
 });
