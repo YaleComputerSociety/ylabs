@@ -169,20 +169,25 @@ const PERSON_PROFILE_PATH_SEGMENTS = [
   'faculty-directory',
 ];
 
-const normalizeIdentityToken = (value: unknown): string =>
+// A directory slug spells an accented name without the accent (`Cantó` as
+// `canto`), so the accent must fold before tokenizing; split on `[^a-z]` first
+// and the accented letter breaks one name token into two.
+const foldedLowercase = (value: unknown): string =>
   String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
+
+const normalizeIdentityToken = (value: unknown): string =>
+  foldedLowercase(value).replace(/[^a-z0-9]+/g, '');
 
 const nameTokensFrom = (value: unknown): string[] =>
-  String(value ?? '')
-    .toLowerCase()
+  foldedLowercase(value)
     .split(/[^a-z]+/)
     .filter((token) => token.length >= 2);
 
 const orderedNameTokensFrom = (value: unknown): string[] =>
-  String(value ?? '')
-    .toLowerCase()
+  foldedLowercase(value)
     .split(/[^a-z]+/)
     .filter(Boolean);
 
@@ -342,6 +347,13 @@ const firstInitialSurnameMatch = (normalizedSlug: string, nameTokenList: string[
   return normalizedSlug === `${given[0]}${surname}`;
 };
 
+// A slug can drop the separator inside a compound surname (`alex-cantopastor`
+// for Alex Canto-Pastor), which leaves it one shared token short of the
+// two-token rule. It spells the lead's whole name, so it names no competing
+// given name either.
+const compactedFullNameMatch = (normalizedSlug: string, nameTokenList: string[]): boolean =>
+  nameTokenList.length >= 2 && normalizedSlug === nameTokenList.join('');
+
 const MIN_SURNAME_ONLY_SLUG_LENGTH = 3;
 
 const profileSlugCorroboratesLead = (
@@ -373,6 +385,7 @@ const profileSlugCorroboratesLead = (
   const leadSurname = nameTokenList[nameTokenList.length - 1];
 
   if (firstInitialSurnameMatch(normalizedSlug, nameTokenList)) return true;
+  if (compactedFullNameMatch(normalizedSlug, nameTokenList)) return true;
 
   const slugTokens = orderedNameTokensFrom(slug);
   if (slugTokens.length >= 2) {

@@ -1780,6 +1780,26 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it('drops a leading site-orientation opener the way it drops a greeting', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Here you will find information about our research, lab members, publications, any opportunities, and how to find us. The Example lab studies how plants admit beneficial soil microbes while keeping pathogens out.',
+      ),
+    ).toBe(
+      'The Example lab studies how plants admit beneficial soil microbes while keeping pathogens out.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead(
+        "On this site you'll find our publications and people. This research studies quantum materials at low temperature.",
+      ),
+    ).toBe('This research studies quantum materials at low temperature.');
+    expect(
+      revoiceFirstPersonResearchLead(
+        'This research studies quantum materials. Here you will find recent publications.',
+      ),
+    ).toBe('This research studies quantum materials. Here you will find recent publications.');
+  });
+
   it('leaves third-person research copy untouched', () => {
     expect(
       revoiceFirstPersonResearchLead('Studies immune checkpoints in cutaneous malignancies.'),
