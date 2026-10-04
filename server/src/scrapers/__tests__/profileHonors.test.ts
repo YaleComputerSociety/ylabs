@@ -169,4 +169,9 @@ describe('extractProfileHonors', () => {
       )[0]?.year,
     ).toBeUndefined();
   });
+  it('does not read a different Guggenheim foundation as the fellowship', () => {
+    expect(
+      keys(page('<p>He received a Harry Frank Guggenheim Foundation Research Award.</p>')),
+    ).toEqual([]);
+  });
 });

@@ -22,7 +22,7 @@ export const PROFILE_HONOR_CATALOG: readonly HonorCatalogEntry[] = [
     label: 'Guggenheim Fellowship',
     kind: 'fellowship',
     pattern:
-      /\b(?:John Simon )?Guggenheim(?: Memorial)?(?: Foundation)?(?: Fellow(?:ship)?s?)?\b(?!\s+Museum)/i,
+      /(?<!Harry Frank )(?<!Peggy )(?<!Solomon R\. )\b(?:John Simon )?Guggenheim(?: Memorial)?(?: Foundation)?(?: Fellow(?:ship)?s?)?\b(?!\s+Museum)/i,
   },
   {
     key: 'acls',
