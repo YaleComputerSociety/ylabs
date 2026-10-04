@@ -54,7 +54,7 @@ async function appendLaneObservations(observations: ObservationInput[], observed
   );
 }
 
-async function laneReadsDescription(observedAt: Date) {
+async function laneReadsDescription(observedAt: Date, value = DESCRIPTION) {
   await appendLaneObservations(
     [
       {
@@ -63,14 +63,18 @@ async function laneReadsDescription(observedAt: Date) {
         entityKey: SLUG,
         sourceUrl: PAGE,
         field: 'fullDescription',
-        value: DESCRIPTION,
+        value,
       },
     ],
     observedAt,
   );
 }
 
-async function runLane(fetchPage: () => Promise<{ url: string; html: string }>, probePage: any) {
+async function runLaneEmitting(
+  fetchPage: (url: string) => Promise<{ url: string; html: string }>,
+  probePage: any,
+  options: { lab?: Record<string, unknown>; callLLM?: any } = {},
+) {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'test-run',
@@ -90,15 +94,27 @@ async function runLane(fetchPage: () => Promise<{ url: string; html: string }>, 
     }),
     apiKey: 'test-key',
     labFinder: async () => [
-      { _id: rowId, slug: SLUG, name: 'Synthetic Signaling Lab', websiteUrl: PAGE },
+      {
+        _id: rowId,
+        slug: SLUG,
+        name: 'Synthetic Signaling Lab',
+        websiteUrl: PAGE,
+        ...options.lab,
+      },
     ],
     fetchPage,
     probePage,
-    callLLM: vi.fn().mockRejectedValue(new Error('no model in this test')),
+    callLLM: options.callLLM ?? vi.fn().mockRejectedValue(new Error('no model in this test')),
     callCardLLM: vi.fn().mockRejectedValue(new Error('no model in this test')),
   });
   await lane.run(ctx);
-  return emitted.filter((observation) => observation.field === LANE_PAGE_HEALTH_FIELD);
+  return emitted;
+}
+
+async function runLane(fetchPage: () => Promise<{ url: string; html: string }>, probePage: any) {
+  return (await runLaneEmitting(fetchPage, probePage)).filter(
+    (observation) => observation.field === LANE_PAGE_HEALTH_FIELD,
+  );
 }
 
 const gone = () => Promise.reject(new HttpStatusError(404));
@@ -113,8 +129,10 @@ const answers = () =>
 
 const resolve = () => materializeEntity('researchEntity', { entityId: rowId }, {});
 
-const storedDescription = async () =>
-  (await ResearchEntity.findById(rowId).lean<{ fullDescription?: unknown }>())?.fullDescription;
+const storedRow = async () =>
+  ResearchEntity.findById(rowId).lean<{ fullDescription?: unknown; shortDescription?: unknown }>();
+
+const storedDescription = async () => (await storedRow())?.fullDescription;
 
 describe('a fixed-list lane page that is gone withdraws the values it supplied (#4729)', () => {
   let replSet: MongoMemoryReplSet;
@@ -198,5 +216,104 @@ describe('a fixed-list lane page that is gone withdraws the values it supplied (
     await appendLaneObservations(liveVerdicts, new Date('2026-09-20T00:00:00Z'));
     await resolve();
     expect(await storedDescription()).toBe(DESCRIPTION);
+  });
+
+  it('withdraws a description and its card when the row stores a truncated form of the read', async () => {
+    const topics = [
+      'membrane receptor clustering',
+      'calcium wave propagation',
+      'kinase cascade timing',
+      'ligand binding kinetics',
+      'vesicle trafficking routes',
+      'cytoskeletal remodeling',
+      'second messenger diffusion',
+      'ion channel gating',
+      'transcriptional feedback loops',
+      'phosphatase regulation',
+      'scaffold protein assembly',
+      'nuclear import control',
+      'mechanosensitive signaling',
+      'metabolic sensing pathways',
+      'circadian signal coupling',
+      'intercellular junction signaling',
+    ];
+    const longRead = [
+      DESCRIPTION,
+      ...topics.map(
+        (topic, index) =>
+          `Project ${index + 1} examines ${topic} in cultured epithelial cells, pairing live microscopy with quantitative models that predict how the response changes when inputs vary.`,
+      ),
+    ].join(' ');
+    await Observation.deleteMany({});
+    await laneReadsDescription(new Date('2026-09-02T00:00:00Z'), longRead);
+    await resolve();
+    const before = await storedRow();
+    expect(longRead.length).toBeGreaterThan(2000);
+    expect(String(before?.fullDescription)).toMatch(/^The Synthetic Signaling Lab/);
+    expect(String(before?.fullDescription).length).toBeGreaterThan(DESCRIPTION.length);
+    expect(String(before?.fullDescription).length).toBeLessThan(longRead.length);
+    expect(before?.shortDescription).toBeTruthy();
+
+    const probe = vi.fn().mockResolvedValue({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+    await appendLaneObservations(await runLane(gone, probe), new Date('2026-09-10T00:00:00Z'));
+    await resolve();
+    const after = await storedRow();
+    expect(after?.fullDescription).toBeFalsy();
+    expect(after?.shortDescription).toBeFalsy();
+  });
+
+  it('records a read on the resolved page as well as the requested one', async () => {
+    const redirected = () =>
+      Promise.resolve({
+        url: `${PAGE}home/`,
+        html: `<main><h1>Synthetic Signaling Lab</h1><p>${DESCRIPTION}</p></main>`,
+      });
+    const verdicts = await runLane(redirected, vi.fn());
+    expect(
+      verdicts.map((observation) => [
+        observation.sourceUrl,
+        (observation.value as any).healthStatus,
+      ]),
+    ).toEqual([
+      [PAGE, 'HEALTHY'],
+      [`${PAGE}home/`, 'HEALTHY'],
+    ]);
+  });
+
+  it('credits no methods to a stored description whose page was found gone in the same run', async () => {
+    const fallback = 'https://synthetic-signaling-mirror.example.edu/';
+    const fetchPage = (url: string) =>
+      url === PAGE
+        ? gone()
+        : Promise.resolve({
+            url: fallback,
+            html: '<main><h1>Synthetic Signaling Lab</h1><p>Welcome to the lab. We are glad you are here and hope you enjoy visiting our pages and meeting our team.</p></main>',
+          });
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: '',
+      shortDescription: '',
+      topics: [],
+      methods: ['imaging'],
+    });
+    const emitted = await runLaneEmitting(
+      fetchPage,
+      vi.fn().mockResolvedValue({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }),
+      {
+        lab: {
+          sourceUrls: [fallback],
+          fullDescription: DESCRIPTION,
+          fullDescriptionSourceUrl: PAGE,
+        },
+        callLLM,
+      },
+    );
+    expect(
+      emitted.filter((observation) => observation.field === LANE_PAGE_HEALTH_FIELD),
+    ).toHaveLength(2);
+    expect(
+      emitted.filter(
+        (observation) => observation.field === 'methods' && observation.sourceUrl === PAGE,
+      ),
+    ).toEqual([]);
   });
 });

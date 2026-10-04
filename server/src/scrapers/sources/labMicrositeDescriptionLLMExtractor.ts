@@ -42,6 +42,7 @@ import {
   lanePageReadVerdict,
   type LanePageProbe,
 } from '../lanePageHealth';
+import { sourceLinkHealthKey } from '../../services/sourceLinkHealth';
 import {
   createWorkPlannerMetrics,
   getWorkPlannerSourcePolicy,
@@ -2087,14 +2088,29 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityKey: lab.slug,
         };
         const pageHealthObservations: ObservationInput[] = [];
+        const gonePageKeys = new Set<string>();
         const recordGonePage = async (url: string, firstAnswer: { httpStatusCode?: unknown }) => {
           const verdict = await confirmGoneLanePage(
             url,
             { ...firstAnswer, storedHealth: lab.sourceLinkHealth },
             this.probePage,
           );
-          if (verdict)
-            pageHealthObservations.push(lanePageHealthObservation(pageHealthEntity, verdict));
+          if (!verdict) return;
+          pageHealthObservations.push(lanePageHealthObservation(pageHealthEntity, verdict));
+          gonePageKeys.add(sourceLinkHealthKey(url) as string);
+        };
+        const recordReadPage = (requestedUrl: string, resolvedUrl: string) => {
+          const resolvedIsAnotherPage =
+            sourceLinkHealthKey(resolvedUrl) !== sourceLinkHealthKey(requestedUrl);
+          for (const url of resolvedIsAnotherPage ? [requestedUrl, resolvedUrl] : [requestedUrl]) {
+            pageHealthObservations.push(
+              lanePageHealthObservation(pageHealthEntity, lanePageReadVerdict(url)),
+            );
+          }
+        };
+        const emitPageHealth = async () => {
+          if (pageHealthObservations.length === 0) return;
+          await ctx.emit(pageHealthObservations.splice(0));
         };
         for (const skippedUrl of candidateUrls.filter((url) => !urls.includes(url))) {
           await recordGonePage(skippedUrl, {});
@@ -2113,13 +2129,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             continue;
           }
           if (page?.html) {
-            pageHealthObservations.push(
-              lanePageHealthObservation(pageHealthEntity, lanePageReadVerdict(sourceUrl)),
-            );
+            recordReadPage(sourceUrl, page.url);
             break;
           }
         }
-        if (pageHealthObservations.length > 0) await ctx.emit(pageHealthObservations);
+        await emitPageHealth();
         if (!page?.html && lastFetchError) {
           ctx.log(
             `[${lab.slug || 'candidate'}] skipping description extraction: ${lastFetchError}`,
@@ -2167,7 +2181,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           MAX_RESEARCH_SUBPAGE_CANDIDATES,
           { includeAboutPages: kind === 'organization' },
         )) {
-          if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) continue;
+          if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) {
+            await recordGonePage(researchUrl, {});
+            continue;
+          }
           // A crawl follows the page's own nav, and a school microsite's nav links its
           // school-wide `/research` landing page, so the same shape arrives here too. Not
           // counted as `crawlIncomplete`: the page was refused rather than unread, and
@@ -2182,16 +2199,19 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             ctx.log(
               `[${lab.slug || 'candidate'}] research subpage skipped: ${sanitizeLogValue(error)}`,
             );
+            await recordGonePage(researchUrl, { httpStatusCode: fetchFailureHttpStatus(error) });
             continue;
           }
           if (!researchPage?.html) {
             crawlIncomplete = true;
             continue;
           }
+          recordReadPage(researchUrl, researchPage.url);
           if (!personProfileSourceMatchesEntity(researchPage.url, lab)) continue;
           if (pages.some((fetched) => fetched.url === researchPage.url)) continue;
           pages.push(researchPage);
         }
+        await emitPageHealth();
 
         // A run that could not read every research page the home page links has
         // seen strictly less than the run that produced the stored description,
@@ -2380,8 +2400,14 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // description is credited to, never to the page just fetched, which on a
         // title-only profile holds none of them (#4048).
         const storedDescriptionSourceUrl = textValue(lab.fullDescriptionSourceUrl);
+        const storedDescriptionSourceIsGone = gonePageKeys.has(
+          sourceLinkHealthKey(storedDescriptionSourceUrl) ?? '',
+        );
         const storedDescriptionMethods =
-          methods.length === 0 && storedDescription.length >= 120 && storedDescriptionSourceUrl
+          methods.length === 0 &&
+          storedDescription.length >= 120 &&
+          storedDescriptionSourceUrl &&
+          !storedDescriptionSourceIsGone
             ? groundMethods(
                 (
                   await this.callLLM({

@@ -8454,8 +8454,11 @@ export async function projectFromLog(
       fieldsWithLiveObservation,
       withdrawnValuesByField: gonePageWithdrawnValuesByField,
       lockedFields: manuallyLockedFields,
+      storedForm: (field, value) => sanitizeProjectedField(entityType, field, value),
     })) {
       console.log(`[lane-page-health] cleared a ${field} only a gone page's read backed`);
+      delete set[field];
+      delete set[`fieldProvenance.${field}`];
       unset[field] = '';
       delete confidenceByField[field];
     }

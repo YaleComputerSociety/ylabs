@@ -9,12 +9,6 @@ import type { ObservationInput } from './types';
 
 export const LANE_PAGE_HEALTH_FIELD = 'lanePageHealth';
 
-export const LANE_PAGE_HEALTH_CLEARABLE_FIELDS = [
-  'description',
-  'shortDescription',
-  'fullDescription',
-] as const;
-
 const GONE_HTTP_STATUS_CODES: ReadonlySet<number> = new Set([404, 410]);
 
 export interface LanePageHealthVerdict {
@@ -194,21 +188,40 @@ function comparableValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : JSON.stringify(value ?? null);
 }
 
+const GONE_PAGE_BODY_FIELDS = ['description', 'fullDescription'] as const;
+
 export function planGoneLanePageFieldClears(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
   fieldsWithLiveObservation: ReadonlySet<string>;
   withdrawnValuesByField: ReadonlyMap<string, readonly unknown[]>;
   lockedFields: readonly string[];
+  storedForm: (field: string, value: unknown) => unknown;
 }): string[] {
-  return LANE_PAGE_HEALTH_CLEARABLE_FIELDS.filter((field) => {
-    const withdrawn = input.withdrawnValuesByField.get(field);
-    if (!withdrawn || withdrawn.length === 0) return false;
-    if (input.lockedFields.includes(field)) return false;
-    if (field in input.staged) return false;
-    if (input.fieldsWithLiveObservation.has(field)) return false;
+  const clearable = (field: string) =>
+    !input.lockedFields.includes(field) && !input.fieldsWithLiveObservation.has(field);
+  const storedValue = (field: string) => {
     const stored = input.stored?.[field];
-    if (stored === undefined || stored === null || comparableValue(stored) === '') return false;
-    return withdrawn.some((value) => comparableValue(value) === comparableValue(stored));
-  });
+    return stored === undefined || stored === null || comparableValue(stored) === ''
+      ? null
+      : comparableValue(stored);
+  };
+  const storedFromGonePage = (field: string) => {
+    const stored = storedValue(field);
+    const withdrawn = input.withdrawnValuesByField.get(field) ?? [];
+    return (
+      stored !== null &&
+      !(field in input.staged) &&
+      clearable(field) &&
+      withdrawn.some((value) => comparableValue(input.storedForm(field, value)) === stored)
+    );
+  };
+  const clearedBodies = GONE_PAGE_BODY_FIELDS.filter(storedFromGonePage);
+  const cardFollowsClearedBody =
+    clearedBodies.includes('fullDescription') &&
+    clearable('shortDescription') &&
+    (storedValue('shortDescription') !== null || 'shortDescription' in input.staged);
+  return cardFollowsClearedBody || storedFromGonePage('shortDescription')
+    ? [...clearedBodies, 'shortDescription']
+    : clearedBodies;
 }

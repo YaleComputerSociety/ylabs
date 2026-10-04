@@ -150,27 +150,20 @@ describe('confirmGoneLanePage', () => {
 
 describe('planGoneLanePageFieldClears', () => {
   const withdrawn = new Map([['fullDescription', ['Studies synthetic signaling.']]]);
+  const base = {
+    stored: { fullDescription: 'Studies synthetic signaling.' } as Record<string, unknown>,
+    staged: {} as Record<string, unknown>,
+    fieldsWithLiveObservation: new Set<string>(),
+    withdrawnValuesByField: withdrawn,
+    lockedFields: [] as string[],
+    storedForm: (_field: string, value: unknown) => value,
+  };
 
   it('clears a stored value only the gone page backed', () => {
-    expect(
-      planGoneLanePageFieldClears({
-        stored: { fullDescription: 'Studies synthetic signaling.' },
-        staged: {},
-        fieldsWithLiveObservation: new Set(),
-        withdrawnValuesByField: withdrawn,
-        lockedFields: [],
-      }),
-    ).toEqual(['fullDescription']);
+    expect(planGoneLanePageFieldClears(base)).toEqual(['fullDescription']);
   });
 
   it('keeps a value another observation still backs, a locked value, or a different value', () => {
-    const base = {
-      stored: { fullDescription: 'Studies synthetic signaling.' },
-      staged: {},
-      fieldsWithLiveObservation: new Set<string>(),
-      withdrawnValuesByField: withdrawn,
-      lockedFields: [] as string[],
-    };
     expect(
       planGoneLanePageFieldClears({
         ...base,
@@ -181,5 +174,48 @@ describe('planGoneLanePageFieldClears', () => {
     expect(
       planGoneLanePageFieldClears({ ...base, stored: { fullDescription: 'Another reading.' } }),
     ).toEqual([]);
+  });
+
+  it('matches the withdrawn read in the form the row stores it', () => {
+    expect(
+      planGoneLanePageFieldClears({
+        ...base,
+        stored: { fullDescription: 'Studies synthetic signaling. [contact removed]' },
+        withdrawnValuesByField: new Map([
+          ['fullDescription', ['Studies synthetic signaling. lab@synthetic.example.edu']],
+        ]),
+        storedForm: (_field, value) =>
+          String(value).replace('lab@synthetic.example.edu', '[contact removed]'),
+      }),
+    ).toEqual(['fullDescription']);
+  });
+
+  it('clears the card derived from a cleared body, stored or freshly staged', () => {
+    expect(
+      planGoneLanePageFieldClears({
+        ...base,
+        stored: { ...base.stored, shortDescription: 'A card the materializer wrote.' },
+      }),
+    ).toEqual(['fullDescription', 'shortDescription']);
+    expect(
+      planGoneLanePageFieldClears({
+        ...base,
+        staged: { shortDescription: 'A card derived from the gone body.' },
+      }),
+    ).toEqual(['fullDescription', 'shortDescription']);
+  });
+
+  it('keeps a card that a live observation or a lock still backs', () => {
+    const stored = { ...base.stored, shortDescription: 'A card another lane read.' };
+    expect(
+      planGoneLanePageFieldClears({
+        ...base,
+        stored,
+        fieldsWithLiveObservation: new Set(['shortDescription']),
+      }),
+    ).toEqual(['fullDescription']);
+    expect(
+      planGoneLanePageFieldClears({ ...base, stored, lockedFields: ['shortDescription'] }),
+    ).toEqual(['fullDescription']);
   });
 });
