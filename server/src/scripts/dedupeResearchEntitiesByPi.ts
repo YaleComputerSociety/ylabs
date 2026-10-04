@@ -74,7 +74,6 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
-import { RESEARCH_PLAN_RESTORE_WINDOW_MS } from '../models/researchPlan';
 import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -856,12 +855,8 @@ export function buildArchivedDocumentArchiveUpdate(args: {
   relinkValue?: unknown;
   includeRelink: boolean;
   archivedReason?: string;
-  collectionName?: string;
 }): { $set: Record<string, unknown>; $unset: Record<string, ''> } {
   const set: Record<string, unknown> = { lastMaterializedAt: args.now };
-  if (args.collectionName === 'research_plans') {
-    set.restorableUntil = new Date(args.now.getTime() + RESEARCH_PLAN_RESTORE_WINDOW_MS);
-  }
   if (
     args.includeRelink &&
     args.relinkField &&
@@ -1749,7 +1744,6 @@ async function archiveOrDeleteDuplicateDocument(args: {
       relinkField: args.relinkField,
       relinkValue: args.relinkValue,
       includeRelink: true,
-      collectionName: args.collectionName,
     });
     try {
       const result = await collection.updateOne({ _id: id }, update);
@@ -1765,7 +1759,6 @@ async function archiveOrDeleteDuplicateDocument(args: {
               relinkField: args.relinkField,
               relinkValue: args.relinkValue,
               includeRelink: false,
-              collectionName: args.collectionName,
             }),
           );
           if (archiveOnly.modifiedCount > 0) return 'archived';

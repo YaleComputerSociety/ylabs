@@ -82,7 +82,11 @@ export function resolveExpireMongoUrl(
 }
 
 export function legacyArchivedResearchPlanFilter(): Record<string, unknown> {
-  return { archived: true, restorableUntil: { $exists: false } };
+  return {
+    archived: true,
+    restorableUntil: { $exists: false },
+    archivedReason: { $exists: false },
+  };
 }
 
 export function restoreWindowFromLastUpdatePipeline(): Document[] {

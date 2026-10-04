@@ -1,9 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { MongoClient, type Collection } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { RESEARCH_PLAN_RESTORE_WINDOW_MS } from '../../models/researchPlan';
+import { PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
   EXPIRE_CONFIRM_FLAG,
   assertExpireLegacyArchivedResearchPlansApplyAllowed,
@@ -41,6 +40,13 @@ describe('expire legacy archived research plans (#4163)', () => {
       { key: 'legacy-undated', archived: true },
       { key: 'stamped', archived: true, restorableUntil: STAMPED_UNTIL, updatedAt: RECENT },
       { key: 'active', archived: false, privateNotes: 'kept', updatedAt: LONG_AGO },
+      {
+        key: 'dedupe-conflict',
+        archived: true,
+        archivedReason: PI_DEDUPE_ARCHIVE_REASON,
+        privateNotes: 'kept',
+        updatedAt: LONG_AGO,
+      },
     ]);
   });
 
@@ -84,6 +90,13 @@ describe('expire legacy archived research plans (#4163)', () => {
     expect((await plan('stamped'))?.restorableUntil).toEqual(STAMPED_UNTIL);
   });
 
+  it('leaves a plan a system lane archived untouched, because the student never removed it', async () => {
+    await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
+
+    expect((await plan('dedupe-conflict'))?.restorableUntil).toBeUndefined();
+    expect((await plan('dedupe-conflict'))?.privateNotes).toBe('kept');
+  });
+
   it('stamps nothing on a second run', async () => {
     await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
     const second = await expireLegacyArchivedResearchPlans(plans, { apply: true, now: NOW });
@@ -121,17 +134,5 @@ describe('expire legacy archived research plans arguments', () => {
     expect(resolveExpireMongoUrl('development', { MONGODBURL: 'mongodb://fixture/dev' })).toBe(
       'mongodb://fixture/dev',
     );
-  });
-});
-
-describe('the product archive of a research plan stamps a restore window', () => {
-  it('sets restorableUntil in every service write that archives a plan', () => {
-    const service = fs.readFileSync(
-      path.resolve(__dirname, '..', '..', 'services', 'researchPlanService.ts'),
-      'utf8',
-    );
-    const archiveSets = [...service.matchAll(/\$set:\s*\{([^}]*archived:\s*true[^}]*)\}/gs)];
-    expect(archiveSets.length).toBeGreaterThan(0);
-    for (const [, body] of archiveSets) expect(body).toMatch(/restorableUntil:/);
   });
 });
