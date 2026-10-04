@@ -12,6 +12,7 @@ import {
   extractElementTextWithLineBreaks,
 } from '../scrapers/utils/htmlText';
 import { removeProfilePublicityRegions } from '../scrapers/utils/profilePublicityRegions';
+import { removeRelatedEntityTeaserCards } from './relatedEntityTeaserCards';
 
 export interface OfficialResearchDescription {
   fullDescription: string;
@@ -88,6 +89,7 @@ function removeNonDescriptionRegions($: cheerio.CheerioAPI): void {
   // candidate block and each news item's own paragraph competes to become the served
   // description (#3184).
   removeProfilePublicityRegions($);
+  removeRelatedEntityTeaserCards($);
 }
 
 /**
