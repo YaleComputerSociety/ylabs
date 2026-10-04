@@ -84,8 +84,11 @@ describe('one fund reached through two fund-page URLs serves one program card (#
       mode: 'dry-run',
       recordIds: [String(OFFICE_COPY_ID)],
     });
-    expect(targeted.map((plan) => plan.recordId)).toEqual([String(OFFICE_COPY_ID)]);
+    expect(targeted.map((plan) => plan.recordId).sort()).toEqual(
+      [String(OFFICE_COPY_ID), String(CATALOG_COPY_ID)].sort(),
+    );
     expect(planFor(OFFICE_COPY_ID, targeted).tier).toBe('suppressed');
+    expect(planFor(CATALOG_COPY_ID, targeted).tier).toBe('student_ready');
   });
 
   it('still serves exactly one copy after the verdict is applied and the gate runs again', async () => {
