@@ -717,6 +717,96 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     meaning: 'Retired undergraduate class-year browse projection',
     target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
   },
+  {
+    collection: 'research_entities',
+    field: 'prerequisiteCourses',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'creditOptions',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'fundingPrograms',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'timeCommitmentHoursPerWeek',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'location',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'embedding',
+    meaning: 'Declared field with no writer, empty on every row',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'accessAcceptanceLevel',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'studentVisibilityVersion',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'totalInquiriesCache',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'claimedByFaculty',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'studentDecisionExplanation',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'description',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'departmentIds',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'researchAreaIds',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'archiveReason',
+    meaning: 'Undeclared field left by a retired feature',
+    target: 'Nothing: unset by retire:research-entity-residue-fields',
+  },
 ];
 
 /** Reference edges whose orphans block clean cutover. */

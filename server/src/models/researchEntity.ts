@@ -220,10 +220,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: String,
       default: '',
     },
-    location: {
-      type: String,
-      default: '',
-    },
     departments: {
       type: [String],
       default: [],
@@ -349,18 +345,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
-    prerequisiteCourses: {
-      type: [String],
-      default: [],
-    },
-    creditOptions: {
-      type: [String],
-      default: [],
-    },
-    fundingPrograms: {
-      type: [String],
-      default: [],
-    },
     rosterEnrichment: {
       type: {
         state: {
@@ -416,13 +400,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
         observedAt: { type: Date, required: true },
       },
       required: false,
-      default: undefined,
-    },
-    timeCommitmentHoursPerWeek: {
-      type: {
-        min: { type: Number },
-        max: { type: Number },
-      },
       default: undefined,
     },
     contactEmail: {
@@ -511,11 +488,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: false,
     },
     ...archiveAttributionFields,
-    embedding: {
-      type: [Number],
-      required: false,
-      select: false,
-    },
     ...studentVisibilityFields,
   },
   {

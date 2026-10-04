@@ -19,6 +19,7 @@ import '../models';
 import {
   declaredIndexName,
   reportMissingMongoIndexes,
+  reportUndeclaredMongoIndexes,
   reportUnbuildableDeclaredIndexSpecs,
   connectScriptMongo,
 } from '../db/connections';
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);
     const unbuildable = reportUnbuildableDeclaredIndexSpecs();
     const missingBefore = await reportMissingMongoIndexes();
+    const undeclared = await reportUndeclaredMongoIndexes();
     const missingBeforeTotal = missingBefore.reduce(
       (sum, entry) => sum + entry.missingIndexNames.length,
       0,
@@ -99,6 +101,11 @@ async function main(): Promise<void> {
           unbuildableIndexSpecs: unbuildable,
           missingIndexesBefore: missingBeforeTotal,
           missingByCollection: missingBefore,
+          undeclaredIndexes: undeclared.reduce(
+            (sum, entry) => sum + entry.undeclaredIndexNames.length,
+            0,
+          ),
+          undeclaredByCollection: undeclared,
         },
         null,
         2,

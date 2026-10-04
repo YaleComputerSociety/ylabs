@@ -121,6 +121,11 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     reason:
       'unsets fields retired from the schema, which strict mode would silently drop from a model update',
   },
+  'scripts/retireResearchEntityResidueFields.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
   'scripts/retireUndergraduateLogisticsFields.ts': {
     sites: 1,
     reason:
