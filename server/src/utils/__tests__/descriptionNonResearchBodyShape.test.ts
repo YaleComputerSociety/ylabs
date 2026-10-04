@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { nonResearchBodyShape } from '../descriptionNonResearchBodyShape';
+import {
+  isRoleBiographyWithoutResearchOrPractice,
+  nonResearchBodyShape,
+} from '../descriptionNonResearchBodyShape';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -127,5 +130,23 @@ describe('nonResearchBodyShape (#4528)', () => {
     expect(
       fullDescriptionQuality(instructionOffering, undefined, 'CORE_FACILITY').flags,
     ).not.toContain('instruction-offering');
+  });
+});
+
+describe('a career narrative of past posts only', () => {
+  it('is a role biography even when an old post mentions care', () => {
+    expect(
+      isRoleBiographyWithoutResearchOrPractice(
+        'Mx. Fixture was the director of public policy for an example foundation, where they led advocacy for funding. Prior to that, they were a senior policy officer at another foundation, where they focused on treatment access. They have a B.A. from Example University.',
+      ),
+    ).toBe(true);
+  });
+
+  it('is not a role biography when it states a current area of expertise', () => {
+    expect(
+      isRoleBiographyWithoutResearchOrPractice(
+        'An expert in gender, health and human rights, Fixture was faculty director of an example center.',
+      ),
+    ).toBe(false);
   });
 });

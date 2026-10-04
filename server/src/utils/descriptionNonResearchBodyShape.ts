@@ -1,4 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
+import { splitDescriptionSentences } from './careerBiographyDescription';
 import {
   creativePracticeEvidence,
   type CreativePracticeEvidence,
@@ -60,9 +61,32 @@ const MIN_TEACHING_ROLE_MENTIONS = 3;
  * practice evidence keeps the body, because the cost of refusing a real research biography
  * is the row.
  */
+const PAST_ROLE_SENTENCE =
+  /\b(?:was|were)\s+(?:also\s+)?(?:(?:the|a|an)\s+)?(?:\w+\s+){0,3}(?:director|manager|officer|advisor|adviser|counsel|consultant|analyst|chief|head|president|fellow|staffer|associate|assistant|aide)\b|^(?:Prior\s+to|Before\s+(?:joining|coming))\b|\bserved\s+as\b/i;
+const DEGREE_HOLDING_SENTENCE =
+  /\b(?:has|have|holds|hold|earned|received)\s+(?:an?\s+)?(?:B\.?A\.?|B\.?S\.?|M\.?A\.?|M\.?S\.?|M\.?P\.?A\.?|M\.?P\.?H\.?|M\.?B\.?A\.?|J\.?D\.?|M\.?D\.?|Ph\.?\s?D\.?|degree)/i;
+const CURRENT_EXPERTISE =
+  /\b(?:expert\s+(?:in|on)|speciali[sz]\w*\s+in|research|scholar\s+of|studies|professor)\b/i;
+
+// Every sentence is a past post or a degree: a career narrative of positions held
+// elsewhere. A research or care word inside one of those posts ("where she focused on
+// treatment access") describes the old job, not the person's research.
+const isPastRoleHistoryOnly = (text: string): boolean => {
+  if (CURRENT_EXPERTISE.test(text)) return false;
+  const sentences = splitDescriptionSentences(text);
+  return (
+    sentences.some((sentence) => PAST_ROLE_SENTENCE.test(sentence)) &&
+    sentences.every(
+      (sentence) => PAST_ROLE_SENTENCE.test(sentence) || DEGREE_HOLDING_SENTENCE.test(sentence),
+    )
+  );
+};
+
 export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
   const text = textValue(value);
-  if (!text || anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
+  if (!text) return false;
+  if (isPastRoleHistoryOnly(text)) return true;
+  if (anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
   if (FACULTY_RANK.test(text) || statesCreativePracticeOutsideTheArts(text)) return false;
   return (
     (text.match(ADMINISTRATIVE_ROLE) ?? []).length >= MIN_ADMINISTRATIVE_ROLE_MENTIONS ||
