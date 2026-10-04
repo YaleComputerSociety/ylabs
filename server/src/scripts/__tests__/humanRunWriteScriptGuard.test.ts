@@ -46,6 +46,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'merges and archives login accounts that share one person, an operator decision about account identity run on Development only (#4773)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
+  'observations:nonfetching-lane-gone-pages':
+    'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',

@@ -53,7 +53,6 @@ export function confirmedGoneVerdictObservations(
 ): RowObservation[] {
   return verdicts.map((verdict) => ({
     ...lanePageHealthObservation({ entityType: 'researchEntity', ...row }, verdict),
-    sourceName: 'lane-page-health-confirmation',
     observedAt,
   }));
 }
