@@ -13,6 +13,8 @@ import {
   finishBenchmarkCapture,
   finishBenchmarkReplay,
 } from '../../snapshotBenchmarkMode';
+import { fetchDescriptionPageWithTlsFallback } from '../../sources/labMicrositeDescriptionLLMExtractor';
+import { isTlsVerificationError } from '../../../utils/tlsVerificationErrors';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
@@ -286,6 +288,80 @@ describe('fetchPageWithPolicy under a benchmark', () => {
         networkBlocks: 0,
       });
     }
+  });
+
+  it('freezes a certificate failure during capture and replays the same failure', async () => {
+    const certificateFailure = () =>
+      Promise.reject(
+        Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' }),
+      );
+    beginBenchmarkCapture();
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/statement', options(vi.fn(certificateFailure))),
+    ).rejects.toMatchObject({ code: 'CERT_HAS_EXPIRED' });
+    const pages = finishBenchmarkCapture();
+    expect(pages).toHaveLength(1);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      const replayed = await fetchPageWithPolicy(
+        'https://lab.example.edu/statement',
+        options(replayRequest),
+      ).catch((error: unknown) => error);
+      expect(isTlsVerificationError(replayed)).toBe(true);
+      expect(replayed).not.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({
+        pagesServed: 1,
+        pagesMissed: 0,
+        networkBlocks: 0,
+      });
+    }
+  });
+
+  it('replays the plain-HTTP fallback a certificate failure took during capture', async () => {
+    const statement = 'https://lab.example.edu/statement';
+    const live: HttpRequestFn = vi.fn((url: string) =>
+      url.startsWith('https:')
+        ? Promise.reject(Object.assign(new Error('expired'), { code: 'CERT_HAS_EXPIRED' }))
+        : ok('<html>statement</html>', url),
+    );
+    const fetchPage = (url: string) =>
+      fetchPageWithPolicy(url, options(live)).then((page) => ({ url: page.url, html: page.html }));
+    beginBenchmarkCapture();
+    const captured = await fetchDescriptionPageWithTlsFallback(statement, fetchPage);
+    const pages = finishBenchmarkCapture();
+    expect(captured?.html).toBe('<html>statement</html>');
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok('<html>live</html>'));
+    try {
+      const replayed = await fetchDescriptionPageWithTlsFallback(statement, (url) =>
+        fetchPageWithPolicy(url, options(replayRequest)).then((page) => ({
+          url: page.url,
+          html: page.html,
+        })),
+      );
+      expect(replayed).toEqual(captured);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 2, pagesMissed: 0 });
+    }
+  });
+
+  it('does not freeze a failure that is neither a status nor a certificate failure', async () => {
+    beginBenchmarkCapture();
+    await expect(
+      fetchPageWithPolicy(
+        'https://lab.example.edu/reset',
+        options(
+          vi.fn(() => Promise.reject(Object.assign(new Error('reset'), { code: 'ECONNRESET' }))),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'ECONNRESET' });
+    expect(finishBenchmarkCapture()).toHaveLength(0);
   });
 
   it('refuses a page the capture never saw instead of fetching it', async () => {

@@ -48,6 +48,8 @@ Capture fetches live pages and makes live model calls, so recapture only when no
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
+A fetch that failed certificate verification is frozen as that certificate error code, so replay raises the same error and a lane that falls back to plain HTTP on it, as `lab-microsite-description-llm` does, takes the same fallback on replay instead of advancing to pages the capture never fetched (#4776).
+Any other network failure, such as a reset connection, is not frozen, because it describes the moment rather than the host, and it counts in `unfrozenRequestCount`.
 `center-affiliation-llm`, `center-director-llm` and `research-area-source-extractor` joined once their page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4606), which keeps the same SSRF guard, redirect cap and retry on a throttled status.
 Their model calls already went over the default axios instance, so the model freeze covered them before the move.
 

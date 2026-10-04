@@ -21,6 +21,7 @@ import {
   isBenchmarkReplayActive,
   refuseBenchmarkReplayNetwork,
 } from '../snapshotBenchmarkMode';
+import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -247,8 +248,23 @@ interface FrozenFailedPage {
   failedStatus: number;
 }
 
+interface FrozenTlsFailure {
+  failedTlsCode: string;
+}
+
 function isFrozenFailedPage(payload: unknown): payload is FrozenFailedPage {
   return typeof (payload as FrozenFailedPage).failedStatus === 'number';
+}
+
+function isFrozenTlsFailure(payload: unknown): payload is FrozenTlsFailure {
+  return typeof (payload as FrozenTlsFailure).failedTlsCode === 'string';
+}
+
+export class FrozenTlsVerificationError extends Error {
+  constructor(readonly code: string) {
+    super(`TLS certificate verification failed: ${code}`);
+    this.name = 'FrozenTlsVerificationError';
+  }
 }
 
 export async function fetchPageWithPolicy(
@@ -259,6 +275,9 @@ export async function fetchPageWithPolicy(
   const frozen = benchmarkCacheRead(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey);
   if (frozen.handled && frozen.payload) {
     if (isFrozenFailedPage(frozen.payload)) throw new HttpStatusError(frozen.payload.failedStatus);
+    if (isFrozenTlsFailure(frozen.payload)) {
+      throw new FrozenTlsVerificationError(frozen.payload.failedTlsCode);
+    }
     return frozen.payload as FetchedHttpPage;
   }
   if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
@@ -270,6 +289,10 @@ export async function fetchPageWithPolicy(
       benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
         failedStatus: error.status,
       } satisfies FrozenFailedPage);
+    } else if (isTlsVerificationError(error)) {
+      benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
+        failedTlsCode: (error as { code: string }).code,
+      } satisfies FrozenTlsFailure);
     }
     throw error;
   }
