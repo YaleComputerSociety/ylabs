@@ -315,8 +315,8 @@ await step('search returns a result and the header settles out of loading', asyn
   const searchButton = page.getByRole('button', { name: 'Search', exact: true });
   await searchButton.waitFor({ timeout: 20000 });
   assert(
-    (await page.getByRole('button', { name: 'Searching...', exact: true }).count()) === 0,
-    'Search button is stuck in the "Searching..." loading state.',
+    (await page.getByRole('button', { name: 'Searching…', exact: true }).count()) === 0,
+    'Search button is stuck in the "Searching…" loading state.',
   );
   assert(
     !(await searchButton.isDisabled()),
