@@ -6,6 +6,7 @@ import {
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -74,9 +75,7 @@ const ResearchFilterDisclosure = ({
     },
     [isControlledOpen, onOpenChange],
   );
-  const [isDesktop, setIsDesktop] = useState(
-    () => window.matchMedia?.('(min-width: 640px)').matches ?? false,
-  );
+  const isDesktop = useMediaQuery('(min-width: 640px)');
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -143,15 +142,6 @@ const ResearchFilterDisclosure = ({
     }
     closeRef.current?.focus();
   }, [isDesktop]);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(min-width: 640px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
-    setIsDesktop(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
 
   const closeFilters = useCallback(
     (restoreFocus = true) => {

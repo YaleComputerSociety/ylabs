@@ -1,4 +1,14 @@
-import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
@@ -19,6 +29,7 @@ import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
+import useMediaQuery from '../hooks/useMediaQuery';
 import {
   approachingDeadlineAriaLabel,
   approachingDeadlineLabel,
@@ -370,6 +381,8 @@ const withDepartmentSearchTarget = (
   target: DepartmentSearchTarget,
 ): ResearchSearchFilters => ({ ...filters, departments: target.filters.departments });
 
+const researchClusterByEntity = new WeakMap<ResearchEntity, ResearchCluster>();
+
 const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -385,26 +398,23 @@ const Research = () => {
     researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin
       ? researchPageSnapshot
       : null;
-  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(
+  const [restoredSnapshot] = useState<ResearchPageSnapshot | null>(() =>
     snapshotForThisPage?.resultsSettled ? snapshotForThisPage : null,
   );
-  const [query, setQuery] = useState(
-    () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
-  );
+  const [query, setQuery] = useState(() => restoredSnapshot?.query ?? searchParams.get('q') ?? '');
   const [submittedQuery, setSubmittedQuery] = useState(
-    () => restoredSnapshotRef.current?.submittedQuery ?? '',
+    () => restoredSnapshot?.submittedQuery ?? '',
   );
   const [departmentSearch, setDepartmentSearch] = useState<DepartmentSearchTarget | null>(
-    () => restoredSnapshotRef.current?.departmentSearch ?? null,
+    () => restoredSnapshot?.departmentSearch ?? null,
   );
   const [showWeakestProfilesFirst, setShowWeakestProfilesFirst] = useState(
     () =>
-      restoredSnapshotRef.current?.showWeakestProfilesFirst ??
-      (isAdmin && searchParams.get('weak') === '1'),
+      restoredSnapshot?.showWeakestProfilesFirst ?? (isAdmin && searchParams.get('weak') === '1'),
   );
   const [qualityFilters, setQualityFilters] = useState<ResearchQualityFilter[]>(
     () =>
-      restoredSnapshotRef.current?.qualityFilters ??
+      restoredSnapshot?.qualityFilters ??
       (isAdmin
         ? readSearchParamList(
             searchParams,
@@ -415,7 +425,7 @@ const Research = () => {
   );
   const [trustTierFilters, setTrustTierFilters] = useState<ResearchTrustTierFilter[]>(
     () =>
-      restoredSnapshotRef.current?.trustTierFilters ??
+      restoredSnapshot?.trustTierFilters ??
       (isAdmin
         ? readSearchParamList(
             searchParams,
@@ -425,13 +435,13 @@ const Research = () => {
         : []),
   );
   const [selectedEntityType, setSelectedEntityType] = useState(
-    () => restoredSnapshotRef.current?.selectedEntityType ?? readEntityTypeParam(searchParams),
+    () => restoredSnapshot?.selectedEntityType ?? readEntityTypeParam(searchParams),
   );
   const [selectedSchool, setSelectedSchool] = useState(
-    () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
+    () => restoredSnapshot?.selectedSchool ?? searchParams.get('school') ?? '',
   );
   const [selectedDepartment, setSelectedDepartment] = useState(
-    () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
+    () => restoredSnapshot?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => snapshotForThisPage?.sortBy ?? 'relevance',
@@ -441,8 +451,6 @@ const Research = () => {
   );
   const sortByRef = useRef(sortBy);
   const sortOrderRef = useRef(sortOrder);
-  sortByRef.current = sortBy;
-  sortOrderRef.current = sortOrder;
   const currentSortRequestOptions = (): Pick<
     ResearchEntitySearchOptions,
     'sortBy' | 'sortOrder'
@@ -452,56 +460,54 @@ const Research = () => {
       : { sortBy: sortByRef.current, sortOrder: sortOrderRef.current };
   const [facetDistribution, setFacetDistribution] = useState<
     Record<string, Record<string, number>>
-  >(() => restoredSnapshotRef.current?.facetDistribution ?? {});
+  >(() => restoredSnapshot?.facetDistribution ?? {});
   const [browseFacetDistribution, setBrowseFacetDistribution] = useState<
     Record<string, Record<string, number>>
-  >(() => restoredSnapshotRef.current?.browseFacetDistribution ?? {});
+  >(() => restoredSnapshot?.browseFacetDistribution ?? {});
   const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(
-    () => restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
+    () => restoredSnapshot?.groupedResults ?? emptyGroupedResults(''),
   );
   const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<
     ResearchEntity[]
-  >(() => restoredSnapshotRef.current?.searchResultResearchEntities ?? []);
-  const [searchPage, setSearchPage] = useState(() => restoredSnapshotRef.current?.searchPage ?? 1);
-  const [searchTotal, setSearchTotal] = useState(
-    () => restoredSnapshotRef.current?.searchTotal ?? 0,
-  );
+  >(() => restoredSnapshot?.searchResultResearchEntities ?? []);
+  const [searchPage, setSearchPage] = useState(() => restoredSnapshot?.searchPage ?? 1);
+  const [searchTotal, setSearchTotal] = useState(() => restoredSnapshot?.searchTotal ?? 0);
   const [searchExhausted, setSearchExhausted] = useState(
-    () => restoredSnapshotRef.current?.searchExhausted ?? true,
+    () => restoredSnapshot?.searchExhausted ?? true,
   );
   const [activeSearchRequest, setActiveSearchRequest] =
     useState<ActiveResearchSearchRequest | null>(
-      () => restoredSnapshotRef.current?.activeSearchRequest ?? null,
+      () => restoredSnapshot?.activeSearchRequest ?? null,
     );
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
-    () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
+    () => restoredSnapshot?.defaultResearchEntities ?? [],
   );
   const [defaultSearchPage, setDefaultSearchPage] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchPage ?? 1,
+    () => restoredSnapshot?.defaultSearchPage ?? 1,
   );
   const [defaultSearchTotal, setDefaultSearchTotal] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchTotal ?? 0,
+    () => restoredSnapshot?.defaultSearchTotal ?? 0,
   );
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
+    () => restoredSnapshot?.defaultSearchExhausted ?? false,
   );
-  const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
-  const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
+  const fetchedSearchPageRef = useRef(restoredSnapshot?.searchPage ?? 1);
+  const fetchedDefaultSearchPageRef = useRef(restoredSnapshot?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [hasFacetError, setHasFacetError] = useState(
-    () => restoredSnapshotRef.current?.hasFacetError ?? false,
+    () => restoredSnapshot?.hasFacetError ?? false,
   );
   const [searchDegraded, setSearchDegraded] = useState(
-    () => restoredSnapshotRef.current?.searchDegraded ?? false,
+    () => restoredSnapshot?.searchDegraded ?? false,
   );
   const [defaultSearchDegraded, setDefaultSearchDegraded] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchDegraded ?? false,
+    () => restoredSnapshot?.defaultSearchDegraded ?? false,
   );
   const [queryCorrection, setQueryCorrection] = useState<ResearchSearchQueryCorrection | null>(
-    () => restoredSnapshotRef.current?.queryCorrection ?? null,
+    () => restoredSnapshot?.queryCorrection ?? null,
   );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
@@ -519,7 +525,7 @@ const Research = () => {
   const pendingSearchSourceLocationKeyRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
-    restoredSnapshotRef.current
+    restoredSnapshot
       ? `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
@@ -610,12 +616,11 @@ const Research = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (isAdmin) return;
+  if (!isAdmin) {
     if (showWeakestProfilesFirst) setShowWeakestProfilesFirst(false);
     if (qualityFilters.length > 0) setQualityFilters([]);
     if (trustTierFilters.length > 0) setTrustTierFilters([]);
-  }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
+  }
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
     if (page === 1) fetchedDefaultSearchPageRef.current = 1;
@@ -928,14 +933,20 @@ const Research = () => {
     }
   };
 
-  const runSearchRef = useRef(runSearch);
-  const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
-  const runSearchResultsPageRef = useRef(runSearchResultsPage);
-  const returnToCleanResearchHomeRef = useRef<() => void>(() => {});
+  const runSearchFromEffect = useEffectEvent((...args: Parameters<typeof runSearch>) =>
+    runSearch(...args),
+  );
+  const runDefaultResearchHomeSearchFromEffect = useEffectEvent((page: number) =>
+    runDefaultResearchHomeSearch(page),
+  );
+  const runSearchResultsPageFromEffect = useEffectEvent((page: number) =>
+    runSearchResultsPage(page),
+  );
+  const latestRunSearchRef = useRef(runSearch);
+  useLayoutEffect(() => {
+    latestRunSearchRef.current = runSearch;
+  });
   const consumedHomeResetKeyRef = useRef<string | null>(null);
-  runSearchRef.current = runSearch;
-  runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
-  runSearchResultsPageRef.current = runSearchResultsPage;
 
   const studentSearchFilters = (
     school = selectedSchool,
@@ -1040,12 +1051,14 @@ const Research = () => {
     const syncKey = `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
 
     if (restoredSnapshotSyncKeyRef.current === syncKey) {
-      restoredSnapshotRef.current = null;
       return;
     }
     restoredSnapshotSyncKeyRef.current = null;
 
     if (showWeakestProfilesFirst !== urlWeakestFirst) {
+      // The URL is the external system here, and this reconcile must run in effect order
+      // with the paging effects below, so it stays a synchronous effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowWeakestProfilesFirst(urlWeakestFirst);
       return;
     }
@@ -1093,7 +1106,7 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current(urlDepartmentSearch.label, {
+      void runSearchFromEffect(urlDepartmentSearch.label, {
         searchQuery: '',
         filters: departmentSearchFilters,
         hasFilterSelections: true,
@@ -1112,7 +1125,7 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current(urlQuery, {
+      void runSearchFromEffect(urlQuery, {
         filters: studentFilters,
         syncUrl: false,
         preserveResults: submittedQuery === urlQuery.trim(),
@@ -1127,7 +1140,7 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current('', {
+      void runSearchFromEffect('', {
         filters: studentFilters,
         hasFilterSelections: true,
         syncUrl: false,
@@ -1165,7 +1178,7 @@ const Research = () => {
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
-    void runDefaultResearchHomeSearchRef.current(1);
+    void runDefaultResearchHomeSearchFromEffect(1);
   }, [
     searchParams,
     setSearchParams,
@@ -1263,7 +1276,7 @@ const Research = () => {
   useEffect(() => {
     if (hasSubmittedSearch || defaultSearchPage <= fetchedDefaultSearchPageRef.current) return;
     fetchedDefaultSearchPageRef.current = defaultSearchPage;
-    void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
+    void runDefaultResearchHomeSearchFromEffect(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
@@ -1271,7 +1284,7 @@ const Research = () => {
       return;
     }
     fetchedSearchPageRef.current = searchPage;
-    void runSearchResultsPageRef.current(searchPage);
+    void runSearchResultsPageFromEffect(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const isZeroResultSearch =
@@ -1281,13 +1294,20 @@ const Research = () => {
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
 
+  const hasRelaxedQueryCandidate =
+    isZeroResultSearch &&
+    activeSearchRequest !== null &&
+    Boolean(relaxResearchQuery(activeSearchRequest.searchQuery ?? ''));
+  if (!hasRelaxedQueryCandidate && relaxedQuerySuggestion !== null) {
+    setRelaxedQuerySuggestion(null);
+  }
+
   useEffect(() => {
     const relaxedQuery = isZeroResultSearch
       ? relaxResearchQuery(activeSearchRequest?.searchQuery ?? '')
       : null;
     if (!relaxedQuery || !activeSearchRequest) {
       relaxProbeRequestIdRef.current += 1;
-      setRelaxedQuerySuggestion(null);
       return;
     }
 
@@ -1323,9 +1343,8 @@ const Research = () => {
   }, [isZeroResultSearch, activeSearchRequest]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
-  const clusterByEntityRef = useRef(new WeakMap<ResearchEntity, ResearchCluster>());
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
-    const cache = clusterByEntityRef.current;
+    const cache = researchClusterByEntity;
     return entities.map((entity) => {
       const cached = cache.get(entity);
       if (cached) return cached;
@@ -1466,7 +1485,7 @@ const Research = () => {
   };
   const rerunActiveSearch = () => {
     if (!activeSearchRequest) return;
-    void runSearchRef.current(activeSearchRequest.submittedText, {
+    void runSearch(activeSearchRequest.submittedText, {
       searchQuery: activeSearchRequest.searchQuery,
       filters: activeSearchRequest.filters,
       hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
@@ -1482,7 +1501,7 @@ const Research = () => {
     setDefaultSearchPage(1);
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
-    void runDefaultResearchHomeSearchRef.current(1);
+    void runDefaultResearchHomeSearch(1);
   };
   const toggleResearchSortDirection = () =>
     applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
@@ -1491,7 +1510,7 @@ const Research = () => {
       scrollViewportToTop();
       const target = departmentSearchTargetByLabel.get(label.toLowerCase());
       if (target) {
-        void runSearchRef.current(target.label, {
+        void latestRunSearchRef.current(target.label, {
           searchQuery: '',
           filters: { departments: target.filters.departments },
           hasFilterSelections: true,
@@ -1499,7 +1518,7 @@ const Research = () => {
         });
         return;
       }
-      void runSearchRef.current(label);
+      void latestRunSearchRef.current(label);
     },
     [departmentSearchTargetByLabel],
   );
@@ -1550,29 +1569,8 @@ const Research = () => {
   };
 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  const [isWideFilterLayout, setIsWideFilterLayout] = useState(
-    () => window.matchMedia?.('(min-width: 1280px)').matches ?? false,
-  );
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(min-width: 1280px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsWideFilterLayout(event.matches);
-    setIsWideFilterLayout(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
-
-  const [isCompactViewport, setIsCompactViewport] = useState(
-    () => window.matchMedia?.('(max-width: 639px)').matches ?? false,
-  );
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(max-width: 639px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsCompactViewport(event.matches);
-    setIsCompactViewport(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
+  const isWideFilterLayout = useMediaQuery('(min-width: 1280px)');
+  const isCompactViewport = useMediaQuery('(max-width: 639px)');
   const searchPlaceholder = isCompactViewport
     ? 'Type a topic, professor, lab, or technique'
     : 'Type a topic, professor, lab, technique, or research question';
@@ -1603,7 +1601,7 @@ const Research = () => {
     scrollViewportToTop();
     setQuery(relaxedQuerySuggestion);
     const filters = studentSearchFilters();
-    void runSearchRef.current(relaxedQuerySuggestion, {
+    void runSearch(relaxedQuerySuggestion, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
     });
@@ -1612,7 +1610,7 @@ const Research = () => {
   const searchOriginalSpelling = () => {
     if (!queryCorrection) return;
     const filters = studentSearchFilters();
-    void runSearchRef.current(queryCorrection.originalQuery, {
+    void runSearch(queryCorrection.originalQuery, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       exactSpelling: true,
@@ -1633,7 +1631,7 @@ const Research = () => {
     if (!hasResetableSearchState) return;
     resetSearch();
   };
-  returnToCleanResearchHomeRef.current = returnToCleanResearchHome;
+  const returnToCleanResearchHomeFromEffect = useEffectEvent(returnToCleanResearchHome);
 
   // The URL-sync effect cannot carry this on its own: an unsubmitted draft query
   // lives only in page state, and the page snapshot restores it whenever the
@@ -1643,7 +1641,7 @@ const Research = () => {
     if (!isResearchHomeResetState(location.state)) return;
     if (consumedHomeResetKeyRef.current === location.key) return;
     consumedHomeResetKeyRef.current = location.key;
-    returnToCleanResearchHomeRef.current();
+    returnToCleanResearchHomeFromEffect();
   }, [location.key, location.state]);
 
   const weakestProfilesToggle = (

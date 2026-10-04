@@ -51,6 +51,7 @@ import {
   type WatchedProgramWithStage,
 } from '../../utils/watchedDeadlineSummary';
 import { CalendarIcon, EditIcon } from '../shared/icons';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -182,9 +183,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     }
   }, [programRequest, markNotePersisted]);
 
-  useEffect(() => {
-    void loadPrograms();
-  }, [loadPrograms]);
+  useLoadEffect(loadPrograms);
 
   const retryLoad = () => {
     void reloadFavorites();

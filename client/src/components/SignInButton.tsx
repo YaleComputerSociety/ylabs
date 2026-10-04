@@ -13,19 +13,22 @@ interface SignInButtonProps {
 }
 
 const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) => {
-  const [redirectParam, setRedirectParam] = useState('');
   const location = useLocation();
   const locationState = location.state as { from?: string } | null;
+  const [mountReturn] = useState(() => ({
+    savedPath: sessionStorage.getItem('logoutReturnPath'),
+    from: locationState?.from,
+  }));
+  const fromChangedSinceMount = locationState?.from !== mountReturn.from;
+  const returnPath = normalizeReturnPath(
+    fromChangedSinceMount ? locationState?.from : mountReturn.savedPath || locationState?.from,
+  );
+  const redirectParam = returnPath ? `?redirect=${encodeURIComponent(returnPath)}` : '';
 
   useEffect(() => {
-    const savedPath = sessionStorage.getItem('logoutReturnPath');
-    const returnPath = normalizeReturnPath(savedPath || locationState?.from);
-
-    setRedirectParam(returnPath ? `?redirect=${encodeURIComponent(returnPath)}` : '');
-
-    if (savedPath) sessionStorage.removeItem('logoutReturnPath');
+    if (mountReturn.savedPath) sessionStorage.removeItem('logoutReturnPath');
     localStorage.removeItem('logoutReturnPath');
-  }, [locationState?.from]);
+  }, [mountReturn, locationState?.from]);
 
   const finalUrl = buildApiUrl(`/cas${redirectParam}`);
 

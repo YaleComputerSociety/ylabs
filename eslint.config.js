@@ -86,12 +86,6 @@ export default [
     plugins: reactHooks.configs.flat.recommended.plugins,
     rules: {
       ...reactHooks.configs.flat.recommended.rules,
-      // Deliberately advisory: these two React Compiler rules flag the loader effects that
-      // set a loading flag before fetching and the latest-value refs on the browse page.
-      // Both are correct without the compiler, which the client does not use, and
-      // rewriting them changes browse behaviour, so they are worked down separately (#4379).
-      'react-hooks/refs': 'warn',
-      'react-hooks/set-state-in-effect': 'warn',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': [
         'error',

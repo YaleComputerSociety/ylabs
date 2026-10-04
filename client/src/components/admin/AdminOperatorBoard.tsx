@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import axios from '../../utils/axios';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 type Risk = 'ok' | 'warn' | 'error';
@@ -1158,9 +1159,7 @@ const AdminOperatorBoard = () => {
     }
   }, [boardRequest]);
 
-  useEffect(() => {
-    void fetchBoard();
-  }, [fetchBoard]);
+  useLoadEffect(fetchBoard);
 
   const topQueues = useMemo(
     () =>

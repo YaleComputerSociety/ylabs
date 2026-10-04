@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import useModalDialog from '../../hooks/useModalDialog';
 import axios from '../../utils/axios';
 import { safeRouteSegment } from '../../utils/url';
 import useLatestRequest from '../../hooks/useLatestRequest';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 type ReportStatus = 'unreviewed' | 'accepted' | 'dismissed';
 
@@ -72,9 +73,7 @@ export default function AdminCorrectionReports() {
     [listRequest, status],
   );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useLoadEffect(load);
 
   const openReview = (report: CorrectionReport) => {
     setSelected(report);
