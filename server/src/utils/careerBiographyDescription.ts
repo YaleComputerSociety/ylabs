@@ -306,10 +306,7 @@ const BIBLIOGRAPHIC_CITATION_SENTENCE: readonly RegExp[] = [
   /^\(\s*with\s+[A-Z]/,
   /^["“][^"”]{8,250}(?:[.?!]["”]|["”]\s*\(with\s[^)]+\)|["”][^"“”]{0,80}?\b(?:(?:19|20)\d{2}|Paper|Slides|Journal|Review|Quarterly|Press)\b)/,
   /\b(?:articles?|essays?|papers?|work|writing|research)\s+(?:has|have)\s+(?:also\s+)?appeared\s+in\b/i,
-  new RegExp(
-    `^${BIBLIOGRAPHY_LINK_LABEL}(?:\\s+${BIBLIOGRAPHY_LINK_LABEL})*$`,
-    'i',
-  ),
+  new RegExp(`^${BIBLIOGRAPHY_LINK_LABEL}(?:\\s+${BIBLIOGRAPHY_LINK_LABEL})*$`, 'i'),
   /^(?:Here\s+(?:are|is)\s+)?(?:a\s+few\s+|some\s+)?(?:of\s+(?:my|his|her|their)\s+)?(?:recent|selected|representative)\s+(?:papers|publications|articles)(?:\s+include)?\s*(?::|\.?\s*$)/i,
   /^(?:Revision\s+requested|Revise\s+and\s+resubmit|R&R|Forthcoming|(?:Conditionally\s+)?[Aa]ccepted|Under\s+review|Working\s+paper)\b/,
 ];
