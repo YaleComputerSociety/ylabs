@@ -278,6 +278,19 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
       },
       leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
     }),
+  biography_without_research: () =>
+    researchReasons({
+      entity: {
+        name: 'Example Person Faculty Research',
+        slug: 'biography-without-research-fixture',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: 'Example Person is a graphic designer and public artist.',
+        fullDescription:
+          'Example Person is a graphic designer and public artist. She received a B.A. from Example College in 1962 and an M.F.A. from Example University in 1964. She joined the faculty in 1990 and served as chair of the department. She won the example medal in 2004.',
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+    }),
   inactive_at_yale: () => researchReasons({ entity: { activeAtYaleCache: false } }),
   archive_review: () => programReasons({ studentFacingCategory: 'Archive / review' }),
   not_undergraduate_relevant: () => programReasons({ title: 'Find Funding' }),

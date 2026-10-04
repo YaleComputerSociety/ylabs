@@ -15,6 +15,7 @@ import { servedDescriptionCitationIsGone } from './descriptionGrounding';
 import { labNameBackedByOwnOfficialText } from '../utils/unbackedLabSelfDescription';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
+  servedBodyIsBiographyWithoutResearch,
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
@@ -834,6 +835,11 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
 
+// A person-scoped page whose body is a CV or biography that states no research
+// (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
+// real and the row returns once a source states the research.
+export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
+
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
 // correctness category each belongs to. The structural suppression shells
@@ -877,6 +883,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   // rows has no evidence about its own subject (#2464). Left unclassified it read
   // as non-blocking, so a row held by it alone would count as unexplained.
   'citations_identify_no_person',
+  BIOGRAPHY_WITHOUT_RESEARCH_REASON,
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -1139,6 +1146,8 @@ export function computeResearchEntityStudentVisibility({
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (unbackedLabName) reasons.push('unbacked_lab_name');
+  const biographyWithoutResearch = servedBodyIsBiographyWithoutResearch(publicDescription);
+  if (biographyWithoutResearch) reasons.push(BIOGRAPHY_WITHOUT_RESEARCH_REASON);
   const leadTitlePendingPolicy = !missingLead && leadTitlesArePendingPolicy(leadMembers);
   if (leadTitlePendingPolicy) reasons.push(LEAD_TITLE_PENDING_POLICY_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
@@ -1156,7 +1165,8 @@ export function computeResearchEntityStudentVisibility({
   if (!hasAnyLiveCitation) reasons.push('all_citations_dead');
 
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
-    descriptionCoherent: publicDescription.invariant.pass && hasRequiredResearchFocusCard,
+    descriptionCoherent:
+      publicDescription.invariant.pass && hasRequiredResearchFocusCard && !biographyWithoutResearch,
     // Folded in beside the org-type mismatch rather than added as a new
     // correctness field, because it is the same question asked of the other half
     // of the title: a heading claiming a laboratory the row cites no evidence for
@@ -1198,6 +1208,7 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
+    !biographyWithoutResearch &&
     !leadTitlePendingPolicy &&
     !duplicateRisk &&
     hasUsableName

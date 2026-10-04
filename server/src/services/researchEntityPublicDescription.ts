@@ -1,5 +1,6 @@
 import {
   assessResearchEntityDescriptionQuality,
+  describesResearchFocus,
   isCardPageFragment,
   isThinButAccurateBody,
   withMemoizedDescriptionQuality,
@@ -19,6 +20,7 @@ import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLe
 import {
   isCurriculumVitaeShapedBody,
   researchStatementSentences,
+  splitDescriptionSentences,
 } from '../utils/careerBiographyDescription';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
@@ -467,4 +469,31 @@ function withThinButAccurateBodyUsable(
   };
   const cardComplete = short.isUseful || (programLike && !short.text);
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
+}
+
+/**
+ * A person-scoped row whose served body is a CV or a biography and, after narrowing,
+ * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
+ * page tells a student nothing about the work, so it is held for review unless the
+ * served card states the research itself.
+ */
+export function servedBodyIsBiographyWithoutResearch(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const entity = representation.entity;
+  if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return false;
+  const body = textValue(entity.fullDescription);
+  if (!body) return false;
+  const biography =
+    isCurriculumVitaeShapedBody(body) ||
+    isCredentialOrAwardLeadBiography(body) ||
+    isCredentialOrTitleLeadBiography(body) ||
+    isPersonBiographyOrAdvisingDescription(body);
+  if (!biography) return false;
+  if (splitDescriptionSentences(body).some((sentence) => describesResearchFocus(sentence))) {
+    return false;
+  }
+  if (researchStatementSentences(body, { activityAnchors: true }).length > 0) return false;
+  const card = textValue(representation.servedCard);
+  return !describesResearchFocus(card);
 }
