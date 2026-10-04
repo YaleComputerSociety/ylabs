@@ -1818,12 +1818,40 @@ const revoicePassOutsideQuotations = (
   });
 };
 
+// A numbered category ("Type I diabetes", "Phase I trial") reads as a capital I
+// before a lowercase word too, so those labels are not a speaker.
+const SINGULAR_FIRST_PERSON_SUBJECT_PATTERN =
+  /(?<!\b(?:Type|Phase|Class|Grade|Stage|Part|Chapter|War|Level|Tier|Wave|Group|Act|Volume|Book|Section)\s)\bI(?:['’](?:m|ve|d|ll))?\s+(?=[a-z])/g;
+
+/**
+ * Whether a person speaks in the body in the singular. On a lab row that voice
+ * belongs to the lead, not to the lab, so converting it names the lab as the one
+ * who grew up, earned the PhD, or is a biological anthropologist (#4809): 23 of 754
+ * served Development lab rows read that way on 2026-10-04. A lab speaks as "we",
+ * which still converts to the lab's name; a body in the lead's own first person
+ * converts to the unnamed "this researcher", as it did before #3368 named the subject.
+ */
+const UNNAMED_RESEARCHER_SUBJECT: FacultyResearchTextEntity = { kind: 'individual' };
+
+function hasSingularFirstPersonSubjectOutsideQuotation(text: string): boolean {
+  const ranges = directlyQuotedRanges(text);
+  const pattern = new RegExp(SINGULAR_FIRST_PERSON_SUBJECT_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+  }
+  return false;
+}
+
 export function revoiceFirstPersonResearchLead(
   value: unknown,
   entity?: FacultyResearchTextEntity | null,
 ): string {
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
+  if (isLabResearchTextEntity(entity) && hasSingularFirstPersonSubjectOutsideQuotation(text)) {
+    return revoiceFirstPersonResearchLead(text, UNNAMED_RESEARCHER_SUBJECT);
+  }
   let next = stripLeadingPersonalGreeting(text);
   const forms = leadSubjectForms(entity);
   const possessiveSubject = possessiveLeadSubject(entity);
@@ -1855,11 +1883,13 @@ export function revoiceFirstPersonResearchLead(
     (match: string, offset: number, full: string) =>
       sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
-  const revoiced = forms ? resolveLeadSubjectMarkers(next, forms) : next;
-  return abandonsHalfConvertedVoice(revoiced) ? text : revoiced;
+  if (abandonsHalfConvertedVoice(next)) return text;
+  return forms ? resolveLeadSubjectMarkers(next, forms) : next;
 }
 
 const SURVIVING_FIRST_PERSON_SUBJECT = /(?:^|[.!?]\s+|["“”]\s*)(?:I|I['’]m|I['’]ve|My)\s/;
+
+const SURVIVING_FIRST_PERSON_OBJECT = /\b(?:me|myself)\b/;
 
 /**
  * Whether the passes above converted some first-person subjects and left others,
@@ -1885,10 +1915,18 @@ function abandonsHalfConvertedVoice(revoiced: string): boolean {
   // direct quotation in its speaker's own voice (#2974), so counting it here
   // abandoned every rewrite of a body that quotes anyone.
   const ranges = directlyQuotedRanges(revoiced);
-  const pattern = new RegExp(SURVIVING_FIRST_PERSON_SUBJECT.source, 'g');
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(revoiced))) {
-    if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+  // A singular first person left anywhere in a sentence, not only at its start,
+  // leaves two voices: "this researcher majored ... where I went" (#4809).
+  for (const source of [
+    SURVIVING_FIRST_PERSON_SUBJECT.source,
+    SINGULAR_FIRST_PERSON_SUBJECT_PATTERN.source,
+    SURVIVING_FIRST_PERSON_OBJECT.source,
+  ]) {
+    const pattern = new RegExp(source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(revoiced))) {
+      if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+    }
   }
   return false;
 }
