@@ -164,18 +164,21 @@ export interface VerifiedProfileEntry extends CanonicalNetidEntry {
 }
 
 /**
- * The page key of every verified official primary-identity link a researcher holds.
- * A verified primary identity is a profile page the link-health lane fetched and found
- * to be about this person, so two records holding the same one are claiming the same
- * human, whatever given name each was minted under.
+ * The page key of every official primary-identity link a researcher holds that the
+ * link-health lane last probed as HEALTHY. `verifiedAt` is stamped on every write and
+ * every probe, dead or not, so only the health verdict separates a live page from one
+ * nobody has confirmed. A live page proves the page exists, not who it is about, which
+ * is why the fold still applies the surname, rank, ORCID, and netid vetoes.
  */
 export function verifiedPrimaryProfileKeys(profileLinks: unknown): string[] {
   if (!Array.isArray(profileLinks)) return [];
   const keys = new Set<string>();
   for (const link of profileLinks) {
     if (!link || typeof link !== 'object') continue;
-    const { kind, purpose, verifiedAt, url } = link as Record<string, unknown>;
-    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || !verifiedAt) continue;
+    const { kind, purpose, healthStatus, url } = link as Record<string, unknown>;
+    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || healthStatus !== 'HEALTHY') {
+      continue;
+    }
     const key = profilePageKey(url);
     if (key) keys.add(key);
   }
@@ -288,7 +291,7 @@ function decideRosterIdentityFold(
 }
 
 /**
- * A shell and an account-backed record that hold the same verified official primary
+ * A shell and an account-backed record that hold the same healthy official primary
  * profile are one person even when their given names differ, because a programme
  * roster mints under a nickname and the directory account under the legal name. The
  * page decides; the surname only vetoes. More than one account-backed holder of the
@@ -332,8 +335,9 @@ function decideVerifiedProfileFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'verified-profile' };
 }
 
-// A verified link can itself be wrong, and the one measured case was a postdoc holding a
-// professor's page, so a professor and a trainee rank are never folded on a page alone.
+// A healthy link can still point at the wrong person, and the one measured case was a
+// postdoc holding a professor's page, so a professor and a trainee rank are never folded
+// on a page alone.
 function titlesStateConflictingRanks(left: unknown, right: unknown): boolean {
   const verdicts = new Set(
     [left, right].map((value) => titleResearchOwnership(typeof value === 'string' ? value : '')),
