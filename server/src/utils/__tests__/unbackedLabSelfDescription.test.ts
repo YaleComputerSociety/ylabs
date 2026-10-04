@@ -154,9 +154,9 @@ describe('recastUnbackedLabSelfDescription', () => {
   });
 
   it('still recasts a sentence whose predicate is not a lab', () => {
-    expect(recast('The Okonkwo-Vale Lab is a leader in estuary research. The lab uses drones.')).toBe(
-      'Wren Okonkwo-Vale is a leader in estuary research. This research uses drones.',
-    );
+    expect(
+      recast('The Okonkwo-Vale Lab is a leader in estuary research. The lab uses drones.'),
+    ).toBe('Wren Okonkwo-Vale is a leader in estuary research. This research uses drones.');
   });
 
   it('still recasts a sentence that places something in the lab', () => {
