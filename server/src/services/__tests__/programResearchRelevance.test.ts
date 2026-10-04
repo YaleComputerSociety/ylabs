@@ -444,6 +444,24 @@ describe('classifyProgramResearchRelevance', () => {
             description: 'Priority for students with prior research experience in the language.',
           }),
         ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Intensive language study that prepares students for research abroad.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Open to students with a demonstrated passion for research.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Applicants should have prior experience conducting research.',
+          }),
+        ).toBe(false);
       });
 
       it('keeps a fund withheld when its text negates or disclaims the research use', () => {
