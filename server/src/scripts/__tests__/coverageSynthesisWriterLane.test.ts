@@ -8,6 +8,7 @@ import {
   writerEvidenceHash,
   writerWritesAfterBodyAttempt,
   writerWritesFor,
+  writtenBodyCardRepairFilter,
 } from '../coverageSynthesisCore';
 
 const LAB =
@@ -164,6 +165,21 @@ describe('the writer lane runs over every live row (#4788)', () => {
       writeBody: false,
       retireBody: false,
       recordHash: false,
+    });
+  });
+});
+
+describe('re-deriving written-body cards (#4788 follow-up)', () => {
+  it('parses --rederive-cards', () => {
+    expect(parseCoverageSynthesisArgs(['--rederive-cards']).rederiveCards).toBe(true);
+    expect(parseCoverageSynthesisArgs([]).rederiveCards).toBe(false);
+  });
+
+  it('selects live rows serving the written body and held on a missing card', () => {
+    expect(writtenBodyCardRepairFilter('coverage-synthesis-llm')).toEqual({
+      archived: { $ne: true },
+      'fieldProvenance.fullDescription.sourceName': 'coverage-synthesis-llm',
+      studentVisibilityReasons: 'missing_card_description',
     });
   });
 });

@@ -20,6 +20,7 @@ export interface CoverageSynthesisArgs {
   confirm: boolean;
   limit: number;
   all: boolean;
+  rederiveCards: boolean;
   concurrency: number;
   slugs: string[];
   output?: string;
@@ -41,6 +42,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     confirm: false,
     limit: DEFAULT_COVERAGE_SYNTHESIS_LIMIT,
     all: false,
+    rederiveCards: false,
     concurrency: DEFAULT_COVERAGE_SYNTHESIS_CONCURRENCY,
     slugs: [],
   };
@@ -49,6 +51,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--dry-run') args.apply = false;
     else if (token === '--confirm-coverage-synthesis') args.confirm = true;
     else if (token === '--all') args.all = true;
+    else if (token === '--rederive-cards') args.rederiveCards = true;
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
     else if (token.startsWith('--concurrency=')) {
       args.concurrency = Number(token.slice('--concurrency='.length));
@@ -215,4 +218,17 @@ export function storedWriterEvidenceHash(
     )
     .sort((a, b) => (b.observedAt?.getTime() ?? 0) - (a.observedAt?.getTime() ?? 0));
   return hashes[0]?.value as string | undefined;
+}
+
+/**
+ * The rows whose card the written-body card defect left unservable: live, serving the
+ * written body, and held on `missing_card_description`. `--rederive-cards` re-projects
+ * only these, and calls the writer model for none of them.
+ */
+export function writtenBodyCardRepairFilter(sourceName: string): Record<string, unknown> {
+  return {
+    archived: { $ne: true },
+    'fieldProvenance.fullDescription.sourceName': sourceName,
+    studentVisibilityReasons: 'missing_card_description',
+  };
 }

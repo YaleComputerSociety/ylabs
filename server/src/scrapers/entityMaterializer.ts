@@ -37,6 +37,7 @@ import { Fellowship } from '../models/fellowship';
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 import {
   buildResearchAreasCardSummary,
+  deriveShortDescriptionFromFullDescription,
   entityDocShortDescriptionForRestatementGuard,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
@@ -58,6 +59,7 @@ import {
 import {
   cardLineFitsBrowseCard,
   CARD_SYNTHESIS_MODEL,
+  cardGroundingScore,
   defaultCardSynthesisLLM,
   isUngroundedSynthesizedCard,
   resolveGroundedCardDescription,
@@ -235,6 +237,8 @@ import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacte
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
+  isResearchAreaEchoDescription,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -461,7 +465,7 @@ interface MaterializeOptions {
   nameIdentityAuthority?: ResearchEntityNameIdentityAuthority;
 }
 
-function defaultMaterializerCardSynthesizer(
+export function defaultMaterializerCardSynthesizer(
   entityName: string,
 ): (fullDescription: string) => Promise<string> {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
@@ -591,36 +595,98 @@ function resolvedShortDescriptionCandidateIsUsable(
 }
 
 /**
- * The card a written body is served with is derived from that body (#4788), so while the
- * written body is what the row serves, a card resolved from copied card observations is
- * set aside. The stored card is kept only when it was itself derived from this same
- * written body, which keeps a re-materialize stable and spends no card synthesis.
+ * Whether the body this pass serves is the written description (#4788), in which case
+ * its card is chosen by `resolveWrittenBodyCard` rather than by the copied-card path.
  */
 export function writtenBodyCardBasis(input: {
   set: Record<string, unknown>;
   entityDoc: any;
   fullDescription: string;
   cardLocked: boolean;
-}): { followsWrittenBody: boolean; currentCard?: string } {
+}): { followsWrittenBody: boolean } {
   if (input.cardLocked || !input.fullDescription) return { followsWrittenBody: false };
   const fullProvenance = (
     Object.hasOwn(input.set, 'fullDescription')
       ? input.set['fieldProvenance.fullDescription']
       : input.entityDoc?.fieldProvenance?.fullDescription
   ) as { sourceName?: unknown } | undefined;
-  if (fullProvenance?.sourceName !== WRITTEN_DESCRIPTION_SOURCE_NAME) {
-    return { followsWrittenBody: false };
+  return { followsWrittenBody: fullProvenance?.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME };
+}
+
+/**
+ * The share of a kept card's distinctive tokens the written body must contain. It is the
+ * written body's own grounding floor against its evidence (`COVERAGE_MIN_OVERLAP`), so a
+ * copied card is kept only when it is about what the body says. A card the serve chain
+ * would surrender as ungrounded is refused separately, by the serving bar.
+ */
+const WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING = 0.45;
+const WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS = 2;
+
+/**
+ * The two shapes a written body's card must never take (#4788 follow-up): a sentence
+ * that only re-lists the row's topic chips, which the serve sanitizer blanks, and the
+ * body itself, which leaves no card beside the body it restates.
+ */
+export function isRefusedWrittenBodyCard(
+  card: string,
+  body: string,
+  researchAreas: unknown,
+): boolean {
+  const areas = Array.isArray(researchAreas) ? researchAreas : [];
+  const chipSummary = buildResearchAreasCardSummary(areas);
+  return (
+    !card ||
+    card.toLowerCase() === body.toLowerCase() ||
+    isFullDescriptionRestatementOfShortDescription(body, card) ||
+    (!!chipSummary && card.toLowerCase() === chipSummary.toLowerCase()) ||
+    isStudiesResearchAreaEchoDescription(card, areas) ||
+    isResearchAreaEchoDescription(card)
+  );
+}
+
+export type WrittenBodyCardChoice =
+  | { kind: 'stored'; card: string }
+  | { kind: 'observed'; card: string; index: number }
+  | { kind: 'derived'; card: string }
+  | { kind: 'synthesized'; card: string }
+  | { kind: 'none' };
+
+/**
+ * The card a written body serves with: the stored card when it is grounded in the
+ * written body and the serving bar accepts the pair, else a copied card observation
+ * that is, else the body's own lead sentence when it is a card rather than the whole
+ * body, else a card synthesized from the written body. Never a topic-chip echo and
+ * never the body itself, so a row with none of those keeps no card rather than a wrong
+ * one. Keeping an acceptable stored card first is what keeps a re-materialize stable
+ * and spends no synthesis.
+ */
+export async function resolveWrittenBodyCard(input: {
+  body: string;
+  storedCard: unknown;
+  observedCards: readonly unknown[];
+  researchAreas: unknown;
+  servingBarAccepts: (card: string) => boolean;
+  synthesize: (fullDescription: string) => Promise<string>;
+}): Promise<WrittenBodyCardChoice> {
+  const acceptable = (card: string, grounding: boolean): boolean =>
+    !isRefusedWrittenBodyCard(card, input.body, input.researchAreas) &&
+    (!grounding || cardGroundingScore(card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
+    input.servingBarAccepts(card);
+  const stored = textValue(input.storedCard);
+  if (stored && acceptable(stored, true)) return { kind: 'stored', card: stored };
+  for (const [index, value] of input.observedCards.entries()) {
+    const card = textValue(value);
+    if (card && card !== stored && acceptable(card, true)) {
+      return { kind: 'observed', card, index };
+    }
   }
-  const storedCard = textValue(input.entityDoc?.shortDescription);
-  const storedCardFromThisBody =
-    Boolean(storedCard) &&
-    input.entityDoc?.fieldProvenance?.shortDescription?.sourceName ===
-      WRITTEN_DESCRIPTION_SOURCE_NAME &&
-    textValue(input.entityDoc?.fullDescription) === input.fullDescription;
-  return {
-    followsWrittenBody: true,
-    currentCard: storedCardFromThisBody ? storedCard : undefined,
-  };
+  const derived = textValue(deriveShortDescriptionFromFullDescription(input.body));
+  if (derived && acceptable(derived, false)) return { kind: 'derived', card: derived };
+  for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
+    const card = textValue(await input.synthesize(input.body));
+    if (card && acceptable(card, false)) return { kind: 'synthesized', card };
+  }
+  return { kind: 'none' };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -7526,6 +7592,28 @@ export function servingBarAcceptsDescriptionPair(
   return representation.invariant.pass && representation.strictQuality.full.isUseful;
 }
 
+/**
+ * The serving check's verdict on a card beside a written body, asked of the row as this
+ * pass would leave it: the public description invariant passes and the card the gate
+ * judges is complete, which is exactly what `missing_card_description` and
+ * `public_description_invariant_failed` read.
+ */
+export function servingBarAcceptsWrittenBodyCard(
+  entityDoc: Record<string, unknown> | null | undefined,
+  projected: Record<string, unknown>,
+  body: string,
+  card: string,
+  leadPersonName: string,
+): boolean {
+  const { representation } = servingRepresentationForCandidate(
+    entityDoc,
+    { ...projected, shortDescription: card },
+    body,
+    leadPersonName,
+  );
+  return representation.invariant.pass && representation.quality.cardState === 'complete';
+}
+
 export async function projectFromLog(
   entityType: ObservedEntityType,
   input: ProjectFromLogInput,
@@ -7715,12 +7803,20 @@ export async function projectFromLog(
   let fullRestatesCurrentCard = false;
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
-      const currentShortForFullDistinctness = textValue(
-        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
-      );
-      const cardShortForFullInversion = textValue(
-        set.shortDescription ?? entityDoc?.shortDescription,
-      );
+      // A written body's card is chosen from that body afterwards (#4788), so the card
+      // stored now is not yet its card, and judging the body against it let a card that
+      // merely restated the written body hand the field back to copied text.
+      const winnerIsWrittenBody =
+        (set['fieldProvenance.fullDescription'] as { sourceName?: unknown } | undefined)
+          ?.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME;
+      const currentShortForFullDistinctness = winnerIsWrittenBody
+        ? ''
+        : textValue(
+            set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
+          );
+      const cardShortForFullInversion = winnerIsWrittenBody
+        ? ''
+        : textValue(set.shortDescription ?? entityDoc?.shortDescription);
       const winnerFull = textValue(set.fullDescription);
       const fullDescriptionReadsWell = (candidateText: string): boolean =>
         !!candidateText &&
@@ -7847,43 +7943,82 @@ export async function projectFromLog(
       fullDescription,
       cardLocked: manuallyLockedFields.includes('shortDescription'),
     });
+    const cardSynthesizer =
+      input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName);
+    let groundedShortDescription: string | null = null;
     if (writtenCard.followsWrittenBody) {
       delete set.shortDescription;
       delete set['fieldProvenance.shortDescription'];
       delete confidenceByField.shortDescription;
-    }
-    const groundedShortDescription = await resolveMaterializedShortDescription({
-      fullDescription,
-      // When the single-PI-shell guard just rejected fullDescription in favor
-      // of the entity's existing org-level value, shortDescription must be
-      // re-derived from that corrected body rather than kept as-is: it may
-      // still be the seed PI's own grant sentence and now contradicts the
-      // fixed full (issue #1595).
-      currentShortDescription: fullDescriptionShellGated
-        ? undefined
-        : writtenCard.followsWrittenBody
-          ? writtenCard.currentCard
+      const observedCards = resolveFieldRanked('shortDescription', resolverObs, {
+        now: input.now,
+        manuallyLockedFields,
+        manualValues,
+        descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
+      });
+      const choice = await resolveWrittenBodyCard({
+        body: fullDescription,
+        storedCard: entityDoc?.shortDescription,
+        observedCards: observedCards.map((candidate) => candidate.value),
+        researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+        servingBarAccepts: (card) =>
+          servingBarAcceptsWrittenBodyCard(
+            entityDoc,
+            set,
+            fullDescription,
+            card,
+            input.nameIdentityAuthority.leadPersonName,
+          ),
+        synthesize: cardSynthesizer,
+      });
+      if (choice.kind === 'observed') {
+        const candidate = observedCards[choice.index];
+        set.shortDescription = choice.card;
+        confidenceByField.shortDescription = candidate.confidence;
+        const provenance = fieldProvenanceForResolvedObservation(
+          'shortDescription',
+          candidate,
+          materializationObs,
+        );
+        if (provenance) set['fieldProvenance.shortDescription'] = provenance;
+        fieldsWritten++;
+      } else if (choice.kind === 'derived' || choice.kind === 'synthesized') {
+        groundedShortDescription = choice.card;
+      }
+    } else {
+      groundedShortDescription = await resolveMaterializedShortDescription({
+        fullDescription,
+        // When the single-PI-shell guard just rejected fullDescription in favor
+        // of the entity's existing org-level value, shortDescription must be
+        // re-derived from that corrected body rather than kept as-is: it may
+        // still be the seed PI's own grant sentence and now contradicts the
+        // fixed full (issue #1595).
+        currentShortDescription: fullDescriptionShellGated
+          ? undefined
           : (set.shortDescription ?? entityDoc?.shortDescription),
-      reconsiderCurrentShortDescription: fullRestatesCurrentCard,
-      resynthesizeCutCards: input.resynthesizeCutCards,
-      researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
-      isProgramLike: isProgramLikeEntity,
-      manuallyLocked: manuallyLockedFields.includes('shortDescription'),
-      synthesize: input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
-    });
+        reconsiderCurrentShortDescription: fullRestatesCurrentCard,
+        resynthesizeCutCards: input.resynthesizeCutCards,
+        researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+        isProgramLike: isProgramLikeEntity,
+        manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+        synthesize: cardSynthesizer,
+      });
+    }
     if (groundedShortDescription) {
       set.shortDescription = groundedShortDescription;
       const fullDescriptionConfidence = resolved.fullDescription?.confidence;
       if (typeof fullDescriptionConfidence === 'number') {
         confidenceByField.shortDescription = fullDescriptionConfidence;
       }
-      const provenance = resolved.fullDescription
-        ? fieldProvenanceForResolvedObservation(
-            'fullDescription',
-            resolved.fullDescription,
-            materializationObs,
-          )
-        : undefined;
+      const provenance =
+        (set['fieldProvenance.fullDescription'] as Record<string, unknown> | undefined) ??
+        (resolved.fullDescription
+          ? fieldProvenanceForResolvedObservation(
+              'fullDescription',
+              resolved.fullDescription,
+              materializationObs,
+            )
+          : undefined);
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
     }

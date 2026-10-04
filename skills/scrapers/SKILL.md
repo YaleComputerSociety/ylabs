@@ -1301,7 +1301,7 @@ Four rules to keep when touching it:
 Only `manual-pi-edit` is not outranked.
 - `manual-admin-edit` is ordinary evidence on description fields (`ADMIN_EDIT_ORDINARY_FIELDS`) and keeps its curated precedence everywhere else; do not re-add it to description precedence.
 - The writer never reads its own output and skips an admin description only when it narrates its sources (`isWriterEvidenceObservation`), so a re-run cannot launder its last body into the next one.
-- The card follows the written body through the existing card derivation (`writtenBodyCardBasis`); do not add a second card writer.
+- The card follows the written body through `resolveWrittenBodyCard`, which reuses the stored card, a copied card, the body's lead sentence or the existing card synthesizer, and never writes a topic-chip echo or the body itself; do not add a second card writer, and never fall back to the chip summary for a written body.
 
 A new refusal arm goes after the older arms so their counts keep their meaning, with one exception that is deliberate: `source-narration` runs before `quality-bar`, because the quality bar blanks the same shape through the serve sanitizer and would report it as a generic quality verdict.
 `isSourcePageNarrationDescription` also covers possessive and next-source narration ("Her Yale profile lists ...", "The site presents ...", "the official next source for students to review"); its qualifier words are a closed list, because an open slot reads "the tumor's expression profile identifies" as narration.
