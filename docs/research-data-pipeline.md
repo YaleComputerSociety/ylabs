@@ -1091,7 +1091,7 @@ Both gold benchmarks replay to the same output fingerprint and the same per-fiel
 ### Fellowship evidence-only fields: a summary no observation backs (#4586)
 
 A fellowship field listed in `FELLOWSHIP_EVIDENCE_ONLY_FIELDS` (`scrapers/fellowshipUnbackedFieldClear.ts`) is cleared by the projection when no live observation in the pass states it and the row stores a value.
-The list holds `summary`, `contactEmail` and `contactName`.
+The list holds `summary`, `contactEmail`, `contactName` and `description`.
 The contact fields joined it in #4600: on Development on 2026-10-04, 169 live rows (139 grants-owned, 30 fellowships-office) stored a `contactEmail` and 6 a `contactName` that no observation had ever stated under either identity form, written by the same retired import.
 The public program reader does not project either field, so no student saw them, but contact data with no evidence behind it fails closed under the scraper contract.
 
@@ -1107,9 +1107,13 @@ A second pass plans nothing, so it needs no lock.
 The detail view then shows the backed `description`, and the browse card is derived from it on every serve through `programLikeCardShortDescription`.
 
 It runs only on a pass that read the row under its own identity, its `sourceKey` or its id, because the Student Grants Database pass over an adopted row enters through its own fund key and never reads the owning lane's observations.
-For the same reason a field whose evidence can arrive through a cited fund key (`FUND_AUTHORITY_FIELDS`) cannot be listed, nor can a classifier-derived field, and `assertFellowshipEvidenceOnlyFieldsAreClearable` enforces both at load.
+For the same reason a value stated under any fund key the row cites also backs it, whether or not that fund speaks for the row, because the fund lane's pass reaches the row through that key and would write the value back; a classifier-derived field cannot be listed, and `assertFellowshipEvidenceOnlyFieldsAreClearable` enforces that at load.
 On 2026-10-03 every live `summary` observation that backs a row sits under that row's own `sourceKey`, so no rival lane's summary is invisible to the own-key pass.
-`description` is not listed: 77 live rows store a `description` with no observation of it, 7 of them served, but the grants lane emits `description` under its fund key onto rows another lane owns, so an own-key pass of the owning lane cannot see that evidence and would clear a value the next fund-key pass writes back.
+`description` joined the list in #4602.
+Measured on Development on 2026-10-04, 505 live rows stored a `description`: 428 are backed under their own key, 74 only under a fund key they cite, and 3 by nothing at all, all of them rows the grants lane owns and reads every run without its page stating a brief description.
+The 77 of #4586 were counted under the row's own key alone, so most of them were backed by their cited fund.
+`description` is also a fund-authority field (`FUND_AUTHORITY_FIELDS`), so where the fund speaks for the row both passes resolve the fund's description over another lane's, following the owner decision that the Yale fellowship database copy of a program is the one served (#4289).
+Before that, the owning lane's own pass and the fund's pass resolved different descriptions on 32 rows, and the fund pass could only fill an empty one.
 
 The materialize result reports the clears per row as `fellowshipUnbackedClears`, and a dry run plans them into `plannedUnset`.
 Two changes ship with it because clearing exposed them.

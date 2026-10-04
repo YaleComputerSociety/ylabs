@@ -166,6 +166,7 @@ import {
   fellowshipCitationsObservedIn,
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
+  fundKeysCitedByFellowship,
   fundSpeaksForFellowship,
   newestFundRetirement,
   preferFundFacetObservations,
@@ -176,7 +177,10 @@ import {
   withoutFellowshipFieldsAssertedAbsent,
   type FellowshipAbsenceClear,
 } from './fellowshipFieldAbsence';
-import { planFellowshipUnbackedFieldClears } from './fellowshipUnbackedFieldClear';
+import {
+  FELLOWSHIP_EVIDENCE_ONLY_FIELDS,
+  planFellowshipUnbackedFieldClears,
+} from './fellowshipUnbackedFieldClear';
 import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
@@ -5025,6 +5029,33 @@ async function fundFacetObservationsCitedBy(
   );
 }
 
+async function evidenceOnlyFieldsStatedByFundsCitedBy(
+  entityDoc: any,
+  prefetch?: MaterializationReadSource,
+): Promise<Set<string>> {
+  const fundKeys = fundKeysCitedByFellowship(entityDoc);
+  if (fundKeys.length === 0) return new Set();
+  const read =
+    routedObservationsForKeysAndIds('fellowship', fundKeys, [], prefetch) ??
+    (await Observation.find({
+      entityType: 'fellowship',
+      ...materializationReadScopeFilter(),
+      entityKey: { $in: fundKeys },
+      sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
+      field: { $in: [...FELLOWSHIP_EVIDENCE_ONLY_FIELDS] },
+    }).lean());
+  const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  return new Set(
+    kept
+      .filter(
+        (observation: any) =>
+          observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
+          FELLOWSHIP_EVIDENCE_ONLY_FIELDS.includes(String(observation.field)),
+      )
+      .map((observation: any) => String(observation.field)),
+  );
+}
+
 async function findEntityDocByIdentifier(
   Model: mongoose.Model<any, any, any, any>,
   entityType: ObservedEntityType,
@@ -6368,6 +6399,7 @@ export interface ProjectFromLogInput {
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
   readRowUnderOwnIdentity?: boolean;
+  fellowshipFieldsStatedByCitedFunds?: ReadonlySet<string>;
   researchAreasHaveNoLiveEvidence?: boolean;
   storedResearchAreasEvidenceRetired?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
@@ -8356,6 +8388,7 @@ export async function projectFromLog(
       staged: set,
       unset,
       liveObservedFields: new Set(resolverObs.map((o) => o.field)),
+      fieldsStatedByCitedFunds: input.fellowshipFieldsStatedByCitedFunds ?? new Set(),
       readRowUnderOwnIdentity: input.readRowUnderOwnIdentity === true,
     });
     for (const field of fellowshipUnbackedClears) {
@@ -9258,6 +9291,10 @@ export async function materializeEntity(
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
     readRowUnderOwnIdentity,
+    fellowshipFieldsStatedByCitedFunds:
+      entityType === 'fellowship' && readRowUnderOwnIdentity
+        ? await evidenceOnlyFieldsStatedByFundsCitedBy(entityDoc, options.chunkPrefetch)
+        : undefined,
     researchAreasHaveNoLiveEvidence,
     storedResearchAreasEvidenceRetired,
   });

@@ -22,17 +22,17 @@
  * observations, and its silence is a fact about its own evidence rather than the row.
  *
  * What may be listed (`assertFellowshipEvidenceOnlyFieldsAreClearable`): never a field
- * the classifier derives, because the materializer recomputes those on every resolve,
- * and never a fund-authority field, because its evidence reaches the row through a cited
- * fund key rather than the row's own and an own-identity pass cannot see it.
+ * the classifier derives, because the materializer recomputes those on every resolve.
+ * A value stated under any fund key the row cites also backs it, because the fund lane's
+ * pass reaches the row through that key and would write the value back (#4602).
  */
 import { CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS } from './fellowshipClassificationDerivation';
-import { FUND_AUTHORITY_FIELDS } from './fellowshipSourcePrecedence';
 
 export const FELLOWSHIP_EVIDENCE_ONLY_FIELDS: readonly string[] = [
   'summary',
   'contactEmail',
   'contactName',
+  'description',
 ];
 
 export function assertFellowshipEvidenceOnlyFieldsAreClearable(
@@ -42,11 +42,6 @@ export function assertFellowshipEvidenceOnlyFieldsAreClearable(
     if (CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS.includes(field)) {
       throw new Error(
         `Cannot clear ${JSON.stringify(field)} as unbacked: the materializer derives it on every resolve.`,
-      );
-    }
-    if (FUND_AUTHORITY_FIELDS.has(field)) {
-      throw new Error(
-        `Cannot clear ${JSON.stringify(field)} as unbacked: its evidence can arrive under a cited fund key.`,
       );
     }
   }
@@ -65,6 +60,7 @@ export function planFellowshipUnbackedFieldClears(input: {
   staged: Record<string, unknown>;
   unset: Record<string, unknown>;
   liveObservedFields: ReadonlySet<string>;
+  fieldsStatedByCitedFunds: ReadonlySet<string>;
   readRowUnderOwnIdentity: boolean;
   fields?: readonly string[];
 }): string[] {
@@ -74,6 +70,7 @@ export function planFellowshipUnbackedFieldClears(input: {
       !(field in input.staged) &&
       !(field in input.unset) &&
       !input.liveObservedFields.has(field) &&
+      !input.fieldsStatedByCitedFunds.has(field) &&
       !storedValueIsEmpty(input.stored?.[field]),
   );
 }
