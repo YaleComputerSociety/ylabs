@@ -978,12 +978,6 @@ const awardCitationLeakPattern =
  * genuine prose; broader than #944's own-name-subject check because the tail,
  * not the subject, is the tell (#978).
  */
-// "Studies biophysics, including research in the group is currently focused on
-// ...": the template's "including" swallowed a whole sentence from the body, so the
-// list item carries its own finite verb.
-const studiesIncludingSwallowedClausePattern =
-  /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
-
 export function isStudiesTemplateGlueMalformed(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
@@ -994,8 +988,7 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
     careerFactLeakPattern.test(normalized) ||
     awardCitationLeakPattern.test(normalized) ||
     studiesBioNameEchoVerbPattern.test(normalized) ||
-    studiesCourseCodeTopicPattern.test(normalized) ||
-    studiesIncludingSwallowedClausePattern.test(normalized)
+    studiesCourseCodeTopicPattern.test(normalized)
   );
 }
 

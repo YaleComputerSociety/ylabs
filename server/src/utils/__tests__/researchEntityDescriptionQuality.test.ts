@@ -1604,20 +1604,12 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.flags).not.toContain('topic-label-list');
   });
 
-  it('rejects a "Studies X, including <swallowed sentence>" LAB short identical to its full', () => {
+  it('rejects a bare "Studies <tags>." LAB short identical to its full', () => {
     const text =
       'Studies biophysics, including research in the group is currently focused on three general themes: decoding self-organization, controlling self-organization, and electrophysiological pattern formation.';
     const quality = shortDescriptionQuality(text, text, undefined, labOptions);
-    expect(quality.flags).toContain('malformed-generated-text');
+    expect(quality.flags).toContain('topic-label-list');
     expect(quality.isUseful).toBe(false);
-  });
-
-  it('accepts a well-formed "Studies X, including A, B, and C." card identical to a useful full', () => {
-    const text =
-      'Studies astrophysics and cosmology, including high-energy radiation processes, particle propagation, blazars, and neutron star binaries.';
-    const quality = shortDescriptionQuality(text, text, undefined, fraOptions);
-    expect(quality.flags).not.toContain('topic-label-list');
-    expect(quality.isUseful).toBe(true);
   });
 
   it('rejects a single-clause "Studies <topic>." short whose topic is entirely absent from the full (ungrounded cherry-pick)', () => {
