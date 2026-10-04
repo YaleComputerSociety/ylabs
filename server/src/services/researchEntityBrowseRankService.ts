@@ -10,7 +10,10 @@
  */
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
-import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
+import {
+  BROWSE_RANK_SCORER_VERSION,
+  computeResearchEntityBrowseRank,
+} from './researchEntityBrowseRank';
 import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
@@ -52,14 +55,28 @@ export interface RecomputeBrowseRankOptions {
   dryRun?: boolean;
   /** When true, re-sync each updated doc to Meilisearch (default true). */
   sync?: boolean;
+  scorerVersion?: number;
 }
 
 export interface RecomputeBrowseRankResult {
   considered: number;
   updated: number;
+  scoreDrifted: number;
+  refusedNewerScorer: number;
   indexSyncFailures: number;
   scoresByEntityId: Map<string, number>;
 }
+
+const storedScorerVersion = (entity: Record<string, any>): number =>
+  typeof entity.browseRankScorerVersion === 'number' ? entity.browseRankScorerVersion : 0;
+
+const notScoredByANewerScorer = (scorerVersion: number) => ({
+  $or: [
+    { browseRankScorerVersion: { $exists: false } },
+    { browseRankScorerVersion: null },
+    { browseRankScorerVersion: { $lte: scorerVersion } },
+  ],
+});
 
 /**
  * Recompute browseRankScore for the given entity ids (loaded with their lead
@@ -70,9 +87,17 @@ export async function recomputeBrowseRankForEntities(
   options: RecomputeBrowseRankOptions = {},
 ): Promise<RecomputeBrowseRankResult> {
   const sync = options.sync ?? true;
+  const scorerVersion = options.scorerVersion ?? BROWSE_RANK_SCORER_VERSION;
   const scoresByEntityId = new Map<string, number>();
   if (entityIds.length === 0) {
-    return { considered: 0, updated: 0, indexSyncFailures: 0, scoresByEntityId };
+    return {
+      considered: 0,
+      updated: 0,
+      scoreDrifted: 0,
+      refusedNewerScorer: 0,
+      indexSyncFailures: 0,
+      scoresByEntityId,
+    };
   }
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
@@ -83,10 +108,16 @@ export async function recomputeBrowseRankForEntities(
   ]);
 
   let updated = 0;
+  let scoreDrifted = 0;
+  let refusedNewerScorer = 0;
   let indexSyncFailures = 0;
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
+    if (storedScorerVersion(entity) > scorerVersion) {
+      refusedNewerScorer += 1;
+      continue;
+    }
     const score = computeResearchEntityBrowseRank({
       entity,
       leadMembers: leadMembers.get(id) || [],
@@ -98,21 +129,31 @@ export async function recomputeBrowseRankForEntities(
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    if (scoreUnchanged && hostingUnchanged) continue;
-    updated += 1;
-    if (options.dryRun) continue;
+    const stampUnchanged = storedScorerVersion(entity) === scorerVersion;
+    if (!scoreUnchanged) scoreDrifted += 1;
+    if (scoreUnchanged && hostingUnchanged && stampUnchanged) continue;
+    if (options.dryRun) {
+      updated += 1;
+      continue;
+    }
 
-    await ResearchEntity.updateOne(
-      { _id: entity._id },
+    const write = await ResearchEntity.updateOne(
+      { _id: entity._id, ...notScoredByANewerScorer(scorerVersion) },
       {
         $set: {
           browseRankScore: score,
+          browseRankScorerVersion: scorerVersion,
           hasUndergradHostingEvidence: undergradHostingEvidence,
         },
       },
       { timestamps: false },
     );
-    if (sync) {
+    if (write.matchedCount === 0) {
+      refusedNewerScorer += 1;
+      continue;
+    }
+    updated += 1;
+    if (sync && !(scoreUnchanged && hostingUnchanged)) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
       if (!fresh || !(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
@@ -121,6 +162,8 @@ export async function recomputeBrowseRankForEntities(
   return {
     considered: entities.length,
     updated,
+    scoreDrifted,
+    refusedNewerScorer,
     indexSyncFailures,
     scoresByEntityId,
   };

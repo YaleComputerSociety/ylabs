@@ -189,6 +189,9 @@ A promotion is a data migration as well as a merge.
 Moving the `main` branch deploys code; it does not move a single document.
 `server/src/scripts/promoteAcceptedBetaCopy.ts` copies Beta's Mongo into Production, and it contains no Meilisearch references at all, so the search index is a separate step again.
 
+Before Development is copied to Beta, run `yarn --cwd server research-homes:backfill-browse-rank --fail-on-drift` from a `beta` checkout against Development.
+A non-zero exit means some rows hold a `browseRankScore` the current scorer does not compute, usually written by a stale checkout (#4642), and the copy would carry that ranking forward; rerun with `--apply --confirm-browse-rank` first.
+
 Run the steps in this order.
 The order is not cosmetic and two of the orderings are the opposite of what seems natural.
 `yarn promote:production` runs steps 1 to 5 in this order and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.

@@ -98,6 +98,11 @@ const entityTypeRankAdjustment = (
   return adjustment;
 };
 
+// Bump on any change to what computeResearchEntityBrowseRank returns for the same input.
+// The service refuses to overwrite a score stamped by a newer version, so a checkout that
+// predates a formula change cannot revert rows a newer checkout already scored (#4642).
+export const BROWSE_RANK_SCORER_VERSION = 2;
+
 const ENRICHMENT_POINTS = {
   website: 8,
   methods: 5,

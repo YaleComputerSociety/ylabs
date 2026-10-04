@@ -481,6 +481,13 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: 0,
     },
     /**
+     * `BROWSE_RANK_SCORER_VERSION` of the scorer that wrote `browseRankScore`. A writer
+     * whose version is older leaves the score alone (#4642).
+     */
+    browseRankScorerVersion: {
+      type: Number,
+    },
+    /**
      * True when the entity carries an undergrad-specific hosting/supervision
      * access signal (PAST_UNDERGRADS / CURRENT_UNDERGRADS /
      * FACULTY_SUPERVISES_STUDENT_PROJECTS), as opposed to a generic
