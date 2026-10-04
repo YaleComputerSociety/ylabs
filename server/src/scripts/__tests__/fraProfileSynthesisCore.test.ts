@@ -896,6 +896,8 @@ describe('publication records and career history are not research prose (#4561)'
       'She was previously at an example foundation, where she led advocacy for child health programs.',
       'He served as chair of the example department of medicine from 2004 to 2015.',
       'She served as dean of the example school of nursing for a decade.',
+      'He spent six years working as a special education teacher in an example district.',
+      'She worked for an example health foundation, where she directed its advocacy for child health programs.',
     ]) {
       expect(isCareerHistorySentence(sentence), sentence).toBe(true);
     }
@@ -908,6 +910,9 @@ describe('publication records and career history are not research prose (#4561)'
       'The fruit fly served as a model system for tracing how circadian clocks shape behavior.',
       'Before CRISPR, editing a genome took months of painstaking work in mouse embryos.',
       'Neurons prune excess synapses before their final connections stabilize in adolescence.',
+      'He has worked for two decades on the genetics of hearing loss in children born preterm.',
+      'She spent several years mapping how gut bacteria shape immune development in preterm infants.',
+      'He is an associate professor of medicine focusing on heart failure outcomes in rural populations.',
     ]) {
       expect(isCareerHistorySentence(sentence), sentence).toBe(false);
     }

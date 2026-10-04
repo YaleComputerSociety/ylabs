@@ -1497,7 +1497,7 @@ Each run re-reads every candidate page of a row whose stored body has this lane'
 That is a statement the pages make rather than an absence, which is why a page with no research prose at all, or one whose only research evidence is a publication feed, withdraws nothing: on Development most such rows hold a correct body built from the person's own publications.
 Withdrawal retires the lane's own live observations, re-resolves the row, and unsets a body or a card whose provenance still names a retired observation, on the same terms field retraction clears a field whose last live observation it retracted, then re-gates the row.
 A failed fetch licenses nothing, a pass that would withdraw more than half of at least 20 complete reads is frozen whole, and `--max-withdraw <n>` is the operator ceiling; `--revalidate-only` runs the re-read without the synthesis pass.
-The lane is dry-run-first, bounded by `--limit`, needs `OPENAI_API_KEY` except under `--revalidate-only`, and apply is Development-only and requires `--confirm-fra-profile-synthesis`; the source must be seeded first (`scrape:seed-sources`).
+The lane is dry-run-first, bounded by `--limit` in both the synthesis and the re-read pass, needs `OPENAI_API_KEY` except under `--revalidate-only`, and apply is Development-only and requires `--confirm-fra-profile-synthesis`; the source must be seeded first (`scrape:seed-sources`).
 The rest of the contract, including the measurement harness and the traps this lane already paid for, lives in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md).
 
 ### One serve-time description sanitizer

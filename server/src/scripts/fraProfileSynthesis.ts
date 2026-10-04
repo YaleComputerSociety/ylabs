@@ -117,9 +117,11 @@ async function main(): Promise<void> {
     .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
     .lean()) as FraProfileSynthesisEntity[];
   const holderLeads = await fraProfileSynthesisLeads(holders);
-  const revalidationTargets = selectFraProfileSynthesisRevalidationTargets(
+  const revalidationScope = selectFraProfileSynthesisRevalidationTargets(
     holders.map((entity) => ({ ...entity, leads: holderLeads.get(String(entity._id)) ?? [] })),
   );
+  const revalidationTargets =
+    args.limit > 0 ? revalidationScope.slice(0, args.limit) : revalidationScope;
   const revalidations: FraProfileSynthesisRevalidationReport[] = [];
   for (const entity of revalidationTargets) {
     revalidations.push(

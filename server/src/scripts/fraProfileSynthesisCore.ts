@@ -407,15 +407,25 @@ export function isTitleCaseHeading(sentence: string): boolean {
 const HELD_POST =
   '(?:the\\s+|an?\\s+)?(?:former\\s+|founding\\s+)?(?:[\\p{L}-]+\\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel|chair|dean)\\b';
 
+const EMPLOYER =
+  '(?:an?\\s+|the\\s+)(?:[\\p{L}-]+\\s+){0,4}(?:company|firm|foundation|organi[sz]ation|agency|department|office|nonprofit|non-profit|hospital|clinic|university|college|school|bank|council|alliance|cent(?:er|re)|institute|association|corporation|government|ministry|commission|bureau|network)\\b';
+
 const CAREER_HISTORY_MARKERS: readonly RegExp[] = [
-  new RegExp(`\\b(?:was|is|has\\s+been|had\\s+been)\\s+${HELD_POST}`, 'iu'),
+  new RegExp(`\\b(?:was|has\\s+been|had\\s+been)\\s+${HELD_POST}`, 'iu'),
   /\b(?:prior\s+to|before)\s+(?:joining|coming)\b/i,
   /\bcomes\s+to\s+(?:Yale|the)\b/i,
   /\b(?:his|her|their)\s+(?:work|role|job|responsibilities)\s+(?:was|were|included)\b/i,
   /\b(?:previously|most\s+recently),?\s+(?:[\p{L}-]+\s+)?(?:served|worked|taught|held|directed|managed|practiced)\b/iu,
   /\bpreviously\s+(?:at|with)\b/i,
-  /\bspent\s+(?:\w+\s+){1,2}years?\b/i,
-  /\b(?:worked|working)\s+(?:full[-\s]time\s+)?(?:as|at|for)\b/i,
+  new RegExp(
+    `\\bspent\\s+(?:\\w+\\s+){1,2}years?\\s+(?:as\\s+${HELD_POST}|(?:at|with)\\s+${EMPLOYER}|(?:working|teaching|practicing)\\b)`,
+    'iu',
+  ),
+  new RegExp(
+    `\\b(?:worked|working)\\s+(?:full[-\\s]time\\s+)?(?:as\\s+${HELD_POST}|(?:at|for)\\s+${EMPLOYER})`,
+    'iu',
+  ),
+  /\b(?:worked|working|spent\s+(?:\w+\s+){1,2}years?)\s+(?:full[-\s]time\s+)?(?:at|for|with)\s+\p{Lu}/u,
   /\bbegan\s+(?:his|her|their)\s+career\b/i,
   /\bbrings\s+(?:over\s+|more\s+than\s+|nearly\s+|almost\s+)?(?:a|\w+)\s+(?:decades?|years?)\b/i,
   /\byears\s+of\s+(?:\w+\s+)?experience\b/i,
