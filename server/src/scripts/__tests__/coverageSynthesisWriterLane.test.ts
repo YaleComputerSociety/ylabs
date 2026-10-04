@@ -6,6 +6,7 @@ import {
   planWriterStep,
   storedWriterEvidenceHash,
   writerEvidenceHash,
+  writerWritesAfterBodyAttempt,
   writerWritesFor,
 } from '../coverageSynthesisCore';
 
@@ -138,6 +139,19 @@ describe('the writer lane runs over every live row (#4788)', () => {
       retireBody: true,
       recordHash: false,
     });
+  });
+
+  it('retires the prior body and records no hash when the store refuses the new body', () => {
+    const accepted = writerWritesFor('synthesize', {
+      result: { description: 'Studies immune cells.', usedSnippetIndexes: [0], sourceUrls: [] },
+      refusal: null,
+    });
+    expect(writerWritesAfterBodyAttempt(accepted, false)).toEqual({
+      writeBody: false,
+      retireBody: true,
+      recordHash: false,
+    });
+    expect(writerWritesAfterBodyAttempt(accepted, true)).toEqual(accepted);
   });
 
   it('records nothing after a failed call, so the next run retries', () => {

@@ -172,6 +172,19 @@ export function writerWritesFor(
   return { writeBody: false, retireBody: true, recordHash: true };
 }
 
+/**
+ * A body the store refused leaves the row judged against evidence it no longer reflects,
+ * so the prior written body is retired and no hash is recorded: the next run judges the
+ * row again instead of reading it as unchanged.
+ */
+export function writerWritesAfterBodyAttempt(
+  writes: WriterWrites,
+  bodyStored: boolean,
+): WriterWrites {
+  if (!writes.writeBody || bodyStored) return writes;
+  return { writeBody: false, retireBody: true, recordHash: false };
+}
+
 export const WRITER_EVIDENCE_FIELDS: readonly string[] = [
   ...COVERAGE_SNIPPET_FIELDS,
   SOURCE_CONTENT_HASH_FIELD,

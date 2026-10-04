@@ -38,6 +38,7 @@ import {
   storedWriterEvidenceHash,
   writerEvidenceHash,
   writerObservationAnchors,
+  writerWritesAfterBodyAttempt,
   writerWritesFor,
   type WriterStep,
 } from './coverageSynthesisCore';
@@ -120,6 +121,15 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
     if (chunk.length < remaining) break;
   }
   return rows;
+}
+
+async function materializeWrittenRow(slug: string): Promise<string | undefined> {
+  const materialized = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: false },
+  );
+  return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
 }
 
 async function main() {
@@ -215,72 +225,70 @@ async function main() {
         return;
       }
     }
-    const writes = writerWritesFor(step, decision);
     if (!args.apply || !context) return;
-
-    let changed = false;
-    if (writes.writeBody && decision?.result) {
-      const stored = await appendSynthesizedDescription(
-        report,
-        {
-          entityType: 'researchEntity',
-          entityKey: entity.slug,
-          field: 'fullDescription',
-          value: decision.result.description,
-          sourceUrl: decision.result.sourceUrls[0],
-          confidenceOverride: COVERAGE_CONFIDENCE,
-        },
-        context,
-      );
-      if (stored) {
-        written += 1;
-        changed = true;
-      } else observationDropped += 1;
+    try {
+      let writes = writerWritesFor(step, decision);
+      let changed = false;
+      if (writes.writeBody && decision?.result) {
+        const stored = await appendSynthesizedDescription(
+          report,
+          {
+            entityType: 'researchEntity',
+            entityKey: entity.slug,
+            field: 'fullDescription',
+            value: decision.result.description,
+            sourceUrl: decision.result.sourceUrls[0],
+            confidenceOverride: COVERAGE_CONFIDENCE,
+          },
+          context,
+        );
+        if (stored) {
+          written += 1;
+          changed = true;
+        } else observationDropped += 1;
+        writes = writerWritesAfterBodyAttempt(writes, stored);
+      }
+      if (writes.retireBody) {
+        const outcome = await retireObservations(
+          {
+            entityType: 'researchEntity',
+            sourceName: SOURCE_NAME,
+            field: 'fullDescription',
+            $or: anchors,
+          },
+          RETIRE_REASON,
+        );
+        report.retired = outcome.retired;
+        retired += outcome.retired;
+        if (outcome.retired > 0) changed = true;
+      }
+      const materializedId = changed ? await materializeWrittenRow(entity.slug) : undefined;
+      if (materializedId) materializedEntityIds.push(materializedId);
+      if (writes.recordHash) {
+        await appendObservations(
+          [
+            contentHashObservation(
+              { entityType: 'researchEntity', entityKey: entity.slug },
+              decision?.result?.sourceUrls[0] ?? '',
+              freshHash,
+            ),
+          ],
+          context,
+        );
+      }
+      if (!materializedId) return;
+      const fresh = (await ResearchEntity.findById(materializedId)
+        .select('fullDescription fieldProvenance.fullDescription.sourceName')
+        .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
+      report.adopted =
+        fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
+        typeof fresh?.fullDescription === 'string' &&
+        fresh.fullDescription.trim().length > 0;
+      if (report.adopted) adopted += 1;
+    } catch (error) {
+      entityErrors += 1;
+      console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
     }
-    if (writes.retireBody) {
-      const outcome = await retireObservations(
-        {
-          entityType: 'researchEntity',
-          sourceName: SOURCE_NAME,
-          field: 'fullDescription',
-          $or: anchors,
-        },
-        RETIRE_REASON,
-      );
-      report.retired = outcome.retired;
-      retired += outcome.retired;
-      if (outcome.retired > 0) changed = true;
-    }
-    if (writes.recordHash) {
-      await appendObservations(
-        [
-          contentHashObservation(
-            { entityType: 'researchEntity', entityKey: entity.slug },
-            decision?.result?.sourceUrls[0] ?? '',
-            freshHash,
-          ),
-        ],
-        context,
-      );
-    }
-    if (!changed) return;
-    const materialized = await materializeEntity(
-      'researchEntity',
-      { entityKey: entity.slug },
-      { dryRun: false },
-    );
-    const materializedId =
-      typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
-    if (!materializedId) return;
-    materializedEntityIds.push(materializedId);
-    const fresh = (await ResearchEntity.findById(materializedId)
-      .select('fullDescription fieldProvenance.fullDescription.sourceName')
-      .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
-    report.adopted =
-      fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
-      typeof fresh?.fullDescription === 'string' &&
-      fresh.fullDescription.trim().length > 0;
-    if (report.adopted) adopted += 1;
   });
 
   const regates = [];

@@ -3153,6 +3153,8 @@ describe('possessive and next-source narration is not a research description (#4
       'Identifies the next source of antibiotic resistance in hospital wastewater.',
       'Develops web site accessibility tools for screen-reader users.',
       'Her research profile spans genetics and chronic disease.',
+      "A patient's profile indicates risk of early-onset cardiomyopathy.",
+      "The receptor's site presents a pocket for allosteric modulators.",
     ]) {
       expect(isSourcePageNarrationDescription(value)).toBe(false);
     }

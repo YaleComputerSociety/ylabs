@@ -397,14 +397,15 @@ const SOURCE_NARRATION_VERB =
  * open slot reads research prose as narration: "the tumor's expression profile identifies
  * subtypes" and "the binding site presents a pocket" both have a determiner, a noun and a
  * narration verb. A bare `the`/`this` lead is anchored to a sentence start for the same
- * reason, while a possessive pronoun or name may sit anywhere.
+ * reason, while a possessive pronoun or name may sit anywhere. A `'s` possessor also
+ * needs a qualifier, because "a patient's profile indicates risk" is research prose.
  */
 const SOURCE_PAGE_NARRATION_PATTERNS = [
   /\b(?:the\s+|this\s+)?(?:faculty|directory|profile|department|departmental|listing|web)?\s*page\s+(?:lists|shows|displays|contains|includes|features|mentions|names|indicates|describes)\b/i,
   /\bthis\s+(?:page|site|directory|listing)\s+(?:lists|shows|displays|contains)\b/i,
   /\bthe\s+(?:directory|listing|roster|index)\s+(?:lists|shows|contains|names)\b/i,
   new RegExp(
-    `\\b(?:[\\w.-]+['’]s|her|his|their)\\s+(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){0,4}${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
+    `\\b(?:(?:her|his|their)\\s+(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){0,4}|[\\w.-]+['’]s\\s+(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){1,4})${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
     'i',
   ),
   new RegExp(
