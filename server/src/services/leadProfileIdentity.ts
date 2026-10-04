@@ -196,6 +196,7 @@ interface LeadDirectoryIdentity {
   nameTokens: Set<string>;
   nameTokenList: string[];
   profileSlugs: Set<string>;
+  profileSlugNameTokens: Array<Set<string>>;
 }
 
 const GROUP_LIKE_SLUG_TOKENS = new Set([
@@ -265,8 +266,7 @@ const leadOfficialProfileSlugs = (lead: LeadProfileIdentityLead): string[] => {
     .map((url) =>
       personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))),
     )
-    .filter(Boolean)
-    .map((slug) => normalizeIdentityToken(slug));
+    .filter(Boolean);
 };
 
 const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirectoryIdentity => {
@@ -284,7 +284,10 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
-    profileSlugs: new Set(leadOfficialProfileSlugs(lead)),
+    profileSlugs: new Set(leadOfficialProfileSlugs(lead).map(normalizeIdentityToken)),
+    profileSlugNameTokens: leadOfficialProfileSlugs(lead).map(
+      (slug) => new Set(nameTokensFrom(slug)),
+    ),
   };
 };
 
@@ -372,6 +375,19 @@ const profileSlugCorroboratesLead = (
   // asymmetric behavior that held same-person slug variants when the lead had
   // its own profile URL, yet cleared surname-only collisions when it did not.
   if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
+    return true;
+  }
+  // A lead who goes by another given name than the one on their account: the
+  // account reads "Harrison Fixture" while their own verified profile is
+  // `/profile/huibin-harry-fixture`, so a second profile at `/people/huibin-fixture`
+  // shares two tokens with the lead's own profile and none but the surname with the
+  // account name. The lead's own profile is evidence of the names they use.
+  if (
+    identity.profileSlugNameTokens.some(
+      (ownProfileTokens) =>
+        sharedNameTokenCount(slug, ownProfileTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE,
+    )
+  ) {
     return true;
   }
 
