@@ -42,7 +42,24 @@ The collection is environment-local and is read with `yarn --cwd server auth:log
 It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
 Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
 
+## 2026-10-04: A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)
+
+This supersedes the #4763 entry below: the thin-but-accurate relaxation no longer depends on who wrote the body (maintainer decision, confirmed in two sessions).
+In the maintainer's words, "it is unfair to block thin description when it is accurate and has a lot of the information we have", and "the reason for thin description is that truly we don't have more information".
+So a true but thin line serves at the gate and on the served page whatever its source, including a language-model line, a body with no recorded source, and the pipeline's own "Studies <topics>." sentence when it is the row's only body.
+The bar is accuracy rather than authorship.
+A line that is wrong, misattributed or not about the row still holds it, through the blockers that already judge accuracy: another person's profile (`profile_identity_risk`), a body about another organization, a name that names something else, a line that states no research, page fragments, chrome and label lists.
+The relaxation lifts only the thinness flags (`too-short`, `area-echo-fallback`, and `topic-label-list` on a sentence that leads with a research statement), and write paths keep the strict verdict, so lanes still prefer richer prose.
+
+One shape is inaccurate as a class and stays held: the "Studies <A>, including <B>, and <C>." sentence, which asserts that the other topics are part of the first (`isStudiesSentenceNestingTopicsUnderTheFirst`).
+Measured on Development on 2026-10-04 with same-moment dry-run gate plans over all 4,234 research rows, against `beta` after #4768: this decision serves 47 rows that `beta` holds only because of the #4763 source check, demotes no served row, and keeps held 9 nesting sentences that `beta` would release.
+All 47 carry a language-model body (33 and 12 from the two microsite lanes, 2 from the faculty profile synthesis lane), and all 47 were read by hand against their cited pages: 47 accurate and about the row, 0 inaccurate, 0 fragments.
+An earlier read of the rows the #4768 shapes plus this decision release found the nesting sentence false on 7 of the 9 rows that carry it, all from the faculty roster lane, which is why that shape stays held; the other 2 were accurate and return when the roster lane writes a flat list.
+The hand-reads also found released rows whose subject holds a current appointment at another university; that is a presence question for the activity lanes, not a description one, and this decision does not change it.
+
 ## 2026-10-04: The Echo Rule Holds A Language-Model Body And Not An Official One (#4756, #4763)
+
+Superseded on 2026-10-04 by "A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)" above: the provenance condition is removed and accuracy is the bar.
 
 The #1664 echo rule holds a research body that adds fewer than about 4 words beyond the row's own topics.
 #4481 closed on keeping it as it was, #4704 then relaxed it at the gate and the served page for every thin but accurate body, and this decision narrows that relaxation to a body an official or human source wrote (maintainer decision, landed in #4763).

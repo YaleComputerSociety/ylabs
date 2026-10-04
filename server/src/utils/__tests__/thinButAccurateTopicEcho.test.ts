@@ -82,11 +82,38 @@ describe('the pipeline "Studies <topics>." sentence is thin but accurate', () =>
     ['Studies game theory.', ['Game Theory']],
     ['Studies macroeconomics.', ['Macroeconomics']],
     [
-      'Studies contract theory, including economic theory, and information economics.',
+      'Studies contract theory, economic theory, and information economics.',
       ['Contract Theory', 'Economic Theory', 'Information Economics'],
     ],
   ])('shows %s', (body, areas) => {
     expect(thinButAccurate(body, areas)).toBe(true);
+  });
+
+  it.each([
+    [
+      'Studies contract theory, including economic theory, and information economics.',
+      ['Contract Theory', 'Economic Theory', 'Information Economics'],
+    ],
+    [
+      'Studies real, including complex, and fourier analysis, and potential theory.',
+      ['Real', 'complex', 'Fourier Analysis', 'potential theory'],
+    ],
+  ])('keeps %s held, because it nests the other topics under the first', (body, areas) => {
+    expect(thinButAccurate(body, areas)).toBe(false);
+  });
+
+  it('does not serve a row whose only body nests its topics under the first', () => {
+    expect(
+      researchEntityServesPublicDetail({
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        researchAreas: ['Climate Policy', 'Environmental Economics'],
+        shortDescription: '',
+        fullDescription: 'Studies climate policy, including environmental economics.',
+        sourceUrls: ['https://example.yale.edu/faculty/economics'],
+        fieldProvenance: { fullDescription: { sourceName: 'dept-faculty-roster' } },
+      }),
+    ).toBe(false);
   });
 
   it('keeps a malformed "Studies" sentence that ends on a label held', () => {

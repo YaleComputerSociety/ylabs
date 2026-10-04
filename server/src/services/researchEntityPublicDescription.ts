@@ -31,7 +31,6 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
-import { isLlmAuthoredSourceName } from '../utils/unbackedLabSelfDescription';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 import {
   servedResearchEntityCardWithoutLastResort,
@@ -321,9 +320,7 @@ function derivePublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
-  const quality = bodyIsOfficialOrHumanWritten(sanitizedEntity)
-    ? withThinButAccurateBodyUsable(strictQuality, programLike)
-    : strictQuality;
+  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -448,17 +445,11 @@ export const researchEntityServesPublicDetail = (entity: Record<string, any>): b
   buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
   !researchEntityHasDeceasedLead(entity);
 
-function bodyIsOfficialOrHumanWritten(entity: Record<string, any>): boolean {
-  const sourceName = textValue(entity.fieldProvenance?.fullDescription?.sourceName);
-  return Boolean(sourceName) && !isLlmAuthoredSourceName(sourceName);
-}
-
 /**
- * The gate and the served page show a thin but accurate body when an official or
- * human source wrote it (owner decisions, 2026-10-04), and a card refused only
- * because that body was judged unusable is re-judged on its own text, still
- * refusing a card that is a page fragment. A body a language model wrote keeps the
- * strict verdict, and so do the write paths.
+ * The gate and the served page show a thin but accurate body whatever its source
+ * (owner decision, 2026-10-04, superseding #4763), and a card refused only because
+ * that body was judged unusable is re-judged on its own text, still refusing a card
+ * that is a page fragment. Write paths keep `assessResearchEntityDescriptionQuality`.
  */
 function withThinButAccurateBodyUsable(
   quality: ResearchEntityDescriptionQuality,
