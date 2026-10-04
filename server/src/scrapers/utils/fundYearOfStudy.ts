@@ -84,6 +84,12 @@ const TERM_PATTERNS: TermPattern[] = [
   { pattern: /^rising seniors$/, term: year('Junior'), standsAlone: true },
   { pattern: /^(?:first years|freshmen)$/, term: year('First-Year Student'), standsAlone: true },
   { pattern: /^(?:first year|freshman)$/, term: year('First-Year Student'), standsAlone: false },
+  { pattern: /^second years$/, term: year('Sophomore'), standsAlone: true },
+  { pattern: /^second year$/, term: year('Sophomore'), standsAlone: false },
+  { pattern: /^third years$/, term: year('Junior'), standsAlone: true },
+  { pattern: /^third year$/, term: year('Junior'), standsAlone: false },
+  { pattern: /^fourth years$/, term: year('Senior'), standsAlone: true },
+  { pattern: /^fourth year$/, term: year('Senior'), standsAlone: false },
   { pattern: /^sophomores$/, term: year('Sophomore'), standsAlone: true },
   { pattern: /^sophomore$/, term: year('Sophomore'), standsAlone: false },
   { pattern: /^juniors$/, term: year('Junior'), standsAlone: true },
@@ -92,7 +98,7 @@ const TERM_PATTERNS: TermPattern[] = [
   { pattern: /^senior$/, term: year('Senior'), standsAlone: false },
   { pattern: /^(?:undergraduates|undergrads)$/, term: generic('undergraduate'), standsAlone: true },
   {
-    pattern: /^(?:undergraduate|undergrad|yale college)$/,
+    pattern: /^(?:undergraduate|undergrad|yale college|college)$/,
     term: generic('undergraduate'),
     standsAlone: false,
   },
@@ -114,7 +120,7 @@ const TERM_PATTERNS: TermPattern[] = [
 ];
 
 const TERM_SOURCE =
-  "graduate affiliates?(?! network)|rising (?:first years?|freshm[ae]n|sophomores|juniors|seniors)|recent (?:graduates|alumni)|first years?|freshm[ae]n|sophomores?|juniors?|seniors?|undergraduates?|undergrads?|yale college|graduate(?!s)|professional(?: school)?|master(?:'s|s)?(?: degree| level)?|doctoral|phd|law(?: school)?|jd|medical(?: school)?|md|alumni|alumnae|alums";
+  "graduate affiliates?(?! network)|rising (?:first years?|freshm[ae]n|sophomores|juniors|seniors)|recent (?:graduates|alumni)|first years?|second years?|third years?|fourth years?|freshm[ae]n|sophomores?|juniors?|seniors?|undergraduates?|undergrads?|yale college|college|graduate(?!s)|professional(?: school)?|master(?:'s|s)?(?: degree| level)?|doctoral|phd|law(?: school)?|jd|medical(?: school)?|md|alumni|alumnae|alums";
 
 const CONNECTOR_SOURCE =
   '(?:\\s*(?:,|&|/|\\band/or\\b|\\band\\b|\\bor\\b|\\bthrough\\b)\\s*)+|\\s+';
@@ -227,8 +233,17 @@ function expandYearRange(phrase: string, terms: LevelTerm[]): LevelTerm[] {
   return [...terms.filter((term) => term.kind !== 'year'), { kind: 'year', values: range }];
 }
 
+const RELATIVE_CLAUSE_AFTER = /^\W*(?:who|that|whose)\b/;
+
+const NEGATED_PREDICATE_AFTER_RELATIVE_CLAUSE = new RegExp(
+  `^\\W*(?:who|that|whose)\\W+\\w+[^,;()]{0,80}?${NEGATED_PREDICATE.source}`,
+);
+
 function negationOf(before: string, after: string): 'blanket' | 'qualified' | null {
   if (NEGATION_BEFORE.test(before)) return 'blanket';
+  if (RELATIVE_CLAUSE_AFTER.test(after)) {
+    return NEGATED_PREDICATE_AFTER_RELATIVE_CLAUSE.test(after) ? 'qualified' : null;
+  }
   const immediate = after.match(IMMEDIATE_NEGATION);
   if (immediate) {
     return QUALIFIER.test(after.slice(immediate[0].length)) ? 'qualified' : 'blanket';
@@ -269,10 +284,40 @@ function roleOf(before: string, after: string): GroupRole {
     : 'base';
 }
 
-const YEAR_WORD = /\b(?:first years?|freshm[ae]n|sophomores?|juniors?|seniors?)\b/g;
+const YEAR_WORD =
+  /\b(?:(?:first|second|third|fourth) years?|freshm[ae]n|sophomores?|juniors?|seniors?)\b/g;
 
 function yearWordCount(text: string): number {
   return Array.from(text.matchAll(YEAR_WORD)).length;
+}
+
+const COORDINATING_SEPARATOR = /[,&/]|\b(?:and|or|through)\b/;
+
+const isGraduateSchoolTerm = (term: LevelTerm): boolean =>
+  term.kind === 'degree' || (term.kind === 'generic' && term.level !== 'undergraduate');
+
+const COORDINATED_GRADUATE: LevelTerm = { kind: 'degree', values: GRADUATE_SCHOOL };
+
+function termsOfPhrase(phrase: string): LevelTerm[] {
+  const matches = Array.from(phrase.matchAll(TERM)).filter((match) => termFor(match[0]));
+  const terms = matches.map((match) => termFor(match[0])!.term);
+  const coordinatedWithNext = matches.map((match, index) => {
+    const next = matches[index + 1];
+    if (!next) return false;
+    const separator = phrase.slice((match.index ?? 0) + match[0].length, next.index);
+    return COORDINATING_SEPARATOR.test(separator);
+  });
+  const listsADegree = terms.some((term) => term.kind === 'degree');
+  return terms.flatMap((term, index) => {
+    const next = terms[index + 1];
+    const modifiesNext = next !== undefined && !coordinatedWithNext[index];
+    if (term.kind === 'year' && modifiesNext && isGraduateSchoolTerm(next)) return [];
+    const coordinated = coordinatedWithNext[index] || coordinatedWithNext[index - 1] === true;
+    if (term.kind === 'generic' && term.level === 'graduate' && coordinated && listsADegree) {
+      return [COORDINATED_GRADUATE];
+    }
+    return [term];
+  });
 }
 
 function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[] {
@@ -294,10 +339,7 @@ function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[]
     if (!negation && !isAdmissionCued(before, after, isEligibilitySection)) continue;
     phrases.push(phrase);
     groups.push({
-      terms: expandYearRange(
-        phrase,
-        patterns.map(({ term }) => term),
-      ),
+      terms: expandYearRange(phrase, termsOfPhrase(phrase)),
       role: negation === 'blanket' ? 'excluded' : roleOf(before, after),
       complete:
         negation === 'blanket' ||

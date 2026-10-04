@@ -355,7 +355,8 @@ describe('buildYsmMeshCandidateMatch', () => {
 
   it('still matches the school and ysm- slug seeds', () => {
     const or = clauses(buildYsmMeshCandidateMatch([]));
-    expect(or).toContainEqual({ school: 'Yale School of Medicine' });
+    expect(or).toContainEqual({ school: 'School of Medicine' });
+    expect(or).toContainEqual({ schools: 'School of Medicine' });
     expect(or.some((clause) => (clause as { slug?: RegExp }).slug instanceof RegExp)).toBe(true);
   });
 

@@ -2277,12 +2277,20 @@ export interface NonDemotingMergeResolution {
   simulatedTier: string;
 }
 
+export type PlannedMergeCarry = Pick<
+  ResearchEntityDedupeMergeGroup,
+  'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
+>;
+
+const carriedStrings = (values: unknown): string[] =>
+  Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
+
 /**
  * A merge keeps one survivor and archives the rest, so keeping a survivor that
  * is less student-visible than one of its twins silently drops a lab from
  * student view (the #2060 regression). This resolves the survivor by
  * hydrate-then-verify: hydrate a candidate canonical with the best card + the
- * union of leads/areas/urls across all twins, simulate the served tier with the
+ * leads plus the areas/urls the merge carries, simulate the served tier with the
  * pure `computeResearchEntityStudentVisibility` gate, and accept the candidate
  * only when it does not demote below the best input twin. The preferred
  * (identity-consistent) canonical is tried first; if it would demote, higher-tier
@@ -2292,6 +2300,7 @@ export interface NonDemotingMergeResolution {
 export async function resolveNonDemotingMerge(
   preferredCanonicalId: mongoose.Types.ObjectId,
   duplicateIds: mongoose.Types.ObjectId[],
+  plannedCarry?: PlannedMergeCarry,
 ): Promise<NonDemotingMergeResolution> {
   const allIds = [preferredCanonicalId, ...duplicateIds];
   const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<
@@ -2301,21 +2310,26 @@ export async function resolveNonDemotingMerge(
   const bestInputRank = Math.max(
     ...allIds.map((id) => mergeTierRank(docById.get(String(id))?.studentVisibilityTier)),
   );
-  const unionStrings = (field: string): string[] =>
-    Array.from(
-      new Set(
-        docs
-          .flatMap((doc) => (Array.isArray(doc[field]) ? doc[field] : []))
-          .map((value) => String(value))
-          .filter(Boolean),
-      ),
-    );
-  const unionAreas = unionStrings('researchAreas');
-  const unionSourceUrls = unionStrings('sourceUrls');
-  const unionDepartments = unionStrings('departments');
+  const describableDocs = describableMergeTwins(docs);
+  const carriedByMerge = {
+    researchAreas: plannedCarry
+      ? carriedStrings(plannedCarry.mergedResearchAreas)
+      : describableDocs.flatMap((doc) => carriedStrings(doc.researchAreas)),
+    sourceUrls: plannedCarry
+      ? carriedStrings(plannedCarry.mergedSourceUrls)
+      : docs.flatMap((doc) => carriedStrings(doc.sourceUrls)),
+    departments: plannedCarry
+      ? carriedStrings(plannedCarry.mergedDepartments)
+      : docs.flatMap((doc) => carriedStrings(doc.departments)),
+  };
+  const storedAfterMerge = (
+    survivor: Record<string, any>,
+    field: keyof typeof carriedByMerge,
+  ): string[] =>
+    Array.from(new Set([...carriedStrings(survivor[field]), ...carriedByMerge[field]]));
   const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
-    describableMergeTwins(docs),
-    unionAreas,
+    describableDocs,
+    Array.from(new Set(describableDocs.flatMap((doc) => carriedStrings(doc.researchAreas)))),
   );
 
   const rosterMap = await getResearchEntityRosterByEntityId(allIds);
@@ -2347,9 +2361,9 @@ export async function resolveNonDemotingMerge(
       ...doc,
       fullDescription: bestFull || doc.fullDescription,
       shortDescription: bestShort || doc.shortDescription,
-      researchAreas: unionAreas,
-      sourceUrls: unionSourceUrls,
-      departments: unionDepartments,
+      researchAreas: storedAfterMerge(doc, 'researchAreas'),
+      sourceUrls: storedAfterMerge(doc, 'sourceUrls'),
+      departments: storedAfterMerge(doc, 'departments'),
     };
     const leadMembers = allLeads.map((lead) => ({ ...lead, researchEntityId: candidateId }));
     const simulated = computeResearchEntityStudentVisibility({
@@ -2430,7 +2444,11 @@ export async function applyResearchEntityDedupeMergeGroup(
   let hydratedFullDescription: string | undefined;
   let hydratedShortDescription: string | undefined;
   if (options.neverDemote) {
-    const resolution = await resolveNonDemotingMerge(requestedCanonicalId, requestedDuplicateIds);
+    const resolution = await resolveNonDemotingMerge(
+      requestedCanonicalId,
+      requestedDuplicateIds,
+      group,
+    );
     if (resolution.defer) {
       return {
         ...zeroedResult(),
@@ -2893,7 +2911,7 @@ async function main() {
               .map((id) => objectId(id))
               .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
             if (!canonicalId || duplicateIds.length === 0) return null;
-            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds);
+            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds, group);
             if (!resolution.defer) return null;
             return {
               canonicalSlug: group.canonicalSlug,

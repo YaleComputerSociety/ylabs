@@ -10,6 +10,7 @@ import { isPersonScopedResearchEntityShape } from '../../models/storedVocabulari
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
 import { getCached, setCached } from '../snapshotCache';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
@@ -448,8 +449,8 @@ export function buildYsmMeshCandidateMatch(
   const ysmProfileUrlClause = { $regex: YSM_PROFILE_URL_MONGO_REGEX, $options: 'i' };
   const ysmFilter = {
     $or: [
-      { school: 'Yale School of Medicine' },
-      { schools: 'Yale School of Medicine' },
+      { school: SCHOOL_OF_MEDICINE_NAME },
+      { schools: SCHOOL_OF_MEDICINE_NAME },
       { slug: /^ysm-/i },
       { profileUrls: ysmProfileUrlClause },
       { sourceUrls: ysmProfileUrlClause },
