@@ -18,7 +18,10 @@ const stringValues = (value: unknown): string[] =>
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
     : [];
 
-const countValues = (documents: readonly ServedFacetDocument[], field: keyof ServedFacetDocument) => {
+const countValues = (
+  documents: readonly ServedFacetDocument[],
+  field: keyof ServedFacetDocument,
+) => {
   const counts = new Map<string, number>();
   for (const document of documents) {
     for (const value of new Set(stringValues(document[field]))) {
