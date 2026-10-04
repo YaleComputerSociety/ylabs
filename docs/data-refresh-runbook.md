@@ -197,7 +197,24 @@ The table reports, per host, the requests made, how many were refused with 403 o
 A request that succeeds after a transport error or a 5xx counts as ok, and one that is refused and then ends on a 404 or a 5xx counts as another failure.
 Latency is end-to-end per page, so it includes waiting for the shared per-host limiter and any retry backoff, which is also how the baseline below was measured.
 The last line starts `HOST_PROBE_RESULT` and carries the same numbers as JSON; the output names hosts and counts only, never a page URL.
-The probe takes no arguments, so every run measures the same sample as the baseline.
+With no arguments every run measures the same sample as the baseline.
+`--host=<host> --in-flight=<n>` probes one host's same 40 pages at `n` requests in flight (1 to 4) with that host's spacing, ignoring its concurrency override, which is how a proposed override is measured before it is changed.
+
+#### The `medicine.yale.edu` override is 3 in flight (#4611)
+
+The rule was fixed before measuring: raise the override from 2 to 3 only if, at 3 in flight, the first-attempt 403 and 429 count is no higher than at 2, and no request exhausts its retry budget.
+Measured from a residential address on 2026-10-04 around 03:55 UTC, two probes at each level, in the order 2, 3, 3, 2:
+
+| in flight | requests | first 403/429 | exhausted | other failed | median ms | p95 ms | wall s |
+|---|---|---|---|---|---|---|---|
+| 2 | 40 | 0 | 0 | 1 | 643 | 4746 | 23.7 |
+| 3 | 40 | 0 | 0 | 1 | 1143 | 4682 | 19.9 |
+| 3 | 40 | 0 | 0 | 1 | 809 | 4861 | 20.0 |
+| 2 | 40 | 0 | 0 | 1 | 568 | 4449 | 22.7 |
+
+Both conditions held, so `HOST_THROTTLE_OVERRIDES` now holds `medicine.yale.edu` at 3 in flight with the same 400 ms spacing and retry budget, and `ysph.yale.edu` stays at 2.
+The spacing still bounds the request rate at 2.5 per second, so the gain is in overlapping slow pages rather than in a higher rate.
+The median rose at 3 while the wall time fell by 12 to 16 percent, and refusal varies by time of day, so the first `development-full` run on this commit is the check: compare its discovery duration with 270.9 minutes and the host's profile fetch failures with 43, both from 2026-09-28, and return the override to 2 if refusals or exhausted retries rise.
 
 To run it on the Render cron job:
 

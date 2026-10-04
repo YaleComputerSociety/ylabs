@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Lead Who Moved Institution Is Operator-Reported, Because ORCID Asserts No Relocation (#4614)
+
+The departure class students meet most is a lead who moved to another institution, and every Yale-derived signal reports that row as present, so the departure lane's ceiling for it is 0.
+ORCID was the candidate off-Yale source, and its bar was fixed before measuring: build a lane only if, over a seeded sample of 50 served leads that carry an ORCID id plus every served lead with an ORCID id and no probeable Yale profile link, it returns an employment record for at least half, and every relocation it asserts is confirmed by hand on the new institution's own page.
+Measured read-only on Development and the public ORCID API on 2026-10-04: 3,455 served leads, 1,815 with an ORCID link, and none of those without a probeable Yale profile link, so the sample was the 50 seeded leads.
+31 of 50 returned any employment record, which clears the first half of the bar.
+11 of 50 carried either a current non-Yale employer or an ended Yale employment, and 0 of those 11 is a relocation: 9 still list a current Yale employment in ORCID itself, and the other 2 list no Yale employment at all while their Yale profile still answers 200 and names a current appointment, one of them an adjunct.
+No record combined an ended Yale employment with no current one and a current non-Yale employer, so ORCID asserted no relocation for hand confirmation, and a lane reading the broader shape would have suppressed 11 present people.
+So no ORCID relocation lane is built.
+A relocated lead is recorded by an operator with `yarn --cwd server research-entity:record-departure` (#3477), and an off-Yale source is reconsidered only with a measurement that finds asserted relocations it can confirm.
+
 ## 2026-10-04: The Absence Of A Signal No Lane Collects Is Never A Reason (#4574)
 
 A gate reason, a repair task, or an operator-board blocker may record only the absence of something a lane collects.

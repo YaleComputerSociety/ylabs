@@ -6,7 +6,7 @@ import {
   storedSourceLinkHealthByUrl,
 } from '../backfillSourceLinkHealthCore';
 
-const URL_A = 'https://medicine.yale.edu/a/b/';
+const URL_A = 'https://ysph.yale.edu/a/b/';
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 const EARLIER = new Date('2026-08-01T00:00:00.000Z');
 

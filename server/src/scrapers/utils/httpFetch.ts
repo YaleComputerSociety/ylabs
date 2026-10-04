@@ -53,6 +53,7 @@ export type HttpRequestFn = (url: string, config: HttpRequestConfig) => Promise<
 export interface HostRateLimiterOptions {
   maxConcurrency?: number;
   minIntervalMs?: number;
+  applyHostOverrides?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -66,6 +67,7 @@ export class HostRateLimiter {
   constructor(options: HostRateLimiterOptions = {}) {
     this.slots = new HostConcurrencyLimiter(options.maxConcurrency ?? 2, {
       minIntervalMs: options.minIntervalMs ?? 400,
+      applyHostOverrides: options.applyHostOverrides,
       now: options.now,
       sleep: options.sleep,
     });

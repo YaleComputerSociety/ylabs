@@ -35,7 +35,7 @@ export const REFUSAL_THROTTLED_HOST_RETRY_BUDGET: HostRetryBudget = {
 
 export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> = {
   'medicine.yale.edu': {
-    concurrency: 2,
+    concurrency: 3,
     minIntervalMs: 400,
     retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
   },
@@ -106,10 +106,12 @@ export interface HostConcurrencyLimiterOptions {
   minIntervalMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  applyHostOverrides?: boolean;
 }
 
 export class HostConcurrencyLimiter implements HostSlotLimiter {
   private readonly baseThrottle: HostThrottle;
+  private readonly applyHostOverrides: boolean;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly states = new Map<string, HostSlotState>();
@@ -122,6 +124,7 @@ export class HostConcurrencyLimiter implements HostSlotLimiter {
       concurrency: Math.max(1, Math.floor(cap) || 1),
       minIntervalMs: Math.max(0, options.minIntervalMs ?? 0),
     };
+    this.applyHostOverrides = options.applyHostOverrides ?? true;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? realSleep;
   }
@@ -167,7 +170,9 @@ export class HostConcurrencyLimiter implements HostSlotLimiter {
   }
 
   private throttleFor(host: string): HostThrottle {
-    return resolveHostThrottle(host, this.baseThrottle);
+    return this.applyHostOverrides
+      ? resolveHostThrottle(host, this.baseThrottle)
+      : this.baseThrottle;
   }
 
   private stateFor(key: string): HostSlotState {
