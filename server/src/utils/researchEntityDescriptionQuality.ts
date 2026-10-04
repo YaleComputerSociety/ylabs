@@ -371,6 +371,9 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
       value,
     ) ||
     /\bI\s+study\b/i.test(value) ||
+    /\b(?:applies|combines)\b[^.]{0,160}\bto\s+(?:study|understand|investigate|examine|explore|model|measure)\b/i.test(
+      value,
+    ) ||
     /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
     /\binterested\s+in\b/i.test(value) ||
     /\blab['’]s\s+mission\s+is\s+to\b/i.test(value) ||
