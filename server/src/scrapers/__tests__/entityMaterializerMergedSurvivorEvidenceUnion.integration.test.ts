@@ -27,6 +27,8 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
 
@@ -330,6 +332,66 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
     expect(stored?.departments).toEqual(['Example Studies']);
+  });
+
+  describe("a merged-in citation of the lead's verified primary profile (#4695)", () => {
+    const seedLead = async (survivorId: mongoose.Types.ObjectId, profileUrl: string) => {
+      const person = await Researcher.create({
+        schemaVersion: 1,
+        displayName: 'Example Lead',
+        status: 'ACTIVE',
+        archived: false,
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: profileUrl,
+            verifiedAt: new Date('2026-09-01T00:00:00Z'),
+          },
+        ],
+      });
+      await RoleAssignment.create({
+        schemaVersion: 1,
+        personId: person._id,
+        target: { kind: 'RESEARCH_ENTITY', id: survivorId },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.7,
+        reviewStatus: 'UNREVIEWED',
+      });
+    };
+
+    it('carries it onto a survivor that cites its own pages', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);
+      await seedObservation('dept-example-lead', 'sourceUrls', [
+        'https://example.yale.edu/profile/example-lead/',
+        'https://example.yale.edu/people/faculty/',
+      ]);
+      await seedLead(survivor._id, 'https://example.yale.edu/profile/example-lead');
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ sourceUrls?: string[] }>();
+
+      expect(stored?.sourceUrls).toContain('https://example.yale.edu/profile/example-lead/');
+      expect(stored?.sourceUrls).not.toContain('https://example.yale.edu/people/faculty/');
+    });
+
+    it('leaves out a merged-in profile that is not the lead verified one', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);
+      await seedObservation('dept-example-lead', 'sourceUrls', [
+        'https://example.yale.edu/profile/other-person/',
+      ]);
+      await seedLead(survivor._id, 'https://example.yale.edu/profile/example-lead');
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ sourceUrls?: string[] }>();
+
+      expect(stored?.sourceUrls ?? []).not.toContain(
+        'https://example.yale.edu/profile/other-person/',
+      );
+    });
   });
 
   it('does not pair a loser body with the survivor own card', async () => {

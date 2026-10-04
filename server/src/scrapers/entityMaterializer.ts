@@ -5111,6 +5111,7 @@ export interface MergedSurvivorEvidence {
   survivorLaneOwnsWebsite: boolean;
   droppedLoserWebsiteValues: unknown[];
   loserRosterAppointments: any[];
+  mergedInSourceUrlValues: string[];
 }
 
 /**
@@ -5169,6 +5170,7 @@ export async function mergedSurvivorEvidence(
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
+    mergedInSourceUrlValues: [],
   };
   if (!survivorId) return unmerged;
   if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
@@ -5363,8 +5365,22 @@ export async function mergedSurvivorEvidence(
   const survivorStatedWebsites = websiteIdentitiesStatedBy(
     observations.filter((observation: any) => !loserOrigin(observation)),
   );
+  const mergedInSourceUrlValues = [
+    ...new Set(
+      entryPointIndependentOrder
+        .filter(
+          (observation: any) => loserOrigin(observation) && observation.field === 'sourceUrls',
+        )
+        .flatMap((observation: any) =>
+          Array.isArray(observation.value) ? observation.value : [observation.value],
+        )
+        .map((value: unknown) => textValue(value).trim())
+        .filter(Boolean),
+    ),
+  ];
   return {
     observations,
+    mergedInSourceUrlValues,
     mergedInKeys: mergedInEntityKeysAndIds(identity),
     mergedInRows: mergedInRows.map((row) => ({ _id: row._id, slug: row.slug })),
     evidenceObservations: [...loadedObservations, ...kept],
@@ -5374,6 +5390,58 @@ export async function mergedSurvivorEvidence(
     ),
     loserRosterAppointments,
   };
+}
+
+/**
+ * The merged-in rows' cited pages that are a lead's own verified primary Yale profile.
+ *
+ * A merge left the person's other department profile on the archived row, because a
+ * loser's `sourceUrls` never fills a survivor that holds its own (#3584), so the
+ * survivor stopped citing a page about its own lead (#4695). Only the lead's verified
+ * primary identity page qualifies, so no other row's claims attach: the survivor already
+ * names that person as its lead, and the profile link was verified as theirs.
+ */
+export async function mergedInLeadProfileSourceUrls(
+  survivorId: unknown,
+  mergedInSourceUrlValues: readonly string[],
+): Promise<string[]> {
+  if (mergedInSourceUrlValues.length === 0) return [];
+  const leadIds = (await RoleAssignment.distinct('personId', {
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': survivorId,
+    role: { $in: SITE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })) as unknown[];
+  if (leadIds.length === 0) return [];
+  const leads = (await Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
+    .select('profileLinks')
+    .lean()) as any[];
+  return selectMergedInLeadProfileSourceUrls(mergedInSourceUrlValues, leads);
+}
+
+export function selectMergedInLeadProfileSourceUrls(
+  mergedInSourceUrlValues: readonly string[],
+  leads: ReadonlyArray<{ profileLinks?: unknown }>,
+): string[] {
+  const verifiedPrimaryDestinations = new Set(
+    leads
+      .flatMap((lead) => (Array.isArray(lead.profileLinks) ? lead.profileLinks : []))
+      .filter(
+        (link: any) =>
+          link?.kind === 'YALE_OFFICIAL' &&
+          link?.purpose === 'PRIMARY_IDENTITY' &&
+          link?.verifiedAt,
+      )
+      .map((link: any) => normalizeOfficialProfileDestination(textValue(link.url)))
+      .filter(Boolean),
+  );
+  if (verifiedPrimaryDestinations.size === 0) return [];
+  return mergedInSourceUrlValues.filter(
+    (url) =>
+      isLikelyOfficialPersonProfileUrl(url) &&
+      verifiedPrimaryDestinations.has(normalizeOfficialProfileDestination(url)),
+  );
 }
 
 async function observationsMergedIntoLiveSurvivor(
@@ -6073,6 +6141,7 @@ export interface ProjectFromLogInput {
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
   droppedLoserWebsiteValues?: readonly unknown[];
+  mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
@@ -6918,6 +6987,7 @@ export async function projectFromLog(
       ReadonlySet<string>
     >(),
     droppedLoserWebsiteValues = [],
+    mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
     loserRosterReads = [],
   } = input;
@@ -7453,6 +7523,26 @@ export async function projectFromLog(
           );
           fieldsWritten++;
         }
+      }
+      const citedNow = (): unknown[] =>
+        Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : currentSourceUrls;
+      const missingLeadProfiles = mergedInLeadProfileUrls.filter(
+        (url) =>
+          !citedNow().some(
+            (cited) =>
+              typeof cited === 'string' &&
+              normalizeOfficialProfileDestination(cited) ===
+                normalizeOfficialProfileDestination(url),
+          ),
+      );
+      if (missingLeadProfiles.length > 0) {
+        stageSourceUrls(
+          sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...citedNow(),
+            ...missingLeadProfiles,
+          ]),
+        );
+        fieldsWritten++;
       }
       // Runs last in the block so it reads every citation this pass will write, whether
       // the #613 projection staged it or the stored list carried it. A live observation
@@ -8389,6 +8479,7 @@ export async function materializeEntity(
   let mergedInRows: MergedSurvivorEvidence['mergedInRows'] = [];
   let researchAreaEvidenceObservations: any[] = obs;
   let droppedLoserWebsiteValues: unknown[] = [];
+  let mergedInLeadProfileUrls: string[] = [];
   let loserRosterReads: ResolverObservation[] = [];
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
@@ -8397,6 +8488,10 @@ export async function materializeEntity(
     mergedInRows = merged.mergedInRows;
     researchAreaEvidenceObservations = merged.evidenceObservations;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
+    mergedInLeadProfileUrls = await mergedInLeadProfileSourceUrls(
+      entityDoc._id,
+      merged.mergedInSourceUrlValues,
+    );
     loserRosterReads = merged.loserRosterAppointments.map((o: any) => ({
       field: o.field,
       value: o.value,
@@ -8726,6 +8821,7 @@ export async function materializeEntity(
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
     droppedLoserWebsiteValues,
+    mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     loserRosterReads,
     mergedInRows,
