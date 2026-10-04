@@ -48,10 +48,7 @@ async function main(): Promise<void> {
     entityType: 'researchEntity',
     field: 'inferredPiUserKey',
     superseded: false,
-    $or: [
-      { entityKey: { $in: [...slugs] } },
-      { entityId: { $in: rows.map((row) => row._id) } },
-    ],
+    $or: [{ entityKey: { $in: [...slugs] } }, { entityId: { $in: rows.map((row) => row._id) } }],
   })
     .select('entityKey entityId value')
     .lean()) as any[];

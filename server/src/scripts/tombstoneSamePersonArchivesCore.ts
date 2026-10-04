@@ -83,7 +83,8 @@ export function planSamePersonArchiveTombstones(input: {
     if (!isNonLabPersonScoped(row)) {
       held.push({
         slug: row.slug,
-        reason: entityTypeOf(row) === 'LAB' ? 'lab-is-not-a-profile-duplicate' : 'not-person-scoped',
+        reason:
+          entityTypeOf(row) === 'LAB' ? 'lab-is-not-a-profile-duplicate' : 'not-person-scoped',
       });
       continue;
     }
