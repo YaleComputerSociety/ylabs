@@ -158,7 +158,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
     expect(summary.status).toBe('failure');
     expect(summary.failureNames).toEqual(['samePiSameNameResearchEntities']);
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
+      'SCRAPER_ENV=development yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
     );
     expect(summary.recommendedCommands).not.toContain(
       'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --apply',
@@ -180,11 +180,11 @@ describe('scraperIntegrityGate CLI helpers', () => {
 
     expect(summary.failureNames).toEqual(['duplicateAccessSignals']);
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
+      'SCRAPER_ENV=development yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
     );
   });
 
-  it('targets duplicate-person warning handoff commands at Beta', () => {
+  it('targets duplicate-person warning handoff commands at the measured environment', () => {
     const summary = buildPostMaterializationIntegritySummary({
       warnings: [
         {
@@ -199,11 +199,47 @@ describe('scraperIntegrityGate CLI helpers', () => {
       classification: 'must_fix_before_promotion',
       owner: 'identity/account operator',
       nextCommand:
-        'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
+        'SCRAPER_ENV=development yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     });
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
+      'SCRAPER_ENV=development yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     );
+  });
+
+  it('prefixes every recommended command with the environment the gate measured', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      commandEnvironment: 'beta',
+      currentMembersOnArchivedEntities: [
+        { researchEntityId: 'entity-1', memberId: 'member-1', role: 'pi', canonicalGroupId: null },
+      ],
+      warnings: [
+        {
+          name: 'deadEndTombstoneChains',
+          count: 1,
+          message: 'Dead-end tombstone chains need repair.',
+        },
+      ],
+    });
+
+    expect(summary.recommendedCommands.length).toBeGreaterThan(0);
+    for (const command of summary.recommendedCommands) {
+      expect(command.startsWith('SCRAPER_ENV=beta yarn --cwd server ')).toBe(true);
+    }
+    expect(summary.warnings[0].nextCommand).toBe(
+      'SCRAPER_ENV=beta yarn --cwd server research-entity:repair-dead-end-tombstones',
+    );
+  });
+
+  it('points recommended commands at Development when no environment is given', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      currentMembersOnArchivedEntities: [
+        { researchEntityId: 'entity-1', memberId: 'member-1', role: 'pi', canonicalGroupId: null },
+      ],
+    });
+
+    expect(summary.recommendedCommands).toEqual([
+      'SCRAPER_ENV=development yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=role-assignment --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
+    ]);
   });
 
   it('labels a count as a lower bound only when its check reports truncation', () => {

@@ -99,6 +99,7 @@ export interface BuildPostMaterializationIntegrityInput {
   truncatedChecks?: PostMaterializationIntegrityFailureName[];
   populationCounts?: Partial<Record<PostMaterializationIntegrityFailureName, number>>;
   sourceRunId?: string;
+  commandEnvironment?: string;
 }
 
 export interface PostMaterializationIntegritySummary {
@@ -124,14 +125,18 @@ export interface RunPostMaterializationIntegrityGateOptions {
   includeSamples?: boolean;
   limit?: number;
   sourceRunId?: string;
+  commandEnvironment?: string;
 }
 
 const DEFAULT_SAMPLE_LIMIT = 25;
 const DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD = 5000;
-const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
+const DEFAULT_COMMAND_ENVIRONMENT = 'development';
 
-function betaCommand(command: string): string {
-  return command.startsWith(BETA_COMMAND_PREFIX) ? command : `${BETA_COMMAND_PREFIX}${command}`;
+function environmentCommand(command: string, environment: string): string {
+  const trimmed = command.trim();
+  if (!trimmed || /^[A-Z_][A-Z0-9_]*=/.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('yarn --cwd server ')) return `SCRAPER_ENV=${environment} ${trimmed}`;
+  return trimmed;
 }
 
 const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
@@ -144,37 +149,26 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'activeArtifactsOnArchivedEntities',
 ];
 
-const SAME_PI_DEDUPE_REVIEW_COMMAND = betaCommand(
-  'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
-);
+const SAME_PI_DEDUPE_REVIEW_COMMAND =
+  'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json';
 
 const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailureName, string[]> = {
   samePiSameNameResearchEntities: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   officialLabUrlResearchEntities: [
-    betaCommand(
-      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
-    ),
+    'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
   ],
   duplicatePeople: [
-    betaCommand(
-      'yarn --cwd server researchers:dedupe-accountless-shells --output /tmp/ylabs-accountless-researcher-shell-dedupe.json',
-    ),
+    'yarn --cwd server researchers:dedupe-accountless-shells --output /tmp/ylabs-accountless-researcher-shell-dedupe.json',
   ],
   duplicateCurrentMembers: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   currentMembersOnArchivedEntities: [
-    betaCommand(
-      'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=role-assignment --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
-    ),
+    'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=role-assignment --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
   ],
   duplicateAccessSignals: [
-    betaCommand(
-      'yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
-    ),
+    'yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
   ],
   activeArtifactsOnArchivedEntities: [
-    betaCommand(
-      'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=access-signal --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
-    ),
+    'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=access-signal --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
   ],
 };
 const SAME_PI_ENTITY_SCAN_LIMIT = 10000;
@@ -191,9 +185,8 @@ const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
   duplicatePersonIdentityConflicts: {
     classification: 'must_fix_before_promotion',
     owner: 'identity/account operator',
-    nextCommand: betaCommand(
+    nextCommand:
       'yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
-    ),
   },
 };
 
@@ -224,7 +217,8 @@ export function buildPostMaterializationIntegritySummary(
     new Set(input.truncatedChecks),
   );
   const failureNames = FAILURE_ORDER.filter((name) => counts[name] > 0);
-  const warnings = enrichIntegrityWarnings(input.warnings || []);
+  const commandEnvironment = input.commandEnvironment || DEFAULT_COMMAND_ENVIRONMENT;
+  const warnings = enrichIntegrityWarnings(input.warnings || [], commandEnvironment);
   const warningCommands = warnings
     .map((warning) => warning.nextCommand)
     .filter((command): command is string => Boolean(command));
@@ -245,7 +239,10 @@ export function buildPostMaterializationIntegritySummary(
       activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
     },
     warnings,
-    recommendedCommands: [...recommendedCommandsForFailures(failureNames), ...warningCommands],
+    recommendedCommands: [
+      ...recommendedCommandsForFailures(failureNames, commandEnvironment),
+      ...warningCommands,
+    ],
   };
 }
 
@@ -268,19 +265,34 @@ function resolveIntegrityCounts(
 
 function recommendedCommandsForFailures(
   failureNames: PostMaterializationIntegrityFailureName[],
+  environment: string,
 ): string[] {
   return [
-    ...new Set(failureNames.flatMap((failureName) => RECOMMENDED_COMMANDS_BY_FAILURE[failureName])),
+    ...new Set(
+      failureNames.flatMap((failureName) =>
+        RECOMMENDED_COMMANDS_BY_FAILURE[failureName].map((command) =>
+          environmentCommand(command, environment),
+        ),
+      ),
+    ),
   ];
 }
 
 function enrichIntegrityWarnings(
   warnings: PostMaterializationIntegrityWarning[],
+  environment: string,
 ): PostMaterializationIntegrityWarning[] {
-  return warnings.map((warning) => ({
-    ...warning,
-    ...INTEGRITY_WARNING_OPERATOR_METADATA[warning.name],
-  }));
+  return warnings.map((warning) => {
+    const metadata = INTEGRITY_WARNING_OPERATOR_METADATA[warning.name];
+    if (!metadata) return warning;
+    return {
+      ...warning,
+      ...metadata,
+      ...(metadata.nextCommand
+        ? { nextCommand: environmentCommand(metadata.nextCommand, environment) }
+        : {}),
+    };
+  });
 }
 
 const PLACEHOLDER_IDENTITY_VALUES = ['', 'na', 'n/a', 'unknown'];
@@ -916,6 +928,7 @@ export async function runPostMaterializationIntegrityGate(
     truncatedChecks,
     populationCounts,
     sourceRunId: options.sourceRunId,
+    commandEnvironment: options.commandEnvironment,
   });
 }
 
