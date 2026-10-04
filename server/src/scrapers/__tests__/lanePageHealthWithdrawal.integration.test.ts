@@ -325,4 +325,63 @@ describe('a fixed-list lane page that is gone withdraws the values it supplied (
       [],
     );
   });
+
+  it('credits no methods to the page a gone page once redirected to', async () => {
+    const resolvedPage = `${PAGE}home/`;
+    const fallback = 'https://synthetic-signaling-mirror.example.edu/';
+    await appendLaneObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityId: rowId,
+          entityKey: SLUG,
+          sourceUrl: PAGE,
+          field: LANE_PAGE_HEALTH_FIELD,
+          value: {
+            url: PAGE,
+            healthStatus: 'HEALTHY',
+            httpStatusCode: 200,
+            resolvedUrl: resolvedPage,
+          },
+        },
+      ],
+      new Date('2026-09-01T00:00:00Z'),
+    );
+    const fetchPage = (url: string) =>
+      url === PAGE
+        ? gone()
+        : Promise.resolve({
+            url: fallback,
+            html: '<main><h1>Synthetic Signaling Lab</h1><p>Welcome to the lab. We are glad you are here and hope you enjoy visiting our pages and meeting our team.</p></main>',
+          });
+    const emitted = await runLaneEmitting(
+      fetchPage,
+      vi.fn().mockResolvedValue({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }),
+      {
+        lab: {
+          sourceUrls: [fallback],
+          fullDescription: DESCRIPTION,
+          fullDescriptionSourceUrl: resolvedPage,
+        },
+        callLLM: vi.fn().mockResolvedValue({
+          fullDescription: '',
+          shortDescription: '',
+          topics: [],
+          methods: ['imaging'],
+        }),
+      },
+    );
+    expect(
+      emitted.filter(
+        (observation) =>
+          observation.field === LANE_PAGE_HEALTH_FIELD &&
+          (observation.value as any).healthStatus === 'UNAVAILABLE',
+      ),
+    ).toHaveLength(1);
+    expect(
+      emitted.filter(
+        (observation) => observation.field === 'methods' && observation.sourceUrl === resolvedPage,
+      ),
+    ).toEqual([]);
+  });
 });

@@ -38,6 +38,8 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import {
   confirmGoneLanePage,
   fetchFailureHttpStatus,
+  goneLanePageKeys,
+  loadLanePageHealthObservations,
   lanePageHealthObservation,
   lanePageReadVerdict,
   type LanePageProbe,
@@ -2091,7 +2093,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityKey: lab.slug,
         };
         const pageHealthObservations: ObservationInput[] = [];
-        const gonePageKeys = new Set<string>();
+        const emittedPageHealth: ObservationInput[] = [];
         const recordGonePage = async (url: string, firstAnswer: { httpStatusCode?: unknown }) => {
           const verdict = await confirmGoneLanePage(
             url,
@@ -2100,7 +2102,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
           if (!verdict) return;
           pageHealthObservations.push(lanePageHealthObservation(pageHealthEntity, verdict));
-          gonePageKeys.add(sourceLinkHealthKey(url) as string);
         };
         const recordReadPage = (requestedUrl: string, resolvedUrl: string) => {
           if (landsAwayFromRequestedResource(requestedUrl, resolvedUrl)) return;
@@ -2113,7 +2114,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         };
         const emitPageHealth = async () => {
           if (pageHealthObservations.length === 0) return;
-          await ctx.emit(pageHealthObservations.splice(0));
+          const batch = pageHealthObservations.splice(0);
+          emittedPageHealth.push(...batch);
+          await ctx.emit(batch);
         };
         for (const skippedUrl of candidateUrls.filter((url) => !urls.includes(url))) {
           await recordGonePage(skippedUrl, {});
@@ -2403,14 +2406,30 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // description is credited to, never to the page just fetched, which on a
         // title-only profile holds none of them (#4048).
         const storedDescriptionSourceUrl = textValue(lab.fullDescriptionSourceUrl);
-        const storedDescriptionSourceIsGone = gonePageKeys.has(
-          sourceLinkHealthKey(storedDescriptionSourceUrl) ?? '',
-        );
+        const storedDescriptionSourceIsGone = async () => {
+          const evaluatedAt = new Date();
+          const gonePageKeys = goneLanePageKeys(
+            [
+              ...(await loadLanePageHealthObservations(this.name, pageHealthEntity)),
+              ...emittedPageHealth.map((observation) => ({
+                ...observation,
+                sourceName: this.name,
+                observedAt: evaluatedAt,
+              })),
+            ],
+            new Set(
+              [pageHealthEntity.entityId, pageHealthEntity.entityKey].filter(
+                (identity): identity is string => Boolean(identity),
+              ),
+            ),
+          );
+          return gonePageKeys.has(sourceLinkHealthKey(storedDescriptionSourceUrl) ?? '');
+        };
         const storedDescriptionMethods =
           methods.length === 0 &&
           storedDescription.length >= 120 &&
           storedDescriptionSourceUrl &&
-          !storedDescriptionSourceIsGone
+          !(await storedDescriptionSourceIsGone())
             ? groundMethods(
                 (
                   await this.callLLM({

@@ -1,10 +1,12 @@
+import mongoose from 'mongoose';
+import { Observation } from '../models/observation';
 import {
   checkSourceLinkHealth,
   findSourceLinkHealth,
   sourceLinkHealthKey,
   type SourceLinkHealth,
 } from '../services/sourceLinkHealth';
-import { isBenchmarkReplayActive } from './snapshotBenchmarkMode';
+import { isBenchmarkModeActive, isBenchmarkReplayActive } from './snapshotBenchmarkMode';
 import type { ObservationInput } from './types';
 
 export const LANE_PAGE_HEALTH_FIELD = 'lanePageHealth';
@@ -181,6 +183,34 @@ function newestPageEvidence(
     resolved.goneAt = Math.max(resolved.goneAt, requested.goneAt);
   }
   return byPage;
+}
+
+export function goneLanePageKeys(
+  observations: readonly LanePageObservation[],
+  rowIdentities: ReadonlySet<string>,
+): Set<string> {
+  const gone = new Set<string>();
+  for (const [key, page] of newestPageEvidence(observations, rowIdentities)) {
+    if (page.goneAt > page.liveAt) gone.add((JSON.parse(key) as string[])[2]);
+  }
+  return gone;
+}
+
+export async function loadLanePageHealthObservations(
+  sourceName: string,
+  entity: Pick<ObservationInput, 'entityType' | 'entityId' | 'entityKey'>,
+): Promise<LanePageObservation[]> {
+  if (!entity.entityId && !entity.entityKey) return [];
+  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return [];
+  return Observation.find({
+    entityType: entity.entityType,
+    sourceName,
+    field: LANE_PAGE_HEALTH_FIELD,
+    superseded: false,
+    ...(entity.entityId ? { entityId: entity.entityId } : { entityKey: entity.entityKey }),
+  })
+    .select('sourceName field value sourceUrl observedAt entityKey entityId')
+    .lean<LanePageObservation[]>();
 }
 
 export function withoutGoneLanePageObservations<T extends LanePageObservation>(

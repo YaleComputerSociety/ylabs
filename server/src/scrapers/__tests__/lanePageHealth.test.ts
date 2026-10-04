@@ -4,9 +4,11 @@ import {
   confirmGoneLanePage,
   fetchFailureHttpStatus,
   lanePageReadVerdict,
+  goneLanePageKeys,
   planGoneLanePageFieldClears,
   withoutGoneLanePageObservations,
 } from '../lanePageHealth';
+import { sourceLinkHealthKey } from '../../services/sourceLinkHealth';
 import { HttpStatusError } from '../utils/httpFetch';
 
 const LANE = 'lab-microsite-description-llm';
@@ -172,6 +174,15 @@ describe('withoutGoneLanePageObservations across a redirect', () => {
     ...read('fullDescription', 'Studies synthetic signaling.', 2),
     sourceUrl: RESOLVED,
   };
+
+  it('reports the resolved page as gone once the requested page is gone', () => {
+    expect(goneLanePageKeys([readThroughRedirect(2), verdict('UNAVAILABLE', 404, 5)], ROW)).toEqual(
+      new Set([sourceLinkHealthKey(PAGE), sourceLinkHealthKey(RESOLVED)]),
+    );
+    expect(goneLanePageKeys([readThroughRedirect(6), verdict('UNAVAILABLE', 404, 5)], ROW)).toEqual(
+      new Set(),
+    );
+  });
 
   it('withdraws a read citing the resolved page once the requested page is gone', () => {
     const { observations } = withoutGoneLanePageObservations(
