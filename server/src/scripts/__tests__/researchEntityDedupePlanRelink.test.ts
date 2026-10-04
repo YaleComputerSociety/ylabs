@@ -29,7 +29,7 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     }
   });
 
-  it('moves saved plans to the canonical entity and archives conflicting duplicates', async () => {
+  it('moves saved plans to the canonical entity and folds a conflicting duplicate plan into the survivor plan', async () => {
     const db = mongoose.connection.db!;
     const canonicalId = oid();
     const duplicateId = oid();
@@ -89,7 +89,8 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     const conflictDuplicate = await db
       .collection('research_plans')
       .findOne({ _id: planConflictDuplicate });
-    expect(conflictDuplicate?.archived).toBe(true);
+    expect(conflictDuplicate).toBeNull();
+    expect(await db.collection('research_plans').countDocuments({ archived: true })).toBe(0);
 
     const activePlansForConflictAccount = await db
       .collection('research_plans')

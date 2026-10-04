@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { carryResearchPlansToSurvivor } from './researchPlanMergeCarry';
 
 export const MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS = 10;
 
@@ -259,11 +260,19 @@ export async function recordResearchEntityMergeTombstone(input: {
   if (!slug || !mongoose.Types.ObjectId.isValid(String(input.canonicalEntityId))) return null;
   const canonicalGroupId = new mongoose.Types.ObjectId(String(input.canonicalEntityId));
 
-  const existing = (await ResearchEntity.findOne({ slug }).select('_id').lean()) as {
+  const existing = (await ResearchEntity.findOne({ slug }).select('_id archived').lean()) as {
     _id: mongoose.Types.ObjectId;
+    archived?: boolean;
   } | null;
   if (existing) {
     await ResearchEntity.updateOne({ _id: existing._id }, { $set: { canonicalGroupId } });
+    if (existing.archived === true) {
+      await carryResearchPlansToSurvivor({
+        survivorId: canonicalGroupId,
+        duplicateIds: [existing._id],
+        apply: true,
+      });
+    }
     return { created: false, entityId: String(existing._id) };
   }
 

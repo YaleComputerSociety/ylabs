@@ -259,6 +259,7 @@ import {
   withoutWithdrawnUndergradEvidenceQuotes,
 } from './storedUndergradEvidenceQuote';
 import { withResearchEntityWriteTransaction } from '../services/researchEntityWriteTransaction';
+import { carryResearchPlansToSurvivor } from '../services/researchPlanMergeCarry';
 import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
@@ -4206,6 +4207,12 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
       lastObservedAt: now,
     }),
   );
+  await carryResearchPlansToSurvivor({
+    survivorId: canonicalId,
+    duplicateIds: [String(shell._id)],
+    apply: true,
+    now,
+  });
   await deleteFromIndex('researchEntity', String(shell._id));
 
   return { folded: true, canonicalEntityId: canonicalId };

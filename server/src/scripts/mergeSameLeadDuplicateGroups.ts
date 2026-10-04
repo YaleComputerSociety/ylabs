@@ -20,6 +20,12 @@ import {
   archivedEntityUpdate,
 } from '../models/entityArchival';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  addResearchPlanCarryReports,
+  carryResearchPlansToSurvivor,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+} from '../services/researchPlanMergeCarry';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -172,6 +178,20 @@ async function main(): Promise<void> {
     survivorsGainedFundingWithNoBackingObservation: 0,
     anyManualLockWritten: 0,
   };
+  let researchPlanCarry = emptyResearchPlanCarryReport();
+
+  if (dryRun) {
+    for (const merge of outcome.merges) {
+      researchPlanCarry = addResearchPlanCarryReports(
+        researchPlanCarry,
+        await carryResearchPlansToSurvivor({
+          survivorId: merge.survivorId,
+          duplicateIds: merge.loserIds,
+          apply: false,
+        }),
+      );
+    }
+  }
 
   if (!dryRun && outcome.merges.length > 0) {
     const now = new Date();
@@ -238,6 +258,15 @@ async function main(): Promise<void> {
         );
         applied.merged += 1;
       }
+      researchPlanCarry = addResearchPlanCarryReports(
+        researchPlanCarry,
+        await carryResearchPlansToSurvivor({
+          survivorId: survivor._id,
+          duplicateIds: losers.map((loser) => loser._id),
+          apply: true,
+          now,
+        }),
+      );
     }
 
     // Two re-materializations. The second is the durability check: a merge that only holds
@@ -307,6 +336,8 @@ async function main(): Promise<void> {
         script: SCRIPT_NAME,
         mode: dryRun ? 'dry-run' : 'apply',
         applied,
+        researchPlanCarry,
+        researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
         duplicateUrlGroupsScanned: groups.length,
         sameLeadGroups: groups.filter((g) => g.sharesALead && g.everyMemberHasALead).length,
         plannedMerges: outcome.merges.length,
