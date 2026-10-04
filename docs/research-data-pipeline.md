@@ -48,8 +48,8 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
 - `official-research-home-roster` claims a named non-lead person is a current member, and no strict `research-homes:audit-rosters` run has been recorded reporting `broadEnablementReady` (#2412, #4025).
-  The 2026-10-04 strict run read clean structure and 7 of 7 honestly mapped roles, but the stored edges hold one expired unrefreshed edge and one twin edge the audit cannot see, so the review was not recorded (#4757, #4758).
-  It returns to the research sweep when #4758 lands and that review is recorded.
+  The first 2026-10-04 strict run found one expired unrefreshed edge and one twin edge the audit could not see (#4757), which #4758 fixed in the lane and the audit; the re-run after it reads clean structure, every snapshot key fresh, and no twin.
+  Only an agent has checked the sampled roles, which is not a recorded review, so it returns to the research sweep when a person reviews the sample and records it with `--sampled-precision-reviewed-by`.
 - `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
   Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
   It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.

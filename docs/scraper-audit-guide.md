@@ -401,9 +401,12 @@ Both alarm, and the lane rows report `unrefreshedMembershipKeys` and `twinMember
 It audited 2 lanes holding 7 members on the page, with `brokenLanes` 0, verdicts `ok` 1 and `uncovered-section` 1, every precision check at 0, and no expired snapshot.
 The sample covered all 7 members, and a manual review found 7 of 7 roles honestly mapped to the stated title and section.
 `broadEnablementReady` stayed false because the review was deliberately not recorded: reading the stored edges directly, 1 of 7 snapshot keys is served only by an expired edge the lane has not refreshed since its first write run, and 1 of 7 keys holds two live CURRENT edges on two researcher records.
-The audit reported that lane `ok` because `membership-not-materialized` ignores edge freshness, so the source stays manual-only until #4758 fixes the lane and the audit.
+The audit reported that lane `ok` because `membership-not-materialized` ignored edge freshness, which #4758 fixed in the lane and the audit.
 #4758 traced both to the same change on the page: a listing re-spelled its member's name, the old and new names stayed live side by side, and the conflicting names refused the listing on every later read, which each run reported as one skipped materialization.
 A listing's name, title, section and dates are now latest-wins per member key, and a listing that resolves to another researcher record ends the earlier name-only holder's edge under the same key on the same read.
+- Recorded strict re-run, 2026-10-04, Development, after the #4758 lane fix was materialized, `--strict --sample-limit=100`.
+It audited the same 2 lanes and 7 members, with `brokenLanes` 0, 0 unmaterialized, 0 unrefreshed and 0 twin membership keys, every precision check at 0, and no expired snapshot.
+`broadEnablementReady` stays false because the 7 of 7 honest-role result came from an agent check, and the owner decided an agent check is not a recorded review, so the source stays manual-only until a person reviews the sample and records it with `--sampled-precision-reviewed-by`.
 - `--strict` exits non-zero until both the structural checks pass and `--sampled-precision-reviewed-by=<reviewer>` records the manual sample review; `--sample-limit=<0-100>` controls the bounded sample in the JSON report.
 - Confirm a successful complete non-empty refresh archives disappeared source-owned rows, while empty or failed refreshes archive nothing.
 
