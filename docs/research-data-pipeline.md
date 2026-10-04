@@ -1993,20 +1993,21 @@ Unanimity, not recency, because several lanes write a `user` `title` against the
 On Development 1,343 identity pages carry more than one live title and 20 disagree about whether the person owns research, in both directions: a roster subheading that appends a second appointment to a professorship can read as refused, and `official-profile-pi-backfill` stores award names as titles, which read as owning research.
 One title saying the person owns research is `title-evidence-disagrees` and keeps the row, because a kept defect is re-readable and an archived professor is not.
 
-**The pass retires three classes only**: a research-support or technical title, a non-research staff role, and a student title.
-A trainee rank is deliberately not in the population, even though every mint lane still refuses one.
-With a faculty-keyword yield, whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, so `'Postdoctoral Fellow'` would have been spared while `'Post-Doctoral Fellow'` was archived.
-No irreversible archive should turn on a hyphen.
-That residue is pre-#2304 trainee data rather than the research-support class this pass exists for, and retiring it needs its own issue and its own predicate.
-`subordinate_research_rank` is therefore not a reason this pass can report.
+**The pass retires four classes**: a research-support or technical title, a non-research staff role, a student title, and a trainee rank the owner ruled cannot host a student's research (2026-10-04: a person belongs if students can do research with them).
+The trainee class is the one #2304 left out, because with a faculty-keyword yield its fate would turn on whether `FACULTY_KEYWORDS` spells the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, and no irreversible archive should turn on a hyphen.
+So it is decided BEFORE that yield, on two witnesses that must agree: `titleResearchOwnership` finds no span that owns research anywhere in the title, which is the lattice where both spellings of a rank live in one pattern, and `isSubordinateResearchRank` names a rank held in someone else's group.
+On top of both, every rank span the lattice finds must be one the owner ruled on (postdoctoral, research associate or assistant, visiting fellow, scholar or researcher), so a research scientist, who can host, is spared, as is a ruled rank named beside one still awaiting a ruling; and a title naming an administrative head noun, or naming a rank as the population it serves, is spared.
+A postdoc who also holds a lecturer or professor appointment keeps the row, because the lattice reads that appointment as owning research.
+Clinical fellows, residents, staff affiliates, postgraduate associates and research fellows await a ruling and stay out of the population, alone or beside a ruled rank.
+The pass reports the class as `non_hosting_trainee_title`.
 
-Student titles are the exception, because they have that predicate (#4654).
+Student titles need no such ordering, because they have their own predicate (#4654).
 `isStudentTitle` matches a stated enrollment in, or graduation from, a degree programme (`Ph.D. Student`, `Graduate School Student`, `IDE Student`, `Master's Student`, a bare `IDE Alumni`), and no `FACULTY_KEYWORDS` entry spells any of them, so the hyphen problem cannot arise.
 The pass reports them as `student_title`, after the same whole-title faculty yield, and only when `titleResearchOwnership` does not read the title as owning research and the title names no administrative head noun (director, dean, chair, chief, head, manager, coordinator, advisor) anywhere, so a dean or director who serves students is never archived as one.
 The same spellings were added to the mint screen, which previously refused `PhD Student` but not `Ph.D. Student`.
 
 Any title that states a faculty appointment anywhere yields, and this is the one place the retirement side is deliberately stricter than the mint gate.
-`staffMintedEntityReasonFor` asks `statesAnyFacultyAppointment` on the WHOLE title, before any screen, and refuses the row as `title-owns-research`.
+`staffMintedEntityReasonFor` asks `statesAnyFacultyAppointment` on the WHOLE title, after the trainee screen and before every other screen, and refuses the row as `title-owns-research`.
 That predicate reads `FACULTY_KEYWORDS` directly rather than going through `isFacultyTitle`, and the difference is the point: `isFacultyTitle` is a classifier, so it short-circuits on `looksLikeNonResearchTitle` to stop a staff title reading as faculty on a stray keyword, and that short-circuit costs `'Associate Professor of Medicine; Clinical Program Manager'` its faculty reading to `\bmanager\b`.
 The yield is a one-way guard, used only to spare a row and never to accept one, so it can afford to be broader than the classifier.
 

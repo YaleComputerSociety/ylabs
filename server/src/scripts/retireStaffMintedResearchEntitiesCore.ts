@@ -1,17 +1,14 @@
 /**
  * Which live rows the mint gate would refuse today because the person profile that
  * gave the row its identity carries a research-support or technical title, a
- * non-research staff role (#3410), or a student or graduate title.
+ * non-research staff role (#3410), a student or graduate title, or a trainee rank the
+ * owner ruled cannot host a student's research.
  *
- * Those three classes are the whole population. A student title is its own predicate,
- * `isStudentTitle`, rather than the trainee vocabulary, because no faculty keyword
- * spells a student rank, so the yield below cannot disagree with it about a hyphen. A
- * postdoctoral or other trainee rank is deliberately NOT in
- * it, even though every mint lane still refuses one: with a faculty-keyword yield,
- * whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to
- * spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does - `postdoc` yes,
- * `post-doc` no - and no irreversible archive should turn on a hyphen. The pre-#2304
- * trainee residue needs its own issue and its own predicate.
+ * Those four classes are the whole population. The trainee class is decided before the
+ * faculty-keyword yield below, because `FACULTY_KEYWORDS` spells `postdoctoral` and a
+ * hyphen would otherwise decide an irreversible archive; the student class runs after
+ * it, because no faculty keyword spells a student rank. Each has its own predicate, and
+ * `docs/research-data-pipeline.md` records why.
  *
  * The pass is strictly more conservative than the mint gate: any title that states a
  * faculty appointment anywhere yields, because minting is reversible by the next run
@@ -39,10 +36,15 @@
 import {
   isResearchSupportStaffTitle,
   isStudentTitle,
+  isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   statesAnyFacultyAppointment,
 } from '../scrapers/sources/yaleDirectoryScraper';
-import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
+import {
+  namesARankItServesRatherThanHolds,
+  titleRankSpans,
+  titleResearchOwnership,
+} from '../scrapers/utils/titleResearchOwnership';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
@@ -50,12 +52,16 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 export const STAFF_MINTED_ENTITY_ARCHIVE_REASON = 'research-entity:retire-staff-minted-entities';
 
 export type StaffMintedEntityReason =
-  'non_research_staff_title' | 'research_support_staff_title' | 'student_title';
+  | 'non_research_staff_title'
+  | 'research_support_staff_title'
+  | 'student_title'
+  | 'non_hosting_trainee_title';
 
 export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityReason[] = [
   'non_research_staff_title',
   'research_support_staff_title',
   'student_title',
+  'non_hosting_trainee_title',
 ];
 
 export type StaffMintedEntityRefusal =
@@ -140,9 +146,37 @@ function statesOnlyThatItsHolderIsAStudent(title: string | undefined | null): bo
   return !ADMINISTRATIVE_HEAD_NOUN.test(stripInvisibleFormatCharacters(String(title)));
 }
 
+// The ranks the owner ruled cannot host a student's research (2026-10-04). Clinical
+// fellows, residents, staff affiliates and postgraduate associates await a ruling, so a
+// title naming any of them beside a ruled rank stays out of an irreversible archive.
+const OWNER_RULED_NON_HOSTING_RANK =
+  /^(?:post-?doc(?:toral)?|research (?:associate|assistant)|visiting (?:fellow|scholar|researcher))$/i;
+
+/**
+ * A rank that cannot host a student's research, on two witnesses that must agree: the
+ * rank lattice finds no span that owns research anywhere in the title, and the mint
+ * vocabulary names a rank held inside someone else's group. The lattice is the reason a
+ * hyphen cannot decide this the way it decided the faculty-keyword yield, because both
+ * spellings of a rank live in one pattern there. Every rank span must be one the owner
+ * ruled on, so a research scientist, which hosts by the owner's rule even where the
+ * lattice reads an associate one as working in another group, spares the title.
+ */
+function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boolean {
+  const clean = stripInvisibleFormatCharacters(String(title ?? ''));
+  if (!clean.trim()) return false;
+  if (titleResearchOwnership(clean) !== 'works_in_another_group') return false;
+  if (!isSubordinateResearchRank(clean)) return false;
+  if (!titleRankSpans(clean).every((span) => OWNER_RULED_NON_HOSTING_RANK.test(span.text))) {
+    return false;
+  }
+  if (namesARankItServesRatherThanHolds(clean)) return false;
+  return !ADMINISTRATIVE_HEAD_NOUN.test(clean);
+}
+
 export function staffMintedEntityReasonFor(
   title: string | undefined | null,
 ): StaffMintedEntityReason | undefined {
+  if (statesOnlyANonHostingTraineeRank(title)) return 'non_hosting_trainee_title';
   if (statesAnyFacultyAppointment(title)) return undefined;
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
@@ -272,6 +306,7 @@ export function summarizeStaffMintedEntityReasons(
     non_research_staff_title: 0,
     research_support_staff_title: 0,
     student_title: 0,
+    non_hosting_trainee_title: 0,
   };
   for (const entry of planned) counts[entry.reason] += 1;
   return counts;

@@ -60,27 +60,68 @@ describe('staffMintedEntityReasonFor', () => {
     }
   });
 
-  // A trainee rank is out of the population entirely, however it is spelled. The
-  // hyphenated pair is the reason: `FACULTY_KEYWORDS` holds `postdoc` but not
-  // `post-doc`, so a rank-based population archived one spelling and spared the other,
-  // and no irreversible archive should turn on a hyphen. Those rows need their own
-  // issue.
-  it('leaves every trainee rank out of the population, whatever its spelling', () => {
+  // A ruled trainee rank retires however it is spelled. The hyphenated pair is the
+  // reason it is decided before the faculty-keyword yield: `FACULTY_KEYWORDS` holds
+  // `postdoc` but not `post-doc`, and no irreversible archive should turn on a hyphen.
+  it('retires every rank the owner ruled cannot host, whatever its spelling', () => {
     for (const title of [
       'Postdoctoral Associate',
       'Post-Doctoral Fellow',
-      'Postgraduate Associate',
+      'postdoc in Immunobiology',
       'Research Associate',
-      'Research Affiliate',
+      'Research Associate 2, HSS',
+      'Research Assistant, YSPH',
+      'Visiting Fellow',
       'Visiting Scholar',
       'Visiting Researcher',
-      'Associate Research Scientist in Neurology',
-      'Resident',
-      'Trainee',
-      'Clinical Fellow',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBe('non_hosting_trainee_title');
+    }
+  });
+
+  it('keeps a trainee rank held beside an appointment that can host', () => {
+    for (const title of [
+      'Postdoctoral Associate & Lecturer',
+      'Visiting Fellow and Lecturer in Law',
+      'Visiting Assistant Professor of Political Science',
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBeUndefined();
     }
+  });
+
+  it('leaves research scientists and the ranks awaiting a ruling out of the population', () => {
+    for (const title of [
+      'Associate Research Scientist in Neurology',
+      'Postgraduate Associate',
+      'Research Affiliate',
+      'Resident',
+      'Trainee',
+      'Clinical Fellow',
+      'Staff Affiliate - Hospital',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBeUndefined();
+    }
+  });
+
+  it('spares a ruled rank named beside a rank still awaiting a ruling', () => {
+    for (const title of [
+      'Postdoctoral Associate and Clinical Fellow',
+      'Research Associate; Resident',
+      'Visiting Fellow and Staff Affiliate',
+      'Postdoctoral Associate and Research Fellow',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBeUndefined();
+    }
+  });
+
+  it('keeps the faculty-keyword yield ahead of the student class', () => {
+    expect(staffMintedEntityReasonFor('PhD Student and Research Fellow')).toBeUndefined();
+  });
+
+  it('spares a trainee rank named as the population an administrator serves', () => {
+    expect(
+      staffMintedEntityReasonFor('Director, Postdoctoral Affairs and Career Services'),
+    ).toBeUndefined();
   });
 
   // The narrowing does not empty the pass: the two classes it exists for still refuse.
@@ -110,9 +151,8 @@ describe('staffMintedEntityReasonFor', () => {
     }
   });
 
-  it('spares a student title held beside a faculty appointment, and a postdoc', () => {
+  it('spares a student title held beside a faculty appointment', () => {
     expect(staffMintedEntityReasonFor('Lecturer and Ph.D. Student')).toBeUndefined();
-    expect(staffMintedEntityReasonFor('Postdoctoral Associate')).toBeUndefined();
   });
 
   it('spares a title that names students as the population it serves', () => {
@@ -233,8 +273,6 @@ describe('planStaffMintedEntityRetirement', () => {
       'Visiting Fellow and Lecturer in Law',
       'Professor of Molecular Biophysics and Biochemistry and Lab Manager',
       'Associate Professor of Medicine; Clinical Program Manager',
-      'Postdoctoral Associate',
-      'Post-Doctoral Fellow',
       'Associate Research Scientist in Neurology',
     ]) {
       const plan = planStaffMintedEntityRetirement([candidate({ storedTitles: [title] })]);
