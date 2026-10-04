@@ -589,6 +589,58 @@ describe('prose a fund page states past the old emission caps (#4572)', () => {
   });
 });
 
+describe('the award amount a fund page states (#4588)', () => {
+  const awardOf = (options: Parameters<typeof fundDetailHtml>[0]) => {
+    const fund = parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+    return {
+      parsed: fund.awardAmount,
+      observed: fundToObservations(fund).find((obs) => obs.field === 'awardAmount')?.value,
+    };
+  };
+
+  it('reads the amount from the prose when the header is empty', () => {
+    expect(
+      awardOf({ fullDescription: '<p>Typical awards are about $3,000 for each project.</p>' }),
+    ).toEqual({ parsed: 'Typically about $3,000', observed: 'Typically about $3,000' });
+  });
+
+  it('serves the stated range rather than its top figure from the header', () => {
+    expect(
+      awardOf({
+        award: 'Award Amount5000',
+        brief: 'Grants range from $500 to $5000 for summer research.',
+      }).observed,
+    ).toBe('$500 to $5000');
+  });
+
+  it('keeps a header that states the award itself', () => {
+    expect(
+      awardOf({
+        award: 'Award AmountUp to $2,500',
+        brief: 'Grants of up to $2,000 support research.',
+      }).observed,
+    ).toBe('Up to $2,500');
+  });
+
+  it('emits no amount when the prose names only figures that are not the award', () => {
+    expect(
+      awardOf({
+        eligibility:
+          '<p>Enrolled Yale College undergraduates. A low or unpaid internship is defined as earning $250 or less per week.</p>',
+      }),
+    ).toEqual({ parsed: undefined, observed: undefined });
+  });
+
+  it('emits no amount when the prose states two different ones', () => {
+    expect(
+      awardOf({
+        fullDescription:
+          '<p>Short projects receive an award in the range of $600 - $1,800.</p><p>Long projects receive an award in the range of $4,000 - $5,000.</p>',
+      }).observed,
+    ).toBeUndefined();
+  });
+});
+
 describe('the year of study a fund page admits (#4216)', () => {
   const yearOfStudyFor = (options: Parameters<typeof fundDetailHtml>[0]) =>
     parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!.yearOfStudy;

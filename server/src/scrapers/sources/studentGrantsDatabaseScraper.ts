@@ -74,6 +74,7 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
+import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
   resolveFundYearOfStudy,
   type FundEligibilityProse,
@@ -362,9 +363,9 @@ function nextStatedApplicationWindow(
   return deadline === structuredDeadline ? structured : { deadline };
 }
 
-function awardAmountText($: cheerio.CheerioAPI): string | undefined {
+function awardAmountHeader($: cheerio.CheerioAPI): string | undefined {
   const text = sectionText($, 'lblAwardAmount')?.replace(/^award amount\s*:?\s*/i, '');
-  return text && /\$|\d/.test(text) ? text.slice(0, 120) : undefined;
+  return text && /\$|\d/.test(text) ? text : undefined;
 }
 
 /**
@@ -393,18 +394,21 @@ export function parseFundDetailPage(
     yearOfStudyFilter,
   );
   const eligibility = sectionTextWithoutContactDirections($, 'lblSpecialEligibilityRequirements');
+  const prose = {
+    description: sectionProse($, 'lblBriefDescription'),
+    fullSourceDescription: fundFullSourceDescription($),
+    applicationInformation: sectionProse($, 'lblApplicationInformation'),
+    eligibility: sanitizedObservedFellowshipProse(eligibility.text),
+    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward'),
+  };
 
   return {
     sourceKey: sourceKeyForFund(fund.url),
     title,
     url,
-    description: sectionProse($, 'lblBriefDescription'),
-    fullSourceDescription: fundFullSourceDescription($),
-    applicationInformation: sectionProse($, 'lblApplicationInformation'),
-    eligibility: sanitizedObservedFellowshipProse(eligibility.text),
+    ...prose,
     eligibilityStatesOnlyContactDirections: eligibility.statesOnlyContactDirections,
-    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward'),
-    awardAmount: awardAmountText($),
+    awardAmount: fundAwardAmount(awardAmountHeader($), Object.values(prose)),
     deadline,
     applicationOpenDate: opensAt,
     applicationRoute: resolveFundApplicationRoute(
