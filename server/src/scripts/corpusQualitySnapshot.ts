@@ -70,6 +70,12 @@ async function main(): Promise<void> {
     `  generic Faculty Research name ${formatRatio(report.description.nameIsGenericFacultyResearchTitle)}`,
   );
   console.log(
+    `  browse card cut mid-sentence ${formatRatio(report.description.browseCardCutMidSentence)}`,
+  );
+  console.log(
+    `  browse card six words or fewer ${formatRatio(report.description.browseCardSixWordsOrFewer)}`,
+  );
+  console.log(
     `  invariant fails          ${formatRatio(report.integrity.publicDescriptionInvariantFails)}`,
   );
 

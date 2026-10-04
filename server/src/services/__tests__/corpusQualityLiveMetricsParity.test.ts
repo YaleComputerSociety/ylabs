@@ -31,6 +31,8 @@ describe('corpus quality freshness contract', () => {
     expect([...CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS]).toEqual([
       'leadSentenceStatesResearch',
       'shortDescriptionIsAreaEchoOnly',
+      'browseCardCutMidSentence',
+      'browseCardSixWordsOrFewer',
       'fullDescriptionIsBiography',
       'publicDescriptionInvariantFails',
       'hasTopic',

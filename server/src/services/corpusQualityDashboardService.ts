@@ -34,6 +34,8 @@ export const CORPUS_QUALITY_REFRESH_COMMAND = 'yarn --cwd server corpus:snapshot
 export const CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS = [
   'leadSentenceStatesResearch',
   'shortDescriptionIsAreaEchoOnly',
+  'browseCardCutMidSentence',
+  'browseCardSixWordsOrFewer',
   'fullDescriptionIsBiography',
   'publicDescriptionInvariantFails',
   'hasTopic',

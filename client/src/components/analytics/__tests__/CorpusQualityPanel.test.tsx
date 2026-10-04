@@ -20,6 +20,8 @@ const measurement = (measuredAt: string, served: number): CorpusQualitySnapshotR
     shortDescriptionUseful: { n: 90, of: 100 },
     leadSentenceStatesResearch: { n: 70, of: 100 },
     shortDescriptionIsAreaEchoOnly: { n: 5, of: 100 },
+    browseCardCutMidSentence: { n: 25, of: 100 },
+    browseCardSixWordsOrFewer: { n: 3, of: 100 },
     fullDescriptionIsBiography: { n: 3, of: 100 },
     nameIsGenericFacultyResearchTitle: { n: 10, of: 100 },
   },
