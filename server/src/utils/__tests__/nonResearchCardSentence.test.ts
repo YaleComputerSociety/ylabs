@@ -46,6 +46,17 @@ describe('isNonResearchCardSentence', () => {
       'a research focus sentence',
       "Dr. Example's research focuses on improving health outcomes for tuberculosis and HIV.",
     ],
+    ['a lowercase studies sentence ending on prizes', 'Studies the history of literary prizes.'],
+    ['a studies sentence about a named prize', 'Studies the economics of the Nobel Prize.'],
+    [
+      'a research noun phrase naming a disease type',
+      'Immune tolerance in Type 1 Diabetes and celiac disease.',
+    ],
+    ['a research noun phrase naming a trial phase', 'Outcomes of Phase 2 Trials in oncology.'],
+    [
+      'a research sentence about presented evidence',
+      'The lab has presented new evidence that sleep shapes memory.',
+    ],
   ])('keeps %s', (_label, text) => {
     expect(isNonResearchCardSentence(text)).toBe(false);
   });
