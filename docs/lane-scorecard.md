@@ -129,7 +129,7 @@ Read a change to an LLM lane's prompt or model against this band: on the first u
 It calls the paid model once per target per run, so it is an operator command and not a sweep stage.
 
 The `lane-scorecard` Development sweep stage runs the apply form every sweep and stores one `lane_scorecard_snapshots` row per benchmark.
-The report lists `regressions`: each gold field whose precision or recall dropped against the benchmark's previous scored replay over the same labeled count, which also makes the run exit non-zero.
+The report lists `regressions`: each gold field whose precision or recall dropped over the same labeled count against the newest scored replay that did not itself regress, so an unfixed drop keeps failing until it recovers, which also makes the run exit non-zero.
 The sweep fails the stage only on those, and lists each unscored benchmark on the stage row as one that needs a recapture (#4852).
 Every capture and replay still goes through the orchestrator, so each one leaves a `scrape_runs` row, and that row is created `invalidated` so source health, freshness, and the barren-streak guard never read a benchmark run as a live run of the lane.
 

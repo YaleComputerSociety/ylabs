@@ -27,7 +27,7 @@ import {
 import {
   allowedReplayMisses,
   goldRegressions,
-  previousComparableReplay,
+  goldBaselineReplay,
   staleReplayReason,
   type ComparableReplayRun,
   type GoldRegression,
@@ -289,8 +289,8 @@ async function main(): Promise<void> {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
       continue;
     }
-    const previous = previousComparableReplay(priorRuns, allowedMisses);
-    for (const regression of goldRegressions(previous?.gold, gold)) {
+    const baseline = goldBaselineReplay(priorRuns, allowedMisses);
+    for (const regression of goldRegressions(baseline?.gold, gold)) {
       regressions.push({ benchmarkId: benchmark.benchmarkId, ...regression });
     }
     const snapshot = {

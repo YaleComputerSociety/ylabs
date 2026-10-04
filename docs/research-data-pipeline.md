@@ -235,9 +235,12 @@ The two exhaustive Development modes (`development-full`, `development-increment
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
-Each count is compared with the most recent prior `weekly_sweep_runs` row that recorded it, read when the sweep starts: the stage fails as a `regression` only when a count rose, and otherwise succeeds with its standing counts recorded on the stage row.
+Each count is compared with the counts of the most recent prior `weekly_sweep_runs` row in which that stage succeeded, read when the sweep starts: the stage fails as a `regression` only when a count rose, and otherwise succeeds with its standing counts recorded on the stage row.
+A failed stage never becomes the baseline, so an unfixed regression keeps failing until its count is back at or below the last accepted value.
 A count no earlier run recorded is recorded and not judged, so a first run never fails on a standing count.
-`lane-scorecard` lists each unscored benchmark, which needs a recapture or an environment fix, and fails only when a scored field's gold precision or recall dropped against the benchmark's previous scored replay over the same labeled count, which `lane:scorecard` reports as `regressions`.
+`publicVisibilityViolations` is the exception: any nonzero value fails `trust-contract` outright as a `violation`, because it means a student can see a row that should not be shown, and `visibility-gate` runs earlier in the same sweep, so a healthy run reads 0.
+`lane-scorecard` lists each unscored benchmark, which needs a recapture or an environment fix, and fails only when a scored field's gold precision or recall dropped over the same labeled count, which `lane:scorecard` reports as `regressions`.
+Its baseline is the newest scored replay that did not itself regress, so the same rule holds there.
 A judged stage that exits without a result it can parse, or is killed, fails as `crashed`, and so does any other stage that exits nonzero.
 The scripts keep their own exit codes, because operators and the promotion gates read them directly; the history a regression is measured against belongs to the sweep, so the comparison lives there.
 

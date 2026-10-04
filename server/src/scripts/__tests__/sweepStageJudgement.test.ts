@@ -53,9 +53,17 @@ describe('counting stage judgement (#4852)', () => {
       'repairLane:review_exception': 0,
     });
     expect(judgement.regressions).toEqual([
-      { name: 'publicVisibilityViolations', previous: 0, current: 1 },
       { name: 'repairLane:pi_identity', previous: 3, current: 4 },
     ]);
+    expect(judgement.violation).toBe(
+      'trust-contract found 1 publicly visible row(s) that are not launch-eligible',
+    );
+    expect(
+      judgeTrustContractResult(
+        { counts: { publicVisibilityViolations: 0 }, repairLanes: [] },
+        undefined,
+      ).violation,
+    ).toBeUndefined();
     expect(() => judgeTrustContractResult({ counts: {} }, undefined)).toThrow(/repairLanes/);
   });
 
@@ -90,26 +98,39 @@ describe('counting stage judgement (#4852)', () => {
     expect(() => judgeLaneScorecardResult({ results: [] })).toThrow(/unscored/);
   });
 
-  it('takes each count from the most recent run that recorded it', () => {
+  it('takes each stage baseline from the most recent run in which that stage succeeded', () => {
     expect(
       stageCountBaselineFromRuns([
         {
           stages: [
-            { name: 'integrity-gate' },
-            { name: 'trust-contract', counts: { violations: 4 } },
+            { name: 'integrity-gate', status: 'failed' },
+            { name: 'trust-contract', status: 'failed', counts: { violations: 14 } },
           ],
         },
         {
           stages: [
-            { name: 'integrity-gate', counts: { duplicatePeople: 2, duplicateAccessSignals: 1 } },
-            { name: 'trust-contract', counts: { violations: 9, publicVisibilityViolations: 0 } },
+            {
+              name: 'integrity-gate',
+              status: 'succeeded',
+              counts: { duplicatePeople: 2, duplicateAccessSignals: 1 },
+            },
+            { name: 'trust-contract', status: 'failed', counts: { violations: 12 } },
           ],
         },
-        { stages: [{ name: 'integrity-gate', counts: { duplicatePeople: 7, retiredCount: 3 } }] },
+        {
+          stages: [
+            { name: 'integrity-gate', status: 'succeeded', counts: { duplicatePeople: 7 } },
+            {
+              name: 'trust-contract',
+              status: 'succeeded',
+              counts: { violations: 9, publicVisibilityViolations: 0 },
+            },
+          ],
+        },
       ]),
     ).toEqual({
-      'integrity-gate': { duplicatePeople: 2, duplicateAccessSignals: 1, retiredCount: 3 },
-      'trust-contract': { violations: 4, publicVisibilityViolations: 0 },
+      'integrity-gate': { duplicatePeople: 2, duplicateAccessSignals: 1 },
+      'trust-contract': { violations: 9, publicVisibilityViolations: 0 },
     });
   });
 });

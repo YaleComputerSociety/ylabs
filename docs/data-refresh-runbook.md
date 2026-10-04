@@ -133,7 +133,7 @@ They run serially because they share the per-host fetch budget and the storage q
 7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
 The single weekly job runs both modes, so that is one point a week, taken after both refreshes.
 8. Records the run in one `weekly_sweep_runs` row in Development, whether it succeeded, failed, or was refused by steps 3 and 4, and exits nonzero if either write fails, because an unrecorded run cannot be audited.
-A run is `failed` only for a failed source, a crashed stage, or a counting stage whose count rose over the last run that recorded it; standing counts are recorded on the stage rows, so they no longer fail every run by construction (#4852).
+A run is `failed` only for a failed source, a crashed stage, a counting stage whose count rose over the last run in which that stage succeeded, or any public visibility violation; standing counts are recorded on the stage rows, so they no longer fail every run by construction (#4852).
 The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
 
@@ -153,7 +153,7 @@ The row flattens both modes' `summary.json` into queryable fields rather than st
 - `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle recovered and exhausted, and materialization errors.
   A failed source also carries its redacted `failureTail`, so why it failed survives the container (#4852).
 - `stages`: one entry per post-run stage per mode, with status, exit code, start, finish and duration.
-  A failed stage also carries `failureKind` (`crashed` or `regression`), and a crashed one its redacted `failureTail`.
+  A failed stage also carries `failureKind` (`crashed`, `regression`, or `violation`), and a crashed one its redacted `failureTail`.
   A counting stage carries the `counts` it recorded, which are the baseline the next run judges it against, its `regressions` as `{ name, previous, current }`, and for `lane-scorecard` the `unscored` benchmarks that need a recapture.
 - `phases`: each phase's wall time per mode.
 - `throttleRetry` totals across both modes, and whether the corpus snapshot was written.
@@ -172,7 +172,7 @@ yarn --cwd server scrape:sweep:weekly-runs --limit 1 --json
 ```
 
 The default view prints the last five runs, each with the modes it covered, its total time against the 12-hour limit, or for a `running` row its elapsed time and, once that passes the limit, that it never finished, each mode's counts, storage, throttle recovered and lost by source, the five slowest sources and stages, and the failed ones.
-Each failed stage is labelled `crashed` or `regression`.
+Each failed stage is labelled `crashed`, `regression`, or `violation`.
 A `regression:` line names each count that rose with its previous and current value, a `standing:` line lists a counting stage's nonzero counts that held or fell, and a `needs recapture:` line lists the unscored benchmarks.
 A `why` line gives each failed step's error, followed by its failure tail.
 `--compare` prints one row per source and post-run stage with its duration in each of the last runs, oldest to newest, sorted by the latest run's duration, with the change from the previous run that has that step, so a regression shows as a growing number.
@@ -626,7 +626,7 @@ Only run it after the bounded sample succeeds.
 After the source sweep, the same command projects active faculty into the Account/Researcher model, runs a full-corpus student-visibility gate so gate-logic changes propagate before the index rebuild, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
 Every post-run stage executes even when an earlier quality gate fails, so the operator receives every report; `docs/research-data-pipeline.md` owns the authoritative stage list.
 The overall command exits nonzero when a source or post-run stage fails.
-`integrity-gate`, `trust-contract` and `lane-scorecard` fail only on a regression or a crash, not on a standing count, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
+`integrity-gate`, `trust-contract` and `lane-scorecard` fail on a regression, a crash, or a public visibility violation, not on a standing count, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
 The runner prints an output directory under `/tmp`.
 That directory contains one JSON report per source, `summary.json`, the faculty projection report, the student-visibility gate report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.

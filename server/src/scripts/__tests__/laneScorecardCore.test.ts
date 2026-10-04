@@ -9,7 +9,7 @@ import {
   allowedReplayMisses,
   staleReplayReason,
   goldRegressions,
-  previousComparableReplay,
+  goldBaselineReplay,
 } from '../laneScorecardCore';
 
 const wrongSite = 'https://example.org/someone-elses-lab';
@@ -284,10 +284,32 @@ describe('gold regressions against the previous replay (#4852)', () => {
       { measuredAt: new Date('2026-10-03T00:00:00Z'), pagesMissed: 9, gold: [] },
       { measuredAt: new Date('2026-10-02T00:00:00Z'), pagesMissed: 1, gold: [] },
     ];
-    expect(previousComparableReplay(runs, 1)?.measuredAt).toEqual(new Date('2026-10-02T00:00:00Z'));
-    expect(previousComparableReplay(runs, undefined)?.measuredAt).toEqual(
+    expect(goldBaselineReplay(runs, 1)?.measuredAt).toEqual(new Date('2026-10-02T00:00:00Z'));
+    expect(goldBaselineReplay(runs, undefined)?.measuredAt).toEqual(
       new Date('2026-10-01T00:00:00Z'),
     );
-    expect(previousComparableReplay([], 0)).toBeUndefined();
+    expect(goldBaselineReplay([], 0)).toBeUndefined();
+  });
+
+  it('skips a replay that regressed, so an unfixed drop keeps failing', () => {
+    const accepted = {
+      measuredAt: new Date('2026-10-01T00:00:00Z'),
+      pagesMissed: 0,
+      gold: [field('deadline', 20, 0.9, 0.8)],
+    };
+    const regressed = {
+      measuredAt: new Date('2026-10-02T00:00:00Z'),
+      pagesMissed: 0,
+      gold: [field('deadline', 20, 0.7, 0.8)],
+    };
+    const baseline = goldBaselineReplay([regressed, accepted], 0);
+    expect(baseline).toBe(accepted);
+    expect(goldRegressions(baseline?.gold, [field('deadline', 20, 0.7, 0.8)])).toHaveLength(1);
+    const recovered = {
+      ...regressed,
+      measuredAt: new Date('2026-10-03T00:00:00Z'),
+      gold: [field('deadline', 20, 0.95, 0.8)],
+    };
+    expect(goldBaselineReplay([regressed, accepted, recovered], 0)).toBe(recovered);
   });
 });

@@ -610,17 +610,26 @@ export interface ComparableReplayRun extends StoredReplayRun {
   gold?: ReadonlyArray<Pick<GoldFieldScore, 'field' | 'labeled' | 'precision' | 'recall'>>;
 }
 
-export function previousComparableReplay<T extends ComparableReplayRun>(
+/**
+ * The newest scored replay that did not itself regress, found by replaying the history in
+ * order, so an unfixed drop keeps failing until the field is back at the accepted value.
+ */
+export function goldBaselineReplay<T extends ComparableReplayRun>(
   runs: readonly T[],
   allowedMisses: number | undefined,
 ): T | undefined {
-  return [...runs]
+  const scored = runs
     .filter(
       (run) =>
         typeof run.pagesMissed === 'number' &&
         staleReplayReason(run.pagesMissed, allowedMisses) === undefined,
     )
-    .sort((a, b) => measuredTime(b.measuredAt) - measuredTime(a.measuredAt))[0];
+    .sort((a, b) => measuredTime(a.measuredAt) - measuredTime(b.measuredAt));
+  let baseline: T | undefined;
+  for (const run of scored) {
+    if (!baseline || goldRegressions(baseline.gold, run.gold).length === 0) baseline = run;
+  }
+  return baseline;
 }
 
 const GOLD_RATE_EPSILON = 1e-9;

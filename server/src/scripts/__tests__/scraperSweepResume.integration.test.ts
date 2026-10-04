@@ -635,11 +635,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
         return { status: 1 };
       };
     const trustContract =
-      (lanes: Array<{ stage: string; count: number }>): StageStub =>
+      (lanes: Array<{ stage: string; count: number }>, publicVisibilityViolations = 0): StageStub =>
       ({ outputPath }) => {
         writeJson(outputPath, {
           pass: false,
-          counts: { scanned: 40, publicVisibilityViolations: 0 },
+          counts: { scanned: 40, publicVisibilityViolations },
           repairLanes: lanes.map((lane) => ({ ...lane, samples: [] })),
         });
         return { status: 1 };
@@ -741,7 +741,16 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
               status: 'succeeded',
               counts: { duplicatePeople: 4, duplicateAccessSignals: 2 },
             },
-            { mode: 'development-full', name: 'trust-contract', status: 'failed' },
+            {
+              mode: 'development-full',
+              name: 'trust-contract',
+              status: 'failed',
+              counts: {
+                publicVisibilityViolations: 0,
+                violations: 12,
+                'repairLane:pi_identity': 12,
+              },
+            },
           ],
         },
       ]);
@@ -749,7 +758,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
 
       const { runner } = makeChildRunner(new Set(['nih-reporter']), {
         'scraper:integrity-gate': integrityGate({ duplicatePeople: 4, duplicateAccessSignals: 1 }),
-        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 11 }]),
+        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 10 }]),
         'lane:scorecard': laneScorecardNeedingRecapture,
         'research-homes:backfill-source-link-health': crashedLinkHealth,
       });
@@ -764,11 +773,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       const trust = stageNamed(summary, 'trust-contract');
       expect(trust).toMatchObject({ status: 'failed', failureKind: 'regression' });
       expect(trust?.regressions).toEqual([
-        { name: 'violations', previous: 9, current: 11 },
-        { name: 'repairLane:pi_identity', previous: 9, current: 11 },
+        { name: 'violations', previous: 9, current: 10 },
+        { name: 'repairLane:pi_identity', previous: 9, current: 10 },
       ]);
       expect(trust?.error).toBe(
-        'trust-contract regressed: violations 9 -> 11, repairLane:pi_identity 9 -> 11',
+        'trust-contract regressed: violations 9 -> 10, repairLane:pi_identity 9 -> 10',
       );
       expect(trust?.failureTail).toBeUndefined();
 
@@ -784,18 +793,24 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       expect(failedSource?.failureTail).toContain('ECONNRESET while fetching nih-reporter');
     }, 180_000);
 
-    it('fails a counting stage that exited without writing its result as crashed', async () => {
+    it('fails a counting stage that exited without its result as crashed, and any public visibility violation outright', async () => {
       const { runner } = makeChildRunner(new Set(), {
         'scraper:integrity-gate': ({ logPath }) => {
           fs.appendFileSync(logPath!, 'MongoServerSelectionError: connection timed out\n');
           return { status: 1 };
         },
-        'launch:trust-contract': trustContract([]),
+        'launch:trust-contract': trustContract([], 2),
         'lane:scorecard': laneScorecardNeedingRecapture,
       });
       const summary = await runScraperSweep(options, { childRunner: runner });
       trackRun(options.mode, summary.outputDirectory);
 
+      expect(stageNamed(summary, 'trust-contract')).toMatchObject({
+        status: 'failed',
+        failureKind: 'violation',
+        error: 'trust-contract found 2 publicly visible row(s) that are not launch-eligible',
+        counts: { publicVisibilityViolations: 2, violations: 0 },
+      });
       const gate = stageNamed(summary, 'integrity-gate');
       expect(gate).toMatchObject({ status: 'failed', failureKind: 'crashed' });
       expect(gate?.error).toMatch(/exited with status 1 and its result could not be judged/);

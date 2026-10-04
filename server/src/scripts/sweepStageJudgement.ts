@@ -20,6 +20,7 @@ export interface StageJudgement {
   counts?: Record<string, number>;
   regressions: StageCountRegression[];
   unscored?: StageUnscoredBenchmark[];
+  violation?: string;
 }
 
 export type StageCounts = Record<string, number>;
@@ -90,7 +91,16 @@ export function judgeTrustContractResult(
   for (const [stage, count] of laneCounts) {
     counts[`${TRUST_CONTRACT_REPAIR_LANE_COUNT_PREFIX}${stage}`] = count;
   }
-  return { counts, regressions: countRegressions(counts, baseline) };
+  const { publicVisibilityViolations, ...regressionOnlyCounts } = counts;
+  return {
+    counts,
+    regressions: countRegressions(regressionOnlyCounts, baseline),
+    ...(publicVisibilityViolations > 0
+      ? {
+          violation: `trust-contract found ${publicVisibilityViolations} publicly visible row(s) that are not launch-eligible`,
+        }
+      : {}),
+  };
 }
 
 /**
@@ -134,11 +144,13 @@ export function formatStageCounts(counts: StageCounts): string {
 
 interface StoredStageCounts {
   name?: unknown;
+  status?: unknown;
   counts?: unknown;
 }
 
 /**
- * Per count, not per run, so a stage that crashed last week is judged against the week before.
+ * Only a stage that succeeded sets the baseline, so an unfixed regression keeps failing until
+ * its count is back at or below the last accepted value instead of becoming the new normal.
  */
 export function stageCountBaselineFromRuns(
   newestFirst: ReadonlyArray<{ stages?: readonly StoredStageCounts[] | null }>,
@@ -146,11 +158,13 @@ export function stageCountBaselineFromRuns(
   const baseline: SweepStageCountBaseline = {};
   for (const run of newestFirst) {
     for (const stage of run.stages ?? []) {
-      if (typeof stage?.name !== 'string' || !isRecord(stage.counts)) continue;
-      const stageBaseline = (baseline[stage.name] ??= {});
-      for (const [name, value] of Object.entries(stage.counts)) {
-        if (isCount(value) && !(name in stageBaseline)) stageBaseline[name] = value;
-      }
+      if (typeof stage?.name !== 'string' || stage.name in baseline) continue;
+      if (stage.status !== 'succeeded' || !isRecord(stage.counts)) continue;
+      baseline[stage.name] = Object.fromEntries(
+        Object.entries(stage.counts).filter((entry): entry is [string, number] =>
+          isCount(entry[1]),
+        ),
+      );
     }
   }
   return baseline;

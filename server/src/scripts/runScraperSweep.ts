@@ -810,7 +810,7 @@ const STAGE_BASELINE_RUN_LOOKBACK = 12;
 export async function loadSweepStageCountBaseline(): Promise<SweepStageCountBaseline> {
   try {
     const runs = await WeeklySweepRun.find({ 'stages.counts': { $exists: true } })
-      .select('startedAt stages.name stages.counts')
+      .select('startedAt stages.name stages.status stages.counts')
       .sort({ startedAt: -1 })
       .limit(STAGE_BASELINE_RUN_LOOKBACK)
       .lean();
@@ -1819,7 +1819,7 @@ function reconstructDevelopmentStage(
     const judge = planned.definition.judgeResult;
     if (!judge) return delta;
     const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
-    return judgement.regressions.length > 0
+    return judgement.regressions.length > 0 || judgement.violation
       ? undefined
       : { ...delta, ...judgementDiagnostics(judgement) };
   } catch {
@@ -1838,7 +1838,7 @@ function reportPostRunStageOutcome(
 ): void {
   if (error) {
     console.error(`[${label}] ${name} failed (${diagnostics.failureKind ?? 'crashed'}): ${error}`);
-    if (diagnostics.failureKind !== 'regression') {
+    if (diagnostics.failureKind === 'crashed') {
       console.error(formatFailureTailForLog(diagnostics.failureTail));
     }
   } else if (diagnostics.counts) {
@@ -1907,8 +1907,15 @@ async function runDevelopmentPostRunStages(
       try {
         const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
         diagnostics = judgementDiagnostics(judgement);
-        if (judgement.regressions.length > 0) {
-          error = formatStageRegressions(planned.name, judgement.regressions);
+        const regressionText =
+          judgement.regressions.length > 0
+            ? formatStageRegressions(planned.name, judgement.regressions)
+            : undefined;
+        if (judgement.violation) {
+          error = [judgement.violation, regressionText].filter(Boolean).join('; ');
+          diagnostics.failureKind = 'violation';
+        } else if (regressionText) {
+          error = regressionText;
           diagnostics.failureKind = 'regression';
         }
       } catch (contractError) {
