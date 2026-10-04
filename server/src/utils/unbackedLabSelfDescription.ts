@@ -80,7 +80,33 @@ function runNamesOnlyThisPerson(run: string, person: string): boolean {
     .every((token) => own.has(token));
 }
 
+function letters(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}]/gu, '');
+}
+
+// A lab-named URL counts only when it also carries this person's surname
+// ("<surname>lab.example.edu"): a shared lab host ("/labs/" on a department site, an
+// institute's lab) proves a lab exists somewhere, not that this person runs one.
+function urlNamesThisPersonsLab(value: unknown, person: string): boolean {
+  try {
+    const url = new URL(textValue(value));
+    const path = `${url.hostname}${url.pathname}`;
+    if (!/lab(?:oratory|s)?/i.test(path)) return false;
+    const tokens = personTokens(person);
+    const surname = letters(tokens[tokens.length - 1]);
+    return surname.length >= 3 && letters(path).includes(surname);
+  } catch {
+    return false;
+  }
+}
+
 function nonLlmEvidenceNamesTheLab(entity: Record<string, any>, person: string): boolean {
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ];
+  if (urls.some((url) => urlNamesThisPersonsLab(url, person))) return true;
   const labMention = namedLabPattern(person, '');
   return DESCRIPTION_FIELDS.some(
     (field) =>
