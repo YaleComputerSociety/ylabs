@@ -20,7 +20,7 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * Otherwise, where the source holds the same `_id` under another netid, it is a
  * pseudonym the mirror minted for this very login, so the target row replaces it.
  */
-const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile'] as const;
+const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile', 'sessionVersion'] as const;
 
 export const ACCOUNT_ID_REFERENCE_FIELDS: ReadonlyArray<{ collection: string; field: string }> = [
   { collection: 'researchers', field: 'accountId' },

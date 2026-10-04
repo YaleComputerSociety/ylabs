@@ -115,4 +115,28 @@ describe('planAccountCarry', () => {
     expect(plan.restores).toEqual([]);
     expect(plan.inserts).toEqual([]);
   });
+
+  it('keeps the Production sessionVersion when refreshing a promoted row that shares its _id', () => {
+    const plan = planAccountCarry({
+      productionAccounts: [
+        { _id: promotedId, netid: 'fixture-researcher', lastLoginAt, sessionVersion: 3 },
+      ],
+      promotedAccounts,
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.refreshes).toEqual([{ _id: promotedId, set: { lastLoginAt, sessionVersion: 3 } }]);
+  });
+
+  it('keeps the Production sessionVersion when re-keying a same-netid promoted row', () => {
+    const plan = planAccountCarry({
+      productionAccounts: [
+        { _id: productionTwinId, netid: 'fixture-researcher', lastLoginAt, sessionVersion: 2 },
+      ],
+      promotedAccounts,
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.rekeys.map((rekey) => rekey.document.sessionVersion)).toEqual([2]);
+  });
 });

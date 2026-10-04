@@ -215,6 +215,8 @@ Production is a serve-only environment: evidence accumulates in Development and 
 Beta's accounts never carry a Production login, so a plain swap deleted every account a real login had created and orphaned the plans that pointed at it: on 2026-09-30, 277 of 319 Production plans referenced an account that no longer existed (#4091).
 Beta does hold its own logins, though, and has since #4139 made the Development-to-Beta sync carry the target's login rows across the swap, so "Beta is a pseudonymized staging copy that holds no student data" is no longer true of `accounts` and must not be relied on.
 The promotion therefore carries every Production account with login evidence (`lastLoginAt`, or an owned research plan) from the pre-swap backup into the swapped collection before verification, and keeps its Production `_id`.
+Where the promoted row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile` and `sessionVersion` onto it, because the promoted row is reduced to the mirrored allow-list and holds none of them.
+`sessionVersion` is what sign-out increments to revoke every session, so a swap that dropped it would reset it to `0` and revive every cookie minted at `0` that a later sign-out revoked (#4575).
 The synthetic-user exclusion applies only to the Beta rows being promoted, so a Production account with login evidence is carried whatever its netid or email looks like and its plans never lose their owner.
 Where Beta holds the same netid under another `_id`, the Beta row is re-keyed to the Production `_id` and every account reference follows it.
 
