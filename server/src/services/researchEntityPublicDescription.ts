@@ -530,12 +530,6 @@ function withThinButAccurateBodyUsable(
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }
 
-/**
- * A person-scoped row whose served body is a CV or a biography and, after narrowing,
- * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
- * page tells a student nothing about the work, so it is held for review unless the
- * served card states the research itself.
- */
 const CITATION_LIKE_CARD =
   /\((?:19|20)\d{2}\)|\b(?:19|20)\d{2}\b[^.]{0,80}\b(?:Review|Journal|Studies|Quarterly|Press|Proceedings)\b|\b(?:Review|Journal|Studies|Quarterly)(?:\s+of\s+[A-Z][\p{L}]+(?:\s+[A-Z][\p{L}]+)*)?,?\s+\d{1,3}\b|\bet al\b/u;
 const DEGREE_FRAGMENT_CARD =
@@ -595,6 +589,12 @@ function cardServedInPlaceOfAResearchlessBiography(
   return cardStatesResearchItself(card) ? card : '';
 }
 
+/**
+ * A person-scoped row whose served body is a CV or a biography and, after narrowing,
+ * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
+ * page tells a student nothing about the work, so it is held for review unless the
+ * served card states the research itself.
+ */
 export function servedBodyIsBiographyWithoutResearch(
   representation: ResearchEntityPublicDescriptionRepresentation,
 ): boolean {
