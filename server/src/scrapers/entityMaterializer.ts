@@ -91,8 +91,8 @@ import {
   type LabRowRoster,
   loadKnownPersonSurnameRoster,
   loadLabRowRoster,
-  loadResearchEntityLeadPersonId,
   loadResearchEntityLeadPersonName,
+  loadResearchEntitySoleLeadPersonId,
   normalizedLabRowName,
 } from '../utils/researchHomeNameIdentityRoster';
 import { ownLabEvidence } from '../utils/unbackedLabSelfDescription';
@@ -6296,7 +6296,7 @@ async function materializeUserIdentityToResearcher(
 export interface ResearchEntityNameIdentityAuthority {
   knownPersonSurnames: ReadonlySet<string>;
   leadPersonName: string;
-  /** The lead's person id; absent where a caller cannot know it, which disables the lab retype. */
+  /** The sole lead's person id; absent or empty where there is not exactly one, which disables the lab retype. */
   leadPersonId?: string;
   /** Every live lab row, read for the lab retype; absent disables it. */
   labRowRoster?: LabRowRoster;
@@ -6320,7 +6320,7 @@ export async function loadResearchEntityNameIdentityAuthority(
       researchEntityId,
       prefetchedLeadPersonId,
     ),
-    leadPersonId: await loadResearchEntityLeadPersonId(researchEntityId, prefetchedLeadPersonId),
+    leadPersonId: await loadResearchEntitySoleLeadPersonId(researchEntityId, prefetchedLeadPersonId),
     labRowRoster: await loadLabRowRoster(),
   };
 }

@@ -214,6 +214,38 @@ describe('materializeEntity retypes a faculty research row its own evidence name
     expect((await persisted()).entityType).toBe('FACULTY_RESEARCH_AREA');
   });
 
+  it('leaves a row whose cited path-style lab site is another person lab row', async () => {
+    const other = await ResearchEntity.create({
+      slug: 'duchamp-lab-other',
+      name: 'Duchamp Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://medicine.example.edu/lab/duchamp/',
+      archived: false,
+    });
+    await lead(other._id, 'Ines Duchamp');
+    const entity = await seedEntity({
+      websiteUrl: 'https://medicine.example.edu/lab/duchamp/people/',
+    });
+    await lead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({ field: 'departments', value: ['Geology'] });
+
+    await materialize();
+
+    expect((await persisted()).entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('leaves a co-led row', async () => {
+    const entity = await seedEntity();
+    await lead(entity._id, 'Rafferty Duchamp');
+    await lead(entity._id, 'Ines Marlowe');
+    await seedOfficialBody();
+
+    await materialize();
+
+    expect((await persisted()).entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
   it('leaves a row with no lead', async () => {
     await seedEntity();
     await seedOfficialBody();

@@ -4,6 +4,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { serializedDocumentId } from './idSerialization';
 import { personSurnamesFromDisplayNames } from './researchHomeNameIdentityAuthority';
+import { labNamedUrlTokens } from './unbackedLabSelfDescription';
 
 const RESEARCH_HOME_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
@@ -61,8 +62,7 @@ export async function loadResearchEntityLeadPersonName(
   return String((person as { displayName?: unknown } | null)?.displayName || '');
 }
 
-/** The id of the person a research entity's own lead role assignment names, or empty. */
-export async function loadResearchEntityLeadPersonId(
+async function loadResearchEntityLeadPersonId(
   researchEntityId: unknown,
   prefetchedLeadPersonId?: string,
 ): Promise<string> {
@@ -79,6 +79,21 @@ export async function loadResearchEntityLeadPersonId(
     .select('personId')
     .lean()) as { personId?: unknown } | null;
   return serializedDocumentId(assignment?.personId) || '';
+}
+
+/**
+ * The id of a research entity's one lead, or empty when its live lead assignments name
+ * no person or more than one.
+ */
+export async function loadResearchEntitySoleLeadPersonId(
+  researchEntityId: unknown,
+  prefetchedSoleLeadPersonId?: string,
+): Promise<string> {
+  const entityId = serializedDocumentId(researchEntityId);
+  if (!entityId) return '';
+  if (prefetchedSoleLeadPersonId !== undefined) return prefetchedSoleLeadPersonId;
+  const leads = new Set((await loadResearchEntityLeadPersonIds([entityId])).get(entityId));
+  return leads.size === 1 ? [...leads][0] : '';
 }
 
 /**
@@ -188,17 +203,6 @@ export function normalizedLabRowName(name: unknown): string {
     .trim();
 }
 
-export function labRowUrlTokens(value: unknown): string[] {
-  try {
-    const url = new URL(String(value || ''));
-    return [...url.hostname.split('.'), ...url.pathname.split('/')]
-      .map((part) => part.toLowerCase().replace(/[^\p{L}]/gu, ''))
-      .filter((part) => /lab(?:oratory|s)?/.test(part) && part.length > 4);
-  } catch {
-    return [];
-  }
-}
-
 const addTo = (map: Map<string, Set<string>>, key: string, value: string) => {
   if (!key) return;
   const bucket = map.get(key) ?? new Set<string>();
@@ -228,7 +232,7 @@ export async function loadLabRowRoster(): Promise<LabRowRoster> {
       lab.websiteUrl,
       lab.website,
       ...(Array.isArray(lab.sourceUrls) ? lab.sourceUrls : []),
-    ].flatMap(labRowUrlTokens);
+    ].flatMap(labNamedUrlTokens);
     for (const owner of owners) {
       if (owner) addTo(labIdsByLeadPersonId, owner, labId);
       addTo(leadPersonIdsByLabName, normalizedLabRowName(lab.name), owner);

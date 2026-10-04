@@ -272,16 +272,29 @@ function surnamePhrase(person: string): string {
   return tokens.slice(start).join(' ');
 }
 
-function labUrlTokens(value: unknown, person: string): string[] {
-  if (!urlNamesThisPersonsLab(value, person)) return [];
+/**
+ * The lab-named host labels and path segments of a URL, letters only. A bare lab segment
+ * is joined to the one after it ("/lab/<surname>/" yields "lab<surname>"), so a cited
+ * site and a lab row's own site yield the same token for the same lab.
+ */
+export function labNamedUrlTokens(value: unknown): string[] {
   try {
     const url = new URL(textValue(value));
-    return [...url.hostname.split('.'), ...url.pathname.split('/')]
+    const parts = [...url.hostname.split('.'), ...url.pathname.split('/')]
       .map(letters)
-      .filter((part) => new RegExp(LAB_TOKEN).test(part) && part.length > 4);
+      .filter(Boolean);
+    const bareLab = new RegExp(`^${LAB_TOKEN}$`);
+    return parts.flatMap((part, index) => {
+      if (bareLab.test(part)) return parts[index + 1] ? [`${part}${parts[index + 1]}`] : [];
+      return new RegExp(LAB_TOKEN).test(part) && part.length > 4 ? [part] : [];
+    });
   } catch {
     return [];
   }
+}
+
+function labUrlTokens(value: unknown, person: string): string[] {
+  return urlNamesThisPersonsLab(value, person) ? labNamedUrlTokens(value) : [];
 }
 
 /**
