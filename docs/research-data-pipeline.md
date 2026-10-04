@@ -847,6 +847,7 @@ The verdict carries `provenInert: true` and the summary counts it as `plannedRel
 The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
 `--release-never-backed` is that path.
 A lock whose field's provenance names a lane that never observed the field on the row or any row merged into it (`lockedNeverBackedProvenanceFields` in `scrapers/neverBackedFieldProvenance.ts`, #4418) is a repair's own write dressed as evidence, so it is a workaround by construction, the way a lock holding no value is.
+A lock whose provenance credits a grant lane for a field outside `GRANT_LANE_ENRICHMENT_FIELDS` is selected the same way without a lookup, because the materializer ignores that observation whatever id the entry records (#4853).
 It is released where doing so moves nothing a student reads: the engine derives the held value, or no projection writes the field at all.
 Silence counts as that answer only on a field whose collection the lock does not stop.
 A lock over a cleared field stays shut on silence, for the reason the fence above gives.
