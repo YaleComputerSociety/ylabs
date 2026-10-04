@@ -15,8 +15,15 @@ import {
   parseFraProfileSynthesisArgs,
   profileResearchSentences,
   profileResearchSnippets,
+  profileStatesCareerInsteadOfResearch,
+  readProfileResearchEvidence,
   repairPronounLead,
+  isCareerHistorySentence,
+  isCitationMetadataSentence,
+  isTitleCaseHeading,
+  splitSentences,
 } from '../fraProfileSynthesisCore';
+import { fraProfileSynthesisWithdrawalFreezeReason } from '../fraProfileSynthesisLane';
 import { isCareerFactSentence } from '../../utils/careerBiographyDescription';
 
 const RESEARCH =
@@ -826,5 +833,122 @@ describe('isCareerFactSentence', () => {
   it('is empty-safe', () => {
     expect(isCareerFactSentence('')).toBe(false);
     expect(isCareerFactSentence(undefined)).toBe(false);
+  });
+});
+
+const CITATION_ONLY =
+  'Comparative transcriptome analysis of stem cell derived lentoid bodies. Example Journal Of Vision Science 2018, 59: 2437-2444.';
+const AUTHOR_LIST =
+  'Monotherapy in acute mania: a randomised placebo-controlled study Quill A, Vale D, Moss A, Reyes R, Marsh R, Carver W. Monotherapy in acute mania: a randomised placebo-controlled study.';
+const PUBLICATION_HEADING =
+  'Effect of a Multifactorial Fall Injury Prevention Intervention on Patient Well-Being: The Example Study.';
+const CAREER_HISTORY_PAGE = [
+  'Jordan Vale was the director of public policy for an example health alliance, where the organization’s advocacy efforts focused on expanding federal support for global vaccine programs.',
+  'Prior to the alliance, Vale was a senior policy officer at an example pediatric foundation, where the work focused on global funding for child health programs.',
+].join(' ');
+
+describe('publication records and career history are not research prose (#4561)', () => {
+  it('refuses a journal citation, an author run and a title-case publication heading', () => {
+    expect(isCitationMetadataSentence(CITATION_ONLY)).toBe(true);
+    expect(isCitationMetadataSentence(AUTHOR_LIST)).toBe(true);
+    expect(isTitleCaseHeading(PUBLICATION_HEADING)).toBe(true);
+    expect(
+      profileResearchSentences(`${CITATION_ONLY} ${AUTHOR_LIST} ${PUBLICATION_HEADING}`),
+    ).toEqual([]);
+  });
+
+  it('keeps a research sentence that names proper nouns among lower-case prose', () => {
+    expect(isTitleCaseHeading(RESEARCH)).toBe(false);
+    expect(isCitationMetadataSentence(RESEARCH)).toBe(false);
+    expect(profileResearchSentences(`${RESEARCH} ${CITATION_ONLY}`)).toEqual([RESEARCH]);
+  });
+
+  it('refuses sentences narrating the posts a person held', () => {
+    const [first, second] = splitSentences(CAREER_HISTORY_PAGE);
+    expect(isCareerHistorySentence(first)).toBe(true);
+    expect(isCareerHistorySentence(second)).toBe(true);
+    expect(profileResearchSentences(CAREER_HISTORY_PAGE)).toEqual([]);
+  });
+
+  it('keeps a career sentence that states research of its own', () => {
+    const sentence =
+      'Before joining the faculty, she was a postdoctoral associate whose research examined how intestinal immune cells restrain inflammation.';
+    expect(isCareerHistorySentence(sentence)).toBe(false);
+  });
+
+  it('does not read a research job title or a quoted course name as a research claim', () => {
+    expect(
+      isCareerHistorySentence(
+        'Vale comes to Yale from an example university, where she was a Senior Research Specialist and developed training programs on workplace safety.',
+      ),
+    ).toBe(true);
+    expect(
+      isCareerHistorySentence(
+        'He previously taught “Legal Research and Writing” at two example law schools and focused on appellate practice.',
+      ),
+    ).toBe(true);
+  });
+
+  it('counts the refusals a withdrawal reads', () => {
+    const reading = readProfileResearchEvidence(`${CAREER_HISTORY_PAGE} ${CITATION_ONLY}`);
+    expect(reading.researchSentences).toEqual([]);
+    expect(reading.careerHistorySentences).toBe(2);
+    expect(reading.publicationRecords).toBe(2);
+  });
+});
+
+describe('profileStatesCareerInsteadOfResearch (#4561)', () => {
+  const career = readProfileResearchEvidence(CAREER_HISTORY_PAGE);
+
+  it('holds only when every page carries career prose and no research or publication', () => {
+    expect(profileStatesCareerInsteadOfResearch([career])).toBe(true);
+    expect(profileStatesCareerInsteadOfResearch([career, readProfileResearchEvidence(NAV)])).toBe(
+      true,
+    );
+  });
+
+  it('is not an absence: a page with no prose at all states nothing', () => {
+    expect(profileStatesCareerInsteadOfResearch([readProfileResearchEvidence(NAV)])).toBe(false);
+    expect(profileStatesCareerInsteadOfResearch([])).toBe(false);
+  });
+
+  it('keeps a body any page still supports with research prose', () => {
+    expect(
+      profileStatesCareerInsteadOfResearch([career, readProfileResearchEvidence(RESEARCH)]),
+    ).toBe(false);
+  });
+
+  it('keeps a body a publication feed may support, because the feed cannot name its author', () => {
+    expect(
+      profileStatesCareerInsteadOfResearch([
+        readProfileResearchEvidence(`${CAREER_HISTORY_PAGE} ${CITATION_ONLY}`),
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe('fraProfileSynthesisWithdrawalFreezeReason (#4561)', () => {
+  it('freezes a pass that would withdraw more than half of a large cohort', () => {
+    expect(fraProfileSynthesisWithdrawalFreezeReason(11, 20)).toMatch(/drop guard/);
+    expect(fraProfileSynthesisWithdrawalFreezeReason(10, 20)).toBeUndefined();
+  });
+
+  it('leaves a small cohort to the operator ceiling', () => {
+    expect(fraProfileSynthesisWithdrawalFreezeReason(5, 6)).toBeUndefined();
+    expect(fraProfileSynthesisWithdrawalFreezeReason(5, 6, 4)).toMatch(/--max-withdraw 4/);
+  });
+});
+
+describe('parseFraProfileSynthesisArgs withdrawal flags (#4561)', () => {
+  it('parses --revalidate-only and --max-withdraw', () => {
+    const args = parseFraProfileSynthesisArgs(['--revalidate-only', '--max-withdraw', '3']);
+    expect(args.revalidateOnly).toBe(true);
+    expect(args.maxWithdraw).toBe(3);
+  });
+
+  it('rejects a non-numeric --max-withdraw', () => {
+    expect(() => parseFraProfileSynthesisArgs(['--max-withdraw', 'all'])).toThrow(
+      /non-negative integer/,
+    );
   });
 });

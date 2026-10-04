@@ -17,6 +17,22 @@ Measured on Development on 2026-10-04, the reasons sat on 2,940 and 1,468 non-ar
 `hasActionEvidence` still feeds the shell-suppression predicates, so suppression is unchanged.
 An extra signal remains welcome as a badge or a citation.
 
+## 2026-10-03: A Profile Synthesis Body Is Withdrawn Only When Its Pages State A Career (#4561)
+
+`fra-profile-research-synthesis` now re-reads every row whose stored body it wrote and withdraws that body when complete reads of all candidate pages carry no admissible research prose, list no publication, and narrate the posts the person held.
+Its snippet selector also refuses publication records and career-history sentences, so a new body can no longer be built from either.
+Before this, a row whose synthesized body read as research left selection for good, so no fix to what the lane admits ever reached a body an earlier run had written.
+
+The withdrawal is deliberately narrower than "the current lane would not write this body".
+Measured on Development on 2026-10-03, 715 non-archived rows store a body with this lane's provenance and 643 of them serve.
+A stratified random sample of 66 served bodies, each read against its live profile page, found 60 correct, 4 thin but accurate, and 2 wrong, about 3 percent (95 percent interval 1 to 10 percent): both wrong bodies read a practitioner's or an administrator's past posts as research.
+With the new guards, 85 of the 715 rows have pages that yield no research snippet at all, and reading them, most hold a correct body built from the person's own publication feed.
+The feed cannot tell those from a namesake's papers, which is the other shape #4561 found, so withdrawing on absence would hide real people to remove a handful of wrong bodies.
+A namesake's feed is therefore an operator judgement on one row (`research-entity:refuse-field-value --rule=not_this_rows_research`), not a predicate.
+
+The career rule plans 3 withdrawals over the 715, and all 3 were read and are wrong: two policy or program staff whose career biographies became research claims, and one administrator whose former job became a research program.
+Residue recorded rather than chased: a practitioner's page whose duties read as investigations ("investigations of claims of factual innocence") keeps its body, because `investigat` is research vocabulary, and bodies that narrate the page itself ("as evidenced by the publication", "documents frequent co-authorship patterns") are a description-quality shape rather than a lane withdrawal.
+
 ## 2026-10-03: A Program That Is Not A Current Program Is Not Served (#4587)
 
 A hand-read sample of served programs on Development found 12 rows that are not a current program a student can apply to, and the gate had no input for any of their shapes.
