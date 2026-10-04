@@ -262,21 +262,15 @@ describe('a fixed-list lane page that is gone withdraws the values it supplied (
     expect(after?.shortDescription).toBeFalsy();
   });
 
-  it('records a read on the resolved page as well as the requested one', async () => {
+  it('records the page a read resolved to alongside the requested one', async () => {
     const redirected = () =>
       Promise.resolve({
         url: `${PAGE}home/`,
         html: `<main><h1>Synthetic Signaling Lab</h1><p>${DESCRIPTION}</p></main>`,
       });
     const verdicts = await runLane(redirected, vi.fn());
-    expect(
-      verdicts.map((observation) => [
-        observation.sourceUrl,
-        (observation.value as any).healthStatus,
-      ]),
-    ).toEqual([
-      [PAGE, 'HEALTHY'],
-      [`${PAGE}home/`, 'HEALTHY'],
+    expect(verdicts.map((observation) => observation.value)).toEqual([
+      { url: PAGE, healthStatus: 'HEALTHY', httpStatusCode: 200, resolvedUrl: `${PAGE}home/` },
     ]);
   });
 
@@ -315,5 +309,20 @@ describe('a fixed-list lane page that is gone withdraws the values it supplied (
         (observation) => observation.field === 'methods' && observation.sourceUrl === PAGE,
       ),
     ).toEqual([]);
+  });
+
+  it('records no live read for a page that lands away from what was requested', async () => {
+    const retiredPage = `${PAGE}people/retired-lab/`;
+    const landsOnRoot = () =>
+      Promise.resolve({
+        url: PAGE,
+        html: `<main><h1>Synthetic Signaling Lab</h1><p>${DESCRIPTION}</p></main>`,
+      });
+    const emitted = await runLaneEmitting(landsOnRoot, vi.fn(), {
+      lab: { websiteUrl: retiredPage },
+    });
+    expect(emitted.filter((observation) => observation.field === LANE_PAGE_HEALTH_FIELD)).toEqual(
+      [],
+    );
   });
 });

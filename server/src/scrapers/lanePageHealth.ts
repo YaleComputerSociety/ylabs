@@ -15,6 +15,7 @@ export interface LanePageHealthVerdict {
   url: string;
   healthStatus: SourceLinkHealth['healthStatus'];
   httpStatusCode?: number;
+  resolvedUrl?: string;
 }
 
 type LanePageObservation = {
@@ -55,8 +56,18 @@ function verdictFrom(url: string, health: SourceLinkHealth): LanePageHealthVerdi
   };
 }
 
-export function lanePageReadVerdict(url: string, httpStatusCode = 200): LanePageHealthVerdict {
-  return { url, healthStatus: 'HEALTHY', httpStatusCode };
+export function lanePageReadVerdict(
+  url: string,
+  resolvedUrl = url,
+  httpStatusCode = 200,
+): LanePageHealthVerdict {
+  const resolvedIsAnotherPage = sourceLinkHealthKey(resolvedUrl) !== sourceLinkHealthKey(url);
+  return {
+    url,
+    healthStatus: 'HEALTHY',
+    httpStatusCode,
+    ...(resolvedIsAnotherPage ? { resolvedUrl } : {}),
+  };
 }
 
 export type LanePageProbe = (url: string) => Promise<SourceLinkHealth>;
@@ -135,6 +146,7 @@ function newestPageEvidence(
   rowIdentities: ReadonlySet<string>,
 ): Map<string, { goneAt: number; liveAt: number }> {
   const byPage = new Map<string, { goneAt: number; liveAt: number }>();
+  const newestResolvedRead = new Map<string, { at: number; resolvedKey: string | null }>();
   const touch = (key: string) => {
     const entry = byPage.get(key) ?? { goneAt: 0, liveAt: 0 };
     byPage.set(key, entry);
@@ -142,13 +154,31 @@ function newestPageEvidence(
   };
   for (const observation of observations) {
     if (observation.field !== LANE_PAGE_HEALTH_FIELD) continue;
-    const verdictUrl = (observation.value as { url?: unknown } | null | undefined)?.url;
-    const key = pageScopeKey(observation, verdictUrl, rowIdentities);
+    const verdict = observation.value as Partial<LanePageHealthVerdict> | null | undefined;
+    const key = pageScopeKey(observation, verdict?.url, rowIdentities);
     if (!key) continue;
     const at = observedTime(observation.observedAt);
     const entry = touch(key);
-    if (isConfirmedGonePageVerdict(observation.value)) entry.goneAt = Math.max(entry.goneAt, at);
-    else if (isLivePageVerdict(observation.value)) entry.liveAt = Math.max(entry.liveAt, at);
+    if (isConfirmedGonePageVerdict(verdict)) {
+      entry.goneAt = Math.max(entry.goneAt, at);
+      continue;
+    }
+    if (!isLivePageVerdict(verdict)) continue;
+    entry.liveAt = Math.max(entry.liveAt, at);
+    const resolvedKey = pageScopeKey(observation, verdict?.resolvedUrl, rowIdentities);
+    if (resolvedKey) {
+      const resolved = touch(resolvedKey);
+      resolved.liveAt = Math.max(resolved.liveAt, at);
+    }
+    if (at >= (newestResolvedRead.get(key)?.at ?? -1)) {
+      newestResolvedRead.set(key, { at, resolvedKey });
+    }
+  }
+  for (const [key, read] of newestResolvedRead) {
+    const requested = byPage.get(key);
+    if (!read.resolvedKey || !requested || requested.goneAt <= requested.liveAt) continue;
+    const resolved = touch(read.resolvedKey);
+    resolved.goneAt = Math.max(resolved.goneAt, requested.goneAt);
   }
   return byPage;
 }

@@ -42,7 +42,10 @@ import {
   lanePageReadVerdict,
   type LanePageProbe,
 } from '../lanePageHealth';
-import { sourceLinkHealthKey } from '../../services/sourceLinkHealth';
+import {
+  landsAwayFromRequestedResource,
+  sourceLinkHealthKey,
+} from '../../services/sourceLinkHealth';
 import {
   createWorkPlannerMetrics,
   getWorkPlannerSourcePolicy,
@@ -2100,13 +2103,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           gonePageKeys.add(sourceLinkHealthKey(url) as string);
         };
         const recordReadPage = (requestedUrl: string, resolvedUrl: string) => {
-          const resolvedIsAnotherPage =
-            sourceLinkHealthKey(resolvedUrl) !== sourceLinkHealthKey(requestedUrl);
-          for (const url of resolvedIsAnotherPage ? [requestedUrl, resolvedUrl] : [requestedUrl]) {
-            pageHealthObservations.push(
-              lanePageHealthObservation(pageHealthEntity, lanePageReadVerdict(url)),
-            );
-          }
+          if (landsAwayFromRequestedResource(requestedUrl, resolvedUrl)) return;
+          pageHealthObservations.push(
+            lanePageHealthObservation(
+              pageHealthEntity,
+              lanePageReadVerdict(requestedUrl, resolvedUrl),
+            ),
+          );
         };
         const emitPageHealth = async () => {
           if (pageHealthObservations.length === 0) return;

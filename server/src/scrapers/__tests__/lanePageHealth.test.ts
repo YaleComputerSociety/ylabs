@@ -146,6 +146,64 @@ describe('confirmGoneLanePage', () => {
       httpStatusCode: 200,
     });
   });
+
+  it('records the page a read resolved to when it is another page', () => {
+    expect(lanePageReadVerdict(PAGE, `${PAGE}home/`)).toEqual({
+      url: PAGE,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      resolvedUrl: `${PAGE}home/`,
+    });
+    expect(lanePageReadVerdict(PAGE, PAGE.replace('https://', 'http://www.'))).toEqual({
+      url: PAGE,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
+  });
+});
+
+describe('withoutGoneLanePageObservations across a redirect', () => {
+  const RESOLVED = `${PAGE}home/`;
+  const readThroughRedirect = (day: number) => ({
+    ...verdict('HEALTHY', 200, day),
+    value: { url: PAGE, healthStatus: 'HEALTHY', httpStatusCode: 200, resolvedUrl: RESOLVED },
+  });
+  const resolvedRead = {
+    ...read('fullDescription', 'Studies synthetic signaling.', 2),
+    sourceUrl: RESOLVED,
+  };
+
+  it('withdraws a read citing the resolved page once the requested page is gone', () => {
+    const { observations } = withoutGoneLanePageObservations(
+      [resolvedRead, readThroughRedirect(2), verdict('UNAVAILABLE', 404, 5)],
+      ROW,
+    );
+    expect(observations).toEqual([]);
+  });
+
+  it('keeps it once the resolved page is read live after the gone verdict', () => {
+    const resolvedLive = {
+      ...verdict('HEALTHY', 200, 6),
+      value: { url: RESOLVED, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    };
+    const { observations } = withoutGoneLanePageObservations(
+      [resolvedRead, readThroughRedirect(2), verdict('UNAVAILABLE', 404, 5), resolvedLive],
+      ROW,
+    );
+    expect(observations).toEqual([resolvedRead]);
+  });
+
+  it('restores a read citing the resolved page when a later read goes through the redirect', () => {
+    const resolvedGone = {
+      ...verdict('UNAVAILABLE', 404, 3),
+      value: { url: RESOLVED, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    };
+    const { observations } = withoutGoneLanePageObservations(
+      [resolvedRead, resolvedGone, readThroughRedirect(6)],
+      ROW,
+    );
+    expect(observations).toEqual([resolvedRead]);
+  });
 });
 
 describe('planGoneLanePageFieldClears', () => {
