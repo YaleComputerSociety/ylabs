@@ -8,6 +8,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
+import { withoutUnbackedLabSelfDescription } from './unbackedLabSelfDescription';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import {
@@ -2338,7 +2339,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       }
       const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
       const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
-      const withFirstPersonReVoice = revoicedFirstPersonBody(withResearchLeadRepair, next, field);
+      const withFirstPersonReVoice = withoutUnbackedLabSelfDescription(
+        revoicedFirstPersonBody(withResearchLeadRepair, next, field),
+        next,
+        field,
+      );
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,

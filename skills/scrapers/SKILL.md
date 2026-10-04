@@ -1177,6 +1177,12 @@ A faculty- or lab-scoped body that both opens on a person-biography or credentia
 `stripLeadingCredentialTitleRun` is first in that chain deliberately, so the biography and revoice passes see the body's real opener rather than a title list glued to it, and it withdraws itself when the opener the chain would then lead with states a career fact (#2973).
 Without that withdrawal the strip traded a title run for "trained at three universities before an appointment to the faculty in 2001", because the sentence the biography repair promotes to first position is judged nowhere else.
 
+Beside the first-person revoice, `withoutUnbackedLabSelfDescription` (`server/src/utils/unbackedLabSelfDescription.ts`) recasts an LLM-written "The <surname> Lab ..." self-reference on a `FACULTY_RESEARCH_AREA` row onto the row's own person, on both the card and the body (#4650).
+It applies only when the field's provenance is an LLM lane (`isLlmAuthoredSourceName`, pinned by test to the seeds whose display name says LLM, because `utils/` cannot import `seedSources`), the words before the surname are the row's own person's name, and no non-LLM evidence names the lab: no lab-named URL and no non-LLM description saying "<surname> Lab".
+An official, non-LLM text that names the lab is evidence the row may be a mistyped lab, so it is left alone rather than rewritten.
+It is a read-time derivation and writes nothing.
+It sits on the chain's main path, so a body that takes the biography-repair branch skips it.
+
 #### A sanitizer that empties a candidate has rejected it, not learned the field is empty (#2958)
 
 The blocker on #1894's one remaining description-class-only row was a live materializer defect rather than anything about ranking, and it is fixed.
