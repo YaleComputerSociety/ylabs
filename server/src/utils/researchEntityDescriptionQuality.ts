@@ -3473,9 +3473,11 @@ const POSSESSIVE_AREA_OF_RESEARCH_STATEMENT =
 // "<Name>'s research and teaching interests span domestic policy issues including
 // ..." is the body a biography narrows to, and its object is the card.
 function possessiveResearchStatementSummary(sentences: string[], full: string): string {
-  const lead = textValue(sentences[0]);
   const match =
-    lead.match(POSSESSIVE_RESEARCH_STATEMENT) ?? lead.match(POSSESSIVE_AREA_OF_RESEARCH_STATEMENT);
+    textValue(sentences[0]).match(POSSESSIVE_RESEARCH_STATEMENT) ??
+    sentences
+      .map((sentence) => textValue(sentence).match(POSSESSIVE_AREA_OF_RESEARCH_STATEMENT))
+      .find(Boolean);
   if (!match?.[1]) return '';
   const candidate = `Studies ${match[1].trim()}.`;
   return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';

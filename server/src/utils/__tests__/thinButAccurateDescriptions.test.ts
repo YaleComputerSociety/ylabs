@@ -138,6 +138,7 @@ describe('page-fragment cards are replaced from the body', () => {
   it.each([
     "Robin Fixture's area of academic research is the history of imagined harbor towns. She studies how port communities organized trade guilds.",
     'Her area of research is the history of imagined harbor towns. She studies how port communities organized trade guilds.',
+    "Robin Fixture is Professor of History. Robin Fixture's area of academic research is the history of imagined harbor towns. She studies how port communities organized trade guilds. She received her Ph.D. from Example University in 1995.",
   ])('serves a card that keeps the discipline of an area-of-research statement: %s', (body) => {
     expect(
       resolveServedShortDescription({
