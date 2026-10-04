@@ -253,4 +253,38 @@ describe('a merged survivor reads the evidence filed under its merged-in keys (#
 
     expect(Object.keys(result.plannedUnset ?? {})).not.toContain('fieldProvenance.school');
   });
+  it('backs an unbacked survivor type with a merged-in row that asserts the same type (#3381)', async () => {
+    const survivor = await seedMergedPair({ entityType: 'LAB' });
+    await seedObservation(LOSER_KEY, 'entityType', 'LAB', 'dept-faculty-roster');
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_KEY });
+
+    const after = (await ResearchEntity.findById(survivor._id).lean()) as any;
+    expect(after.entityType).toBe('LAB');
+    expect(after.fieldProvenance?.entityType?.sourceName).toBe('dept-faculty-roster');
+  });
+
+  it('never lets a merged-in row restate a survivor type it contradicts (#3381)', async () => {
+    const survivor = await seedMergedPair({ entityType: 'LAB' });
+    await seedObservation(LOSER_KEY, 'entityType', 'FACULTY_RESEARCH_AREA', 'dept-faculty-roster');
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_KEY });
+
+    const after = (await ResearchEntity.findById(survivor._id).lean()) as any;
+    expect(after.entityType).toBe('LAB');
+    expect(after.fieldProvenance?.entityType?.sourceName).not.toBe('dept-faculty-roster');
+  });
+
+  it('keeps the survivor own type evidence ahead of an agreeing merged-in row (#3381)', async () => {
+    const survivor = await seedMergedPair({ entityType: 'LAB' });
+    await seedObservation(SURVIVOR_KEY, 'entityType', 'LAB', 'ysm-faculty-directory');
+    await seedObservation(LOSER_KEY, 'entityType', 'LAB', 'dept-faculty-roster', {
+      observedAt: new Date('2026-09-01T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_KEY });
+
+    const after = (await ResearchEntity.findById(survivor._id).lean()) as any;
+    expect(after.fieldProvenance?.entityType?.sourceName).toBe('ysm-faculty-directory');
+  });
 });

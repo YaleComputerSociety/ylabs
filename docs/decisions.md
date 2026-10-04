@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-03: A Merged-In Row's Type Backs A Survivor's Matching Type, And Never Restates It (#3381)
+
+A merged survivor's `entityType` stays survivor-owned, but a survivor with no `entityType` observation of its own now resolves its stored type from a merged-in row's observation of the same type, read through `mergedRowEvidenceIdentity`, so the served type rests on evidence and records it in `fieldProvenance`.
+A merged-in type that contradicts the survivor's is still dropped, because the merge itself decided who the survivor is: an eponymous faculty research profile merged into a lab is evidence the lab exists.
+Measured on Development on 2026-10-03, 627 of 3,464 served rows had no live `entityType` observation on their own key or id.
+For 448 a merged-in row carries one; on the commit before, none of the 448 resolved a type, and with this rule 445 resolve the type they already serve, so no served type changes.
+The other 3 are labs whose only type evidence is a merged-in profile's contradicting type.
+Those 3 and the 179 served rows with no live type observation on any key and none ever filed on their own (162 `FACULTY_RESEARCH_AREA`, 16 `LAB`, 1 `CENTER`) are not fixable by derivation: no lane observes their type, and stamping the stored value as an observation would manufacture evidence.
+
 ## 2026-10-03: Design And Instrument Practice Are Creative Practice, And A Practice Biography Is Not A Description (#4551)
 
 Three of the rows #4388 would newly serve were wrong for reasons the lead mint does not cause, and each is a serve-time predicate gap.
