@@ -10,6 +10,10 @@ import {
   emptyRoleEdgeSettlementOutcome,
   type RoleEdgeSettlementOutcome,
 } from '../services/archivedResearchEntityRoleEdges';
+import {
+  emptyAccessSignalSettlementOutcome,
+  type AccessSignalSettlementOutcome,
+} from '../services/archivedResearchEntityAccessSignals';
 import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
@@ -215,6 +219,7 @@ export interface RetireProgramResearchEntitiesResult {
   plan: RetireProgramResearchEntitiesPlan;
   archivedResearchEntities: number;
   roleEdges: RoleEdgeSettlementOutcome;
+  accessSignals: AccessSignalSettlementOutcome;
   search: ProgramSearchDocumentRemoval;
 }
 
@@ -236,6 +241,7 @@ export async function retireProgramResearchEntities(options: {
 
   let archivedResearchEntities = 0;
   let roleEdges = emptyRoleEdgeSettlementOutcome();
+  let accessSignals = emptyAccessSignalSettlementOutcome();
   let search: ProgramSearchDocumentRemoval = { requested: 0, deleted: false };
 
   if (options.apply && plan.toArchive.length > 0) {
@@ -245,6 +251,7 @@ export async function retireProgramResearchEntities(options: {
     const result = await archiveResearchEntities({ ids: objectIds, archivedReason: SCRIPT_NAME });
     archivedResearchEntities = result.archived;
     roleEdges = result.roleEdges;
+    accessSignals = result.accessSignals;
     search = {
       ...(await deleteProgramSearchDocuments(plan.toArchive, options.getIndex || getMeiliIndex)),
       rebuildGuidance:
@@ -257,6 +264,7 @@ export async function retireProgramResearchEntities(options: {
     plan,
     archivedResearchEntities,
     roleEdges,
+    accessSignals,
     search,
   };
 }

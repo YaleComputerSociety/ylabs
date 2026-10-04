@@ -11,6 +11,7 @@ import {
   archivedEntityRepairClasses,
   buildArchivedEntityArtifactRepairPlan,
   dispositionMatchesScope,
+  accessSignalSettlementsFromRepairPlan,
   resolveArchivedEntityDispositions,
   roleEdgeSettlementsFromRepairPlan,
   summarizeArchivedEntityArtifactRepairPlanByClass,
@@ -25,12 +26,15 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { attributedArchiveSet } from '../models/entityArchival';
 import {
   applyRoleEdgeSettlements,
   LIVE_ROLE_EDGE_FILTER,
   SURVIVOR_HOLDING_ROLE_EDGE_FILTER,
 } from '../services/archivedResearchEntityRoleEdges';
+import {
+  applyAccessSignalSettlements,
+  LIVE_ACCESS_SIGNAL_FILTER,
+} from '../services/archivedResearchEntityAccessSignals';
 
 dotenv.config({ quiet: true });
 
@@ -86,7 +90,7 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     artifactType: 'AccessSignal',
     collection: 'signals',
     entityIdPath: 'researchEntityId',
-    activeMatch: { archived: { $ne: true } },
+    activeMatch: { ...LIVE_ACCESS_SIGNAL_FILTER },
     survivorMatch: {},
     projection: { _id: 1, researchEntityId: 1, type: 1, derivationKey: 1 },
     toArtifact: (row) => ({
@@ -388,12 +392,6 @@ function objectId(value: unknown): mongoose.Types.ObjectId | undefined {
   return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
-function specFor(artifactType: ArchivedEntityArtifactType): ArtifactSpec {
-  const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === artifactType);
-  if (!spec) throw new Error(`No artifact spec for ${artifactType}`);
-  return spec;
-}
-
 async function loadEntityNodes(): Promise<{
   archivedEntities: ArchivedEntityNode[];
   nodesById: Map<string, ArchivedEntityNode>;
@@ -509,47 +507,6 @@ function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
 
 const ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON = 'research-entity:repair-archived-artifacts';
 
-async function retireSignal(id: string, now: Date): Promise<number> {
-  const db = mongoose.connection.db;
-  const artifactObjectId = objectId(id);
-  if (!db || !artifactObjectId) return 0;
-  const result = await db.collection(specFor('AccessSignal').collection).updateOne(
-    { _id: artifactObjectId, archived: { $ne: true } },
-    {
-      $set: attributedArchiveSet(ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON, {
-        lastMaterializedAt: now,
-      }),
-    },
-  );
-  return result.modifiedCount || 0;
-}
-
-async function mergeSignalEvidenceIntoSurvivor(
-  duplicateId: string,
-  canonicalId: string,
-  now: Date,
-): Promise<number> {
-  const db = mongoose.connection.db;
-  const duplicateObjectId = objectId(duplicateId);
-  const canonicalObjectId = objectId(canonicalId);
-  if (!db || !duplicateObjectId || !canonicalObjectId) return 0;
-  const collection = db.collection(specFor('AccessSignal').collection);
-  const duplicate = await collection.findOne(
-    { _id: duplicateObjectId },
-    { projection: { 'source.evidenceIds': 1 } },
-  );
-  const evidenceIds = duplicate?.source?.evidenceIds;
-  if (!Array.isArray(evidenceIds) || evidenceIds.length === 0) return 0;
-  const result = await collection.updateOne(
-    { _id: canonicalObjectId, archived: { $ne: true } },
-    {
-      $addToSet: { 'source.evidenceIds': { $each: evidenceIds } },
-      $set: { lastMaterializedAt: now },
-    },
-  );
-  return result.modifiedCount || 0;
-}
-
 export async function applyArchivedEntityArtifactRepairPlan(
   plan: ArchivedEntityArtifactRepairPlan,
   now = new Date(),
@@ -568,42 +525,14 @@ export async function applyArchivedEntityArtifactRepairPlan(
   counts.archivedMergedDuplicates += roleEdges.archivedRedundant;
   counts.archivedWithoutCanonical += roleEdges.ended;
 
-  const isSignal = (item: { artifactType: ArchivedEntityArtifactType }) =>
-    item.artifactType === 'AccessSignal';
-  const signalSpec = specFor('AccessSignal');
-  for (const item of plan.relink.filter(isSignal)) {
-    const itemObjectId = objectId(item.id);
-    const archivedEntityObjectId = objectId(item.archivedEntityId);
-    const canonicalObjectId = objectId(item.canonicalResearchEntityId);
-    if (!itemObjectId || !archivedEntityObjectId || !canonicalObjectId) continue;
-    try {
-      const result = await db.collection(signalSpec.collection).updateOne(
-        {
-          _id: itemObjectId,
-          archived: { $ne: true },
-          [signalSpec.entityIdPath]: archivedEntityObjectId,
-        },
-        { $set: { [signalSpec.entityIdPath]: canonicalObjectId, lastMaterializedAt: now } },
-      );
-      counts.relinked += result.modifiedCount || 0;
-    } catch (error: any) {
-      if (error?.code !== 11000) throw error;
-      counts.archivedMergedDuplicates += await retireSignal(item.id, now);
-    }
-  }
-
-  for (const item of plan.mergeAndArchive.filter(isSignal)) {
-    counts.mergedCanonicalArtifacts += await mergeSignalEvidenceIntoSurvivor(
-      item.duplicateId,
-      item.canonicalId,
-      now,
-    );
-    counts.archivedMergedDuplicates += await retireSignal(item.duplicateId, now);
-  }
-
-  for (const item of plan.archiveWithoutCanonical.filter(isSignal)) {
-    counts.archivedWithoutCanonical += await retireSignal(item.id, now);
-  }
+  const signals = await applyAccessSignalSettlements(accessSignalSettlementsFromRepairPlan(plan), {
+    archivedReason: ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON,
+    now,
+  });
+  counts.relinked += signals.relinked;
+  counts.mergedCanonicalArtifacts += signals.mergedIntoSurvivor;
+  counts.archivedMergedDuplicates += signals.archivedAsDuplicate;
+  counts.archivedWithoutCanonical += signals.archivedWithoutSurvivor;
 
   return counts;
 }

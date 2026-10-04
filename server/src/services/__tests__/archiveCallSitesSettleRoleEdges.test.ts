@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // An archive that bypasses `archiveResearchEntities` leaves its role edges current on a
-// row the serve path refuses: 176 such edges failed `integrity-gate` on Development (#4752).
+// row the serve path refuses: 176 such edges failed `integrity-gate` on Development (#4752),
+// and live signals on archived rows failed it again within hours of a repair (#4816).
 // A new caller of either archive builder fails here until it routes through the helper or
 // is listed with the reason it does not archive a research entity's edges.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +14,7 @@ const SERVER_SRC = path.resolve(HERE, '../..');
 const REVIEWED_ARCHIVED_ENTITY_UPDATE_CALLERS: Record<string, { sites: number; reason: string }> = {
   'services/archivedResearchEntityRoleEdges.ts': {
     sites: 1,
-    reason: 'the helper itself, which settles role edges in the same step',
+    reason: 'the helper itself, which settles role edges and access signals in the same step',
   },
   'scrapers/entityMaterializer.ts': {
     sites: 1,
@@ -37,7 +38,10 @@ const REVIEWED_ATTRIBUTED_ARCHIVE_SET_CALLERS: Record<string, { sites: number; r
     sites: 2,
     reason: 'archives owners in ARCHIVABLE_REFERENCE_COLLECTIONS, which holds signals only',
   },
-  'scripts/repairArchivedEntityArtifacts.ts': { sites: 1, reason: 'archives access signals' },
+  'services/archivedResearchEntityAccessSignals.ts': {
+    sites: 1,
+    reason: 'archives access signals, for archiveResearchEntities and the repair alike',
+  },
   'scripts/dedupeResearchEntitiesByPi.ts': { sites: 1, reason: 'archives self-relationships' },
   'scripts/repairDuplicateAccessSignals.ts': { sites: 1, reason: 'archives access signals' },
 };
@@ -61,7 +65,7 @@ const callSiteCounts = (pattern: RegExp): Record<string, number> => {
 const reviewedCounts = (reviewed: Record<string, { sites: number }>) =>
   Object.fromEntries(Object.entries(reviewed).map(([file, { sites }]) => [file, sites]));
 
-describe('every research-entity archive settles its role edges (#4752)', () => {
+describe('every research-entity archive settles its role edges and access signals (#4752, #4816)', () => {
   it('lists every archivedEntityUpdate caller that is not archiveResearchEntities', () => {
     expect(callSiteCounts(/\barchivedEntityUpdate\(/g)).toEqual(
       reviewedCounts(REVIEWED_ARCHIVED_ENTITY_UPDATE_CALLERS),
@@ -72,6 +76,16 @@ describe('every research-entity archive settles its role edges (#4752)', () => {
     expect(callSiteCounts(/\battributedArchiveSet\(/g)).toEqual(
       reviewedCounts(REVIEWED_ATTRIBUTED_ARCHIVE_SET_CALLERS),
     );
+  });
+
+  it('settles both role edges and access signals inside archiveResearchEntities', () => {
+    const helper = fs.readFileSync(
+      path.join(SERVER_SRC, 'services/archivedResearchEntityRoleEdges.ts'),
+      'utf8',
+    );
+    const body = helper.slice(helper.indexOf('export async function archiveResearchEntities('));
+    expect(body).toMatch(/await settleRoleEdgesOfArchivedResearchEntities\(\{/);
+    expect(body).toMatch(/await settleAccessSignalsOfArchivedResearchEntities\(\{/);
   });
 
   it('routes each lane that archives a research entity through archiveResearchEntities', () => {

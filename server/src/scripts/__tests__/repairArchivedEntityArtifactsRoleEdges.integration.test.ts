@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { Signal } from '../../models/signal';
 import { runPostMaterializationIntegrityGate } from '../../scrapers/integrityGate';
 import {
   applyArchivedEntityArtifactRepairPlan,
@@ -121,5 +122,59 @@ describe('research-entity:repair-archived-artifacts settles stranded role edges 
     expect(rerun.plan.relink).toEqual([]);
     expect(rerun.plan.mergeAndArchive).toEqual([]);
     expect(rerun.plan.archiveWithoutCanonical).toEqual([]);
+  });
+  it('settles stranded access signals through the archive-time applier (#4816)', async () => {
+    const survivor = await entity('synthetic-survivor-lab');
+    const folded = await entity('dept-synthetic-folded', {
+      archived: true,
+      archivedReason: 'materialize:fold-dept-roster-shell',
+      canonicalGroupId: survivor._id,
+    });
+    const retired = await entity('synthetic-retired-row', {
+      archived: true,
+      archivedReason: 'research-entity:retire-staff-minted-entities',
+    });
+    const signal = (
+      researchEntityId: mongoose.Types.ObjectId,
+      type: 'CURRENT_UNDERGRADS' | 'APPLICATION_FORM_EXISTS',
+    ) =>
+      Signal.create({
+        researchEntityId,
+        type,
+        derivationKey: `signal:${type}`,
+        confidence: 'MEDIUM',
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        archived: false,
+      });
+    const survivorSignal = await signal(survivor._id, 'CURRENT_UNDERGRADS');
+    const duplicate = await signal(folded._id, 'CURRENT_UNDERGRADS');
+    const relinked = await signal(folded._id, 'APPLICATION_FORM_EXISTS');
+    const ended = await signal(retired._id, 'CURRENT_UNDERGRADS');
+
+    const { plan } = await loadArchivedEntityArtifactPlan(100, {}, ['AccessSignal']);
+    expect(plan.mergeAndArchive.map((item) => [item.duplicateId, item.canonicalId])).toEqual([
+      [String(duplicate._id), String(survivorSignal._id)],
+    ]);
+    expect(plan.relink.map((item) => item.id)).toEqual([String(relinked._id)]);
+    expect(plan.archiveWithoutCanonical.map((item) => item.id)).toEqual([String(ended._id)]);
+
+    const applied = await applyArchivedEntityArtifactRepairPlan(plan);
+    expect(applied).toMatchObject({
+      relinked: 1,
+      archivedMergedDuplicates: 1,
+      archivedWithoutCanonical: 1,
+    });
+    for (const id of [duplicate._id, ended._id]) {
+      expect(await Signal.findById(id).lean()).toMatchObject({
+        archived: true,
+        archivedReason: 'research-entity:repair-archived-artifacts',
+      });
+    }
+    expect(String((await Signal.findById(relinked._id).lean())?.researchEntityId)).toBe(
+      String(survivor._id),
+    );
+    const summary = await runPostMaterializationIntegrityGate({ includeSamples: false });
+    expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
+    expect(summary.counts.duplicateAccessSignals).toBe(0);
   });
 });

@@ -9,6 +9,7 @@ import {
   archiveResearchEntities,
   emptyRoleEdgeSettlementOutcome,
 } from '../services/archivedResearchEntityRoleEdges';
+import { emptyAccessSignalSettlementOutcome } from '../services/archivedResearchEntityAccessSignals';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -130,6 +131,7 @@ async function main(): Promise<void> {
 
   let archived = 0;
   let roleEdges = emptyRoleEdgeSettlementOutcome();
+  let accessSignals = emptyAccessSignalSettlementOutcome();
   let search: { requested: number; deleted: boolean; error?: string } = {
     requested: 0,
     deleted: false,
@@ -143,6 +145,7 @@ async function main(): Promise<void> {
     const result = await archiveResearchEntities({ ids: objectIds, archivedReason: SCRIPT_NAME });
     archived = result.archived;
     roleEdges = result.roleEdges;
+    accessSignals = result.accessSignals;
     search = await deleteSearchDocuments(
       toApply.map((entry) => entry.id),
       getMeiliIndex,
@@ -160,6 +163,7 @@ async function main(): Promise<void> {
     appliedLimit: args.maxApply,
     archived,
     roleEdges,
+    accessSignals,
     search: {
       ...search,
       rebuildGuidance:

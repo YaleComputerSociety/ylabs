@@ -494,6 +494,7 @@ async function main(): Promise<void> {
     });
     archived = result.archived;
     report.roleEdges = result.roleEdges;
+    report.accessSignals = result.accessSignals;
     search = await deleteSearchDocuments(toApply.map((entry) => entry.id));
   }
 

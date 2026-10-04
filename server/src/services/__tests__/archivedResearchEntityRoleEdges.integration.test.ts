@@ -85,6 +85,13 @@ describe('archiving a research entity settles its live role edges (#4752)', () =
     expect(result).toEqual({
       archived: 1,
       roleEdges: { repointed: 1, archivedRedundant: 1, ended: 0, refusedSurvivorNotLive: 0 },
+      accessSignals: {
+        relinked: 0,
+        mergedIntoSurvivor: 0,
+        archivedAsDuplicate: 0,
+        archivedWithoutSurvivor: 0,
+        refusedSurvivorNotLive: 0,
+      },
     });
     const redundant = await stored(shellLead._id);
     expect(redundant).toMatchObject({ state: 'HISTORICAL', archived: true });
