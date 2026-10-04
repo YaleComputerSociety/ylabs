@@ -188,6 +188,8 @@ A diff count alone cannot tell you whether a defect was repaired or reworded.
 
 Tier and archived are not the last gate.
 `getResearchGroupDetail` returns null, and `/api/research/:slug` therefore 404s, when the public-description invariant fails or when the stored copy names a deceased lead (#982), even for a row that is `student_ready` and not archived.
+An admin caller is the one exception: the route passes `includeWithheldForOperator`, so an admin sees the page with an `operatorPreview` block naming the tier and each withholding check (#4564).
+Every script that asks whether a row is served calls `getResearchGroupDetail` without that option, so it still answers for a student.
 The scoreboard calls `researchEntityServesPublicDetail`, the same entity-only predicate the browse list filters on, so it covers both halves from one place instead of reimplementing either.
 
 So `still served` means the detail route would actually serve the row, and the holdback gets its own count rather than being absorbed into `still served` (which would report copy for a page nobody can reach) or into `no longer served` (which would read as a tier or archived change that never happened).

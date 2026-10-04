@@ -105,6 +105,18 @@ export interface LabRelationshipCollectionMeta {
   truncated: boolean;
 }
 
+export type ResearchDetailWithholdingCheck =
+  | 'visibility_tier'
+  | 'deceased_lead'
+  | 'description_invariant';
+
+export interface ResearchDetailOperatorPreview {
+  studentVisibilityTier: string;
+  studentVisibilityReasons: string[];
+  studentVisibilitySuppressionReason?: string;
+  withheldBy: ResearchDetailWithholdingCheck[];
+}
+
 export interface LabDetailPayload {
   group: ResearchGroup;
   researchEntity?: ResearchEntity;
@@ -119,4 +131,5 @@ export interface LabDetailPayload {
   affiliatedResearchEntities?: LabRelatedResearchEntitySummary[];
   affiliatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
   similarResearchEntities?: LabRelatedResearchEntitySummary[];
+  operatorPreview?: ResearchDetailOperatorPreview;
 }

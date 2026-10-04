@@ -3594,6 +3594,70 @@ describe('getResearchGroupDetail', () => {
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
   });
 
+  it('lets an operator preview a held row with no tier filter and names what withholds it', async () => {
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: '67d8928150621bcef434a1d7',
+        slug: 'held-review-lab',
+        name: 'Held Review Lab',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/held-review'],
+        departments: [],
+        researchAreas: [],
+        studentVisibilityTier: 'operator_review',
+        studentVisibilityReasons: ['missing_lead'],
+      }),
+    );
+
+    const detail = await getResearchGroupDetail('held-review-lab', {
+      includeWithheldForOperator: true,
+    });
+
+    expect(mocks.researchEntityFindOne).toHaveBeenCalledWith({
+      slug: 'held-review-lab',
+      archived: { $ne: true },
+    });
+    expect(detail?.researchEntity.slug).toBe('held-review-lab');
+    expect(detail?.operatorPreview).toEqual({
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: ['missing_lead'],
+      studentVisibilitySuppressionReason: undefined,
+      withheldBy: ['visibility_tier', 'description_invariant'],
+    });
+  });
+
+  it('lets an operator preview a deceased-lead row that students get a 404 for', async () => {
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: '67d8928150621bcef434a1e3',
+        slug: 'memoriam-lab',
+        name: 'Memoriam Lab',
+        kind: 'lab',
+        entityType: 'RESEARCH_GROUP',
+        departments: ['Astronomy'],
+        researchAreas: [],
+        sourceUrls: ['https://astronomy.yale.edu/people/example-person-1932-2025'],
+        fullDescription:
+          'Example Person (1932 - 2025), Professor Emeritus of Astronomy, studied stellar structure and evolution.',
+        shortDescription: 'Example Person (1932 - 2025) studied stellar structure and evolution.',
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+
+    const detail = await getResearchGroupDetail('memoriam-lab', {
+      includeWithheldForOperator: true,
+    });
+
+    expect(detail?.operatorPreview?.withheldBy).toContain('deceased_lead');
+    expect(detail?.operatorPreview?.withheldBy).not.toContain('visibility_tier');
+  });
+
   it('uses only current non-archived members for public detail pages', () => {
     expect(currentResearchEntityMemberFilter('entity-1')).toEqual({
       researchEntityId: 'entity-1',

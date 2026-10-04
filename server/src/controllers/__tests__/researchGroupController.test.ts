@@ -61,6 +61,46 @@ describe('researchGroupController', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Research entity not found' });
   });
 
+  it('serves a visitor only the student-facing research detail', async () => {
+    mocks.getResearchGroupDetail.mockResolvedValue(null);
+    const req = { params: { slug: 'example-lab' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail).toHaveBeenCalledWith('example-lab', {
+      includeWithheldForOperator: false,
+    });
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('lets an admin preview a research detail withheld from students', async () => {
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
+    const detail = {
+      researchEntity: { slug: 'example-lab' },
+      operatorPreview: {
+        studentVisibilityTier: 'operator_review',
+        studentVisibilityReasons: [],
+        withheldBy: ['visibility_tier'],
+      },
+    };
+    mocks.getResearchGroupDetail.mockResolvedValue(detail);
+    const req = {
+      params: { slug: 'example-lab' },
+      user: { netId: 'admin123', userType: 'admin' },
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.hasAdminAuthorityForUser).toHaveBeenCalledWith(req.user);
+    expect(mocks.getResearchGroupDetail).toHaveBeenCalledWith('example-lab', {
+      includeWithheldForOperator: true,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(detail);
+  });
+
   it('rejects malformed public research detail slugs before service work', async () => {
     const req = { params: { slug: '../private-internal-slug' } } as any;
     const res = {

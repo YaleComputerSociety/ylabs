@@ -254,7 +254,12 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     return response.status(400).json({ error: 'Invalid slug' });
   }
 
-  const detail = await getResearchGroupDetail(slug);
+  const currentUser = request.user as
+    { netId?: string; netid?: string; userType?: string } | undefined;
+  const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
+  const detail = await getResearchGroupDetail(slug, {
+    includeWithheldForOperator: hasAdminAuthority,
+  });
   if (!detail) {
     const canonicalSlug = await resolveArchivedResearchEntityCanonicalSlug(slug);
     if (canonicalSlug) {

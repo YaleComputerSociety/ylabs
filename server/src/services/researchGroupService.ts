@@ -3531,7 +3531,22 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   return canonicalSlug;
 }
 
-export async function getResearchGroupDetail(slug: string): Promise<{
+export type ResearchDetailWithholdingCheck =
+  | 'visibility_tier'
+  | 'deceased_lead'
+  | 'description_invariant';
+
+export interface ResearchDetailOperatorPreview {
+  studentVisibilityTier: string;
+  studentVisibilityReasons: string[];
+  studentVisibilitySuppressionReason?: string;
+  withheldBy: ResearchDetailWithholdingCheck[];
+}
+
+export async function getResearchGroupDetail(
+  slug: string,
+  { includeWithheldForOperator = false }: { includeWithheldForOperator?: boolean } = {},
+): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
@@ -3544,6 +3559,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   similarResearchEntities: PublicResearchEntitySummaryDto[];
+  operatorPreview?: ResearchDetailOperatorPreview;
 } | null> {
   // The research-area splitter reads the controlled vocabulary synchronously, so it has to be
   // loaded before this builds a DTO (#3817). Warmed at the two service entry points every
@@ -3558,10 +3574,19 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const group = await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...(includeWithheldForOperator
+      ? {}
+      : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } }),
   }).lean();
   if (!group) return null;
-  if (researchEntityHasDeceasedLead(group as Record<string, any>)) return null;
+  const withheldBy: ResearchDetailWithholdingCheck[] = [];
+  if (!publicStudentVisibilityTiers.includes((group as any).studentVisibilityTier)) {
+    withheldBy.push('visibility_tier');
+  }
+  if (researchEntityHasDeceasedLead(group as Record<string, any>)) {
+    if (!includeWithheldForOperator) return null;
+    withheldBy.push('deceased_lead');
+  }
 
   const rosterEntries = await getResearchEntityRoster((group as any)._id);
   const canonicalMembers = canonicalPublicDetailMembers(
@@ -3593,7 +3618,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     entity: group as any,
     leadMemberNames,
   });
-  if (!publicDescription.invariant.pass) return null;
+  if (!publicDescription.invariant.pass) {
+    if (!includeWithheldForOperator) return null;
+    withheldBy.push('description_invariant');
+  }
   const publicGroup = publicDescription.entity;
   const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
     isFreshVerifiedOfficialRosterRow(member.row, new Date(), (group as any).rosterEnrichment),
@@ -3679,7 +3707,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
 
-  return addResearchEntityDetailAlias(
+  const detail = addResearchEntityDetailAlias(
     {
       group: {
         ...publicGroupForResponse,
@@ -3704,4 +3732,15 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
     { leadMemberNames },
   );
+  if (withheldBy.length === 0) return detail;
+  return {
+    ...detail,
+    operatorPreview: {
+      studentVisibilityTier: String((group as any).studentVisibilityTier ?? ''),
+      studentVisibilityReasons: ((group as any).studentVisibilityReasons ?? []) as string[],
+      studentVisibilitySuppressionReason:
+        (group as any).studentVisibilitySuppressionReason || undefined,
+      withheldBy,
+    },
+  };
 }
