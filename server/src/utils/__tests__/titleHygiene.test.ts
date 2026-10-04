@@ -280,3 +280,18 @@ describe('normalizeTitleWhitespace', () => {
     expect(normalizeTitleWhitespace(undefined)).toBe('');
   });
 });
+
+describe('a field label scraped in front of a title', () => {
+  it.each([
+    ['Title: Lecturer', 'Lecturer'],
+    ['Title: Senior Lecturer, Film and Media Studies', 'Senior Lecturer, Film and Media Studies'],
+    ['Position: Assistant Professor', 'Assistant Professor'],
+    ['Job Title: Research Scientist', 'Research Scientist'],
+  ])('is stripped from %s', (raw, title) => {
+    expect(sanitizePersonTitle(raw)).toBe(title);
+  });
+
+  it('leaves a title that only contains the word', () => {
+    expect(sanitizePersonTitle('Title IX Coordinator')).toBe('Title IX Coordinator');
+  });
+});

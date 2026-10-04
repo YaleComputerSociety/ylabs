@@ -234,11 +234,14 @@ export function isBioProseTitle(value: string | null | undefined): boolean {
 
 export const MAX_PERSON_TITLE_LENGTH = 140;
 
+const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
+
 /**
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
- * normalized title, or undefined when the candidate is navigation/menu chrome,
- * a site section/directory label (#1257), a site menu read with spaces between
+ * normalized title with any leading scraped field label ("Title:", "Position:",
+ * "Job Title:", "Rank:", "Appointment:") stripped (#4855), or undefined when
+ * the candidate is navigation/menu chrome, a site section/directory label (#1257), a site menu read with spaces between
  * its items (#4046: six or more capitalized single words, no role word or title
  * connective, five or more of them menu items; person titles only, because
  * entity names such as a lab or program name legitimately run on menu words),
@@ -249,7 +252,7 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
  * stale data (#708, #740, #1257).
  */
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
-  const text = normalizeTitleWhitespace(value);
+  const text = normalizeTitleWhitespace(value).replace(FIELD_LABEL_PREFIX, '');
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
