@@ -754,6 +754,18 @@ export function servedResearchEntityCardForRow(
   );
 }
 
+export function servedResearchEntityBrowseCardText(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[],
+): string {
+  return (
+    toPublicResearchEntityDto(researchEntityListServedSource(entity, leadMemberNames, false), {
+      forList: true,
+      leadMemberNames,
+    }).cardDescription?.text || ''
+  );
+}
+
 export function researchEntityListServedSource(
   hit: Record<string, any>,
   leadMemberNames: readonly string[] | undefined,

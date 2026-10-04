@@ -58,7 +58,8 @@ If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the
 ## The browse card rows (#4809)
 
 "Useful" counts are not a student's view of a card: on 2026-10-04 the panel read `fullDescriptionUseful` 3,505 of 3,505 and `shortDescriptionUseful` 3,504 of 3,505, while 914 of 3,543 browse cards ended mid-sentence in "…".
-The card a student scans is the served short description (the full description when there is none) run through the client's `cardSummary`, which ends at the last whole sentence within 200 characters and otherwise cuts at a word with "…".
+The card a student scans is the list DTO's `cardDescription.text` run through the client's `cardSummary`, which ends at the last whole sentence within 200 characters and otherwise cuts at a word with "…".
+`servedRowFacts` reads that text through `servedResearchEntityBrowseCardText` in `server/src/services/researchEntityDto.ts`, which builds the same list DTO the browse route serves, so a card the serve path withholds or replaces with the "Limited public description" state is counted as that, not as the stored short or the whole body.
 `servedRowFacts` runs `browseCardSummary` (`server/src/utils/browseCardSummary.ts`), a server copy of `cardSummary`, because a server module cannot import a client util; `contracts/browseCardSummary.cases.json` pins the two copies, and both suites read it.
 **Browse card cut mid-sentence** counts cards that end in "…".
 **Browse card of six words or fewer** counts cards too short to say what is studied, such as "Studies human behavior."

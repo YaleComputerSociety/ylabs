@@ -10,7 +10,10 @@ import {
   browseCardSummary,
 } from '../utils/browseCardSummary';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
-import { decideServedResearchEntityTopics } from './researchEntityDto';
+import {
+  decideServedResearchEntityTopics,
+  servedResearchEntityBrowseCardText,
+} from './researchEntityDto';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -74,7 +77,7 @@ export function servedRowFacts(
   const searchTopics = decideServedResearchEntityTopics(entity, leadMemberNames).served;
   const shortDescription = textValue(served.shortDescription);
   const areaSummary = textValue(buildResearchAreasCardSummary(searchTopics));
-  const browseCard = browseCardSummary(shortDescription || textValue(served.fullDescription));
+  const browseCard = browseCardSummary(servedResearchEntityBrowseCardText(entity, leadMemberNames));
 
   return {
     school: textValue(served.school),
