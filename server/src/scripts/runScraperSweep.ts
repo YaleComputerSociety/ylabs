@@ -595,7 +595,9 @@ export interface SweepSourceOrderingViolation {
 export function sweepSourceOrderingViolations(
   sources: ScraperSweepSource[] = RESEARCH_SWEEP_SOURCES,
 ): SweepSourceOrderingViolation[] {
-  const phaseIndex = new Map(orderedScraperSweepPhases(sources).map((phase, index) => [phase, index]));
+  const phaseIndex = new Map(
+    orderedScraperSweepPhases(sources).map((phase, index) => [phase, index]),
+  );
   const sourcePhaseIndex = new Map(
     sources.map((source) => [source.name, phaseIndex.get(source.phase) ?? -1]),
   );
