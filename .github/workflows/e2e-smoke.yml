@@ -95,6 +95,15 @@ jobs:
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
 
+      # The browser download and its apt dependencies take ~25 seconds and need
+      # nothing the steps below produce, so they run while the client builds, the
+      # index is seeded and the API starts (#4666). The exit code is written to a
+      # file because a later step cannot `wait` on another step's process, and
+      # the wait step below fails the job on any non-zero install.
+      - name: Start Playwright Chromium install
+        run: |
+          nohup bash -c 'npx playwright install --with-deps chromium > /tmp/playwright-install.log 2>&1; echo $? > /tmp/playwright-install.exit' > /dev/null 2>&1 &
+
       - name: Build client
         run: yarn build:client
 
@@ -132,7 +141,13 @@ jobs:
           exit 1
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in $(seq 1 300); do
+            [ -s /tmp/playwright-install.exit ] && break
+            sleep 1
+          done
+          cat /tmp/playwright-install.log || true
+          [ "$(cat /tmp/playwright-install.exit 2>/dev/null)" = 0 ]
 
       - name: Run student-journey smoke
         run: node scripts/e2e-student-journey-smoke.mjs

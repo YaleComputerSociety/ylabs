@@ -79,6 +79,7 @@
     "test": "yarn test:server && yarn test:client",
     "test:server": "yarn --cwd server test",
     "test:client": "yarn --cwd client test:ci",
+    "test:changed": "yarn --cwd server test --changed origin/beta --passWithNoTests && yarn --cwd client test:ci --changed origin/beta --passWithNoTests",
     "test:data-profiles": "node --test scripts/run-data-profile.test.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",
     "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/gh-identifier-guard.test.mjs",

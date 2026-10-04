@@ -1077,6 +1077,96 @@ test('test-and-build is an aggregate that fails unless every other CI job succee
   }
 });
 
+const CI_CHECK_COMMANDS = [
+  'yarn format:check',
+  'yarn lint',
+  'yarn --cwd server test:guards',
+  'npx tsc --noEmit -p server/tsconfig.json',
+  'npx tsc --noEmit -p client/tsconfig.json',
+  'yarn model-refactor:inventory:test-operator-tools',
+  'yarn test:data-profiles',
+  'yarn test:scripts',
+  'yarn --cwd client test:ci',
+  'yarn security:preflight',
+  'yarn security:audit:all-environments',
+  'yarn build',
+];
+
+const ciJobRuns = () =>
+  Object.entries(yaml.load(ciWorkflow).jobs).map(([jobId, job]) => [
+    jobId,
+    (job.steps ?? []).map((step) => step.run?.trim()).filter(Boolean),
+  ]);
+
+test('CI runs every check exactly once across its parallel jobs', () => {
+  const runs = ciJobRuns().flatMap(([, jobRuns]) => jobRuns);
+  for (const command of CI_CHECK_COMMANDS) {
+    assert.equal(
+      runs.filter((run) => run === command).length,
+      1,
+      `ci.yml must run ${command} in exactly one job, so splitting jobs for speed cannot drop or double a check (#4666)`,
+    );
+  }
+});
+
+test('CI runs lint and the client suite beside the server shards, not behind them', () => {
+  const jobOf = (command) => ciJobRuns().find(([, jobRuns]) => jobRuns.includes(command))?.[0];
+  const lintJob = jobOf('yarn lint');
+  const clientJob = jobOf('yarn --cwd client test:ci');
+  assert.ok(lintJob && clientJob);
+  assert.notEqual(
+    lintJob,
+    clientJob,
+    'a lint error must not wait for the client suite to report (#4666)',
+  );
+  const { jobs } = yaml.load(ciWorkflow);
+  for (const jobId of [lintJob, clientJob, 'server-tests']) {
+    assert.equal(jobs[jobId].needs, undefined, `${jobId} must start at once, beside the others`);
+  }
+});
+
+test('the smoke waits for the background Playwright install and fails when it failed', () => {
+  const steps = yaml.load(e2eSmokeWorkflow).jobs['student-journey-smoke'].steps;
+  const indexOf = (name) => steps.findIndex((step) => step.name === name);
+  const startAt = indexOf('Start Playwright Chromium install');
+  const waitAt = indexOf('Install Playwright Chromium');
+  const smokeAt = indexOf('Run student-journey smoke');
+  assert.ok(startAt >= 0 && startAt < waitAt && waitAt < smokeAt);
+  assert.ok(startAt > indexOf('Install dependencies from lockfiles'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-wait-'));
+  try {
+    const inTempDir = (script) => script.replaceAll('/tmp/playwright-install', `${dir}/install`);
+    const stubBin = path.join(dir, 'bin');
+    fs.mkdirSync(stubBin);
+    const handshakeExit = (npxExit) => {
+      fs.rmSync(`${dir}/install.exit`, { force: true });
+      fs.writeFileSync(
+        path.join(stubBin, 'npx'),
+        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\nexit ${npxExit}\n`,
+        { mode: 0o755 },
+      );
+      const env = { ...process.env, PATH: `${stubBin}:${process.env.PATH}` };
+      const start = spawnSync('bash', ['-e', '-c', inTempDir(steps[startAt].run)], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.equal(start.status, 0, 'the start step must return at once and never fail the job');
+      return spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
+        env,
+        encoding: 'utf8',
+      }).status;
+    };
+    assert.equal(handshakeExit(0), 0);
+    assert.notEqual(handshakeExit(1), 0, 'a failed browser install must fail the smoke job');
+    assert.deepEqual(fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n'), [
+      'npx playwright install --with-deps chromium',
+      'npx playwright install --with-deps chromium',
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 const everyWorkflowFile = () => {
   const directory = new URL('../.github/workflows/', import.meta.url);
   const files = fs

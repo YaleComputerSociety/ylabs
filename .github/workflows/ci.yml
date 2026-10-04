@@ -30,17 +30,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The jobs below run side by side, so the run takes as long as its slowest job
+  # rather than the sum of every step (#4666). One serial `checks` job was 5.9
+  # of the 6.1 minutes a sharded run took. Each job pays its own ~30 second
+  # install, which is far less than the steps it moves off the critical path.
+  # Changing which job holds a step also requires updating the job list in
+  # skills/finishing-work/SKILL.md, which readers follow to predict CI.
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Operator escape hatch for an advisory-registry outage. Absent or anything
-    # other than "1" leaves the audit failing closed, so the default stays strict
-    # and turning it on is a deliberate, revocable act recorded in repo settings
-    # rather than an --admin merge that bypasses every other check too.
-    # Set repository variable ALLOW_UNREACHABLE_ADVISORY_AUDIT=1 to use it, and
-    # unset it the moment the registry is healthy again.
-    env:
-      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: ${{ vars.ALLOW_UNREACHABLE_ADVISORY_AUDIT }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,21 +83,13 @@ jobs:
       # Errors block; warnings do not. `yarn lint` sets no warning ceiling, so
       # ESLint's unlimited default applies and only an error exits non-zero.
       # Deliberate (ylabs#3070): this gates the class that actually reached beta
-      # and cannot be defeated by warning drift. Placed ahead of the suites
-      # because a lint error costs seconds to report and the tests cost minutes.
+      # and cannot be defeated by warning drift. Kept in a job that runs no long
+      # suite, so a lint error reports in about two minutes, beside the tests
+      # rather than behind them.
       # Changing this order also requires updating the step list in
       # skills/finishing-work/SKILL.md, which readers follow to predict CI.
       - name: Run ESLint (errors block, warnings advisory)
         run: yarn lint
-
-      - name: Run server typecheck
-        run: npx tsc --noEmit -p server/tsconfig.json
-
-      # A step inside `checks` rather than a new job, because only jobs listed in
-      # `test-and-build`'s `needs` can block a merge, and that is the one context
-      # the rulesets require.
-      - name: Run client typecheck
-        run: npx tsc --noEmit -p client/tsconfig.json
 
       # Registration and inventory guards report in seconds, so a guard failure
       # surfaces here before the sharded server suite in `server-tests` finishes,
@@ -107,6 +97,46 @@ jobs:
       # updating the step list in skills/finishing-work/SKILL.md.
       - name: Run server guard tests
         run: yarn --cwd server test:guards
+
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Operator escape hatch for an advisory-registry outage. Absent or anything
+    # other than "1" leaves the audit failing closed, so the default stays strict
+    # and turning it on is a deliberate, revocable act recorded in repo settings
+    # rather than an --admin merge that bypasses every other check too.
+    # Set repository variable ALLOW_UNREACHABLE_ADVISORY_AUDIT=1 to use it, and
+    # unset it the moment the registry is healthy again.
+    env:
+      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: ${{ vars.ALLOW_UNREACHABLE_ADVISORY_AUDIT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Run server typecheck
+        run: npx tsc --noEmit -p server/tsconfig.json
+
+      - name: Run client typecheck
+        run: npx tsc --noEmit -p client/tsconfig.json
 
       - name: Run model inventory operator tests
         run: yarn model-refactor:inventory:test-operator-tools
@@ -116,9 +146,6 @@ jobs:
 
       - name: Run every scripts test suite
         run: yarn test:scripts
-
-      - name: Run client tests
-        run: yarn --cwd client test:ci
 
       - name: Run deploy security preflight
         run: yarn security:preflight
@@ -146,6 +173,35 @@ jobs:
 
       - name: Build server and client
         run: yarn build
+
+  client-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Run client tests
+        run: yarn --cwd client test:ci
 
   # The server suite is most of the wall time of one run (8.6 of 14.7 minutes on
   # one runner), and every pull request runs CI twice on its way in: once on the
@@ -193,7 +249,7 @@ jobs:
   # needed job fails, because a skipped required context reads as passing.
   # Adding a job above also requires adding it to `needs`.
   test-and-build:
-    needs: [checks, server-tests]
+    needs: [checks, typecheck-and-build, client-tests, server-tests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
