@@ -42,7 +42,6 @@ import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
   servedResearchEntityCardWithoutLastResort,
   servedResearchEntityCopy,
-  servesWrittenBody,
 } from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
@@ -332,7 +331,6 @@ function derivePublicDescriptionRepresentation({
       researchAreas: sanitizedSourceEntity.researchAreas,
       entityType: resolvedEntityType,
       kind: sanitizedSourceEntity.kind,
-      withholdTopicCard: servesWrittenBody(sanitizedSourceEntity),
     }),
   };
   // The card the gate JUDGES, as opposed to the one `entity` carries for the DTO to

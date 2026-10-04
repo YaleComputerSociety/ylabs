@@ -33,7 +33,6 @@ import {
   mapResearchGroupKindToEntityType,
 } from '../models/researchAccessTypes';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../scrapers/confidenceResolver';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
@@ -335,20 +334,10 @@ export function servedShortDescriptionFallback(
     researchAreas: served.researchAreas,
     entityType,
     kind: served.kind,
-    withholdTopicCard: servesWrittenBody(served),
   });
   if (outcome.card) return outcome.card;
   if (outcome.topicCardWithheld) return '';
   return servedShortDescriptionString(served.fullDescription);
-}
-
-/**
- * A written body's card is grounded in that body or absent, never the topic chips
- * restated (#4788), so a written-body row with no such card is held on
- * `missing_card_description` rather than served on a chip summary.
- */
-export function servesWrittenBody(served: Record<string, any>): boolean {
-  return served.fieldProvenance?.fullDescription?.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME;
 }
 
 function servedResearchEntityType(
@@ -384,7 +373,6 @@ export function servedResearchEntityCardWithoutLastResort(
         researchAreas: served.researchAreas,
         entityType: resolvedEntityType,
         kind: served.kind,
-        withholdTopicCard: servesWrittenBody(served),
       }).card,
   );
 }

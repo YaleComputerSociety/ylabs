@@ -336,7 +336,6 @@ export interface ResolveServedShortDescriptionInput {
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
   kind?: unknown;
-  withholdTopicCard?: boolean;
 }
 
 /**
@@ -511,9 +510,7 @@ export function resolveServedShortDescriptionOutcome(
   // summaries agree there and nothing is withheld.
   const groundedAreas = researchAreasGroundedInFullDescription(researchAreas, full);
   const groundedSummary = buildResearchAreasCardSummary(groundedAreas);
-  if (groundedSummary && !input.withholdTopicCard) {
-    return { card: groundedSummary, topicCardWithheld: false };
-  }
+  if (groundedSummary) return { card: groundedSummary, topicCardWithheld: false };
   // Nothing was refused when the stored-order summary is empty too: the row has no
   // carding chips at all, and the caller's own fallback is still the right answer.
   const storedOrderSummary = buildResearchAreasCardSummary(researchAreas);

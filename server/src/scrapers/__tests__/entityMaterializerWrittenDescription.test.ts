@@ -275,6 +275,44 @@ describe('a written body never serves a chip echo or itself as its card (#4788 f
     expect(result.unset.shortDescription).toBe('');
   });
 
+  it('spends no synthesis on a second pass over an unchanged written body with no card', async () => {
+    let calls = 0;
+    const synthesize = async () => {
+      calls += 1;
+      return '';
+    };
+    const first = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: CHIP_ECHO, synthesize }),
+    );
+    expect(first.unset.shortDescription).toBe('');
+    calls = 0;
+    const second = await projectFromLog(
+      'researchEntity',
+      rowWith({ body: LONG_ONE_SENTENCE_BODY, storedCard: '', synthesize }),
+    );
+    expect(calls).toBe(0);
+    expect(second.set.shortDescription).toBeUndefined();
+  });
+
+  it('synthesizes when the written body changed since the last pass', async () => {
+    let calls = 0;
+    const row = rowWith({
+      body: LONG_ONE_SENTENCE_BODY,
+      storedCard: '',
+      synthesize: async () => {
+        calls += 1;
+        return SYNTHESIZED_CARD;
+      },
+    });
+    const result = await projectFromLog('researchEntity', {
+      ...row,
+      entityDoc: { ...row.entityDoc, fullDescription: COPIED_BODY },
+    });
+    expect(calls).toBe(1);
+    expect(result.set.shortDescription).toBe(SYNTHESIZED_CARD);
+  });
+
   it('keeps a stored card already grounded in the written body without synthesizing', async () => {
     let calls = 0;
     const result = await projectFromLog(
