@@ -154,19 +154,32 @@ const textValue = (value: unknown): string =>
 
 const INITIAL_DOT_TOKEN = '<initialdot>';
 
-const sentenceList = (value: string): string[] => {
-  const protectedText = textValue(value)
+const protectAbbreviationDots = (value: string): string =>
+  textValue(value)
     .replace(/(\d)\.(?=\d)/g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\bU\.S\./g, `U${INITIAL_DOT_TOKEN}S${INITIAL_DOT_TOKEN}`)
     .replace(/\bPh\.D\./g, `Ph${INITIAL_DOT_TOKEN}D${INITIAL_DOT_TOKEN}`)
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms|St)\./g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\b([A-Z])\.(?=\s+[A-Z][A-Za-z.'-]+)/g, `$1${INITIAL_DOT_TOKEN}`);
-  return (
-    protectedText
-      .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
-      ?.map((sentence) => sentence.split(INITIAL_DOT_TOKEN).join('.').trim()) || []
+
+const splitProtectedSentences = (protectedText: string): string[] =>
+  protectedText
+    .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
+    ?.map((sentence) => sentence.split(INITIAL_DOT_TOKEN).join('.').trim()) || [];
+
+const sentenceList = (value: string): string[] =>
+  splitProtectedSentences(protectAbbreviationDots(value));
+
+// Scoped to the program card until the wider splitter is measured: on Development it
+// re-splits 189 of 8033 research descriptions ("C. elegans", "D.Phil."), which feed
+// stored-description guards as well as cards (#4586).
+const programCardSentenceList = (value: string): string[] =>
+  splitProtectedSentences(
+    protectAbbreviationDots(value).replace(
+      /\b([A-Z])\.(?=[A-Za-z]|\s+[^\sA-Z])/g,
+      `$1${INITIAL_DOT_TOKEN}`,
+    ),
   );
-};
 
 const wordCount = (value: string): number => textValue(value).split(/\s+/).filter(Boolean).length;
 
@@ -2116,7 +2129,7 @@ export function programCardShortDescriptionQuality(
 export function deriveProgramCardShortDescription(fullDescription: unknown): string {
   const full = textValue(fullDescription);
   if (!full) return '';
-  const sentences = sentenceList(full);
+  const sentences = programCardSentenceList(full);
   if (sentences.length === 0) return '';
   if (sentences.length === 1) {
     const candidate = normalizeProgramCardCandidateSentence(full);

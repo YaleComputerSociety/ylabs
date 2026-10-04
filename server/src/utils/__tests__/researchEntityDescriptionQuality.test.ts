@@ -1840,6 +1840,22 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
     expect(deriveProgramCardShortDescription(full)).toBe(full);
   });
 
+  it('never starts a card at a donor initial followed by a lowercase word (#4586)', () => {
+    const full =
+      'The Fixture Program invites applications for the Alma Q. and Bram Z. Fixture Student Research Grants. Grants support undergraduate or graduate students pursuing focused research on any aspect of the field.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'Grants support undergraduate or graduate students pursuing focused research on any aspect of the field.',
+    );
+  });
+
+  it('keeps a degree abbreviation inside its sentence (#4586)', () => {
+    const full =
+      'The Fixture Fellowship, established by a donor, B.A. ‘64, M.Arch ‘69, supports undergraduate travel and research in architecture. The fellowship is open to all juniors in the major.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'The Fixture Fellowship, established by a donor, B.A. ‘64, M.Arch ‘69, supports undergraduate travel and research in architecture.',
+    );
+  });
+
   it('takes the first self-contained sentence of a multi-sentence program description', () => {
     const full =
       'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school. Richter Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible.';
