@@ -644,7 +644,7 @@ export function extractDescriptionPageProse(
   const embedded = extractLabHomepageDescription(page.html, { kind });
   const prose = embedded?.description
     ? { fullDescription: embedded.description, shortDescription: embedded.shortDescription || '' }
-    : extractOfficialResearchDescription(page.html, { kind });
+    : extractOfficialResearchDescription(page.html, { kind, pageUrl: page.url });
   if (!prose?.fullDescription) return null;
   return {
     url: page.url,
