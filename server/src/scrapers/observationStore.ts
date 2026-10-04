@@ -942,11 +942,32 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
   researchGroupMember: new Set(['profileUrl']),
 };
 
-export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
+/**
+ * Latest-wins fields that are one value per run only for one source. The description lane
+ * asserts at most one self-declared name per row per read, so a re-read naming the row
+ * differently must replace its earlier name; other sources emit several `name` rows per
+ * run, which is why the global list cannot hold it. A read that names nothing inserts
+ * nothing, so it leaves the earlier name live (#2647, #3925).
+ */
+export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  'lab-microsite-description-llm': new Set(['name', 'displayName']),
+};
+
+export function usesLatestWinsFingerprint(input: {
+  entityType: string;
+  field: string;
+  sourceName?: string;
+}): boolean {
   return (
     input.entityType === 'fellowship' ||
     LATEST_WINS_FINGERPRINT_FIELDS.has(input.field) ||
-    Boolean(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE[input.entityType]?.has(input.field))
+    Boolean(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE[input.entityType]?.has(input.field)) ||
+    Boolean(
+      input.sourceName &&
+      LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE[input.sourceName]?.has(input.field),
+    )
   );
 }
 
@@ -1021,7 +1042,14 @@ export function collapseLatestWins<
 >(observations: T[], entityType: string, memberOf?: (observation: T) => string | undefined): T[] {
   const indicesByKey = new Map<string, number[]>();
   observations.forEach((observation, index) => {
-    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return;
+    if (
+      !usesLatestWinsFingerprint({
+        entityType,
+        field: observation.field,
+        sourceName: observation.sourceName,
+      })
+    )
+      return;
     const key = JSON.stringify([observation.sourceName, observation.field]);
     const group = indicesByKey.get(key);
     if (group) group.push(index);
@@ -1082,7 +1110,14 @@ export function collapseLatestWins<
 
   return observations
     .filter((observation, index) => {
-      if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
+      if (
+        !usesLatestWinsFingerprint({
+          entityType,
+          field: observation.field,
+          sourceName: observation.sourceName,
+        })
+      )
+        return true;
       const key = JSON.stringify([observation.sourceName, observation.field]);
       return winningIndexByKey.get(key) === index;
     })

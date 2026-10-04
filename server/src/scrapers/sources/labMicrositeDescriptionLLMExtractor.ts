@@ -51,11 +51,18 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
 import {
+  evidenceUrlCiters,
   institutionalEvidenceHosts,
   isInstitutionSectionLandingUrl,
   isSharedEvidenceUrl,
+  normalizeEvidenceUrl,
   sharedEvidenceUrls,
+  type EvidenceCiter,
 } from '../utils/sharedEvidenceUrls';
+import {
+  OWNERSHIP_GUARDED_ENTITY_TYPE,
+  refusesDescriptionOnSharedPage,
+} from '../descriptionSourceOwnership';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import {
   describesResearchHome,
@@ -154,6 +161,8 @@ export interface CandidateDescriptionLab {
   schools?: string[];
   departments?: string[];
   fullDescription?: string;
+  /** The page the stored `fullDescription` is credited to, if any. */
+  fullDescriptionSourceUrl?: string;
   sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
@@ -171,6 +180,7 @@ export interface CandidateDescriptionLabDoc {
   school?: string;
   schools?: string[];
   departments?: string[];
+  fieldProvenance?: { fullDescription?: { sourceUrl?: unknown } };
   sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
@@ -222,6 +232,25 @@ export interface PageAttributionIdentityCorpus {
    */
   sharedUrls?: ReadonlySet<string>;
   institutionalHosts?: ReadonlySet<string>;
+  /**
+   * The rows citing each normalized URL. The description is held to the engine's
+   * ownership bar, which `sharedUrls` is stricter than (#3740).
+   */
+  evidenceCiters?: ReadonlyMap<string, readonly EvidenceCiter[]>;
+}
+
+const EMPTY_CITERS: ReadonlyMap<string, readonly EvidenceCiter[]> = new Map();
+
+export function foreignEvidenceCiterNames(
+  url: string,
+  ownEntityId: string | undefined,
+  citers: ReadonlyMap<string, readonly EvidenceCiter[]>,
+): unknown[] {
+  const normalized = normalizeEvidenceUrl(url);
+  if (!normalized) return [];
+  return (citers.get(normalized) ?? [])
+    .filter((citer) => citer.id !== ownEntityId)
+    .map((citer) => citer.name);
 }
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
@@ -242,7 +271,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     loadResearchEntityLeadPersonNames(),
     ResearchEntity.find(
       { archived: { $ne: true } },
-      { websiteUrl: 1, website: 1, sourceUrls: 1 },
+      { name: 1, displayName: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
     ).lean() as Promise<Array<Record<string, unknown>>>,
   ]);
   return {
@@ -250,6 +279,7 @@ async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCor
     leadPersonNameByEntityId,
     sharedUrls: sharedEvidenceUrls(evidenceRows),
     institutionalHosts: institutionalEvidenceHosts(evidenceRows),
+    evidenceCiters: evidenceUrlCiters(evidenceRows),
   };
 }
 
@@ -786,6 +816,8 @@ export function candidateDescriptionLabsFromDocs(
       departments: doc.departments,
       fullDescription:
         textValue((doc as { fullDescription?: unknown }).fullDescription) || undefined,
+      fullDescriptionSourceUrl:
+        textValue(doc.fieldProvenance?.fullDescription?.sourceUrl) || undefined,
       sourceLinkHealth: doc.sourceLinkHealth,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
@@ -970,6 +1002,19 @@ export function opensOnNavigationChrome(value: unknown): boolean {
   const boundary =
     terminator === -1 ? NAVIGATION_LEAD_CHARS : Math.min(terminator, NAVIGATION_LEAD_CHARS);
   return match.index < boundary;
+}
+
+/**
+ * A medical school profile template's own widgets, which a title-only profile flattens
+ * into its only text: a MeSH chip run under "Medical Research Interests", an ORCID, and
+ * the "Research at a Glance" co-author panel. Never a description of anyone (#4048).
+ */
+const PROFILE_TEMPLATE_CHROME =
+  /^(?:(?:research\s+)?overview\s+)?medical\s+research\s+interests\b|\b(?:research\s+at\s+a\s+glance|yale\s+co-authors|frequent\s+collaborators\s+of)\b/i;
+
+export function isProfileTemplateChrome(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return Boolean(text) && PROFILE_TEMPLATE_CHROME.test(text);
 }
 
 const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
@@ -1234,6 +1279,7 @@ export type DescriptionGuardRefusal =
   | 'bibliography_entry'
   | 'interest_chip_list'
   | 'navigation_chrome'
+  | 'profile_template_chrome'
   | 'another_organization_body'
   | 'unopposed_crawled_prose';
 
@@ -1253,6 +1299,7 @@ function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuar
   if (isBibliographyCitationEntryText(fullDescription)) return 'bibliography_entry';
   if (isInterestChipListText(fullDescription)) return 'interest_chip_list';
   if (opensOnNavigationChrome(fullDescription)) return 'navigation_chrome';
+  if (isProfileTemplateChrome(fullDescription)) return 'profile_template_chrome';
   return null;
 }
 
@@ -1298,9 +1345,23 @@ export function describeDescriptionExtraction(
   // describes both, and `candidateUrlsForDoc` has already name matched it to this
   // entity. What the refusal is left with is the institutional shape: a school landing
   // page, a section index, a programme page, a shared core facility.
-  if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
+  // Held to the ingest bar in `descriptionSourceOwnership`, which a second citer does
+  // not meet; refusing earlier withheld bodies the store admits (#3740).
+  if (
+    refusesDescriptionOnSharedPage(
+      {
+        entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+        field: 'fullDescription',
+        sourceUrl: context.sourceUrl,
+        ownName: context.entityName,
+      },
+      context.descriptionSourceForeignCiterNames ?? [],
+    )
+  ) {
     return refusedBy('shared_evidence_url');
   }
+  const pageNameIsShared =
+    context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl);
   if (context.institutionLandingUrl === true) return refusedBy('institution_landing_url');
   const labName = usefulLabName(extraction.name);
   const pageAttribution = classifyExtractedPageAttribution(labName, context);
@@ -1353,7 +1414,7 @@ export function describeDescriptionExtraction(
   const methods = uniqueStrings(extraction.methods || []).slice(0, 12);
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
 
-  if (labName && pageAttribution === 'THIS_ENTITY') {
+  if (labName && pageAttribution === 'THIS_ENTITY' && !pageNameIsShared) {
     observations.push(...labNameObservations(labName, base, context));
   }
   return { observations };
@@ -1476,6 +1537,13 @@ export interface ExtractedPageIdentityContext {
    * `sharedEvidenceUrls` over the corpus before any page is fetched.
    */
   sharedEvidenceUrl?: boolean;
+  /**
+   * The names of the rows other than this one that cite `sourceUrl`, judged by
+   * `refusesDescriptionOnSharedPage` with `entityName`; `sharedEvidenceUrl` still
+   * governs the name a page may assert (#3740).
+   */
+  descriptionSourceForeignCiterNames?: readonly unknown[];
+  entityName?: unknown;
   /**
    * Whether `sourceUrl` is an institutional host's own whole-organisation landing
    * page. Distinct from `sharedEvidenceUrl` because the lane reaches such a page by
@@ -1718,6 +1786,7 @@ export async function defaultLabFinder(
       schools: 1,
       departments: 1,
       fullDescription: 1,
+      'fieldProvenance.fullDescription.sourceUrl': 1,
       sourceLinkHealth: 1,
     },
   ).lean();
@@ -2159,25 +2228,52 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // page names no groundable methods, fall back to deriving them from the
         // entity's already-stored description so research homes without method
         // language on the page still surface techniques.
-        let methods = citedPageExtraction
+        const methods = citedPageExtraction
           ? groundMethods(citedPageExtraction.methods, pageText)
           : [];
-        if (methods.length === 0 && storedDescription.length >= 120) {
-          const descExtraction = await this.callLLM({
-            model: this.model,
-            apiKey: this.apiKey as string,
-            labName: lab.name,
-            sourceUrl: page.url,
-            pageText: storedDescription,
-          });
-          methods = groundMethods(descExtraction.methods, storedDescription);
-        }
+        // Methods read from the stored description are credited to the page that
+        // description is credited to, never to the page just fetched, which on a
+        // title-only profile holds none of them (#4048).
+        const storedDescriptionSourceUrl = textValue(lab.fullDescriptionSourceUrl);
+        const storedDescriptionMethods =
+          methods.length === 0 && storedDescription.length >= 120 && storedDescriptionSourceUrl
+            ? groundMethods(
+                (
+                  await this.callLLM({
+                    model: this.model,
+                    apiKey: this.apiKey as string,
+                    labName: lab.name,
+                    sourceUrl: storedDescriptionSourceUrl,
+                    pageText: storedDescription,
+                  })
+                ).methods,
+                storedDescription,
+              )
+            : [];
+        const storedDescriptionMethodsObservation: ObservationInput | null =
+          storedDescriptionMethods.length > 0
+            ? {
+                entityType: 'researchEntity',
+                entityId: serializedDocumentId(lab._id),
+                entityKey: lab.slug,
+                sourceUrl: storedDescriptionSourceUrl,
+                confidenceOverride: /\/profile\//i.test(storedDescriptionSourceUrl) ? 0.55 : 0.82,
+                field: 'methods',
+                value: storedDescriptionMethods,
+              }
+            : null;
 
         const identity = {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
           sharedEvidenceUrl: isSharedEvidenceUrl(page.url, identityCorpus.sharedUrls ?? EMPTY_SET),
+          descriptionSourceForeignCiterNames: foreignEvidenceCiterNames(
+            page.url,
+            serializedDocumentId(lab._id),
+            identityCorpus.evidenceCiters ?? EMPTY_CITERS,
+          ),
+          entityName: lab.name,
           institutionLandingUrl: isInstitutionSectionLandingUrl(
             page.url,
             identityCorpus.institutionalHosts ?? EMPTY_SET,
@@ -2269,16 +2365,19 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             slotAttestation,
           );
           const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
-          if (methods.length > 0 && !foreignLabPage) {
-            const methodsObservation: ObservationInput = {
-              entityType: 'researchEntity',
-              entityId: identity.entityId,
-              entityKey: identity.entityKey,
-              sourceUrl: identity.sourceUrl,
-              confidenceOverride: /\/profile\//i.test(page.url) ? 0.55 : 0.82,
-              field: 'methods',
-              value: methods,
-            };
+          const methodsObservation: ObservationInput | null =
+            methods.length > 0
+              ? {
+                  entityType: 'researchEntity',
+                  entityId: identity.entityId,
+                  entityKey: identity.entityKey,
+                  sourceUrl: identity.sourceUrl,
+                  confidenceOverride: /\/profile\//i.test(page.url) ? 0.55 : 0.82,
+                  field: 'methods',
+                  value: methods,
+                }
+              : storedDescriptionMethodsObservation;
+          if (methodsObservation && !foreignLabPage) {
             await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
             observationCount += 1 + nameObservations.length;
             entitiesObserved += 1;
@@ -2295,6 +2394,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const { observations: withCard, cardCallFailed } = await this.withSynthesizedCard([
           ...observations,
           ...pageStatedNameObservations,
+          ...(storedDescriptionMethodsObservation ? [storedDescriptionMethodsObservation] : []),
         ]);
         // This lane's OWN last description, not `lab.fullDescription`: the materialized field can
         // hold another lane's winning prose, and the bound asks whether re-reading produced the
