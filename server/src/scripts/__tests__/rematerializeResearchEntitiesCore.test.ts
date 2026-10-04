@@ -49,6 +49,16 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     expect(args.confirmRematerialize).toBe(true);
   });
 
+  it('opts into card synthesis for cut cards only when asked', () => {
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab']).resynthesizeCutCards,
+    ).toBe(false);
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--resynthesize-cut-cards'])
+        .resynthesizeCutCards,
+    ).toBe(true);
+  });
+
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
       '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',
@@ -260,6 +270,7 @@ describe('assertRematerializeApplyAllowed', () => {
     foreignContact: false,
     unbackedResearchAreas: false,
     accessSignals: false,
+    resynthesizeCutCards: false,
   };
 
   it('is a no-op for dry-run', () => {

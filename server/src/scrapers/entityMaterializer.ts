@@ -56,6 +56,7 @@ import {
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
+  cardLineFitsBrowseCard,
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
   isUngroundedSynthesizedCard,
@@ -396,6 +397,7 @@ interface MaterializeOptions {
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  resynthesizeCutCards?: boolean;
   writeOnlyFields?: string[];
   /**
    * Keep the field-less post-projection steps (inferred lead edges, access-signal
@@ -539,6 +541,12 @@ export interface MaterializedShortDescriptionInput {
    * `resolveGroundedCardDescription` falls back to.
    */
   reconsiderCurrentShortDescription?: boolean;
+  /**
+   * Lets a stored card that clears the bar but is cut on the browse card reach card
+   * synthesis. Off by default because a synthesis that yields no fitting line writes
+   * nothing, so every routine materialize of that row would repeat the same LLM calls.
+   */
+  resynthesizeCutCards?: boolean;
   researchAreas?: unknown;
   manuallyLocked?: boolean;
   isProgramLike?: boolean;
@@ -631,12 +639,17 @@ export async function resolveMaterializedShortDescription(
     !isBareResearchAreasFallback &&
     Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
+  const currentFitsBrowseCard = cardLineFitsBrowseCard(current);
+  if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
+    return null;
+  }
+  const currentIsCutCard = currentClearsCardBar && !currentFitsBrowseCard;
+  const reconsideredOnlyBecauseCut = currentIsCutCard && !input.reconsiderCurrentShortDescription;
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
     isProgramLike: input.isProgramLike,
-    synthesize: input.synthesize,
+    synthesize: currentIsCutCard && !input.resynthesizeCutCards ? undefined : input.synthesize,
     refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
   });
   if (
@@ -653,6 +666,9 @@ export async function resolveMaterializedShortDescription(
   const groundedIsBareResearchAreasEcho =
     !!researchAreasCardSummary && grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
+  // A current card reconsidered only because the browse card cuts it is replaced
+  // only by a line that shows whole; trading one cut line for another is churn.
+  if (reconsideredOnlyBecauseCut && !cardLineFitsBrowseCard(grounded)) return null;
   // Reconsidering is triggered by a body that restates the current card, so a replacement
   // that restates the body too is no upgrade: a single-sentence body derives itself as its
   // card, and served beside its own body that card reads as empty and refuses the row (#3866).
@@ -6490,6 +6506,7 @@ export interface ProjectFromLogInput {
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  resynthesizeCutCards?: boolean;
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
   readRowUnderOwnIdentity?: boolean;
@@ -7848,6 +7865,7 @@ export async function projectFromLog(
           ? writtenCard.currentCard
           : (set.shortDescription ?? entityDoc?.shortDescription),
       reconsiderCurrentShortDescription: fullRestatesCurrentCard,
+      resynthesizeCutCards: input.resynthesizeCutCards,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -9424,6 +9442,7 @@ export async function materializeEntity(
     mergedInRows,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
+    resynthesizeCutCards: options.resynthesizeCutCards,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
     readRowUnderOwnIdentity,

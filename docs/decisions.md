@@ -5,6 +5,23 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Card Line Is Produced To Fit The Browse Card (#4809)
+
+The 2026-09-22 entry below stopped the serve path from deleting a card line past 200 characters, and kept it whole instead.
+Kept whole, a one-sentence line still reaches the browse card, which ends at the last whole sentence within 200 characters and otherwise cuts mid-sentence with "…".
+Measured on Development on 2026-10-04, after #4788's written bodies landed, 1,649 of 3,367 served browse cards were cut that way, almost all of them fluent "Studies ... using ..." sentences of 230 to 270 characters written to the card prompt's "under 30 words".
+
+Resolution: every card producer prefers a line that shows whole, and a long line is the last resort rather than the first answer.
+`resolveGroundedCardDescription` returns a derived line only when it fits, then a synthesized line that fits, and only then the long derived or synthesized line, which still outranks the topic summary.
+Card synthesis asks for at most 190 characters and retries once with its own long answer to shorten it, keeping the long grounded line when the retry does not fit.
+`resolveMaterializedShortDescription` reconsiders a stored card the browse card cuts and replaces it only with a line that fits, so one long line is never traded for another.
+
+The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
+`lab-microsite-description-llm` keys its content hash on that file's hash, so editing it would have invalidated every stored hash for the lane and re-run its LLM extraction over every row on the next sweep, about 2,500 calls, to change only the card.
+The stored cards change through a targeted rematerialize of the cut rows instead.
+A routine materialize reconsiders a cut card with the deterministic derivation only, because a synthesis that yields no fitting line writes nothing and would repeat its LLM calls on every later materialize of the row.
+Card synthesis for a cut card is opt-in through `--resynthesize-cut-cards`: `yarn --cwd server research-entity:rematerialize --slugs=<rows whose browse card is cut> --resynthesize-cut-cards --apply --confirm-rematerialize`.
+
 ## 2026-10-04: Evidence Is Input To The Description, And One Writer Writes Every Description (#4788)
 
 A served description answers one question for a student: what does this lab or researcher study.

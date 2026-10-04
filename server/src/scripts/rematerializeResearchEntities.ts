@@ -1,3 +1,11 @@
+/**
+ * Re-runs the materializer over selected research entities and reports what changed.
+ *
+ * `--resynthesize-cut-cards` lets a stored card that the browse card cuts mid-sentence
+ * reach card synthesis. A routine materialize reconsiders such a card with the
+ * deterministic derivation only, so run this flag over the rows whose browse card is
+ * cut to have their cards rewritten to fit (#4809).
+ */
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -92,6 +100,7 @@ async function processSlug(
   includeArchived: boolean,
   onlyReconcileFieldProvenance: boolean,
   foreignContact = false,
+  resynthesizeCutCards = false,
 ): Promise<RematerializeEntityReport> {
   const writeOnlyFields = foreignContact ? [...RESEARCH_ENTITY_CONTACT_FIELDS] : onlyFields;
   const comparedFields = rematerializeComparedFields(writeOnlyFields);
@@ -128,6 +137,7 @@ async function processSlug(
       dryRun: !apply,
       ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
+      ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
     },
   );
 
@@ -408,6 +418,7 @@ async function main() {
           args.includeArchived,
           args.unbackedProvenance,
           args.foreignContact,
+          args.resynthesizeCutCards,
         ),
   );
   const failed = entities.filter((entity) => entity.error);
