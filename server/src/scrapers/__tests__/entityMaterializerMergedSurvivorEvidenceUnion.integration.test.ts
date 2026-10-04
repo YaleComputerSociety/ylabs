@@ -377,6 +377,36 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       expect(stored?.sourceUrls).not.toContain('https://example.yale.edu/people/faculty/');
     });
 
+    it('leaves out the lead verified profile when the survivor records it as dead', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await ResearchEntity.updateOne(
+        { _id: survivor._id },
+        {
+          $set: {
+            sourceLinkHealth: [
+              {
+                url: 'https://example.yale.edu/profile/example-lead/',
+                healthStatus: 'UNAVAILABLE',
+                httpStatusCode: 404,
+              },
+            ],
+          },
+        },
+      );
+      await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);
+      await seedObservation('dept-example-lead', 'sourceUrls', [
+        'https://example.yale.edu/profile/example-lead/',
+      ]);
+      await seedLead(survivor._id, 'https://example.yale.edu/profile/example-lead');
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ sourceUrls?: string[] }>();
+
+      expect(stored?.sourceUrls ?? []).not.toContain(
+        'https://example.yale.edu/profile/example-lead/',
+      );
+    });
+
     it('leaves out a merged-in profile that is not the lead verified one', async () => {
       const survivor = await seedMerge('dept-example-lead');
       await seedObservation('example-lead-lab', 'sourceUrls', ['https://example.yale.edu/lab/']);

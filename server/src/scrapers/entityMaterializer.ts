@@ -7528,6 +7528,11 @@ export async function projectFromLog(
         Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : currentSourceUrls;
       const missingLeadProfiles = mergedInLeadProfileUrls.filter(
         (url) =>
+          !isKnownDeadSourceUrl(entityDoc?.sourceLinkHealth, url) &&
+          ![
+            ...citedNow(),
+            ...(Array.isArray(entityDoc?.sourceUrls) ? (entityDoc?.sourceUrls as unknown[]) : []),
+          ].some((cited) => isRetiredProfilePathForSamePerson(url, cited)) &&
           !citedNow().some(
             (cited) =>
               typeof cited === 'string' &&
