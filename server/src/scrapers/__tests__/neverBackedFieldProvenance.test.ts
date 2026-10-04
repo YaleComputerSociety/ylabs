@@ -29,6 +29,22 @@ const plan = (
 };
 
 describe('planNeverBackedFieldProvenanceRetirement', () => {
+  it('retires a grant-lane entry for a field grants may not assert, without asking whether it observed it', async () => {
+    const grant = { sourceName: 'nih-reporter', observationId: 'synthetic-observation' };
+    const { sourceObservedField, result } = plan(
+      { name: grant, slug: grant, recentGrants: grant },
+      {},
+      true,
+    );
+    expect(await result).toEqual(['name', 'slug']);
+    expect(sourceObservedField).not.toHaveBeenCalled();
+  });
+
+  it('keeps a locked grant-lane entry for the lock release path', async () => {
+    const grant = { sourceName: 'nsf-award-search', observationId: 'synthetic-observation' };
+    expect(await plan({ name: grant }, { lockedFields: ['name'] }).result).toEqual([]);
+  });
+
   it('retires only an entry whose lane never observed the field on this row', async () => {
     expect(await plan({ entityType: lane }).result).toEqual(['entityType']);
     expect(await plan({ entityType: lane }, {}, true).result).toEqual([]);
@@ -125,6 +141,19 @@ describe('planUnrecordedProvenanceObservationRelink (#3788)', () => {
       }),
     };
   };
+
+  it('never relinks a grant-lane entry to the grant observation for a field grants may not assert', async () => {
+    const { liveObservations, result } = relink({
+      stored: {
+        _id: 'synthetic-id',
+        slug: 'synthetic-row',
+        departments: ['Synthetic Department'],
+        fieldProvenance: { departments: { ...entry, sourceName: 'nih-reporter' } },
+      },
+    });
+    expect(await result).toEqual({});
+    expect(liveObservations).not.toHaveBeenCalled();
+  });
 
   it('cites the one live observation of the lane that states the stored value, in schema key order', async () => {
     const { liveObservations, result } = relink();

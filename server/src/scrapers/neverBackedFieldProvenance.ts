@@ -8,6 +8,22 @@ import {
   fieldProvenanceEntries,
   fieldProvenanceEntryNamesALaneWithoutEvidence,
 } from '../models/fieldProvenanceBacking';
+import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
+
+export function fieldProvenanceEntryNamesALaneThatCannotAssertTheField(
+  field: string,
+  entry: unknown,
+): boolean {
+  const sourceName = (entry as { sourceName?: unknown } | null)?.sourceName;
+  return isGrantLaneObservationOutsideEnrichment({ sourceName, field });
+}
+
+export function fieldProvenanceEntryIsUnbacked(field: string, entry: unknown): boolean {
+  return (
+    fieldProvenanceEntryNamesALaneWithoutEvidence(entry) ||
+    fieldProvenanceEntryNamesALaneThatCannotAssertTheField(field, entry)
+  );
+}
 
 export interface ProvenanceRowEvidenceIdentity {
   entityKeys: string[];
@@ -75,6 +91,10 @@ export async function planNeverBackedFieldProvenanceRetirement(input: {
     if (path in input.set || path in input.unset) continue;
     if (input.lockedFields.includes(field)) continue;
     if (input.scopedFields && !input.scopedFields.includes(field)) continue;
+    if (fieldProvenanceEntryNamesALaneThatCannotAssertTheField(field, entry)) {
+      retired.push(field);
+      continue;
+    }
     if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
     const sourceName = textValue((entry as { sourceName?: unknown }).sourceName);
     if (await lookup({ ...identity, field, sourceName })) continue;
@@ -184,6 +204,7 @@ export async function planUnrecordedProvenanceObservationRelink(input: {
     if (path in input.set || path in input.unset || field in input.unset) continue;
     if (input.lockedFields.includes(field)) continue;
     if (input.scopedFields && !input.scopedFields.includes(field)) continue;
+    if (fieldProvenanceEntryNamesALaneThatCannotAssertTheField(field, entry)) continue;
     if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
     const heldValue = field in input.set ? input.set[field] : input.stored[field];
     if (heldValue === undefined) continue;
