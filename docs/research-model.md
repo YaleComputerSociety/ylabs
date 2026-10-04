@@ -397,7 +397,7 @@ Under the organizational/program dead-end gate (issue #1359), a lead-exempt enti
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
 
 `EntryPathway` and `PostedOpportunity` were removed (#363), along with the separate public practical-routes search endpoint/page and the `/api/opportunities/:id` detail surface.
-Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, `APPLICATION_FORM_EXISTS`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
+Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, `APPLICATION_FORM_EXISTS`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile and evidence rather than split into a second student product.
 `NO_EVIDENCE` remains a computed state, not a stored fact, unless a source explicitly supports it.
 Course credit, fellowship funding, and thesis advising remain formalization outcomes after home and mentor fit, not access evidence by themselves, unless a source describes a structured hosted or mentor-matching program that is its own `ResearchEntity`.
 

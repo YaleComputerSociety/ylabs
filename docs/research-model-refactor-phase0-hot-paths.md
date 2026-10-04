@@ -62,7 +62,7 @@ It enriches the bounded page with listing presence and lead display names before
 
 ### Declared indexes and settings
 
-The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and `hasUndergradHostingEvidence`, derived by `entityHasHostedUndergraduates` in `accessAcceptanceLevel.ts` since #3593.
+The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and `hasUndergradHostingEvidence`, derived by `entityHasHostedUndergraduates` in `hostedUndergraduates.ts` since #3593.
 They declare `browseRankScore`, `lastObservedAt`, `name`, `sortTitle`, `sortTitleQualifier`, `createdAt`, and `updatedAt` as sortable.
 The `research_entities` schema declares single-field indexes for the common browse filters and a compound `{ studentVisibilityTier: 1, archived: 1 }` index.
 It also declares `{ archived: 1, browseRankScore: -1 }`, which does not match the public visibility predicate plus the two-key browse order as one compound index.
@@ -77,7 +77,7 @@ The public React route renders `LabDetail`, which sends `GET /api/research/:slug
 The route applies a 60-second public cache header and calls `researchGroupController.getResearchGroupBySlug`.
 The controller validates and normalizes the slug, then calls `researchGroupService.getResearchGroupDetail`.
 The service first loads one visible, non-archived `research_entities` document by slug.
-It then loads current member rows, users and faculty members, shared-image guards, member scholarly attributions, papers, scholarly links, listings, access records, planning context, and bidirectional entity relationships.
+It then loads current member rows, users and faculty members, shared-image guards, member scholarly attributions, papers, scholarly links, listings, access records, and bidirectional entity relationships.
 
 ### Boundedness and cost drivers
 
