@@ -44,7 +44,7 @@ describe('Undergraduate-logistics retirement (#3088)', () => {
     for (const claimType of RETIRED_CLAIM_TYPES) {
       expect(types).not.toContain(claimType);
     }
-    expect(types).toContain('REACH_OUT_PLAUSIBLE');
+    expect(types).toContain('CURRENT_UNDERGRADS');
   });
 
   it('stops exporting the claim-type enum and its aliases', () => {

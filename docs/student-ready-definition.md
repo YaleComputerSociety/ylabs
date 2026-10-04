@@ -203,7 +203,7 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
 - `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
   It stays soft on purpose: per #1802 the card is never withheld for unknown access evidence.
   It used to gate whether the materializer minted the organizational `REACH_OUT_PLAUSIBLE` signal (#1359, #2559).
-  That producer was retired entirely in #2578, so the reason is now purely a repair-queue and reporting signal.
+  That producer was retired entirely in #2578, and the type itself in #4637, so the reason is now purely a repair-queue and reporting signal.
 - `missing_application_route` / `missing_source_route` - a program is still reachable and describable without a distinct apply/source route.
 - `missing_source_url` / `missing_official_source` - **critical:** every discovered entity carries its source in observation provenance (`fieldProvenance[*].sourceUrl` and/or the entity's observations' `sourceUrl`). The gate only inspected `entity.sourceUrls` / `website` / `websiteUrl`, so a bare `sourceUrls` is a PROJECTION GAP, never a genuinely source-less entity. The materializer projects that provenance onto `entity.sourceUrls` at write time (`bestMaterializationProvenanceSourceUrl`), and the gate never blocks on it either way.
 

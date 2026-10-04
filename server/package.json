@@ -164,7 +164,6 @@
     "database:verify-names": "tsx src/scripts/verifyDatabaseNames.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "access-signals:repair-duplicates": "tsx src/scripts/repairDuplicateAccessSignals.ts",
-    "access-signals:reconcile-not-currently-available": "tsx src/scripts/reconcileNotCurrentlyAvailableAccessSignals.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",
     "scraper:integrity-gate": "tsx src/scripts/scraperIntegrityGate.ts",
     "scraper:integrity-duplicates-review": "tsx src/scripts/scraperIntegrityDuplicateReview.ts",

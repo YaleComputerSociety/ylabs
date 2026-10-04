@@ -369,17 +369,8 @@ async function currentMaterializationEvidenceIds(input: {
     }
     const derived = context.accessArtifacts;
     const exact = derived.accessSignals.find((item) => item.derivationKey === key);
-    const legacyReplacement =
-      key.startsWith('signal:REACH_OUT_PLAUSIBLE:OFFICIAL_PROFILE:') ||
-      key.startsWith('visibility-repair:official-profile-outreach:')
-        ? derived.accessSignals.find(
-            (item) =>
-              item.type === 'REACH_OUT_PLAUSIBLE' &&
-              /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
-          )
-        : undefined;
-    const id = exact?.sourceEvidenceId || legacyReplacement?.sourceEvidenceId;
-    return { evidenceIds: id ? [id] : [], replacesOwner: !exact && Boolean(legacyReplacement) };
+    const id = exact?.sourceEvidenceId;
+    return { evidenceIds: id ? [id] : [], replacesOwner: false };
   }
 
   return { evidenceIds: [], replacesOwner: false };

@@ -3,6 +3,9 @@ import {
   ARCHIVE_LEGACY_ACCESS_SIGNALS_REASON,
   LEGACY_ACCESS_SIGNAL_PREDICATES,
   PROTECTED_ACCESS_SIGNAL_SOURCES,
+  RETIRED_ACCESS_SIGNAL_TYPES,
+  RETIRED_TYPE_ACCESS_SIGNAL_PREDICATES,
+  SOURCE_SCOPED_LEGACY_ACCESS_SIGNAL_PREDICATES,
   assertLegacyAccessSignalsFullyArchived,
   legacyAccessSignalPredicateMatches,
   type LegacyAccessSignalRow,
@@ -15,6 +18,11 @@ import {
 
 const matchesAny = (row: LegacyAccessSignalRow) =>
   LEGACY_ACCESS_SIGNAL_PREDICATES.some((predicate) =>
+    legacyAccessSignalPredicateMatches(predicate, row),
+  );
+
+const matchesSourceScoped = (row: LegacyAccessSignalRow) =>
+  SOURCE_SCOPED_LEGACY_ACCESS_SIGNAL_PREDICATES.some((predicate) =>
     legacyAccessSignalPredicateMatches(predicate, row),
   );
 
@@ -41,9 +49,21 @@ describe('legacy access signal predicates', () => {
     }
   });
 
-  it('never touches a reach-out row from a source a lane still produces', () => {
+  it('never matches a protected source with a source-scoped predicate', () => {
     for (const source of PROTECTED_ACCESS_SIGNAL_SOURCES) {
-      expect(matchesAny(reachOut(source))).toBe(false);
+      expect(matchesSourceScoped(reachOut(source))).toBe(false);
+    }
+  });
+
+  it('archives each retired type from every source, and only that type (#4637)', () => {
+    for (const predicate of RETIRED_TYPE_ACCESS_SIGNAL_PREDICATES) {
+      for (const type of RETIRED_ACCESS_SIGNAL_TYPES) {
+        for (const source of [...PROTECTED_ACCESS_SIGNAL_SOURCES, 'visibility-repair-queue']) {
+          expect(
+            legacyAccessSignalPredicateMatches(predicate, { type, source: { name: source } }),
+          ).toBe(type === predicate.name);
+        }
+      }
     }
   });
 
@@ -51,13 +71,14 @@ describe('legacy access signal predicates', () => {
     for (const type of [
       'CURRENT_UNDERGRADS',
       'PAST_UNDERGRADS',
-      'FELLOWSHIP_COMPATIBLE',
-      'CONTACT_INSTRUCTIONS_EXIST',
       'APPLICATION_FORM_EXISTS',
-      'NOT_CURRENTLY_AVAILABLE',
-      'COURSE_CREDIT_PATHWAY',
+      'POSTED_OPENING',
+      'CREDIT_FORMALIZATION_POSSIBLE',
+      'FACULTY_SUPERVISES_STUDENT_PROJECTS',
     ]) {
-      expect(matchesAny({ type, source: { name: 'visibility-repair-queue' } })).toBe(false);
+      for (const source of [...PROTECTED_ACCESS_SIGNAL_SOURCES, 'visibility-repair-queue']) {
+        expect(matchesAny({ type, source: { name: source } })).toBe(false);
+      }
     }
   });
 
@@ -147,6 +168,13 @@ const seed = (): Row[] => [
   { _id: '3', researchEntityId: 'b', ...reachOut('dept-faculty-roster') },
   { _id: '4', researchEntityId: 'c', type: 'MODALITY', source: { name: 'x' } },
   { _id: '5', researchEntityId: 'd', ...reachOut('lab-microsite-undergrad-llm') },
+  {
+    _id: '6',
+    researchEntityId: 'd',
+    type: 'CURRENT_UNDERGRADS',
+    archived: false,
+    source: { name: 'lab-microsite-undergrad-llm' },
+  },
 ];
 
 describe('archiveLegacyAccessSignals', () => {
@@ -165,15 +193,15 @@ describe('archiveLegacyAccessSignals', () => {
     expect(rows.every((row) => row.archived !== true)).toBe(true);
   });
 
-  it('archives every target with attribution and leaves lane-produced rows live', async () => {
+  it('archives every target with attribution and leaves kept types live', async () => {
     const rows = seed();
     const result = await archiveLegacyAccessSignals({ apply: true, db: fakeDb(rows) });
     expect(result.predicates.every((p) => p.presentAfter === 0)).toBe(true);
     const archived = rows.filter((row) => row.archived === true);
-    expect(archived.map((row) => row._id).sort()).toEqual(['1', '2', '3', '4']);
+    expect(archived.map((row) => row._id).sort()).toEqual(['1', '2', '3', '4', '5']);
     expect(
       archived.every((row) => row.archivedReason === ARCHIVE_LEGACY_ACCESS_SIGNALS_REASON),
     ).toBe(true);
-    expect(rows.find((row) => row._id === '5')?.archived).toBe(false);
+    expect(rows.find((row) => row._id === '6')?.archived).toBe(false);
   });
 });

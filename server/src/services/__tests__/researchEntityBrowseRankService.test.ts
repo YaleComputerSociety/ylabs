@@ -118,7 +118,7 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
       { $set: { pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }] } },
     );
     await Signal.create({ researchEntityId: staleSignalOnly._id, type: 'PAST_UNDERGRADS' });
-    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
+    await Signal.create({ researchEntityId: outreachOnly._id, type: 'APPLICATION_FORM_EXISTS' });
     await ResearchEntity.updateOne(
       { _id: staleSignalOnly._id },
       { $set: { hasUndergradHostingEvidence: true } },

@@ -27,10 +27,7 @@ import {
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
-import {
-  foreignContactFieldSignalIds,
-  judgeReDerivedAccessSignals,
-} from '../scrapers/accessMaterializer';
+import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -104,10 +101,6 @@ import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabe
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
-import {
-  listDepartmentCourseCreditRoutes,
-  type PublicDepartmentCourseCreditRoute,
-} from './departmentResearchContextService';
 import {
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -316,17 +309,6 @@ const optionalPlanningContexts = async (entityIds: any[]) => {
       contexts: new Map(),
       degraded: true,
     };
-  }
-};
-
-const optionalDepartmentCourseCreditRoutes = async (
-  departmentNames: string[],
-): Promise<PublicDepartmentCourseCreditRoute[]> => {
-  try {
-    return await listDepartmentCourseCreditRoutes(departmentNames);
-  } catch (error) {
-    console.error('Optional department course-credit enrichment failed:', sanitizeLogValue(error));
-    return [];
   }
 };
 
@@ -3604,7 +3586,6 @@ export async function getResearchGroupDetail(
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
   accessSignals: any[];
-  departmentCourseCreditRoutes: PublicDepartmentCourseCreditRoute[];
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
@@ -3721,7 +3702,7 @@ export async function getResearchGroupDetail(
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [accessSignals, planningContexts, departmentCourseCreditRoutes] = await Promise.all([
+  const [accessSignals, planningContexts] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -3732,24 +3713,16 @@ export async function getResearchGroupDetail(
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
     optionalPlanningContexts([(group as any)._id]),
-    optionalDepartmentCourseCreditRoutes(((group as any).departments || []) as string[]),
   ]);
 
   const publicGroupForResponse = publicResearchDetailGroup({
     ...publicGroup,
     fieldProvenance: (group as any).fieldProvenance,
   });
-  const [foreignContactSignalIds, reDerived] = await Promise.all([
-    foreignContactFieldSignalIds(accessSignals as any[], [group as any]),
-    judgeReDerivedAccessSignals(accessSignals as any[], [group as any]),
-  ]);
+  const reDerived = await judgeReDerivedAccessSignals(accessSignals as any[], [group as any]);
   const publicAccessSignals = withoutRepeatedPageClaims(
     (accessSignals as any[])
-      .filter(
-        (signal) =>
-          !foreignContactSignalIds.has(String(signal._id)) &&
-          !reDerived.underived.has(String(signal._id)),
-      )
+      .filter((signal) => !reDerived.underived.has(String(signal._id)))
       .filter((signal) => !signalIsWithheldWayIn(signal, emeritusWayIn))
       .map((signal) => withReDerivedCitation(signal, reDerived.citations))
       .map((signal) => publicAccessSignalForResearchDetail(signal, group))
@@ -3777,7 +3750,6 @@ export async function getResearchGroupDetail(
       members,
       roster,
       accessSignals: publicAccessSignals,
-      departmentCourseCreditRoutes,
       ...relationshipPayload,
       similarResearchEntities,
     },

@@ -329,7 +329,7 @@ Expected collections:
 
 - `observations`: `pastUndergradAdvisees`.
 - `research_entities`: faculty-owned entities.
-- `signals`: `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`.
+- `signals`: `PAST_UNDERGRADS` (`FELLOWSHIP_COMPATIBLE` was retired in #4637).
 
 Audit focus:
 

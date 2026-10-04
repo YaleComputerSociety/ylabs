@@ -19,7 +19,6 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'auditPlansTheProjectionDeclines.ts': REFUSES_APPLY,
   'leadEdgeRetirementReviewQueue.ts': REFUSES_APPLY,
   'backfillNonLabBrowseRankDebias.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
-  'reconcileNotCurrentlyAvailableAccessSignals.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
   'retireStaleAccessSignalFields.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
   'retireStaleSavedPlanFields.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
   'canonicalMongoValidators.ts':

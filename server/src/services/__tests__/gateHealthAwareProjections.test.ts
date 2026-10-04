@@ -55,13 +55,4 @@ describe('gate projections stay health-aware', () => {
 
     expect(serialized.sourceLinkHealth).toBeDefined();
   });
-
-  it('declares sourceLinkHealth on the reach-out credit entity param', () => {
-    const source = fs.readFileSync(SERVICE, 'utf8');
-    const signature = source.slice(
-      source.indexOf('export function reachOutPlausibleSignalCreditsActionEvidence'),
-    );
-    const entityParam = signature.slice(0, signature.indexOf('}): boolean'));
-    expect(entityParam).toContain('sourceLinkHealth');
-  });
 });

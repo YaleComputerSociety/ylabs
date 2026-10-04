@@ -106,15 +106,8 @@ const WARNING_SCORES: Record<ResearchQualitySearchWarningCode, number> = {
 };
 
 const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director', 'core-faculty']);
-const EXPLORATORY_ACCESS_SIGNAL_TYPES = new Set([
-  'REACH_OUT_PLAUSIBLE',
-  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
-]);
-const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set([
-  'POSTED_OPENING',
-  'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
-]);
+const EXPLORATORY_ACCESS_SIGNAL_TYPES = new Set(['FACULTY_SUPERVISES_STUDENT_PROJECTS']);
+const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set(['POSTED_OPENING', 'APPLICATION_FORM_EXISTS']);
 const CENTER_LIKE_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 function compactStrings(values: Array<string | undefined | null> | undefined): string[] {

@@ -8,7 +8,7 @@
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
- * reads into the PAST_UNDERGRADS and FELLOWSHIP_COMPATIBLE signals. Having mentored
+ * reads into the PAST_UNDERGRADS signal. Having mentored
  * a fellowship recipient is pathway-specific evidence, so this lane deliberately
  * asserts nothing about generic current openness.
  *

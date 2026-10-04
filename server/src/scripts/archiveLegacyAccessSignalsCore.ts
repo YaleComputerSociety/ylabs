@@ -17,17 +17,37 @@ const liveReachOutFrom = (sourceName: string): Record<string, unknown> => ({
   archived: { $ne: true },
 });
 
+export const SOURCE_SCOPED_LEGACY_ACCESS_SIGNAL_PREDICATES: readonly LegacyAccessSignalPredicate[] =
+  [
+    { name: 'visibility-repair-queue', filter: liveReachOutFrom('visibility-repair-queue') },
+    { name: 'dept-faculty-roster', filter: liveReachOutFrom('dept-faculty-roster') },
+    {
+      name: 'research-entity-cache-backfill',
+      filter: liveReachOutFrom('research-entity-cache-backfill'),
+    },
+    {
+      name: 'retired-logistics',
+      filter: { type: { $in: ['CURRENT_AVAILABILITY', 'MODALITY'] }, archived: { $ne: true } },
+    },
+  ];
+
+export const RETIRED_ACCESS_SIGNAL_TYPES = [
+  'REACH_OUT_PLAUSIBLE',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'NOT_CURRENTLY_AVAILABLE',
+  'FELLOWSHIP_COMPATIBLE',
+  'COURSE_CREDIT_PATHWAY',
+] as const;
+
+export const RETIRED_TYPE_ACCESS_SIGNAL_PREDICATES: readonly LegacyAccessSignalPredicate[] =
+  RETIRED_ACCESS_SIGNAL_TYPES.map((type) => ({
+    name: type,
+    filter: { type, archived: { $ne: true } },
+  }));
+
 export const LEGACY_ACCESS_SIGNAL_PREDICATES: readonly LegacyAccessSignalPredicate[] = [
-  { name: 'visibility-repair-queue', filter: liveReachOutFrom('visibility-repair-queue') },
-  { name: 'dept-faculty-roster', filter: liveReachOutFrom('dept-faculty-roster') },
-  {
-    name: 'research-entity-cache-backfill',
-    filter: liveReachOutFrom('research-entity-cache-backfill'),
-  },
-  {
-    name: 'retired-logistics',
-    filter: { type: { $in: ['CURRENT_AVAILABILITY', 'MODALITY'] }, archived: { $ne: true } },
-  },
+  ...SOURCE_SCOPED_LEGACY_ACCESS_SIGNAL_PREDICATES,
+  ...RETIRED_TYPE_ACCESS_SIGNAL_PREDICATES,
 ];
 
 export interface LegacyAccessSignalRow {

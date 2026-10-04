@@ -51,7 +51,7 @@ describe('buildResearchDetailSources', () => {
       accessSignals: [
         {
           _id: 'signal-1',
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: evidenceUrl,
         },
       ],
@@ -61,7 +61,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources[1].label).toBe('program.example.test source');
     expect(sources[1].contexts).toHaveLength(2);
     expect(sources[1].contexts).toEqual(
-      expect.arrayContaining(['Profile source', 'Reach Out Plausible evidence']),
+      expect.arrayContaining(['Profile source', 'Current Undergrads evidence']),
     );
   });
 
@@ -80,7 +80,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: facultyProfileUrl,
         },
       ],
@@ -175,7 +175,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: namedProfileUrl,
         },
       ],
@@ -301,7 +301,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: apiEndpoint,
         },
       ],
@@ -342,7 +342,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: 'https://www.lab.example.yale.edu/research',
         },
       ],
@@ -351,7 +351,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe('https://lab.example.yale.edu/research');
     expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source', 'Reach Out Plausible evidence']),
+      expect.arrayContaining(['Profile website', 'Profile source', 'Current Undergrads evidence']),
     );
   });
 
@@ -385,7 +385,7 @@ describe('buildResearchDetailSources', () => {
           sourceUrl: canonicalProfile,
         },
         {
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          signalType: 'PAST_UNDERGRADS',
           confidence: 'HIGH',
           confidenceScore: 0.86,
           sourceUrl: canonicalProfile,
@@ -400,7 +400,7 @@ describe('buildResearchDetailSources', () => {
       expect.arrayContaining([
         'Profile source',
         'Current Undergrads evidence',
-        'Contact Instructions Exist evidence',
+        'Past Undergrads evidence',
       ]),
     );
   });
@@ -536,7 +536,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'LOW',
           confidenceScore: 0.35,
           sourceUrl: unrelatedPersonUrl,
@@ -556,7 +556,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           confidenceScore: 0.3,
           sourceUrl: 'https://unrelated.example.test/person',
@@ -577,7 +577,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'HIGH',
           confidenceScore: 0.9,
           sourceUrl: evidenceUrl,
@@ -596,7 +596,7 @@ describe('isCitableAccessSignal', () => {
     expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.49 })).toBe(false);
     expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.5 })).toBe(true);
     expect(isCitableAccessSignal({ confidence: 'HIGH' })).toBe(true);
-    expect(isCitableAccessSignal({ signalType: 'REACH_OUT_PLAUSIBLE' })).toBe(true);
+    expect(isCitableAccessSignal({ signalType: 'CURRENT_UNDERGRADS' })).toBe(true);
   });
 });
 

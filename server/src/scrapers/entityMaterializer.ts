@@ -249,7 +249,6 @@ import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
-import { materializeOrgUnitSignalsForObservations } from './orgUnitSignalMaterializer';
 import {
   planStoredUndergradEvidenceQuoteClear,
   sourcesWithdrawingUndergradEvidenceQuote,
@@ -8175,16 +8174,10 @@ export async function materializeEntity(
   }
 
   if (entityType === 'orgUnit') {
-    // An org-unit observation becomes a Signal on the department rather than a
-    // field on the OrgUnit document, so it deliberately does not reach
-    // `entityModelFor`: OrgUnit is an ingest-time canonical lookup table, and
-    // writing scraped prose into it would make the department pill a scraped
-    // value.
-    const orgUnitResult = await materializeOrgUnitSignalsForObservations({
-      orgUnitSlug: identifier.entityKey || '',
-      observations: obs,
-      dryRun: options.dryRun,
-    });
+    // An org-unit observation has no materialized form since #4637, and it
+    // deliberately does not reach `entityModelFor`: OrgUnit is an ingest-time
+    // canonical lookup table, and writing scraped prose into it would make the
+    // department pill a scraped value.
     return {
       entityType,
       ...identifier,
@@ -8194,13 +8187,13 @@ export async function materializeEntity(
       resolved: {},
       postMaterializationMetrics: {
         entryPathways: 0,
-        accessSignals: orgUnitResult.signalsWritten,
+        accessSignals: 0,
         contactRoutes: 0,
         postedOpportunities: 0,
         guardedContactRoutes: 0,
         staleEvidenceSkipped: 0,
         conflicts: 0,
-        errors: orgUnitResult.rejected,
+        errors: 0,
       },
     };
   }

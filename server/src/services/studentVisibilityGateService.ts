@@ -69,12 +69,9 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import {
-  foreignContactFieldSignalIds,
-  officialNonGrantSourceUrl,
   RE_DERIVED_ACCESS_SIGNAL_TYPES,
   underivedAccessSignalIds,
 } from '../scrapers/accessMaterializer';
-import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from '../scrapers/rowKeyedContactEvidence';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
@@ -1113,46 +1110,6 @@ const increment = (counts: Record<string, number>, key: string) => {
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [studentVisibilityGateDocumentId(row._id), row.count]));
 
-const REACH_OUT_PLAUSIBLE_SIGNAL_TYPE = 'REACH_OUT_PLAUSIBLE';
-
-const hasHttpSourceUrl = (value: unknown): boolean =>
-  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
-
-export interface ReachOutPlausibleGateSignal {
-  type?: unknown;
-  archived?: unknown;
-  derivationKey?: unknown;
-  source?: { url?: unknown; evidenceIds?: unknown; name?: unknown } | null;
-}
-
-// A REACH_OUT_PLAUSIBLE signal is a derived exploratory ways-in, so it inherently
-// carries no external http `source.url`; requiring one hides an already-earned
-// signal from the action-evidence gate. It still counts only when it is backed by
-// a supporting source observation and the entity itself carries an official
-// non-grant page, so no weaker or unbacked signal can pass. Signals that already
-// carry an http `source.url` are counted by the primary aggregation and excluded
-// here to avoid double counting.
-export function reachOutPlausibleSignalCreditsActionEvidence(input: {
-  signal: ReachOutPlausibleGateSignal;
-  entity: {
-    websiteUrl?: unknown;
-    website?: unknown;
-    sourceUrls?: unknown;
-    // Declared because `officialNonGrantSourceUrl` reads it to exclude a known-dead
-    // URL. Omitting it here made a health-aware helper read as blind, and a caller
-    // that built a fresh literal would have silently disabled that exclusion.
-    sourceLinkHealth?: unknown;
-  };
-}): boolean {
-  const { signal, entity } = input;
-  if (signal.archived === true) return false;
-  if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
-  if (hasHttpSourceUrl(signal.source?.url)) return false;
-  const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
-  if (evidenceIds.length === 0) return false;
-  return Boolean(officialNonGrantSourceUrl(entity));
-}
-
 const profileAreaDuplicateCounterpartEntityTypes = new Set(['LAB', 'FACULTY_PROJECT']);
 
 const profileAreaDuplicateCounterpartKinds = new Set(['lab', 'group', 'project']);
@@ -2008,16 +1965,6 @@ async function planResearchEntityGateUpdates(
         .lean()
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
-  const foreignContactSignalIds = await foreignContactFieldSignalIds(
-    await Signal.find({
-      researchEntityId: { $in: entityIds },
-      derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
-      archived: false,
-    })
-      .select('_id researchEntityId derivationKey source.excerpt')
-      .lean(),
-    entities as any[],
-  );
   const underivedSignalIds = await underivedAccessSignalIds(
     await Signal.find({
       researchEntityId: { $in: entityIds },
@@ -2028,14 +1975,7 @@ async function planResearchEntityGateUpdates(
       .lean(),
     entities as any[],
   );
-  const withheldAccessSignalIds = [...foreignContactSignalIds, ...underivedSignalIds];
-
-  const [
-    rosterByEntityId,
-    accessRows,
-    reachOutPlausibleWithoutHttpSource,
-    alternateAccessPathCounts,
-  ] = await Promise.all([
+  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -2044,7 +1984,7 @@ async function planResearchEntityGateUpdates(
           type: { $in: [...accessSignalTypes] },
           archived: false,
           _id: {
-            $nin: withheldAccessSignalIds.map((id) => new mongoose.Types.ObjectId(id)),
+            $nin: [...underivedSignalIds].map((id) => new mongoose.Types.ObjectId(id)),
           },
           'source.url': { $regex: '^https?://', $options: 'i' },
         },
@@ -2057,16 +1997,6 @@ async function planResearchEntityGateUpdates(
         },
       },
     ]),
-    Signal.find({
-      researchEntityId: { $in: entityIds },
-      type: REACH_OUT_PLAUSIBLE_SIGNAL_TYPE,
-      archived: false,
-      'source.url': { $not: /^https?:\/\//i },
-    })
-      .select(
-        'researchEntityId type archived derivationKey source.url source.evidenceIds source.name',
-      )
-      .lean(),
     countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
@@ -2133,23 +2063,6 @@ async function planResearchEntityGateUpdates(
       uniqueStrings(row.sourceNames || []),
     ]),
   );
-  const entityById = new Map(
-    (entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
-  );
-
-  for (const signal of reachOutPlausibleWithoutHttpSource as any[]) {
-    const entityId = studentVisibilityGateDocumentId(signal.researchEntityId);
-    const entity = entityById.get(entityId);
-    if (!entity) continue;
-    if (!reachOutPlausibleSignalCreditsActionEvidence({ signal, entity })) continue;
-    accessCounts.set(entityId, (accessCounts.get(entityId) || 0) + 1);
-    const sourceName = typeof signal.source?.name === 'string' ? signal.source.name.trim() : '';
-    sourceNamesByEntityId.set(
-      entityId,
-      uniqueStrings([...(sourceNamesByEntityId.get(entityId) || []), sourceName]),
-    );
-  }
-
   /**
    * Entities the person is PI of. Only these may be CALLED a duplicate.
    *
