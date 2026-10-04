@@ -809,9 +809,11 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   Import it rather than typing a copy: three scripts once carried their own copies naming `neh-grants` and `federal-award-search`, neither ever registered, so they never recognised NEH evidence (#4567).
   `__tests__/grantLaneSourceNames.test.ts` fails when the list names an unregistered scraper or differs from the sweep's `funding` phase, so adding or retiring a funding lane means updating it.
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities, and a `deadEndTombstoneChains` warning for malformed tombstone pointers), with recommended CLI repair commands
-  Most checks collect at most `--limit` rows (1 without `--include-samples`), and duplicate people and same-PI duplicates also stop at an internal scan cap, so a count that reaches its cap is a lower bound and `countLabels` renders it as "at least N".
+  Every check except same-PI duplicates runs a `$count` over the same pipeline its samples come from, so `counts` is the measured population whether or not `--include-samples` is passed, and only the samples stop at `--limit` (#4790).
+  Before #4790 the group checks loaded one row without `--include-samples` and counted it, so a counts-only run read 1 for 16 groups.
+  Same-PI duplicates are decided by the dedupe plan in code rather than in the pipeline, so that check scans at most 10,000 leads; a scan that reaches the cap is a lower bound and `countLabels` renders it as "at least N".
+  When samples are included and hold fewer rows than the count, `countLabels` says so, as "16 (sample of 1)".
   Never size a repair from a capped count (#3578).
-  The two archived-entity checks also run a `$count` over the same pipeline, so their `counts` are the measured population and their samples stay capped.
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 

@@ -129,7 +129,6 @@ export interface RunPostMaterializationIntegrityGateOptions {
 }
 
 const DEFAULT_SAMPLE_LIMIT = 25;
-const DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD = 5000;
 const DEFAULT_COMMAND_ENVIRONMENT = 'development';
 
 function environmentCommand(command: string, environment: string): string {
@@ -211,10 +210,20 @@ export function buildPostMaterializationIntegritySummary(
     duplicateAccessSignals: input.duplicateAccessSignalGroups?.length || 0,
     activeArtifactsOnArchivedEntities: input.activeArtifactsOnArchivedEntities?.length || 0,
   };
+  const samples: PostMaterializationIntegritySummary['samples'] = {
+    samePiSameNameResearchEntities: sample(input.samePiNameDuplicateGroups, limit),
+    officialLabUrlResearchEntities: sample(input.officialLabUrlDuplicateGroups, limit),
+    duplicatePeople: sample(input.duplicatePersonGroups, limit),
+    duplicateCurrentMembers: sample(input.duplicateCurrentMemberGroups, limit),
+    currentMembersOnArchivedEntities: sample(input.currentMembersOnArchivedEntities, limit),
+    duplicateAccessSignals: sample(input.duplicateAccessSignalGroups, limit),
+    activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
+  };
   const { counts, countLabels } = resolveIntegrityCounts(
     sampledCounts,
     input.populationCounts || {},
     new Set(input.truncatedChecks),
+    limit > 0 ? samples : undefined,
   );
   const failureNames = FAILURE_ORDER.filter((name) => counts[name] > 0);
   const commandEnvironment = input.commandEnvironment || DEFAULT_COMMAND_ENVIRONMENT;
@@ -229,15 +238,7 @@ export function buildPostMaterializationIntegritySummary(
     counts,
     countLabels,
     failureNames,
-    samples: {
-      samePiSameNameResearchEntities: sample(input.samePiNameDuplicateGroups, limit),
-      officialLabUrlResearchEntities: sample(input.officialLabUrlDuplicateGroups, limit),
-      duplicatePeople: sample(input.duplicatePersonGroups, limit),
-      duplicateCurrentMembers: sample(input.duplicateCurrentMemberGroups, limit),
-      currentMembersOnArchivedEntities: sample(input.currentMembersOnArchivedEntities, limit),
-      duplicateAccessSignals: sample(input.duplicateAccessSignalGroups, limit),
-      activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
-    },
+    samples,
     warnings,
     recommendedCommands: [
       ...recommendedCommandsForFailures(failureNames, commandEnvironment),
@@ -250,6 +251,7 @@ function resolveIntegrityCounts(
   sampledCounts: Record<PostMaterializationIntegrityFailureName, number>,
   populationCounts: Partial<Record<PostMaterializationIntegrityFailureName, number>>,
   truncatedChecks: ReadonlySet<PostMaterializationIntegrityFailureName>,
+  samples: PostMaterializationIntegritySummary['samples'] | undefined,
 ): Pick<PostMaterializationIntegritySummary, 'counts' | 'countLabels'> {
   const counts = {} as Record<PostMaterializationIntegrityFailureName, number>;
   const countLabels = {} as Record<PostMaterializationIntegrityFailureName, string>;
@@ -257,8 +259,10 @@ function resolveIntegrityCounts(
     const population = populationCounts[name];
     const count = population ?? sampledCounts[name];
     const lowerBound = population === undefined && truncatedChecks.has(name);
+    const sampled = samples?.[name].length;
+    const sampleNote = sampled !== undefined && sampled < count ? ` (sample of ${sampled})` : '';
     counts[name] = count;
-    countLabels[name] = lowerBound ? `at least ${count}` : String(count);
+    countLabels[name] = `${lowerBound ? `at least ${count}` : String(count)}${sampleNote}`;
   }
   return { counts, countLabels };
 }
@@ -301,91 +305,127 @@ const normalizedIdentityValue = (expression: unknown): Record<string, unknown> =
   $trim: { input: { $toLower: { $ifNull: [expression, ''] } } },
 });
 
+interface CountedSample<T> {
+  sample: T[];
+  total: number;
+}
+
+async function countAndSample(
+  model: mongoose.Model<any, any, any, any>,
+  pipeline: mongoose.PipelineStage[],
+  sampleStages: mongoose.PipelineStage[],
+  limit: number,
+): Promise<{ rows: any[]; total: number }> {
+  const [total, rows] = await Promise.all([
+    countPipeline(model, pipeline),
+    model.aggregate([...pipeline, ...sampleStages, { $limit: limit }]),
+  ]);
+  return { rows, total };
+}
+
+const identityCollisionPipeline = (valuePath: string): mongoose.PipelineStage[] => [
+  { $match: { archived: { $ne: true } } },
+  {
+    $project: {
+      identityValue: normalizedIdentityValue(`$${valuePath}`),
+      personId: { $toString: '$_id' },
+    },
+  },
+  { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
+  { $group: { _id: '$identityValue', personIds: { $push: '$personId' } } },
+  { $match: { 'personIds.1': { $exists: true } } },
+];
+
 async function loadIdentityCollisionGroups(
   model: mongoose.Model<any, any, any, any>,
   identityField: DuplicatePersonGroup['identityField'],
   valuePath: string,
-): Promise<DuplicatePersonGroup[]> {
-  const rows = await model.aggregate([
-    { $match: { archived: { $ne: true } } },
-    {
-      $project: {
-        identityValue: normalizedIdentityValue(`$${valuePath}`),
-        personId: { $toString: '$_id' },
-      },
-    },
-    { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
-    { $group: { _id: '$identityValue', personIds: { $push: '$personId' } } },
-    { $match: { 'personIds.1': { $exists: true } } },
-    { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
-  ]);
-
-  return rows.map((row: any) => ({
-    identityField,
-    identityValue: stringId(row._id),
-    userIds: row.personIds || [],
-  }));
+  limit: number,
+): Promise<CountedSample<DuplicatePersonGroup>> {
+  const { rows, total } = await countAndSample(
+    model,
+    identityCollisionPipeline(valuePath),
+    [],
+    limit,
+  );
+  return {
+    total,
+    sample: rows.map((row: any) => ({
+      identityField,
+      identityValue: stringId(row._id),
+      userIds: row.personIds || [],
+    })),
+  };
 }
 
-async function loadResearcherNetidCollisionGroups(): Promise<DuplicatePersonGroup[]> {
-  const rows = await Researcher.aggregate([
-    { $match: { archived: { $ne: true } } },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: 'accountId',
-        foreignField: '_id',
-        as: 'account',
+const researcherNetidCollisionPipeline = (): mongoose.PipelineStage[] => [
+  { $match: { archived: { $ne: true } } },
+  {
+    $lookup: {
+      from: 'accounts',
+      localField: 'accountId',
+      foreignField: '_id',
+      as: 'account',
+    },
+  },
+  {
+    $project: {
+      personId: { $toString: '$_id' },
+      identityValues: {
+        $setUnion: [
+          [normalizedIdentityValue('$identifiers.netid')],
+          [normalizedIdentityValue({ $arrayElemAt: ['$account.netid', 0] })],
+        ],
       },
     },
-    {
-      $project: {
-        personId: { $toString: '$_id' },
-        identityValues: {
-          $setUnion: [
-            [normalizedIdentityValue('$identifiers.netid')],
-            [normalizedIdentityValue({ $arrayElemAt: ['$account.netid', 0] })],
-          ],
-        },
-      },
-    },
-    { $unwind: '$identityValues' },
-    { $project: { personId: 1, identityValue: '$identityValues' } },
-    { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
-    { $group: { _id: '$identityValue', personIds: { $addToSet: '$personId' } } },
-    { $match: { 'personIds.1': { $exists: true } } },
-    { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
-  ]);
+  },
+  { $unwind: '$identityValues' },
+  { $project: { personId: 1, identityValue: '$identityValues' } },
+  { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
+  { $group: { _id: '$identityValue', personIds: { $addToSet: '$personId' } } },
+  { $match: { 'personIds.1': { $exists: true } } },
+];
 
-  return rows.map((row: any) => ({
-    identityField: 'netid' as const,
-    identityValue: stringId(row._id),
-    userIds: row.personIds || [],
-  }));
+async function loadResearcherNetidCollisionGroups(
+  limit: number,
+): Promise<CountedSample<DuplicatePersonGroup>> {
+  const { rows, total } = await countAndSample(
+    Researcher,
+    researcherNetidCollisionPipeline(),
+    [],
+    limit,
+  );
+  return {
+    total,
+    sample: rows.map((row: any) => ({
+      identityField: 'netid' as const,
+      identityValue: stringId(row._id),
+      userIds: row.personIds || [],
+    })),
+  };
 }
 
-async function loadDuplicatePeopleIntegrity(): Promise<{
+async function loadDuplicatePeopleIntegrity(limit: number): Promise<{
   groups: DuplicatePersonGroup[];
-  truncated: boolean;
+  total: number;
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const groupsByField = await Promise.all([
-    loadIdentityCollisionGroups(Account, 'email', 'email'),
-    loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
-    loadResearcherNetidCollisionGroups(),
+  const byField = await Promise.all([
+    loadIdentityCollisionGroups(Account, 'email', 'email', limit),
+    loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid', limit),
+    loadResearcherNetidCollisionGroups(limit),
   ]);
   return {
-    groups: groupsByField.flat(),
-    truncated: groupsByField.some(
-      (groups) => groups.length >= DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD,
-    ),
+    groups: byField.flatMap((field) => field.sample),
+    total: byField.reduce((sum, field) => sum + field.total, 0),
     warnings: [],
   };
 }
 
-async function loadSamePiNameDuplicateGroups(
-  limit: number,
-): Promise<{ groups: SamePiNameDuplicateGroup[]; truncated: boolean }> {
+async function loadSamePiNameDuplicateGroups(): Promise<{
+  groups: SamePiNameDuplicateGroup[];
+  truncated: boolean;
+}> {
   const rows = await RoleAssignment.aggregate([
     {
       $match: {
@@ -441,11 +481,12 @@ async function loadSamePiNameDuplicateGroups(
       },
     },
     { $match: { 'entities.1': { $exists: true } } },
-    { $limit: SAME_PI_ENTITY_SCAN_LIMIT },
+    { $limit: SAME_PI_ENTITY_SCAN_LIMIT + 1 },
   ]);
+  const truncated = rows.length > SAME_PI_ENTITY_SCAN_LIMIT;
 
   const groups = buildSamePiNameDuplicateGroupsFromDedupeRows(
-    rows.map((row: any) => {
+    rows.slice(0, SAME_PI_ENTITY_SCAN_LIMIT).map((row: any) => {
       const personId = stringId(row._id?.personId);
       const { first, last } = splitName(stringId(row.personDisplayName));
       return {
@@ -457,10 +498,7 @@ async function loadSamePiNameDuplicateGroups(
       };
     }),
   );
-  return {
-    groups: groups.slice(0, limit),
-    truncated: rows.length >= SAME_PI_ENTITY_SCAN_LIMIT || groups.length >= limit,
-  };
+  return { groups, truncated };
 }
 
 export function buildSamePiNameDuplicateGroupsFromDedupeRows(
@@ -473,95 +511,110 @@ export function buildSamePiNameDuplicateGroupsFromDedupeRows(
   }));
 }
 
+const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
+  { $match: { archived: { $ne: true } } },
+  {
+    $project: {
+      entityId: { $toString: '$_id' },
+      urls: {
+        $setUnion: [
+          {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ['$websiteUrl', null] },
+                  { $ne: [{ $trim: { input: '$websiteUrl' } }, ''] },
+                ],
+              },
+              ['$websiteUrl'],
+              [],
+            ],
+          },
+          { $ifNull: ['$sourceUrls', []] },
+        ],
+      },
+    },
+  },
+  { $unwind: '$urls' },
+  {
+    $project: {
+      officialLabUrl: { $trim: { input: { $toLower: '$urls' } } },
+      entityId: 1,
+    },
+  },
+  {
+    $match: {
+      officialLabUrl: { $regex: '^https://medicine\\.yale\\.edu/lab/[^/]+/?$' },
+    },
+  },
+  {
+    $group: {
+      _id: '$officialLabUrl',
+      entityIds: { $addToSet: '$entityId' },
+    },
+  },
+  { $match: { 'entityIds.1': { $exists: true } } },
+];
+
 async function loadOfficialLabUrlDuplicateGroups(
   limit: number,
-): Promise<OfficialLabUrlDuplicateGroup[]> {
-  const rows = await ResearchEntity.aggregate([
-    { $match: { archived: { $ne: true } } },
-    {
-      $project: {
-        entityId: { $toString: '$_id' },
-        urls: {
-          $setUnion: [
-            {
-              $cond: [
-                {
-                  $and: [
-                    { $ne: ['$websiteUrl', null] },
-                    { $ne: [{ $trim: { input: '$websiteUrl' } }, ''] },
-                  ],
-                },
-                ['$websiteUrl'],
-                [],
-              ],
-            },
-            { $ifNull: ['$sourceUrls', []] },
-          ],
-        },
-      },
-    },
-    { $unwind: '$urls' },
-    {
-      $project: {
-        officialLabUrl: { $trim: { input: { $toLower: '$urls' } } },
-        entityId: 1,
-      },
-    },
-    {
-      $match: {
-        officialLabUrl: { $regex: '^https://medicine\\.yale\\.edu/lab/[^/]+/?$' },
-      },
-    },
-    {
-      $group: {
-        _id: '$officialLabUrl',
-        entityIds: { $addToSet: '$entityId' },
-      },
-    },
-    { $match: { 'entityIds.1': { $exists: true } } },
-    { $sort: { _id: 1 } },
-    { $limit: limit },
-  ]);
-
-  return rows.map((row: any) => ({
-    officialLabUrl: stringId(row._id),
-    entityIds: (row.entityIds || []).map(stringId),
-  }));
+): Promise<CountedSample<OfficialLabUrlDuplicateGroup>> {
+  const { rows, total } = await countAndSample(
+    ResearchEntity,
+    officialLabUrlDuplicatePipeline(),
+    [{ $sort: { _id: 1 } }],
+    limit,
+  );
+  return {
+    total,
+    sample: rows.map((row: any) => ({
+      officialLabUrl: stringId(row._id),
+      entityIds: (row.entityIds || []).map(stringId),
+    })),
+  };
 }
+
+const duplicateCurrentMemberPipeline = (): mongoose.PipelineStage[] => [
+  {
+    $match: {
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $exists: true, $ne: null },
+      personId: { $exists: true, $ne: null },
+    },
+  },
+  {
+    $group: {
+      _id: {
+        researchEntityId: '$target.id',
+        personId: '$personId',
+        role: '$role',
+      },
+      memberIds: { $push: { $toString: '$_id' } },
+    },
+  },
+  { $match: { 'memberIds.1': { $exists: true } } },
+];
 
 async function loadDuplicateCurrentMemberGroups(
   limit: number,
-): Promise<DuplicateCurrentMemberGroup[]> {
-  const rows = await RoleAssignment.aggregate([
-    {
-      $match: {
-        state: { $ne: 'HISTORICAL' },
-        archived: { $ne: true },
-        'target.kind': 'RESEARCH_ENTITY',
-        'target.id': { $exists: true, $ne: null },
-        personId: { $exists: true, $ne: null },
-      },
-    },
-    {
-      $group: {
-        _id: {
-          researchEntityId: '$target.id',
-          personId: '$personId',
-          role: '$role',
-        },
-        memberIds: { $push: { $toString: '$_id' } },
-      },
-    },
-    { $match: { 'memberIds.1': { $exists: true } } },
-    { $limit: limit },
-  ]);
-
-  return rows.map((row: any) => ({
-    researchEntityId: stringId(row._id?.researchEntityId),
-    userId: stringId(row._id?.personId),
-    role: LEGACY_ROLE_BY_CANONICAL[row._id?.role as RoleAssignmentRole] ?? row._id?.role,
-    memberIds: (row.memberIds || []).map(stringId).filter(Boolean),
-  }));
+): Promise<CountedSample<DuplicateCurrentMemberGroup>> {
+  const { rows, total } = await countAndSample(
+    RoleAssignment,
+    duplicateCurrentMemberPipeline(),
+    [],
+    limit,
+  );
+  return {
+    total,
+    sample: rows.map((row: any) => ({
+      researchEntityId: stringId(row._id?.researchEntityId),
+      userId: stringId(row._id?.personId),
+      role: LEGACY_ROLE_BY_CANONICAL[row._id?.role as RoleAssignmentRole] ?? row._id?.role,
+      memberIds: (row.memberIds || []).map(stringId).filter(Boolean),
+    })),
+  };
 }
 
 const currentMembersOnArchivedEntitiesPipeline = (): mongoose.PipelineStage[] => [
@@ -619,57 +672,77 @@ async function loadCurrentMembersOnArchivedEntities(
   }));
 }
 
+const DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS: DuplicateAccessSignalGroup['identityField'][] = [
+  'derivationKey',
+  'sourceEvidenceId',
+  'observationId',
+];
+
+const DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH: Record<
+  DuplicateAccessSignalGroup['identityField'],
+  string
+> = {
+  derivationKey: 'derivationKey',
+  sourceEvidenceId: 'source.evidenceIds',
+  observationId: 'source.evidenceIds',
+};
+
+const duplicateAccessSignalPipeline = (
+  field: DuplicateAccessSignalGroup['identityField'],
+): mongoose.PipelineStage[] => {
+  const path = DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH[field];
+  const identityExpr =
+    field === 'derivationKey'
+      ? { $toString: `$${path}` }
+      : { $toString: { $arrayElemAt: [`$${path}`, 0] } };
+  return [
+    {
+      $match: {
+        archived: { $ne: true },
+        type: { $in: [...accessSignalTypes] },
+        researchEntityId: { $exists: true, $ne: null },
+        [path]: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $project: {
+        researchEntityId: { $toString: '$researchEntityId' },
+        signalType: '$type',
+        identityValue: identityExpr,
+        signalId: { $toString: '$_id' },
+      },
+    },
+    // Null is excluded here rather than by the row builder so the $count agrees with the sample.
+    { $match: { identityValue: { $nin: ['', 'null', 'undefined', null] } } },
+    {
+      $group: {
+        _id: {
+          researchEntityId: '$researchEntityId',
+          signalType: '$signalType',
+          identityValue: '$identityValue',
+        },
+        signalIds: { $addToSet: '$signalId' },
+      },
+    },
+    { $match: { 'signalIds.1': { $exists: true } } },
+  ];
+};
+
 async function loadDuplicateAccessSignalGroups(
   limit: number,
-): Promise<DuplicateAccessSignalGroup[]> {
-  const fields: DuplicateAccessSignalGroup['identityField'][] = [
-    'derivationKey',
-    'sourceEvidenceId',
-    'observationId',
-  ];
-  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
-    derivationKey: 'derivationKey',
-    sourceEvidenceId: 'source.evidenceIds',
-    observationId: 'source.evidenceIds',
-  };
+): Promise<CountedSample<DuplicateAccessSignalGroup>> {
+  const totals = await Promise.all(
+    DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS.map((field) =>
+      countPipeline(Signal, duplicateAccessSignalPipeline(field)),
+    ),
+  );
   const groups: DuplicateAccessSignalGroup[] = [];
 
-  for (const field of fields) {
-    const path = identityFieldPath[field];
-    const identityExpr =
-      field === 'derivationKey'
-        ? { $toString: `$${path}` }
-        : { $toString: { $arrayElemAt: [`$${path}`, 0] } };
+  for (const field of DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS) {
+    if (groups.length >= limit) break;
     const rows = await Signal.aggregate([
-      {
-        $match: {
-          archived: { $ne: true },
-          type: { $in: [...accessSignalTypes] },
-          researchEntityId: { $exists: true, $ne: null },
-          [path]: { $exists: true, $ne: null },
-        },
-      },
-      {
-        $project: {
-          researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$type',
-          identityValue: identityExpr,
-          signalId: { $toString: '$_id' },
-        },
-      },
-      { $match: { identityValue: { $nin: ['', 'null', 'undefined'] } } },
-      {
-        $group: {
-          _id: {
-            researchEntityId: '$researchEntityId',
-            signalType: '$signalType',
-            identityValue: '$identityValue',
-          },
-          signalIds: { $addToSet: '$signalId' },
-        },
-      },
-      { $match: { 'signalIds.1': { $exists: true } } },
-      { $limit: Math.max(1, limit - groups.length) },
+      ...duplicateAccessSignalPipeline(field),
+      { $limit: limit - groups.length },
     ]);
 
     groups.push(
@@ -683,10 +756,12 @@ async function loadDuplicateAccessSignalGroups(
         })),
       ),
     );
-    if (groups.length >= limit) return groups.slice(0, limit);
   }
 
-  return groups;
+  return {
+    sample: groups.slice(0, limit),
+    total: totals.reduce((sum, total) => sum + total, 0),
+  };
 }
 
 export function buildDuplicateAccessSignalGroupsFromRows(
@@ -877,56 +952,49 @@ export async function runPostMaterializationIntegrityGate(
   options: RunPostMaterializationIntegrityGateOptions = {},
 ): Promise<PostMaterializationIntegritySummary> {
   const limit = normalizePostMaterializationIntegrityLimit(options.limit);
-  const queryLimit = options.includeSamples ? limit : 1;
+  const sampleLimit = options.includeSamples ? limit : 1;
   const [
     samePiNameDuplicates,
-    officialLabUrlDuplicateGroups,
+    officialLabUrlDuplicates,
     duplicatePersonIntegrity,
-    duplicateCurrentMemberGroups,
+    duplicateCurrentMembers,
     currentMembersOnArchivedEntities,
-    duplicateAccessSignalGroups,
+    duplicateAccessSignals,
     activeArtifactsOnArchivedEntities,
     warnings,
     deadEndTombstoneChainWarnings,
-    populationCounts,
+    archivedEntityPopulationCounts,
   ] = await Promise.all([
-    loadSamePiNameDuplicateGroups(queryLimit),
-    loadOfficialLabUrlDuplicateGroups(queryLimit),
-    loadDuplicatePeopleIntegrity(),
-    loadDuplicateCurrentMemberGroups(queryLimit),
-    loadCurrentMembersOnArchivedEntities(queryLimit),
-    loadDuplicateAccessSignalGroups(queryLimit),
-    loadActiveArtifactsOnArchivedEntities(queryLimit),
+    loadSamePiNameDuplicateGroups(),
+    loadOfficialLabUrlDuplicateGroups(sampleLimit),
+    loadDuplicatePeopleIntegrity(sampleLimit),
+    loadDuplicateCurrentMemberGroups(sampleLimit),
+    loadCurrentMembersOnArchivedEntities(sampleLimit),
+    loadDuplicateAccessSignalGroups(sampleLimit),
+    loadActiveArtifactsOnArchivedEntities(sampleLimit),
     loadAmbiguousSameNameWarning(),
-    loadDeadEndTombstoneChains(queryLimit),
+    loadDeadEndTombstoneChains(sampleLimit),
     loadArchivedEntityPopulationCounts(),
   ]);
 
-  const reachesQueryLimit = (rows: unknown[]) => rows.length >= queryLimit;
-  const truncatedChecks = (
-    [
-      ['samePiSameNameResearchEntities', samePiNameDuplicates.truncated],
-      ['officialLabUrlResearchEntities', reachesQueryLimit(officialLabUrlDuplicateGroups)],
-      ['duplicatePeople', duplicatePersonIntegrity.truncated],
-      ['duplicateCurrentMembers', reachesQueryLimit(duplicateCurrentMemberGroups)],
-      ['duplicateAccessSignals', reachesQueryLimit(duplicateAccessSignalGroups)],
-    ] as const
-  )
-    .filter(([, truncated]) => truncated)
-    .map(([name]) => name);
-
   return buildPostMaterializationIntegritySummary({
     samePiNameDuplicateGroups: samePiNameDuplicates.groups,
-    officialLabUrlDuplicateGroups,
+    officialLabUrlDuplicateGroups: officialLabUrlDuplicates.sample,
     duplicatePersonGroups: duplicatePersonIntegrity.groups,
-    duplicateCurrentMemberGroups,
+    duplicateCurrentMemberGroups: duplicateCurrentMembers.sample,
     currentMembersOnArchivedEntities,
-    duplicateAccessSignalGroups,
+    duplicateAccessSignalGroups: duplicateAccessSignals.sample,
     activeArtifactsOnArchivedEntities,
     warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
     limit: options.includeSamples ? limit : 0,
-    truncatedChecks,
-    populationCounts,
+    truncatedChecks: samePiNameDuplicates.truncated ? ['samePiSameNameResearchEntities'] : [],
+    populationCounts: {
+      ...archivedEntityPopulationCounts,
+      officialLabUrlResearchEntities: officialLabUrlDuplicates.total,
+      duplicatePeople: duplicatePersonIntegrity.total,
+      duplicateCurrentMembers: duplicateCurrentMembers.total,
+      duplicateAccessSignals: duplicateAccessSignals.total,
+    },
     sourceRunId: options.sourceRunId,
     commandEnvironment: options.commandEnvironment,
   });
