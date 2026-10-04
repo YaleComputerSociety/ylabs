@@ -3144,11 +3144,25 @@ export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
   let changed = withTextGuards !== entity;
   const next: Record<string, any> = { ...withTextGuards };
 
+  const cleanedBodies = HYGIENE_FULL_DESCRIPTION_FIELDS.map((field, index) => {
+    if (typeof next[field] !== 'string') return undefined;
+    const cleaned = stripSelfReferencePlaceholderNoun(
+      sanitizeResearchEntityDescription(next[field]),
+    );
+    const echo = isStudiesResearchAreaEchoDescription(
+      cleaned,
+      next[SERVED_RESEARCH_AREA_FIELDS[index]],
+    );
+    return { cleaned, echo };
+  });
+  // A "Studies <topics>." echo is redundant beside other prose, but when it is the
+  // row's only body it is thin and accurate, which the owner shows (2026-10-04).
+  const hasNonEchoBody = cleanedBodies.some((body) => body && body.cleaned && !body.echo);
   HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
-    if (typeof next[field] !== 'string') return;
-    const areaField = SERVED_RESEARCH_AREA_FIELDS[index];
-    let cleaned = stripSelfReferencePlaceholderNoun(sanitizeResearchEntityDescription(next[field]));
-    if (isStudiesResearchAreaEchoDescription(cleaned, next[areaField])) cleaned = '';
+    const body = cleanedBodies[index];
+    if (!body) return;
+    const keepsOnlyBody = field === 'fullDescription' && !hasNonEchoBody;
+    const cleaned = body.echo && !keepsOnlyBody ? '' : body.cleaned;
     if (cleaned !== next[field]) {
       next[field] = cleaned;
       changed = true;

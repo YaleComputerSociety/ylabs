@@ -2639,11 +2639,32 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(recordHasNoUsablePublicDescription(describedRecord)).toBe(false);
   });
 
-  it('treats a description that only echoes the record research-area chips as no usable description', () => {
+  it('treats a body echo as usable when it is the only body, because it is served as thin but accurate', () => {
     const echoOnlyRecord = {
       researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
       fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
       shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(false);
+    const result = enforceStudentReadyDescriptionInvariant(
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
+      echoOnlyRecord,
+    );
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('treats a description that only echoes the record research-area chips beside another body as no usable description', () => {
+    const echoOnlyRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      profileSynthesisDescription:
+        'The faculty member surveys reef recovery after bleaching events in the Caribbean.',
     };
 
     expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(true);
