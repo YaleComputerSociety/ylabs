@@ -11,16 +11,22 @@ repository_url="${SWEEP_REPOSITORY_URL:-https://github.com/YaleComputerSociety/y
 work_dir="$(mktemp -d)"
 checkout="$work_dir/ylabs"
 
-target_sha="$(git ls-remote "$repository_url" refs/heads/beta | cut -f1)"
-if [ -z "$target_sha" ]; then
-  echo "[weekly-sweep] REFUSING TO START: could not resolve beta HEAD from $repository_url" >&2
+refuse_to_start() {
+  echo "[weekly-sweep] REFUSING TO START: $1" >&2
   exit 1
+}
+
+target_sha="$(git ls-remote "$repository_url" refs/heads/beta | cut -f1 || true)"
+if [ -z "$target_sha" ]; then
+  refuse_to_start "could not resolve beta HEAD from $repository_url"
 fi
 echo "[weekly-sweep] resolved beta HEAD to $target_sha; the whole sweep runs at this commit"
 
 git clone --quiet --filter=blob:none --no-checkout --single-branch --branch beta \
-  "$repository_url" "$checkout"
-git -C "$checkout" checkout --quiet --detach "$target_sha"
+  "$repository_url" "$checkout" \
+  || refuse_to_start "could not clone beta from $repository_url"
+git -C "$checkout" checkout --quiet --detach "$target_sha" \
+  || refuse_to_start "could not check out $target_sha"
 
 if cmp -s /app/server/yarn.lock "$checkout/server/yarn.lock" \
   && cmp -s /app/server/package.json "$checkout/server/package.json"; then
