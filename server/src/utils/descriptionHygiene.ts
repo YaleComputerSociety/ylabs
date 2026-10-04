@@ -1535,22 +1535,34 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) {
     return isRefusedCardText(cleaned) ? '' : cleaned;
   }
+  if (isWholeTextDumpText(cleaned)) return '';
   const clamped = clampShortDescriptionToWholeSentences(cleaned);
-  return isRefusedCardText(cleaned) && (!clamped || isRefusedCardText(clamped)) ? '' : clamped;
+  return isRefusedCardSentenceText(cleaned) && (!clamped || isRefusedCardSentenceText(clamped))
+    ? ''
+    : clamped;
 }
 
 function isRefusedCardText(text: string): boolean {
+  return isWholeTextDumpText(text) || isRefusedCardSentenceText(text);
+}
+
+function isWholeTextDumpText(text: string): boolean {
+  return (
+    isInstitutionalCenterBlurbText(text) ||
+    isCtaNewsTickerDumpText(text) ||
+    isCitationAuthorListDumpText(text)
+  );
+}
+
+function isRefusedCardSentenceText(text: string): boolean {
   return (
     isResearchAreaTemplateLeakText(text) ||
     isResearchAreaEchoDescription(text) ||
-    isInstitutionalCenterBlurbText(text) ||
-    isCtaNewsTickerDumpText(text) ||
     isStudiesTemplateGlueMalformed(text) ||
     isFirstPersonResearchVoiceText(text) ||
     isAdministrativeTitleEnumerationText(text) ||
     isNonSelfContainedShortDescription(text) ||
     containsHtmlTagMarkup(text) ||
-    isCitationAuthorListDumpText(text) ||
     isContentlessResearchProjectsBoilerplateText(text) ||
     isNonResearchCardSentence(text) ||
     truncationEllipsisTailPattern.test(text)
@@ -1629,7 +1641,7 @@ function leadingSentenceCutAtClauseWithinCeiling(value: string): string {
     if (!head || CARD_CLAUSE_DANGLING_TAIL_PATTERN.test(head)) continue;
     if (countHygieneWords(head) < MIN_CARD_CLAUSE_WORDS) continue;
     if ((head.match(/\(/g) || []).length !== (head.match(/\)/g) || []).length) continue;
-    const card = `${head}.`;
+    const card = /[.!?]$/.test(head) ? head : `${head}.`;
     if (
       card.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
       countHygieneWords(card) > MAX_CARD_SHORT_DESCRIPTION_WORDS

@@ -538,14 +538,26 @@ function isBareTopicLabelListText(value: string): boolean {
   );
 }
 
+const LABEL_LIST_ROLE_NOUN_PATTERN =
+  /^(?:theorists?|experimentalists?|clinicians?|professors?|lecturers?|directors?|chairs?|faculty|researchers?|scientists?|scholars?)$/i;
+const STUDIES_INCLUDING_GLUED_CLAUSE =
+  /^Studies\s+[^,]+,\s+including\s+[^,.;]*\b(?:is|are|was|were|has|have)\s+(?:currently\s+)?\w+/i;
+
+const listsARoleOrAffiliationAsATopic = (text: string): boolean =>
+  Boolean(
+    parseLabelListFields(text)?.some(
+      (field) =>
+        LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field) ||
+        LABEL_LIST_ROLE_NOUN_PATTERN.test(field.trim()),
+    ),
+  );
+
 /**
  * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
  * not a faithful compression of its own fullDescription (#1616) when there is
  * no real fullDescription prose to compress in the first place - full is
- * blank, full is itself just the same bare label-list shape, or short and
- * full are the literal same text (a short is supposed to be a distinct
- * summary, so contributing zero delta over the full is substantively empty) -
- * or when a listed item names an affiliation rather than a topic (Schmidt
+ * blank, or full is itself just the same bare label-list shape - or when a
+ * listed item names an affiliation rather than a topic (Schmidt
  * Camacho's short serves her Council/Program affiliations as things she
  * "studies", which is incoherent - you can be affiliated with a Council, but
  * you cannot study one).
@@ -562,20 +574,6 @@ function isBareTopicLabelListText(value: string): boolean {
  * or a much larger tuning corpus than this issue affords, so those are left
  * for one-off data correction rather than a general rule.
  */
-const LABEL_LIST_ROLE_NOUN_PATTERN =
-  /^(?:theorists?|experimentalists?|clinicians?|professors?|lecturers?|directors?|chairs?|faculty|researchers?|scientists?|scholars?)$/i;
-const STUDIES_INCLUDING_GLUED_CLAUSE =
-  /^Studies\s+[^,]+,\s+including\s+[^,.;]*\b(?:is|are|was|were|has|have)\s+(?:currently\s+)?\w+/i;
-
-const listsARoleOrAffiliationAsATopic = (text: string): boolean =>
-  Boolean(
-    parseLabelListFields(text)?.some(
-      (field) =>
-        LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field) ||
-        LABEL_LIST_ROLE_NOUN_PATTERN.test(field.trim()),
-    ),
-  );
-
 function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
   // A card identical to its body is the row's whole description, which the owner

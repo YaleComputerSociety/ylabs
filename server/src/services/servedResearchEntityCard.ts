@@ -233,6 +233,14 @@ export function groundedShortDescriptionString(
   return shortDescription;
 }
 
+const bodyIsPastCardCeiling = (value: unknown): boolean => {
+  const text = String(value || '');
+  return (
+    text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+    text.split(/\s+/).filter(Boolean).length > MAX_CARD_SHORT_DESCRIPTION_WORDS
+  );
+};
+
 /**
  * Whether giving up the stored card actually reaches a summary of this entity's own
  * body: the body must survive the card sanitizer (#1832), and the value
@@ -260,14 +268,6 @@ export function groundedShortDescriptionString(
  * refusal above covers that case and must not be relaxed into "empty means the
  * body".
  */
-const bodyIsPastCardCeiling = (value: unknown): boolean => {
-  const text = String(value || '');
-  return (
-    text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
-    text.split(/\s+/).filter(Boolean).length > MAX_CARD_SHORT_DESCRIPTION_WORDS
-  );
-};
-
 function surrenderingTheCardReachesTheBody(
   served: Record<string, any>,
   entityType: ResearchEntityType | undefined,

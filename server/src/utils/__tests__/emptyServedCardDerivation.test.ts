@@ -41,8 +41,27 @@ describe('a card whose only sentence is past the card ceiling', () => {
 
   it('is never cut to a head that ends on a dangling word', () => {
     const card = sanitizeResearchEntityShortDescription(
-      `${'Studies the regulation of '.repeat(14)}gene expression in cells.`,
+      'Studies how developing neurons in the mammalian retina form their first synapses; examines the guidance cues and activity patterns in the visual cortex to which young neurons respond as circuits mature and are later refined by sensory experience across many developmental stages in mice, ferrets, and primates, using imaging.',
     );
-    expect(card).not.toMatch(/\b(?:of|the|and)\.$/);
+    expect(card).toBe(
+      'Studies how developing neurons in the mammalian retina form their first synapses.',
+    );
+  });
+
+  it('does not double the period of a head that ends on an abbreviation', () => {
+    const card = sanitizeResearchEntityShortDescription(
+      'Studies how mechanical forces shape developing tissues across the embryo, including the heart, the gut, the limb buds, the neural tube, etc. using live imaging, genetic perturbation, and computational models of cell mechanics to explain how organs reach their final size and form during development in zebrafish and mice.',
+    );
+    expect(card).toMatch(/etc\.$/);
+    expect(card).not.toMatch(/\.\.$/);
+  });
+});
+
+describe('a long card refused as a whole page dump', () => {
+  it('is not served through its clamped head', () => {
+    const card = sanitizeResearchEntityShortDescription(
+      'Welcome! The Coastal Ecology Lab investigates how salt marsh plant communities respond to sea level rise and nutrient loading along the Atlantic coast and in the estuaries of the Gulf of Maine. Field crews combine long-term plots with greenhouse experiments. Get involved in the summer field program and help with sampling.',
+    );
+    expect(card).toBe('');
   });
 });
