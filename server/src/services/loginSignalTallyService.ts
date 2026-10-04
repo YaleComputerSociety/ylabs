@@ -8,6 +8,7 @@ const MONGO_CONNECTED = 1;
 export const loginSignalBucketForLookup = (lookup: YaliesLookup): LoginSignalBucket => {
   if (lookup.kind === 'student') return lookup.signal;
   if (lookup.kind === 'unavailable') return 'yalies_unavailable';
+  if (lookup.kind === 'not_found') return 'yalies_not_found';
   return 'other_or_faculty';
 };
 

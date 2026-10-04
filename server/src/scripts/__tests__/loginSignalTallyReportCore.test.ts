@@ -64,6 +64,7 @@ describe('formatLoginSignalTallies', () => {
       grad_with_curriculum: 3,
       grad_without_curriculum: 1,
       other_or_faculty: 4,
+      yalies_not_found: 0,
       yalies_unavailable: 0,
     });
   });

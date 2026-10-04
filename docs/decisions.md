@@ -11,6 +11,7 @@ Personalizing default `/research` browse from the Yalies major, or a graduate cu
 A Yale College major is declared late, a major hidden in the source directory is absent from Yalies, and a record marked leave or visitor carries nothing usable.
 Development cannot answer it, because a Development login skips CAS and never calls Yalies.
 Decision: each CAS login classifies its Yalies lookup into exactly one bucket and increments a per-UTC-day counter in `login_signal_tallies`.
+A login Yalies has no record of is counted apart from a known faculty or staff login, because it may be a student hidden from the directory, so the report can show how large that unknown share is.
 The row holds the date and integer counts only, with no netid, account id, major, curriculum or time finer than the day, so the #4162 rule that login stores no major is unchanged: the major is read inside `yaliesService.ts` and only its bucket label leaves.
 A tally write never blocks or fails a login.
 The collection is environment-local and is read with `yarn --cwd server auth:login-signal-tally --environment=production --from <date> --to <date>`.

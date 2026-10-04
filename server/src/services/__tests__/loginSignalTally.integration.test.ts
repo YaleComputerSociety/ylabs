@@ -69,7 +69,7 @@ describe('the login signal tally', () => {
 
   it('maps every lookup outcome to exactly one bucket', () => {
     expect(loginSignalBucketForLookup({ kind: 'unavailable' })).toBe('yalies_unavailable');
-    expect(loginSignalBucketForLookup({ kind: 'not_found' })).toBe('other_or_faculty');
+    expect(loginSignalBucketForLookup({ kind: 'not_found' })).toBe('yalies_not_found');
     expect(
       loginSignalBucketForLookup({
         kind: 'employee',

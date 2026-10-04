@@ -180,6 +180,7 @@ export const loginSignalBuckets = [
   'grad_with_curriculum',
   'grad_without_curriculum',
   'other_or_faculty',
+  'yalies_not_found',
   'yalies_unavailable',
 ] as const;
 export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
