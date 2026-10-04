@@ -1133,17 +1133,35 @@ test('the smoke waits for the background Playwright install and fails when it fa
   const smokeAt = indexOf('Run student-journey smoke');
   assert.ok(startAt >= 0 && startAt < waitAt && waitAt < smokeAt);
   assert.ok(startAt > indexOf('Install dependencies from lockfiles'));
-  assert.match(steps[startAt].run, /npx playwright install --with-deps chromium/);
-  assert.match(steps[startAt].run, /echo \$\? > \/tmp\/playwright-install\.exit/);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-wait-'));
   try {
-    const script = steps[waitAt].run.replaceAll('/tmp/playwright-install', `${dir}/install`);
-    const verdictFor = (exitFileContent) => {
-      fs.writeFileSync(`${dir}/install.exit`, exitFileContent);
-      return spawnSync('bash', ['-e', '-c', script], { encoding: 'utf8' }).status;
+    const inTempDir = (script) => script.replaceAll('/tmp/playwright-install', `${dir}/install`);
+    const stubBin = path.join(dir, 'bin');
+    fs.mkdirSync(stubBin);
+    const handshakeExit = (npxExit) => {
+      fs.rmSync(`${dir}/install.exit`, { force: true });
+      fs.writeFileSync(
+        path.join(stubBin, 'npx'),
+        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\nexit ${npxExit}\n`,
+        { mode: 0o755 },
+      );
+      const env = { ...process.env, PATH: `${stubBin}:${process.env.PATH}` };
+      const start = spawnSync('bash', ['-e', '-c', inTempDir(steps[startAt].run)], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.equal(start.status, 0, 'the start step must return at once and never fail the job');
+      return spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
+        env,
+        encoding: 'utf8',
+      }).status;
     };
-    assert.equal(verdictFor('0\n'), 0);
-    assert.notEqual(verdictFor('1\n'), 0, 'a failed browser install must fail the smoke job');
+    assert.equal(handshakeExit(0), 0);
+    assert.notEqual(handshakeExit(1), 0, 'a failed browser install must fail the smoke job');
+    assert.deepEqual(fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n'), [
+      'npx playwright install --with-deps chromium',
+      'npx playwright install --with-deps chromium',
+    ]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
