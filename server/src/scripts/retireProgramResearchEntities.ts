@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import {
+  archiveResearchEntities,
+  emptyRoleEdgeSettlementOutcome,
+  type RoleEdgeSettlementOutcome,
+} from '../services/archivedResearchEntityRoleEdges';
 import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
@@ -210,6 +214,7 @@ export interface RetireProgramResearchEntitiesResult {
   mode: 'dry-run' | 'apply';
   plan: RetireProgramResearchEntitiesPlan;
   archivedResearchEntities: number;
+  roleEdges: RoleEdgeSettlementOutcome;
   search: ProgramSearchDocumentRemoval;
 }
 
@@ -230,17 +235,16 @@ export async function retireProgramResearchEntities(options: {
   });
 
   let archivedResearchEntities = 0;
+  let roleEdges = emptyRoleEdgeSettlementOutcome();
   let search: ProgramSearchDocumentRemoval = { requested: 0, deleted: false };
 
   if (options.apply && plan.toArchive.length > 0) {
     const objectIds = plan.toArchive
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
-    const result = await ResearchEntity.updateMany(
-      { _id: { $in: objectIds } },
-      archivedEntityUpdate(SCRIPT_NAME),
-    );
-    archivedResearchEntities = result.modifiedCount || 0;
+    const result = await archiveResearchEntities({ ids: objectIds, archivedReason: SCRIPT_NAME });
+    archivedResearchEntities = result.archived;
+    roleEdges = result.roleEdges;
     search = {
       ...(await deleteProgramSearchDocuments(plan.toArchive, options.getIndex || getMeiliIndex)),
       rebuildGuidance:
@@ -252,6 +256,7 @@ export async function retireProgramResearchEntities(options: {
     mode: options.apply ? 'apply' : 'dry-run',
     plan,
     archivedResearchEntities,
+    roleEdges,
     search,
   };
 }

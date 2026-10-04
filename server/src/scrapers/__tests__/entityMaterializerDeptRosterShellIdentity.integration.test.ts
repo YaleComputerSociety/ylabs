@@ -224,6 +224,50 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
       expect((await liveRows()).map((row) => row.slug)).toEqual([physics.slug]);
     });
 
+    it('leaves no live role edge on a folded row, across a second materialize (#4752)', async () => {
+      const researcher = await researcherNamed('jane.smith');
+      const chemistry = await crossListedRow('Chemistry');
+      const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
+      for (const row of [chemistry, physics]) await piEdge(researcher._id, row._id);
+      const student = new mongoose.Types.ObjectId();
+      const studentEdge = await RoleAssignment.create({
+        personId: student,
+        target: { kind: 'RESEARCH_ENTITY', id: chemistry._id },
+        role: 'GRADUATE_STUDENT',
+        state: 'UNKNOWN',
+        confidence: 0.6,
+        archived: false,
+      });
+
+      const liveEdgesOn = async (entityId: unknown) =>
+        RoleAssignment.find({
+          'target.kind': 'RESEARCH_ENTITY',
+          'target.id': entityId,
+          archived: { $ne: true },
+          state: { $ne: 'HISTORICAL' },
+        })
+          .select('personId role')
+          .lean<Array<{ personId: mongoose.Types.ObjectId; role: string }>>();
+
+      for (let pass = 0; pass < 2; pass += 1) {
+        await rematerialize('Chemistry');
+
+        expect((await ResearchEntity.findById(chemistry._id).lean())?.archived).toBe(true);
+        expect(await liveEdgesOn(chemistry._id)).toEqual([]);
+        const survivorEdges = await liveEdgesOn(physics._id);
+        expect(survivorEdges.map((edge) => `${edge.role}:${String(edge.personId)}`).sort()).toEqual(
+          [`GRADUATE_STUDENT:${String(student)}`, `PI:${String(researcher._id)}`].sort(),
+        );
+      }
+      const moved = await RoleAssignment.findById(studentEdge._id).lean();
+      expect(String(moved?.target.id)).toBe(String(physics._id));
+      const foldedLead = await RoleAssignment.findOne({
+        personId: researcher._id,
+        'target.id': chemistry._id,
+      }).lean();
+      expect(foldedLead).toMatchObject({ state: 'HISTORICAL', archived: true });
+    });
+
     it('folds into the oldest row when none serves yet', async () => {
       const researcher = await researcherNamed('jane.smith');
       const chemistry = await crossListedRow('Chemistry', {

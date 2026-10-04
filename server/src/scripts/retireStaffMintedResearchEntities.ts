@@ -8,7 +8,8 @@ import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
 import { Observation } from '../models/observation';
-import { archivedEntityUpdate, LIVE_ENTITY_FILTER } from '../models/entityArchival';
+import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
@@ -487,11 +488,12 @@ async function main(): Promise<void> {
       .map((entry) => entry.id)
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
-    const result = await ResearchEntity.updateMany(
-      { _id: { $in: objectIds }, ...LIVE_ENTITY_FILTER },
-      archivedEntityUpdate(STAFF_MINTED_ENTITY_ARCHIVE_REASON),
-    );
-    archived = result.modifiedCount ?? 0;
+    const result = await archiveResearchEntities({
+      ids: objectIds,
+      archivedReason: STAFF_MINTED_ENTITY_ARCHIVE_REASON,
+    });
+    archived = result.archived;
+    report.roleEdges = result.roleEdges;
     search = await deleteSearchDocuments(toApply.map((entry) => entry.id));
   }
 

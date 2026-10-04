@@ -12,8 +12,8 @@ import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import {
   GRANT_ONLY_ROW_ARCHIVE_REASON,
   GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
-  archivedEntityUpdate,
 } from '../models/entityArchival';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { Observation } from '../models/observation';
@@ -103,6 +103,7 @@ export interface GrantShellPortDelta {
   grantOnlyServedBefore: number;
   grantOnlyStillArchivedAfterTwoPasses: number;
   grantOnlyIndexDeleteFailures: number;
+  grantOnlyRoleEdgesEnded: number;
   grantOnlyEnrichedIntoExistingRow: number;
   grantOnlyEnrichmentDeferred: number;
   grantOnlyDeferredByCap: number;
@@ -118,6 +119,7 @@ type GrantOnlyArchivalDelta = Pick<
   | 'grantOnlyServedBefore'
   | 'grantOnlyStillArchivedAfterTwoPasses'
   | 'grantOnlyIndexDeleteFailures'
+  | 'grantOnlyRoleEdgesEnded'
   | 'grantOnlyEnrichedIntoExistingRow'
   | 'grantOnlyEnrichmentDeferred'
   | 'grantOnlyDeferredByCap'
@@ -297,6 +299,7 @@ async function archiveGrantOnlyRows(
     ).length,
     grantOnlyStillArchivedAfterTwoPasses: 0,
     grantOnlyIndexDeleteFailures: 0,
+    grantOnlyRoleEdgesEnded: 0,
     grantOnlyEnrichedIntoExistingRow: 0,
     grantOnlyEnrichmentDeferred: 0,
     grantOnlyDeferredByCap:
@@ -339,11 +342,12 @@ async function archiveGrantOnlyRows(
   if (toArchive.length === 0) return delta;
 
   for (const doc of toArchive) {
-    const result = await ResearchEntity.updateOne(
-      { _id: doc._id, archived: { $ne: true } },
-      archivedEntityUpdate(GRANT_ONLY_ROW_ARCHIVE_REASON),
-    );
-    delta.grantOnlyArchived += result.modifiedCount ?? 0;
+    const result = await archiveResearchEntities({
+      ids: [doc._id],
+      archivedReason: GRANT_ONLY_ROW_ARCHIVE_REASON,
+    });
+    delta.grantOnlyArchived += result.archived;
+    delta.grantOnlyRoleEdgesEnded += result.roleEdges.ended;
     const removedFromIndex = await deleteFromIndex('researchEntity', idText(doc._id));
     if (!removedFromIndex) delta.grantOnlyIndexDeleteFailures += 1;
   }

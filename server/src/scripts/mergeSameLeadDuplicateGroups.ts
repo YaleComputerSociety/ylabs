@@ -15,10 +15,8 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import {
-  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
-  archivedEntityUpdate,
-} from '../models/entityArchival';
+import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import {
   addResearchPlanCarryReports,
@@ -167,6 +165,8 @@ async function main(): Promise<void> {
 
   const applied = {
     merged: 0,
+    roleEdgesRepointed: 0,
+    roleEdgesArchivedRedundant: 0,
     fundingFieldsCarried: 0,
     rematerializations: 0,
     loserEvidenceMissingFromSurvivorBefore: 0,
@@ -249,14 +249,16 @@ async function main(): Promise<void> {
       }
 
       for (const loser of losers) {
-        await ResearchEntity.updateOne(
-          { _id: loser._id },
-          archivedEntityUpdate(SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON, {
-            canonicalGroupId: survivor._id,
-            lastObservedAt: now,
-          }),
-        );
+        const archivedLoser = await archiveResearchEntities({
+          ids: [loser._id],
+          archivedReason: SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+          set: { canonicalGroupId: survivor._id, lastObservedAt: now },
+          survivorId: survivor._id,
+          now,
+        });
         applied.merged += 1;
+        applied.roleEdgesRepointed += archivedLoser.roleEdges.repointed;
+        applied.roleEdgesArchivedRedundant += archivedLoser.roleEdges.archivedRedundant;
       }
       researchPlanCarry = addResearchPlanCarryReports(
         researchPlanCarry,

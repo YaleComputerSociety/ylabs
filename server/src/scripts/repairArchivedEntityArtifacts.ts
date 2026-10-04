@@ -5,7 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import {
   ARCHIVED_REASON_ABSENT,
   archivedEntityArtifactPlanWriteCount,
@@ -13,6 +12,7 @@ import {
   buildArchivedEntityArtifactRepairPlan,
   dispositionMatchesScope,
   resolveArchivedEntityDispositions,
+  roleEdgeSettlementsFromRepairPlan,
   summarizeArchivedEntityArtifactRepairPlanByClass,
   type ArchivedEntityArtifact,
   type ArchivedEntityArtifactRepairPlan,
@@ -26,6 +26,11 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { attributedArchiveSet } from '../models/entityArchival';
+import {
+  applyRoleEdgeSettlements,
+  LIVE_ROLE_EDGE_FILTER,
+  SURVIVOR_HOLDING_ROLE_EDGE_FILTER,
+} from '../services/archivedResearchEntityRoleEdges';
 
 dotenv.config({ quiet: true });
 
@@ -34,6 +39,7 @@ interface ArtifactSpec {
   collection: string;
   entityIdPath: string;
   activeMatch: Record<string, unknown>;
+  survivorMatch: Record<string, unknown>;
   projection: Record<string, 1>;
   toArtifact: (row: Record<string, any>) => ArchivedEntityArtifact;
 }
@@ -55,11 +61,6 @@ export interface RepairArchivedEntityArtifactsCliOptions {
 
 const __filename = fileURLToPath(import.meta.url);
 
-export const MERGED_DUPLICATE_ROLE_EDGE_NOTE =
-  'Retired by research-entity:repair-archived-artifacts: duplicates a live edge on the merge survivor of its archived research entity (#3578).';
-export const NO_CANONICAL_ROLE_EDGE_NOTE =
-  'Retired by research-entity:repair-archived-artifacts: its research entity is archived with no merge survivor (#3578).';
-
 const ARTIFACT_TYPE_FLAGS: Record<string, ArchivedEntityArtifactType> = {
   'role-assignment': 'RoleAssignment',
   'access-signal': 'AccessSignal',
@@ -70,11 +71,8 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     artifactType: 'RoleAssignment',
     collection: 'role_assignments',
     entityIdPath: 'target.id',
-    activeMatch: {
-      archived: { $ne: true },
-      state: { $ne: 'HISTORICAL' },
-      'target.kind': 'RESEARCH_ENTITY',
-    },
+    activeMatch: { ...LIVE_ROLE_EDGE_FILTER, 'target.kind': 'RESEARCH_ENTITY' },
+    survivorMatch: { ...SURVIVOR_HOLDING_ROLE_EDGE_FILTER, 'target.kind': 'RESEARCH_ENTITY' },
     projection: { _id: 1, target: 1, personId: 1, role: 1 },
     toArtifact: (row) => ({
       artifactType: 'RoleAssignment',
@@ -89,6 +87,7 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     collection: 'signals',
     entityIdPath: 'researchEntityId',
     activeMatch: { archived: { $ne: true } },
+    survivorMatch: {},
     projection: { _id: 1, researchEntityId: 1, type: 1, derivationKey: 1 },
     toArtifact: (row) => ({
       artifactType: 'AccessSignal',
@@ -430,7 +429,7 @@ async function loadEntityNodes(): Promise<{
   return { archivedEntities, nodesById };
 }
 
-async function loadArchivedEntityArtifactPlan(
+export async function loadArchivedEntityArtifactPlan(
   limit: number,
   scope: ArchivedEntityRepairScope,
   artifactTypes: ArchivedEntityArtifactType[] | undefined,
@@ -479,7 +478,7 @@ async function loadArchivedEntityArtifactPlan(
         .toArray(),
       survivorIds.length > 0
         ? collection
-            .find({ [spec.entityIdPath]: { $in: survivorIds } })
+            .find({ ...spec.survivorMatch, [spec.entityIdPath]: { $in: survivorIds } })
             .project(spec.projection)
             .toArray()
         : Promise.resolve([]),
@@ -510,42 +509,18 @@ function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
 
 const ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON = 'research-entity:repair-archived-artifacts';
 
-function retireArtifactUpdate(
-  artifactType: ArchivedEntityArtifactType,
-  note: string,
-  now: Date,
-): Record<string, unknown> {
-  if (artifactType === 'RoleAssignment') {
-    return {
-      $set: {
-        archived: true,
-        reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
-        reviewNotes: note,
-      },
-    };
-  }
-  return {
-    $set: attributedArchiveSet(ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON, {
-      lastMaterializedAt: now,
-    }),
-  };
-}
-
-async function retireArtifact(
-  artifactType: ArchivedEntityArtifactType,
-  id: string,
-  note: string,
-  now: Date,
-): Promise<number> {
+async function retireSignal(id: string, now: Date): Promise<number> {
   const db = mongoose.connection.db;
   const artifactObjectId = objectId(id);
   if (!db || !artifactObjectId) return 0;
-  const result = await db
-    .collection(specFor(artifactType).collection)
-    .updateOne(
-      { _id: artifactObjectId, archived: { $ne: true } },
-      retireArtifactUpdate(artifactType, note, now),
-    );
+  const result = await db.collection(specFor('AccessSignal').collection).updateOne(
+    { _id: artifactObjectId, archived: { $ne: true } },
+    {
+      $set: attributedArchiveSet(ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON, {
+        lastMaterializedAt: now,
+      }),
+    },
+  );
   return result.modifiedCount || 0;
 }
 
@@ -575,9 +550,11 @@ async function mergeSignalEvidenceIntoSurvivor(
   return result.modifiedCount || 0;
 }
 
-async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
+export async function applyArchivedEntityArtifactRepairPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+  now = new Date(),
+) {
   const db = mongoose.connection.db;
-  const now = new Date();
   const counts = {
     relinked: 0,
     mergedCanonicalArtifacts: 0,
@@ -586,58 +563,46 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
   };
   if (!db) return counts;
 
-  for (const item of plan.relink) {
-    const spec = specFor(item.artifactType);
+  const roleEdges = await applyRoleEdgeSettlements(roleEdgeSettlementsFromRepairPlan(plan), now);
+  counts.relinked += roleEdges.repointed;
+  counts.archivedMergedDuplicates += roleEdges.archivedRedundant;
+  counts.archivedWithoutCanonical += roleEdges.ended;
+
+  const isSignal = (item: { artifactType: ArchivedEntityArtifactType }) =>
+    item.artifactType === 'AccessSignal';
+  const signalSpec = specFor('AccessSignal');
+  for (const item of plan.relink.filter(isSignal)) {
     const itemObjectId = objectId(item.id);
     const archivedEntityObjectId = objectId(item.archivedEntityId);
     const canonicalObjectId = objectId(item.canonicalResearchEntityId);
     if (!itemObjectId || !archivedEntityObjectId || !canonicalObjectId) continue;
-    const set: Record<string, unknown> = { [spec.entityIdPath]: canonicalObjectId };
-    if (item.artifactType === 'AccessSignal') set.lastMaterializedAt = now;
     try {
-      const result = await db.collection(spec.collection).updateOne(
+      const result = await db.collection(signalSpec.collection).updateOne(
         {
           _id: itemObjectId,
           archived: { $ne: true },
-          [spec.entityIdPath]: archivedEntityObjectId,
+          [signalSpec.entityIdPath]: archivedEntityObjectId,
         },
-        { $set: set },
+        { $set: { [signalSpec.entityIdPath]: canonicalObjectId, lastMaterializedAt: now } },
       );
       counts.relinked += result.modifiedCount || 0;
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
-      counts.archivedMergedDuplicates += await retireArtifact(
-        item.artifactType,
-        item.id,
-        MERGED_DUPLICATE_ROLE_EDGE_NOTE,
-        now,
-      );
+      counts.archivedMergedDuplicates += await retireSignal(item.id, now);
     }
   }
 
-  for (const item of plan.mergeAndArchive) {
-    if (item.artifactType === 'AccessSignal') {
-      counts.mergedCanonicalArtifacts += await mergeSignalEvidenceIntoSurvivor(
-        item.duplicateId,
-        item.canonicalId,
-        now,
-      );
-    }
-    counts.archivedMergedDuplicates += await retireArtifact(
-      item.artifactType,
+  for (const item of plan.mergeAndArchive.filter(isSignal)) {
+    counts.mergedCanonicalArtifacts += await mergeSignalEvidenceIntoSurvivor(
       item.duplicateId,
-      MERGED_DUPLICATE_ROLE_EDGE_NOTE,
+      item.canonicalId,
       now,
     );
+    counts.archivedMergedDuplicates += await retireSignal(item.duplicateId, now);
   }
 
-  for (const item of plan.archiveWithoutCanonical) {
-    counts.archivedWithoutCanonical += await retireArtifact(
-      item.artifactType,
-      item.id,
-      NO_CANONICAL_ROLE_EDGE_NOTE,
-      now,
-    );
+  for (const item of plan.archiveWithoutCanonical.filter(isSignal)) {
+    counts.archivedWithoutCanonical += await retireSignal(item.id, now);
   }
 
   return counts;
@@ -667,7 +632,7 @@ async function main() {
   );
   const plannedWrites = archivedEntityArtifactPlanWriteCount(plan);
   assertArchivedEntityArtifactRepairApplyAllowed({ ...applyGuardInput, plannedWrites });
-  const applied = options.apply ? await applyRepairPlan(plan) : undefined;
+  const applied = options.apply ? await applyArchivedEntityArtifactRepairPlan(plan) : undefined;
   const report = buildRepairArchivedEntityArtifactsOutput(
     {
       environment: guard.environment,

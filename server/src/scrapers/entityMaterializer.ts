@@ -270,6 +270,7 @@ import {
 } from './storedUndergradEvidenceQuote';
 import { withResearchEntityWriteTransaction } from '../services/researchEntityWriteTransaction';
 import { carryResearchPlansToSurvivor } from '../services/researchPlanMergeCarry';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
@@ -4173,14 +4174,14 @@ async function deptRosterShellFoldTarget(personName: string): Promise<any | null
 
 /**
  * A department-roster observation mints a `dept-<dept>-<person>` shell per
- * appointment. Left alone, these never enter the identity-keyed dedupe lane
- * (#561) because they carry no PI RoleAssignment yet, and never get a
- * canonicalGroupId tombstone or Meili cleanup (#584) because they never go
- * through a dedupe merge - the exact gap in #1364. When the shell's inferred
- * PI already has a real, non-generated research home, fold the shell into it
- * immediately: merge the additive fields, archive the shell with a
- * canonicalGroupId tombstone, and remove it from the search index, so no
- * per-appointment orphan is ever left standing.
+ * appointment. Left alone, these never get a canonicalGroupId tombstone or Meili
+ * cleanup (#584) because they never go through a dedupe merge - the exact gap in
+ * #1364. When the shell's inferred PI already has a real, non-generated research
+ * home, fold the shell into it immediately: merge the additive fields, archive the
+ * shell with a canonicalGroupId tombstone, and remove it from the search index, so
+ * no per-appointment orphan is ever left standing. The shell usually carries the
+ * PI edge this same pass wrote, so the archive moves its edges to the canonical row
+ * or archives them as redundant there (#4752).
  */
 export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   shellEntityId: string,
@@ -4217,13 +4218,13 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
       $set: { lastObservedAt: now },
     },
   );
-  await ResearchEntity.updateOne(
-    { _id: shell._id, archived: { $ne: true } },
-    archivedEntityUpdate(DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON, {
-      canonicalGroupId: canonicalId,
-      lastObservedAt: now,
-    }),
-  );
+  await archiveResearchEntities({
+    ids: [shell._id],
+    archivedReason: DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
+    set: { canonicalGroupId: canonicalId, lastObservedAt: now },
+    survivorId: canonicalId,
+    now,
+  });
   await carryResearchPlansToSurvivor({
     survivorId: canonicalId,
     duplicateIds: [String(shell._id)],
@@ -8818,10 +8819,10 @@ export async function materializeEntity(
           ? archivedEntityUpdate(PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON)
           : undefined;
       if (archiveUpdate && !options.dryRun) {
-        await ResearchEntity.updateOne(
-          { _id: entityDoc._id, archived: { $ne: true } },
-          archiveUpdate,
-        );
+        await archiveResearchEntities({
+          ids: [entityDoc._id],
+          archivedReason: PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON,
+        });
         await deleteFromIndex('researchEntity', String(entityDoc._id));
       }
       return {
