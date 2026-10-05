@@ -31,6 +31,7 @@ import {
   firstContactLimiter,
   globalLimiter,
   observeFirstContactVolume,
+  rateLimitClientIp,
 } from './middleware/rateLimiters';
 
 const clientDistPath = path.join(resolveServerPackageRoot(import.meta.url), '..', 'client', 'dist');
@@ -235,7 +236,7 @@ app.get('/{*clientPath}', async (req, res) => {
     return sendStaticNotFound(res);
   }
 
-  const resolution = await resolvePageShell(req.path);
+  const resolution = await resolvePageShell(req.path, rateLimitClientIp(req));
   if (resolution.kind === 'redirect') {
     res.setHeader('Cache-Control', 'public, max-age=0');
     return res.redirect(resolution.status, resolution.location);

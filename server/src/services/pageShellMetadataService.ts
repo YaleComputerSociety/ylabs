@@ -7,6 +7,11 @@ import { servedResearchEntityTitle } from '../utils/servedResearchEntityTitle';
 import type { PageShellHead } from '../utils/pageShellHead';
 
 export const PAGE_SHELL_LOOKUP_TIMEOUT_MS = 1500;
+export const PAGE_SHELL_CACHE_TTL_MS = 5 * 60 * 1000;
+export const PAGE_SHELL_CACHE_MAX_ENTRIES = 2000;
+export const PAGE_SHELL_LOOKUP_WINDOW_MS = 60 * 1000;
+export const PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW = 60;
+export const PAGE_SHELL_LIMITER_MAX_CLIENTS = 10000;
 
 export type PageShellResolution =
   | { kind: 'page'; status: 200 | 404; head: PageShellHead }
@@ -20,11 +25,92 @@ export interface ServedResearchShellFields {
   shortDescription?: unknown;
 }
 
+export interface PageShellResolutionCache {
+  get: (slug: string) => Promise<PageShellResolution> | undefined;
+  track: (slug: string, pending: Promise<PageShellResolution>) => Promise<PageShellResolution>;
+}
+
+export interface PageShellLookupLimiter {
+  tryAcquire: (clientKey: string) => boolean;
+}
+
 export interface PageShellMetadataDependencies {
   readServedResearchEntity: (slug: string) => Promise<ServedResearchShellFields | null>;
   readArchivedCanonicalSlug: (slug: string) => Promise<string | null>;
   lookupTimeoutMs: number;
+  cache: PageShellResolutionCache;
+  lookupLimiter: PageShellLookupLimiter;
 }
+
+const setNewest = <K, V>(map: Map<K, V>, key: K, value: V, maxEntries: number): void => {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > maxEntries) {
+    const oldest = map.keys().next();
+    if (oldest.done) break;
+    map.delete(oldest.value);
+  }
+};
+
+export const createPageShellResolutionCache = ({
+  ttlMs = PAGE_SHELL_CACHE_TTL_MS,
+  maxEntries = PAGE_SHELL_CACHE_MAX_ENTRIES,
+  now = Date.now,
+}: { ttlMs?: number; maxEntries?: number; now?: () => number } = {}): PageShellResolutionCache => {
+  const settled = new Map<string, { resolution: PageShellResolution; expiresAt: number }>();
+  const inFlight = new Map<string, Promise<PageShellResolution>>();
+
+  return {
+    get: (slug) => {
+      const entry = settled.get(slug);
+      if (entry && entry.expiresAt > now()) return Promise.resolve(entry.resolution);
+      if (entry) settled.delete(slug);
+      return inFlight.get(slug);
+    },
+    track: (slug, pending) => {
+      const tracked = pending.then(
+        (resolution) => {
+          inFlight.delete(slug);
+          setNewest(settled, slug, { resolution, expiresAt: now() + ttlMs }, maxEntries);
+          return resolution;
+        },
+        (error: unknown) => {
+          inFlight.delete(slug);
+          throw error;
+        },
+      );
+      inFlight.set(slug, tracked);
+      return tracked;
+    },
+  };
+};
+
+export const createPageShellLookupLimiter = ({
+  windowMs = PAGE_SHELL_LOOKUP_WINDOW_MS,
+  maxLookups = PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW,
+  maxClients = PAGE_SHELL_LIMITER_MAX_CLIENTS,
+  now = Date.now,
+}: {
+  windowMs?: number;
+  maxLookups?: number;
+  maxClients?: number;
+  now?: () => number;
+} = {}): PageShellLookupLimiter => {
+  const windows = new Map<string, { startedAt: number; lookups: number }>();
+
+  return {
+    tryAcquire: (clientKey) => {
+      const current = windows.get(clientKey);
+      const window =
+        current && now() - current.startedAt < windowMs
+          ? current
+          : { startedAt: now(), lookups: 0 };
+      if (window.lookups >= maxLookups) return false;
+      setNewest(windows, clientKey, { ...window, lookups: window.lookups + 1 }, maxClients);
+      return true;
+    },
+  };
+};
 
 const STATIC_PAGE_HEADS: Record<string, PageShellHead> = {
   '/': { canonicalPath: '/' },
@@ -86,6 +172,7 @@ const withTimeout = async <T>(work: Promise<T>, timeoutMs: number): Promise<T> =
 
 const resolveResearchDetailShell = async (
   rawSlug: string,
+  clientKey: string,
   dependencies: PageShellMetadataDependencies,
 ): Promise<PageShellResolution> => {
   const decoded = decodePathSegment(rawSlug);
@@ -108,8 +195,15 @@ const resolveResearchDetailShell = async (
     return NOT_FOUND_SHELL;
   };
 
+  const pending =
+    dependencies.cache.get(slug) ??
+    (dependencies.lookupLimiter.tryAcquire(clientKey)
+      ? dependencies.cache.track(slug, withTimeout(lookup(), dependencies.lookupTimeoutMs))
+      : undefined);
+  if (!pending) return UNMODIFIED_SHELL;
+
   try {
-    return await withTimeout(lookup(), dependencies.lookupTimeoutMs);
+    return await pending;
   } catch {
     return UNMODIFIED_SHELL;
   }
@@ -126,10 +220,13 @@ export const defaultPageShellMetadataDependencies: PageShellMetadataDependencies
   readServedResearchEntity,
   readArchivedCanonicalSlug: resolveArchivedResearchEntityCanonicalSlug,
   lookupTimeoutMs: PAGE_SHELL_LOOKUP_TIMEOUT_MS,
+  cache: createPageShellResolutionCache(),
+  lookupLimiter: createPageShellLookupLimiter(),
 };
 
 export const resolvePageShell = async (
   requestPath: string,
+  clientKey: string,
   dependencies: PageShellMetadataDependencies = defaultPageShellMetadataDependencies,
 ): Promise<PageShellResolution> => {
   const segments = requestPath.split('/').filter(Boolean);
@@ -139,7 +236,7 @@ export const resolvePageShell = async (
   if (staticHead) return { kind: 'page', status: 200, head: staticHead };
 
   if (segments.length === 2 && segments[0] === 'research') {
-    return resolveResearchDetailShell(segments[1], dependencies);
+    return resolveResearchDetailShell(segments[1], clientKey, dependencies);
   }
 
   return UNMODIFIED_SHELL;
