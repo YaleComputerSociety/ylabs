@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WRITER_CONTRACT_VERSION,
   buildWriterEvidenceSnippets,
+  buildWriterEvidenceSnippetsWithMergedInFill,
   eligibleWriterGrants,
   orderWriterEvidence,
   writerEvidenceRank,
@@ -236,5 +237,51 @@ describe('the writer refuses wrong attribution and past work (#4867)', () => {
         'Mentors students through their graduate research on immune cell fate.',
       ),
     ).toBe(false);
+  });
+});
+
+describe('a merge survivor reads its merged-in rows only to fill empty evidence', () => {
+  const ROSTER_PROSE =
+    'Studies asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
+
+  it('writes from a merged-in row when the survivor carries no evidence of its own', async () => {
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
+      [],
+      async () => [
+        observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh'),
+      ],
+      [],
+      { now: NOW },
+    );
+    expect(snippets.map((snippet) => snippet.text)).toEqual([ROSTER_PROSE]);
+  });
+
+  it("keeps the survivor's own evidence without reading a merged-in row", async () => {
+    let mergedInRead = false;
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
+      [observation(OWN_PROSE, 'yale-research-official', 'https://marsh.example.edu/')],
+      async () => {
+        mergedInRead = true;
+        return [
+          observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh'),
+        ];
+      },
+      [],
+      { now: NOW },
+    );
+    expect(snippets.map((snippet) => snippet.text)).toEqual([OWN_PROSE]);
+    expect(mergedInRead).toBe(false);
+  });
+
+  it('holds a merged-in row to the same evidence rule as the survivor', async () => {
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
+      [],
+      async () => [
+        observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/'),
+      ],
+      [],
+      { now: NOW },
+    );
+    expect(snippets).toEqual([]);
   });
 });
