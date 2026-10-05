@@ -400,6 +400,67 @@ describe(
       expect(await researchersNamed('Blair')).toBe(1);
     });
 
+    it('joins a section-prefixed medical school profile listing to the holder of the root profile', async () => {
+      const slug = 'quinlan-synthetic';
+      const holder = await accountHolder('Quinlan', {
+        officialUrl: `https://medicine.yale.edu/profile/${slug}/`,
+        displayName: 'Quinlaneth Synthetic',
+      });
+      const sectionListing: CenterMember = {
+        name: 'Quinlan Synthetic',
+        role: 'core-faculty',
+        profileUrl: `https://medicine.yale.edu/cancer/profile/${slug}/`,
+      };
+
+      await runLane({}, [sectionListing]);
+
+      expect(await researchersNamed('Quinlan')).toBe(0);
+      expect(await liveEdgesOf(holder)).toHaveLength(1);
+      expect(await RoleAssignment.countDocuments({ 'target.id': await centerId() })).toBe(1);
+    });
+
+    it('joins a medical school profile listing to a holder stored under another section spelling', async () => {
+      const slug = 'quinlan-synthetic';
+      const holder = await accountHolder('Quinlan', {
+        officialUrl: `https://www.medicine.yale.edu/bbs/profile/${slug}`,
+        displayName: 'Quinlaneth Synthetic',
+      });
+
+      await runLane({}, [
+        {
+          name: 'Quinlan Synthetic',
+          role: 'core-faculty',
+          profileUrl: `https://medicine.yale.edu/cancer/profile/${slug}/`,
+        },
+      ]);
+
+      expect(await researchersNamed('Quinlan')).toBe(0);
+      expect(await liveEdgesOf(holder)).toHaveLength(1);
+    });
+
+    it('treats root and section spellings of one medical school profile as one shared url', async () => {
+      const slug = 'avery-synthetic';
+      const avery = await accountHolder('Avery', {
+        officialUrl: `https://medicine.yale.edu/profile/${slug}/`,
+      });
+      await accountHolder('Blair');
+
+      await runLane({}, [
+        {
+          name: 'Avery Synthetic',
+          role: 'director',
+          profileUrl: `https://medicine.yale.edu/profile/${slug}/`,
+        },
+        {
+          name: 'Blair Synthetic',
+          role: 'core-faculty',
+          profileUrl: `https://medicine.yale.edu/cancer/profile/${slug}/`,
+        },
+      ]);
+
+      expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
+    });
+
     it('still records a listing no identified researcher shares a name with', async () => {
       await runLane({ [centerProfileUrl('Casey')]: profilePage() });
 
