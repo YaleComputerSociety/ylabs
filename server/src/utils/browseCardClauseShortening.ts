@@ -37,6 +37,13 @@ const TRAILING_FUNCTION_WORD =
 const TRAILING_PLACEHOLDER_NOUN =
   /(?:\b(?:topics|areas|fields|issues|subjects|themes|questions|aspects|ways|things|targets|figures|institutions|settings)|\b(?:to|and|other)\s+conditions)$/i;
 
+// A boundary with no punctuation before it can follow a word that needs what comes after
+// it ("research has focused on", "aims to understand", "can be used to", "mediated by
+// signaling"), so the head must not end on an auxiliary, a verb that takes "to", an
+// adverb, or a past participle.
+const TRAILING_DEPENDENT_WORD =
+  /\b(?:has|have|had|been|be|being|can|could|may|might|will|would|should|must|aims?|seeks?|works?|strives?|tries|try|hopes?|able|[a-z]+ly|[a-z]+ed)$/i;
+
 const MAX_SHORTENED_LENGTH = 190;
 const MIN_SHORTENED_LENGTH = 35;
 const MIN_SHORTENED_WORDS = 6;
@@ -45,7 +52,9 @@ const MIN_SHORTENED_WORDS = 6;
 // especially ... — influences") holds the sentence's verb after it, so the head before
 // it has no verb.
 const cutsBeforeAClosedAside = (pattern: RegExp, tail: string): boolean =>
-  pattern === EM_DASH_ASIDE_BOUNDARY && tail.includes('—');
+  pattern === EM_DASH_ASIDE_BOUNDARY && /[—–]/.test(tail);
+
+const opensWithPunctuation = (boundary: string): boolean => /^\s*[,;:—–]/.test(boundary);
 
 // "mechanisms that allow specialized cell types such as neurons ... to meet" holds the
 // relative clause's verb after its examples.
@@ -67,17 +76,18 @@ export function shortenCardLineToFitBrowseCard(card: string): string {
   const text = card.replace(/\s+/g, ' ').trim();
   if (!browseCardIsCutMidSentence(browseCardSummary(text))) return text;
   for (const pattern of CLAUSE_BOUNDARIES) {
-    const cuts: number[] = [];
+    const cuts: { at: number; boundary: string }[] = [];
     const matcher = new RegExp(pattern.source, pattern.flags);
     let match: RegExpExecArray | null;
     while ((match = matcher.exec(text))) {
       if (match.index >= MIN_SHORTENED_LENGTH && match.index <= MAX_SHORTENED_LENGTH) {
-        cuts.push(match.index);
+        cuts.push({ at: match.index, boundary: match[0] });
       }
     }
-    for (const at of cuts.reverse()) {
+    for (const { at, boundary } of cuts.reverse()) {
       const head = text.slice(0, at).replace(/[\s,;:–—-]+$/, '');
-      if (cutsBeforeAClosedAside(pattern, text.slice(at + 1))) continue;
+      if (cutsBeforeAClosedAside(pattern, text.slice(at + boundary.length))) continue;
+      if (!opensWithPunctuation(boundary) && TRAILING_DEPENDENT_WORD.test(head)) continue;
       if (cutsInsideARelativeClause(pattern, head)) continue;
       if (TRAILING_FUNCTION_WORD.test(head) || TRAILING_PLACEHOLDER_NOUN.test(head)) continue;
       // A head already ending in a period ends in an abbreviation ("the U.S."), which

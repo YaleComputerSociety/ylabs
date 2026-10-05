@@ -88,6 +88,33 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     );
   });
 
+  it('does not cut before an en-dash aside that the sentence closes', () => {
+    const card =
+      'Studies how steroid hormone signaling in the uterus – especially glucocorticoid receptor activity and crosstalk with other receptors – influences early pregnancy events and the growth of uterine fibroids.';
+    expect(shortenCardLineToFitBrowseCard(card)).not.toBe(
+      'Studies how steroid hormone signaling in the uterus.',
+    );
+  });
+
+  it('cuts before a spaced em-dash aside the sentence leaves open', () => {
+    const card =
+      'Studies how steroid hormone signaling shapes the uterus and placenta — especially glucocorticoid receptor activity, crosstalk with other steroid receptors, implantation, pregnancy loss, and uterine fibroids.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(
+      'Studies how steroid hormone signaling shapes the uterus and placenta.',
+    );
+  });
+
+  it.each([
+    'Research in the fixture laboratory has focused on how cortical circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in rodents, primates, and humans over many decades.',
+    'The fixture laboratory is primarily focused on how cortical circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in rodents, primates, and humans over many decades.',
+    'The fixture laboratory aims to understand how cortical circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in rodents, primates, and humans over many decades.',
+    'Develops computational methods for cortical recordings that can be used to identify how circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in many model species.',
+    'Studies synaptic loss and memory decline in the aging brain mediated by signaling between microglia, astrocytes, and neurons across learning, sleep, stress, and disease states in rodents and in humans worldwide.',
+  ])('does not end a card on a word that needs what follows it: %s', (card) => {
+    const served = shortenCardLineToFitBrowseCard(card);
+    expect(served).not.toMatch(/\b(?:has|primarily|aims|used|mediated)\.$/);
+  });
+
   it('does not cut example lists inside a relative clause or after a placeholder noun', () => {
     const relative =
       'Studies lysosome cell biology in neurodegenerative disease, aiming to define cellular mechanisms that allow specialized cell types such as neurons, microglia and macrophages to meet their physiological demands.';
