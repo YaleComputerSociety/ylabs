@@ -17,6 +17,7 @@ import { normalizeOfficialProfileDestination } from '../services/leadProfileIden
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   descriptionAffirmsNoResearch,
+  descriptionStatesCreativePracticeEvidence,
   descriptionStatesResearch,
 } from '../utils/descriptionStatesResearch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -410,6 +411,9 @@ async function main(): Promise<void> {
           row as { shortDescription?: unknown; fullDescription?: unknown },
         ),
         descriptionAffirmsNoResearch: descriptionAffirmsNoResearch(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
+        descriptionStatesCreativePractice: descriptionStatesCreativePracticeEvidence(
           row as { shortDescription?: unknown; fullDescription?: unknown },
         ),
         hasForeignWebsite: hasForeignWebsite(

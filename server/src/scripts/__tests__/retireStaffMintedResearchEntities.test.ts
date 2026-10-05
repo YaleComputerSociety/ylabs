@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { descriptionAffirmsNoResearch } from '../../utils/descriptionStatesResearch';
+import {
+  descriptionAffirmsNoResearch,
+  descriptionStatesCreativePracticeEvidence,
+} from '../../utils/descriptionStatesResearch';
 import {
   descriptionStatesResearch,
   entriesInReasonScope,
@@ -191,5 +194,34 @@ describe('descriptionAffirmsNoResearch (#4916)', () => {
     ]) {
       expect(descriptionAffirmsNoResearch(entity)).toBe(false);
     }
+  });
+});
+
+describe('teaching witness and creative practice (#4916)', () => {
+  it('reads program evaluation as research', () => {
+    expect(
+      descriptionAffirmsNoResearch({
+        fullDescription: 'Designing and evaluating leadership programs for fixture health teams.',
+      }),
+    ).toBe(false);
+  });
+
+  it('reads any kind of creative-practice evidence, with no arts department needed', () => {
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        fullDescription: 'The author of five books of poetry and a collection of essays.',
+      }),
+    ).toBe(true);
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        shortDescription: 'Writes about art and culture for magazines and essays.',
+        fullDescription: 'Has taught literature and is interested in fiction.',
+      }),
+    ).toBe(true);
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        fullDescription: 'Has worked in a state remediation division for twenty years.',
+      }),
+    ).toBe(false);
   });
 });
