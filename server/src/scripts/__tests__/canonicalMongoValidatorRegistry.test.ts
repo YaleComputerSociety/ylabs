@@ -135,7 +135,11 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #4917. The only drift is accounts.archivedReason admitting
+    // Reviewed for #4940. The only drift is researchers losing dedupedReason, because the twin
+    // researcher merge that stamped it was removed (#4924). On 2026-10-05, 0 Development
+    // researchers carried the field. No other collection or property changed.
+    //
+    // Reviewed for #4917 before that. The only drift is accounts.archivedReason admitting
     // 'lone-local-part-netid-account', which archives a local-part account with no twin and
     // nothing referencing it, and researchers gaining dedupedReason, an optional string
     // limited to 'local-part-netid-twin-account', which the twin researcher merge stamps on
@@ -190,6 +194,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('74b96965f7e184264a2eea5c907f0df5f3c3ab4acc3a37ca8d6af1b89f9bffa1');
+    ).toBe('c69c262b8dce7b35d240c86700a31cda0ff9979d63fc6436cfe50fa6849df193');
   });
 });

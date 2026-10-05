@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { connectScriptMongo } from '../db/connections';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   applyLocalPartNetidMerges,
@@ -15,11 +14,6 @@ import {
   planLoneLocalPartArchives,
   projectedSharedEmailGroupsAfterApply,
 } from './mergeLocalPartNetidAccountsCore';
-import {
-  applyLocalPartTwinResearcherMerges,
-  planLocalPartTwinResearcherMerges,
-  summarizeTwinResearcherMergeEdits,
-} from './mergeLocalPartTwinResearchersCore';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,7 +22,9 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 export const SCRIPT_NAME = 'accounts:merge-local-part-netid-twins';
 export const MERGE_CONFIRM_FLAG = '--confirm-merge-local-part-netid-twins';
 
-export const MERGE_SCOPES = ['account-twins', 'researcher-twins', 'lone-accounts'] as const;
+// No scope folds the researchers of a pair whose accounts both link one: the local part is a live
+// observation join key, so a fold leaves those observations resolving to nobody (#4924).
+export const MERGE_SCOPES = ['account-twins', 'lone-accounts'] as const;
 export type MergeScope = (typeof MERGE_SCOPES)[number];
 
 export interface MergeLocalPartNetidAccountsArgs {
@@ -119,34 +115,18 @@ async function main(): Promise<void> {
     const db = mongoose.connection.db!;
     assertMergeLocalPartNetidAccountsApplyAllowed(args, db.databaseName);
     const twins = await planLocalPartNetidMerges(db);
-    const researcherTwins = await planLocalPartTwinResearcherMerges(db);
     const lone = await planLoneLocalPartArchives(db);
     const planned: Record<MergeScope, number> = {
       'account-twins': twins.merges.length,
-      'researcher-twins': researcherTwins.merges.length,
       'lone-accounts': lone.archives.length,
     };
     let applied: unknown = null;
     if (args.apply) {
       assertMergeCountWithinCap(planned[args.scope], args.maxApply);
-      if (args.scope === 'account-twins') {
-        applied = await applyLocalPartNetidMerges(db, twins.merges);
-      } else if (args.scope === 'lone-accounts') {
-        applied = await applyLoneLocalPartArchives(db, lone.archives);
-      } else {
-        const merged = await applyLocalPartTwinResearcherMerges(db, researcherTwins.merges);
-        // A merge edits the roster of every row the loser held an edge on, so the gate re-reads
-        // those rows rather than this script writing a tier.
-        if (merged.touchedEntityIds.length > 0) {
-          await runStudentVisibilityGate({
-            collection: 'research',
-            mode: 'apply',
-            recordIds: merged.touchedEntityIds,
-          });
-        }
-        const { touchedEntityIds, ...counts } = merged;
-        applied = { ...counts, regatedEntities: touchedEntityIds.length };
-      }
+      applied =
+        args.scope === 'account-twins'
+          ? await applyLocalPartNetidMerges(db, twins.merges)
+          : await applyLoneLocalPartArchives(db, lone.archives);
     }
     const report = {
       script: SCRIPT_NAME,
@@ -159,20 +139,12 @@ async function main(): Promise<void> {
       refusals: twins.refusals,
       localPartAccountsWithoutTwin: twins.localPartAccountsWithoutTwin,
       projectedSharedEmailGroupsAfterApply: projectedSharedEmailGroupsAfterApply(twins),
-      researcherTwins: {
-        pairsWithBothResearchers: researcherTwins.pairsWithBothResearchers,
-        plannedMerges: researcherTwins.merges.length,
-        held: researcherTwins.held,
-        edits: await summarizeTwinResearcherMergeEdits(db, researcherTwins.merges),
-      },
       offShapePairsHeld: twins.refusals['off-shape-pair'],
       loneAccounts: {
         loneLocalPartAccounts: lone.loneLocalPartAccounts,
         plannedArchives: lone.archives.length,
         held: lone.held,
       },
-      projectedSharedEmailGroupsAfterEveryScope:
-        twins.sharedEmailGroups - twins.merges.length - researcherTwins.merges.length,
       applied,
     };
     if (args.output) {
