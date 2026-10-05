@@ -3,10 +3,7 @@ import { revoiceFirstPersonResearchLead } from './researchEntityDescriptionText'
 import { fullDescriptionQuality } from './researchEntityDescriptionQuality';
 
 export type BioResearchStatementRejection =
-  | 'empty_bio'
-  | 'no_research_statement'
-  | 'only_past_research'
-  | 'not_useful_after_filtering';
+  'empty_bio' | 'no_research_statement' | 'only_past_research' | 'not_useful_after_filtering';
 
 export interface BioResearchStatement {
   fullDescription: string;
@@ -25,7 +22,8 @@ const CLINICAL_SERVICE_FOCUS =
 const CLINICAL_SPECIALTY_SENTENCE =
   /\bspeciali[sz](?:es|ing|ed)?\s+in\b|\b(?:primary\s+)?focus\s+is\s+(?:on\s+)?clinical\s+care\b|\bperforming\b[^.]{0,80}\bsurger(?:y|ies)\b/i;
 
-const SCHOLARLY_INQUIRY = /\b(?:research|stud(?:y|ies|ying)|investigat\w*|scholar\w*|analy[sz]\w*|theor\w*)\b/i;
+const SCHOLARLY_INQUIRY =
+  /\b(?:research|stud(?:y|ies|ying)|investigat\w*|scholar\w*|analy[sz]\w*|theor\w*)\b/i;
 
 const NON_RESEARCH_ONLY_SENTENCE =
   /\b(?:teach(?:es|ing)?|courses?|curricul|sees\s+patients|clinical\s+(?:practice|care|service)|board[- ]certified|practices\s+(?:general|internal|family)|patient\s+care)\b/i;
@@ -33,9 +31,11 @@ const NON_RESEARCH_ONLY_SENTENCE =
 const NOT_RESEARCH_CONTENT_SENTENCE =
   /\b(?:boards?\s+of|serves?\s+on|served|editor|editorial|reviewer|committee|council|task\s+force|president|co-?founder|founded|managing\s+partner|venture|funded\s+by|has\s+been\s+funded|grants?\s+from|book|forthcoming|to\s+appear|published\s+by|translations?|selected\s+publications|publications?\s*:|co-?edited|google\s+scholar|can\s+be\s+found|click|blogs?|website|administrative\s+roles?|appointment\s+as|private\s+practice|co-?authors?\s+of|co-?authored|has\s+appeared\s+in|appeared\s+in|appears\s+in|edited\s+by|in\s+press|new\s+york\s+times|washington\s+post|wall\s+street\s+journal|the\s+atlantic|npr\b|cares?\s+for\s+patients|(?:his|her|their)\s+practice|clinical\s+expertise|board[- ]certified|holds\s+an?\s+(?:MSc|MA|MS|BA|BS|PhD|MD)|studied\s+medicine|completed|graduated|has\s+joined|joined\s+the|enthusiasm\s+for|received\s+(?:his|her|their)|trained)\b/i;
 
-const CITATION_FRAGMENT = /\beds?\.(?=[\s,)])|\((?:eds?|ed)\.?\)|\b\d+\s*\(\d+\)\s*[:,]|\bpp\.\s*\d|\bvol\.\s*\d|[“"][^”"]{8,}[”"]\s*,?\s*in\s+[A-Z]/;
+const CITATION_FRAGMENT =
+  /\beds?\.(?=[\s,)])|\((?:eds?|ed)\.?\)|\b\d+\s*\(\d+\)\s*[:,]|\bpp\.\s*\d|\bvol\.\s*\d|[“"][^”"]{8,}[”"]\s*,?\s*in\s+[A-Z]/;
 
-const DANGLING_REFERENCE_OPENER = /^(?:The\s+latter|The\s+former|These|This\s+(?:work|book|project|volume))\b/;
+const DANGLING_REFERENCE_OPENER =
+  /^(?:The\s+latter|The\s+former|These|This\s+(?:work|book|project|volume))\b/;
 
 const RESEARCH_WORD =
   /\b(?:research|stud(?:y|ies|ying)|investigat|examin|explor|analy[sz]|model|develop|focus|interests?)\w*/i;
@@ -86,10 +86,16 @@ export function deriveBioResearchStatement(
   person: { name?: string } = {},
 ): BioResearchStatement {
   const text = typeof bio === 'string' ? bio.replace(/\s+/g, ' ').trim() : '';
-  if (!text) return { fullDescription: '', sentences: [], evidenceSentences: [], rejection: 'empty_bio' };
+  if (!text)
+    return { fullDescription: '', sentences: [], evidenceSentences: [], rejection: 'empty_bio' };
   const candidates = researchStatementSentences(text, { activityAnchors: true });
   if (candidates.length === 0) {
-    return { fullDescription: '', sentences: [], evidenceSentences: [], rejection: 'no_research_statement' };
+    return {
+      fullDescription: '',
+      sentences: [],
+      evidenceSentences: [],
+      rejection: 'no_research_statement',
+    };
   }
   const current = candidates.filter(
     (sentence) =>
@@ -104,7 +110,12 @@ export function deriveBioResearchStatement(
       !CITATION_FRAGMENT.test(sentence),
   );
   if (current.length === 0) {
-    return { fullDescription: '', sentences: [], evidenceSentences: [], rejection: 'only_past_research' };
+    return {
+      fullDescription: '',
+      sentences: [],
+      evidenceSentences: [],
+      rejection: 'only_past_research',
+    };
   }
   const entity = { entityType: 'FACULTY_RESEARCH_AREA', name: person.name || '' };
   const sentences = current.map((sentence) =>
@@ -112,7 +123,12 @@ export function deriveBioResearchStatement(
   );
   const fullDescription = sentences.join(' ');
   if (!fullDescriptionQuality(fullDescription).isUseful) {
-    return { fullDescription, sentences, evidenceSentences: current, rejection: 'not_useful_after_filtering' };
+    return {
+      fullDescription,
+      sentences,
+      evidenceSentences: current,
+      rejection: 'not_useful_after_filtering',
+    };
   }
   return { fullDescription, sentences, evidenceSentences: current };
 }
