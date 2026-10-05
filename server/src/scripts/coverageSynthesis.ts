@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
+import { ScrapeRun } from '../models/scrapeRun';
 import {
   appendObservations,
   getSourceByName,
@@ -46,6 +47,10 @@ import {
   writerWritesFor,
   writtenBodyCardRepairFilter,
   type WriterStep,
+  INGEST_VERIFIED_EXTRACTION_SOURCE,
+  PAGE_GROUNDING_VERIFIED_SINCE,
+  ingestVerifiedRunIds,
+  markIngestVerifiedObservations,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
 
@@ -101,7 +106,7 @@ type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
   const projection =
-    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl';
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl fieldValueRefusals';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME),
@@ -263,6 +268,20 @@ async function main() {
   await initializeConnections();
 
   const entities = await loadTargetEntities(args);
+  const verifiedRunIds = ingestVerifiedRunIds(
+    (await ScrapeRun.find({
+      sourceName: INGEST_VERIFIED_EXTRACTION_SOURCE,
+      startedAt: { $gte: PAGE_GROUNDING_VERIFIED_SINCE },
+      invalidated: { $ne: true },
+    })
+      .select('_id sourceName startedAt invalidated')
+      .lean()) as Array<{
+      _id: unknown;
+      sourceName?: unknown;
+      startedAt?: unknown;
+      invalidated?: unknown;
+    }>,
+  );
   if (args.rederiveCards) {
     await rederiveWrittenBodyCards(entities, args, guard.dbLabel);
     return;
@@ -314,12 +333,17 @@ async function main() {
       field: { $in: WRITER_EVIDENCE_FIELDS },
       $or: anchors,
     })
-      .select('field value sourceUrl sourceName confidence observedAt')
+      .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
       .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
 
-    const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants, {
-      websiteUrl: entity.websiteUrl,
-    });
+    const snippets = buildWriterEvidenceSnippets(
+      markIngestVerifiedObservations(observations, verifiedRunIds),
+      entity.recentGrants,
+      {
+        websiteUrl: entity.websiteUrl,
+        fieldValueRefusals: entity.fieldValueRefusals,
+      },
+    );
     report.snippets = snippets.length;
     const freshHash = writerEvidenceHash(snippets);
     const step = planWriterStep({

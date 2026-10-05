@@ -15,6 +15,7 @@ import {
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
+import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { buildGrantCorpusSnippets } from './grantCorpusSynthesisCore';
 import { isOfficialYalePersonPageUrl } from './fraProfileSynthesisCore';
@@ -211,6 +212,8 @@ export interface WriterEvidenceOptions {
   websiteUrl?: unknown;
   storedPageText?: StoredPageTextLookup;
   now?: Date;
+  /** The row's own refusals, so a value an operator refused never becomes evidence again. */
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -224,7 +227,8 @@ export function buildWriterEvidenceSnippets(
   recentGrants: unknown,
   options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
-  const ordered = orderWriterEvidence(observations, options.websiteUrl);
+  const admissible = refusedResolverObservations(observations, options.fieldValueRefusals).kept;
+  const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
   if (hasOwnResearchProse(fromPages)) return fromPages;
@@ -347,4 +351,56 @@ export function writtenBodyCardRepairFilter(sourceName: string): Record<string, 
     'fieldProvenance.fullDescription.sourceName': sourceName,
     studentVisibilityReasons: 'missing_card_description',
   };
+}
+
+/**
+ * The one model lane whose values are admitted as writer evidence, and only for the
+ * field it verifies: before storing a `fullDescription` it requires every sentence of
+ * four or more words to be present in the fetched page text (`groundDescriptionExtraction`,
+ * landed in #528). Its `shortDescription` can be a synthesized card, so it is not admitted.
+ */
+export const INGEST_VERIFIED_EXTRACTION_SOURCE = 'lab-microsite-description-llm';
+export const INGEST_VERIFIED_EXTRACTION_FIELDS: ReadonlySet<string> = new Set(['fullDescription']);
+/** When the ingest check reached the lane (#528 merged to beta), so earlier runs were not verified. */
+export const PAGE_GROUNDING_VERIFIED_SINCE = new Date('2026-08-22T19:15:50Z');
+
+interface RecordedRunLike {
+  _id: unknown;
+  sourceName?: unknown;
+  startedAt?: unknown;
+  invalidated?: unknown;
+}
+
+/**
+ * The recorded runs of the extraction lane that ran with the ingest check. A run id is
+ * the durable per-observation marker: the lane's own runs are recorded in `scrape_runs`,
+ * while the description backfill script stores rewrites and syntheses under the same
+ * source name with a fresh run id it never records, so its values match no run here.
+ */
+export function ingestVerifiedRunIds(runs: readonly RecordedRunLike[]): Set<string> {
+  return new Set(
+    runs
+      .filter((run) => {
+        if (run.sourceName !== INGEST_VERIFIED_EXTRACTION_SOURCE) return false;
+        if (run.invalidated === true) return false;
+        const started = grantTime(run.startedAt);
+        return started !== undefined && started >= PAGE_GROUNDING_VERIFIED_SINCE.getTime();
+      })
+      .map((run) => String(run._id)),
+  );
+}
+
+export function markIngestVerifiedObservations<T extends CoverageObservationLike>(
+  observations: readonly T[],
+  verifiedRunIds: ReadonlySet<string>,
+): T[] {
+  return observations.map((obs) =>
+    obs.sourceName === INGEST_VERIFIED_EXTRACTION_SOURCE &&
+    INGEST_VERIFIED_EXTRACTION_FIELDS.has(obs.field) &&
+    obs.scrapeRunId !== undefined &&
+    obs.scrapeRunId !== null &&
+    verifiedRunIds.has(String(obs.scrapeRunId))
+      ? { ...obs, ingestVerifiedAgainstPage: true }
+      : { ...obs, ingestVerifiedAgainstPage: false },
+  );
 }
