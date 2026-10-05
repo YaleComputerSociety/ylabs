@@ -674,6 +674,17 @@ describe('slugContradictionShape (#4916)', () => {
     }
   });
 
+  it('reads a namesake sharing a compound or particle surname as a namesake', () => {
+    for (const [slug, lead] of [
+      ['dale-quill-brook', 'Robin Quill-Brook'],
+      ['dale-quill-brook', 'Robin Quill Brook'],
+      ['dale-van-brook', 'Robin van Brook'],
+      ['dale-brook', 'Robin de Brook'],
+    ]) {
+      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('NAMESAKE');
+    }
+  });
+
   it('spares a possible alias even when the page names it beside a lead role', () => {
     expect(
       slugContradictionShape(

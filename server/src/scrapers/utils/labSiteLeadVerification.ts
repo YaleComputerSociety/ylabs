@@ -476,6 +476,18 @@ function couldBeOneTransliteration(left: string, right: string): boolean {
   );
 }
 
+function sharedTrailingTokenCount(left: readonly string[], right: readonly string[]): number {
+  let count = 0;
+  while (
+    count < left.length &&
+    count < right.length &&
+    left[left.length - 1 - count] === right[right.length - 1 - count]
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
 /**
  * Whether a namesake's given name could still be this lead's, which is what keeps a
  * nickname, an initial, a transliteration or a former name from reading as a different
@@ -488,13 +500,15 @@ function namesakeGivenNameCouldBeTheLead(
   surname: string,
   leadDisplayName: unknown,
 ): boolean {
-  const slugGiven = slugTokens.filter((token) => token !== surname);
   return personNameAliases(String(leadDisplayName ?? '')).some((alias) => {
     const tokens = flattenForNameMatch(alias)
       .trim()
       .split(' ')
       .filter((token) => token && !CREDENTIAL_TOKENS.has(token));
-    const leadGiven = tokens.slice(0, -1);
+    const sharedSurnameRun = sharedTrailingTokenCount(tokens, slugTokens);
+    const isGivenName = (token: string) => token !== surname && !SURNAME_PARTICLES.has(token);
+    const leadGiven = tokens.slice(0, -Math.max(1, sharedSurnameRun)).filter(isGivenName);
+    const slugGiven = slugTokens.slice(0, slugTokens.length - sharedSurnameRun).filter(isGivenName);
     if (givenNamesCouldNameOnePerson(leadGiven.join(' '), slugGiven.join(' '))) return true;
     return leadGiven.some((left) =>
       slugGiven.some((right) => couldBeOneTransliteration(left, right)),
