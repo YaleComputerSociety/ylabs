@@ -368,7 +368,8 @@ export function ownLabEvidence(
  * live observation carrying this form is not evidence that the lab exists. The same
  * reasoning that keeps the full-name form out of descriptions (#4707) applies to the
  * heading. A cited site backs the row only when its lab token stands alone or beside this
- * person's name or an abbreviation of it: a site named for another word ("ganges-lab",
+ * person's name or an abbreviation of it, initials included, and a bare lab path segment
+ * only when nothing or this person's name follows it: a site named for another word ("ganges-lab",
  * "hugheslab") is a lab under another name, often another person's lab the lead belongs
  * to, so it proves no "<full name> Lab" (#4903).
  */
@@ -402,15 +403,37 @@ function urlNamesALab(value: unknown, person: string): boolean {
       .map(letters)
       .filter((token) => token.length >= 2);
     const strippableNameTokens = nameTokens.filter((token) => token.length >= 3);
-    const abbreviatesAName = (prefix: string) =>
-      nameTokens.includes(prefix) ||
-      (prefix.length >= 3 && nameTokens.some((token) => token.startsWith(prefix)));
-    const namesThisPersonsLab = (rest: string) => {
-      const match = new RegExp(`^(.*?)${LAB_TOKEN}$`).exec(rest);
-      return match !== null && (match[1] === '' || abbreviatesAName(match[1]));
-    };
     const withoutName = (part: string) =>
       strippableNameTokens.reduce((rest, token) => rest.replace(token, ''), part);
+    const endsInLab = new RegExp(`${LAB_TOKEN}$`);
+    const spellsTwoOrMoreNames = (rest: string, unused: string[], used: number): boolean =>
+      rest === ''
+        ? used >= 2
+        : unused.some((token, index) => {
+            const others = unused.filter((_, other) => other !== index);
+            for (let length = token.length; length >= 1; length--) {
+              if (
+                rest.startsWith(token.slice(0, length)) &&
+                spellsTwoOrMoreNames(rest.slice(length), others, used + 1)
+              ) {
+                return true;
+              }
+            }
+            return false;
+          });
+    const abbreviatesAName = (prefix: string) =>
+      nameTokens.includes(prefix) ||
+      (prefix.length >= 3 && nameTokens.some((token) => token.startsWith(prefix))) ||
+      spellsTwoOrMoreNames(prefix, nameTokens, 0);
+    const carriesAName = (part: string) =>
+      nameTokens.some((token) => token.length >= 3 && part.includes(token)) ||
+      abbreviatesAName(part);
+    const namesThisPersonsLab = (part: string, next?: string) => {
+      const match = new RegExp(`^(.*?)${LAB_TOKEN}$`).exec(part);
+      if (match === null || !endsInLab.test(withoutName(part))) return false;
+      if (match[1] !== '') return abbreviatesAName(match[1]);
+      return next === undefined || carriesAName(next);
+    };
     const hostParts = url.hostname.split('.').map(letters).filter(Boolean);
     const pathParts = url.pathname.split('/').map(letters).filter(Boolean);
     const labRightAfterName = nameTokens.map((token) => new RegExp(`${token}${LAB_TOKEN}`));
@@ -421,14 +444,13 @@ function urlNamesALab(value: unknown, person: string): boolean {
     if (
       hostParts.some(
         (part) =>
-          namesThisPersonsLab(withoutName(part)) ||
-          labRightAfterName.some((pattern) => pattern.test(part)),
+          namesThisPersonsLab(part) || labRightAfterName.some((pattern) => pattern.test(part)),
       )
     ) {
       return true;
     }
     return pathParts.some(
-      (part) => namesThisPersonsLab(withoutName(part)) && !isListingOfLabs(part),
+      (part, index) => namesThisPersonsLab(part, pathParts[index + 1]) && !isListingOfLabs(part),
     );
   } catch {
     return false;

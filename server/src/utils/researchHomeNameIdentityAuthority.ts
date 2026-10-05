@@ -950,17 +950,20 @@ function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boo
  * A person-scoped record's name read off a page outside Yale that names neither the
  * record's lead nor an organization: the title of an exhibition, a conference, or a
  * squatter's site the lead's old domain now redirects to. A faculty research record is
- * named after its person, so such a title is never its name.
+ * named after its person, so such a title is never its name. A name the row's own site
+ * declares for itself is the site's own evidence, so a brand-only lab name is kept.
  */
 export function isOffSitePageTitleForPersonScopedName(args: {
   candidateName: unknown;
   sourceUrl: unknown;
   personName: unknown;
+  siteDeclaredOwnNames?: readonly unknown[];
 }): boolean {
   const sourceUrl = textValue(args.sourceUrl);
   if (!/^https?:\/\//i.test(sourceUrl) || isYaleHostedUrl(sourceUrl)) return false;
   if (personIdentityTokens(args.personName).length === 0) return false;
   if (nameCarriesPersonIdentity(args.candidateName, args.personName)) return false;
+  if (organizationNameIsAmong(args.candidateName, args.siteDeclaredOwnNames)) return false;
   return !namesAnOrganizationalResearchHome(args.candidateName);
 }
 

@@ -2170,6 +2170,17 @@ describe('isOffSitePageTitleForPersonScopedName', () => {
     }
   });
 
+  it("keeps a brand-only name the row's own site declares for itself", () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'QUILLON',
+        sourceUrl: 'https://quillon.example.io/',
+        personName,
+        siteDeclaredOwnNames: ['QUILLON'],
+      }),
+    ).toBe(false);
+  });
+
   it('cannot judge a title without the lead', () => {
     expect(
       isOffSitePageTitleForPersonScopedName({

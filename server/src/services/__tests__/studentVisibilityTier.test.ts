@@ -3540,6 +3540,27 @@ describe("a lab heading composed from the lead's full name", () => {
     ).toBe(false);
   });
 
+  it("is backed by a lab host built from the lead's initials", () => {
+    for (const url of ['https://rflab.example.org/', 'https://rfixlab.example.org/']) {
+      expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(false);
+    }
+  });
+
+  it("is backed by a bare lab path only when nothing or the lead's name follows it", () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Robin Fixture Lab', 'https://medicine.example.edu/lab/quillon/'),
+        'Robin Fixture',
+      ),
+    ).toBe(true);
+    for (const url of [
+      'https://medicine.example.edu/lab/fixture/',
+      'https://medicine.example.edu/research/lab',
+    ]) {
+      expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(false);
+    }
+  });
+
   it('needs the lead to tell the composed form apart', () => {
     expect(
       isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),

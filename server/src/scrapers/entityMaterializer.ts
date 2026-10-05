@@ -7181,6 +7181,7 @@ function enforceResearchEntityNameAuthority(input: {
         candidateName,
         sourceUrl: websiteUrl,
         personName: recordIdentity.personName,
+        siteDeclaredOwnNames,
       })) ||
     // Roster-corroborated rather than path-only, because this is a write
     // chokepoint: a lab name whose eponym appears nowhere in the URL path
