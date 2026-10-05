@@ -12,6 +12,7 @@ import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import * as path from 'path';
+import { readFile } from 'fs/promises';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { createClientStaticAssets } from './middleware/clientStaticAssets';
@@ -23,9 +24,12 @@ import { SESSION_LIFETIME_MS } from './utils/sessionClaim';
 import { parseTrustedProxyCidrs } from './utils/trustedProxyCidrs';
 import { assertDeployedMeiliConnectionConfig } from './utils/meiliClient';
 import { resolveServerPackageRoot } from './utils/serverPackageRoot';
+import { renderPageShell } from './utils/pageShellHead';
+import { resolvePageShell } from './services/pageShellMetadataService';
 import {
   ensureAnonymousRateLimitId,
   firstContactLimiter,
+  getPeerIpKey,
   globalLimiter,
   observeFirstContactVolume,
 } from './middleware/rateLimiters';
@@ -227,14 +231,23 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
-app.get('/{*clientPath}', (req, res) => {
+app.get('/{*clientPath}', async (req, res) => {
   if (!shouldServeSpaFallback(req)) {
     return sendStaticNotFound(res);
   }
 
-  // A root keeps send's dotfile check on 'index.html' alone, so a checkout under a
-  // dot directory still serves the SPA shell.
-  res.sendFile('index.html', { root: clientDistPath });
+  const resolution = await resolvePageShell(req.path, getPeerIpKey(req));
+  if (resolution.kind === 'redirect') {
+    res.setHeader('Cache-Control', 'public, max-age=0');
+    return res.redirect(resolution.status, resolution.location);
+  }
+
+  const template = await readFile(path.join(clientDistPath, 'index.html'), 'utf8');
+  res.setHeader('Cache-Control', 'public, max-age=0');
+  return res
+    .status(resolution.status)
+    .type('html')
+    .send(renderPageShell(template, resolution.head));
 });
 
 app.use(errorHandler);
