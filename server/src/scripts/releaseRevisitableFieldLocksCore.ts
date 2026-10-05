@@ -220,11 +220,16 @@ export function decideFieldLockReleases(
         return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
       }
       const plannedValue = plannedFieldValue(answer, field, storedValue);
-      if (!fieldLockReleaseAgrees(plannedValue, storedValue)) {
+      const agrees = fieldLockReleaseAgrees(plannedValue, storedValue);
+      const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
+      if (!agrees && !acceptedByOperator) {
         return { ...base, engineValue: plannedValue, verdict: 'keep_engine_disagrees' as const };
       }
       const movedSiblings = movedSiblingValuesFor(entity, answer, field);
-      if (Object.keys(movedSiblings).length > 0) {
+      const unacceptedSiblings = Object.keys(movedSiblings).filter(
+        (sibling) => !rules.acceptEngineValueFields?.includes(sibling),
+      );
+      if (unacceptedSiblings.length > 0) {
         return {
           ...base,
           engineValue: plannedValue,
@@ -236,7 +241,8 @@ export function decideFieldLockReleases(
         ...base,
         engineValue: plannedValue,
         verdict: 'release' as const,
-        provenInert: true,
+        ...(agrees ? { provenInert: true } : { acceptsEngineValue: true }),
+        ...(Object.keys(movedSiblings).length > 0 ? siblingMoves(movedSiblings) : {}),
       };
     }
     if (!projectionNamesField(answer, field) && lockSuppressesFieldCollection(field)) {
