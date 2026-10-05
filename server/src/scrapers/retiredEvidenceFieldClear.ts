@@ -16,7 +16,7 @@ export const RETIRED_EVIDENCE_CLEARABLE_FIELDS: readonly string[] = [
   'undergradEvidenceQuote',
 ];
 
-const BODY_FIELDS = new Set(['description', 'fullDescription']);
+const CARD_BODY_FIELD = 'fullDescription';
 const CARD_FIELD = 'shortDescription';
 
 export interface CitedObservation {
@@ -144,14 +144,22 @@ export async function planRetiredEvidenceFieldClears(
   });
   if (retiredBacking.length === 0) return [];
 
-  const bodyRetired = retiredBacking.some(({ field }) => BODY_FIELDS.has(field));
+  const retiredBody = retiredBacking.find(({ field }) => field === CARD_BODY_FIELD);
+  const cardDerivedFromRetiredBody =
+    retiredBody !== undefined &&
+    undecided(CARD_FIELD) &&
+    isStoredValue(stored[CARD_FIELD]) &&
+    String(provenanceEntry(stored, CARD_FIELD)?.observationId ?? '') === retiredBody.observationId;
   const liveLookup = input.liveFieldValues ?? liveFieldValuesOnMergedRow;
   const stillStated = new Set(
     (
       await liveLookup({
         stored,
         mergedInRows: input.mergedInRows ?? [],
-        fields: [...retiredBacking.map(({ field }) => field), ...(bodyRetired ? [CARD_FIELD] : [])],
+        fields: [
+          ...retiredBacking.map(({ field }) => field),
+          ...(cardDerivedFromRetiredBody ? [CARD_FIELD] : []),
+        ],
       })
     )
       .filter(({ field, value }) => statesStoredValue(String(field), value))
@@ -162,10 +170,6 @@ export async function planRetiredEvidenceFieldClears(
     .filter((field) => !stillStated.has(field));
 
   const cardFollowsClearedBody =
-    cleared.some((field) => BODY_FIELDS.has(field)) &&
-    !input.fieldsWithLiveObservation.has(CARD_FIELD) &&
-    !stillStated.has(CARD_FIELD) &&
-    !operatorJudged(CARD_FIELD) &&
-    (isStoredValue(stored[CARD_FIELD]) || CARD_FIELD in input.staged);
+    cardDerivedFromRetiredBody && cleared.includes(CARD_BODY_FIELD) && !stillStated.has(CARD_FIELD);
   return cardFollowsClearedBody ? [...cleared, CARD_FIELD] : cleared;
 }

@@ -174,6 +174,7 @@ describe('planRetiredEvidenceFieldClears', () => {
       shortDescription: CARD,
       fieldProvenance: {
         fullDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
+        shortDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
       },
     };
     expect(await plan({ stored, citedObservations: lookupOf(retired('obs-body', BODY)) })).toEqual([
@@ -188,6 +189,7 @@ describe('planRetiredEvidenceFieldClears', () => {
       shortDescription: CARD,
       fieldProvenance: {
         fullDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
+        shortDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
       },
     };
     const citedObservations = lookupOf(retired('obs-body', BODY));
@@ -209,6 +211,7 @@ describe('planRetiredEvidenceFieldClears', () => {
       shortDescription: CARD,
       fieldProvenance: {
         fullDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
+        shortDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
       },
     };
     expect(
@@ -216,6 +219,61 @@ describe('planRetiredEvidenceFieldClears', () => {
         stored,
         citedObservations: lookupOf(retired('obs-body', BODY)),
         liveFieldValues: async () => [{ field: 'shortDescription', value: CARD }],
+      }),
+    ).toEqual(['fullDescription']);
+  });
+
+  it('keeps a card whose own provenance does not cite the retired body observation', async () => {
+    const bodyProvenance = { sourceName: 'profile-lane', observationId: 'obs-body' };
+    const citedObservations = lookupOf(retired('obs-body', BODY), retired('obs-card', CARD));
+    for (const cardProvenance of [
+      undefined,
+      { sourceName: 'profile-lane' },
+      { sourceName: 'card-lane', observationId: 'obs-card' },
+      { sourceName: 'card-lane', observationId: 'obs-pruned' },
+    ]) {
+      const stored = {
+        fullDescription: BODY,
+        shortDescription: CARD,
+        fieldProvenance: { fullDescription: bodyProvenance, shortDescription: cardProvenance },
+      };
+      expect(await plan({ stored, citedObservations })).toEqual(['fullDescription']);
+    }
+  });
+
+  it('keeps the card when only the legacy description clears', async () => {
+    const stored = {
+      description: BODY,
+      shortDescription: CARD,
+      fieldProvenance: {
+        description: { sourceName: 'profile-lane', observationId: 'obs-body' },
+        shortDescription: { sourceName: 'profile-lane', observationId: 'obs-body' },
+      },
+    };
+    expect(await plan({ stored, citedObservations: lookupOf(retired('obs-body', BODY)) })).toEqual([
+      'description',
+    ]);
+  });
+
+  it('keeps a card this pass stages or a row that stores none', async () => {
+    const provenance = { sourceName: 'profile-lane', observationId: 'obs-body' };
+    const citedObservations = lookupOf(retired('obs-body', BODY));
+    expect(
+      await plan({
+        stored: {
+          fullDescription: BODY,
+          shortDescription: CARD,
+          fieldProvenance: { fullDescription: provenance, shortDescription: provenance },
+        },
+        staged: { shortDescription: CARD },
+        citedObservations,
+      }),
+    ).toEqual(['fullDescription']);
+    expect(
+      await plan({
+        stored: { fullDescription: BODY, fieldProvenance: { fullDescription: provenance } },
+        staged: { shortDescription: CARD },
+        citedObservations,
       }),
     ).toEqual(['fullDescription']);
   });
