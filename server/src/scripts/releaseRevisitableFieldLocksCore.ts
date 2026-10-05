@@ -119,8 +119,10 @@ export interface FieldLockReleaseDecision {
  * `acceptEngineValueFields` widens both paths to a value the operator read and
  * accepted: a named field the plan names with a different value, or a sibling the
  * release moves. Such a release carries `acceptsEngineValue` rather than
- * `provenInert`, because it changes what a student reads; a plan silent about the
- * field still keeps the lock.
+ * `provenInert`, because it changes what a student reads. A named field the plan is
+ * silent about is released with `acceptsEngineSilence` only when no sibling moves, and
+ * the stored value stays until evidence resolves the field; an unnamed silent field
+ * keeps the lock.
  */
 export interface FieldLockReleaseRules {
   releaseProvenInert?: boolean;
@@ -225,9 +227,17 @@ export function decideFieldLockReleases(
     if (!revisitable) {
       const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
       if (!projectionNamesField(answer, field)) {
-        const movedSiblings = movedSiblingValuesFor(entity, answer, field);
-        if (!acceptedByOperator || Object.keys(movedSiblings).length > 0) {
+        if (!acceptedByOperator) {
           return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+        }
+        const movedSiblings = movedSiblingValuesFor(entity, answer, field);
+        if (Object.keys(movedSiblings).length > 0) {
+          return {
+            ...base,
+            engineValue: undefined,
+            verdict: 'keep_sibling_field_moves' as const,
+            ...siblingMoves(movedSiblings),
+          };
         }
         return {
           ...base,
