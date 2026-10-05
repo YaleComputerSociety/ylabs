@@ -19,6 +19,7 @@ export interface RematerializeResearchEntitiesArgs {
   unbackedResearchAreas: boolean;
   accessSignals: boolean;
   resynthesizeCutCards: boolean;
+  cardModel?: string;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -175,6 +176,12 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--resynthesize-cut-cards') {
       args.resynthesizeCutCards = true;
+      continue;
+    }
+    if (arg.startsWith('--card-model=')) {
+      const model = arg.slice('--card-model='.length).trim();
+      if (!model) throw new Error('--card-model needs a model name.');
+      args.cardModel = model;
       continue;
     }
     if (arg.startsWith('--slugs=')) {

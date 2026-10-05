@@ -4,9 +4,13 @@ import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSumma
 // parenthesis lands inside a list or leaves a clause dangling ("...to study central,
 // autonomic."), which reads worse than a card that runs long.
 const CLAUSE_BOUNDARIES: readonly RegExp[] = [
-  /,\s+(?:including|such as|particularly|especially|notably|with (?:a|an) (?:focus|emphasis) on|focusing on|with attention to|ranging from)\s/gi,
+  /,\s+(?:including|such as|particularly|especially|notably|with (?:a|an) (?:focus|emphasis) on|with emphasis on|emphasizing|focusing on|with attention to|ranging from)\s/gi,
   /;\s+/g,
   /,\s+(?:which|where|while|whereas)\s/gi,
+  // A second coordinated clause ("..., and how ...", "... and develops ...") leaves the
+  // first clause whole when cut before it.
+  /,?\s+and\s+(?:how|why|whether|what|develops|investigates|studies|examines|explores|uses|builds|designs|evaluates|tests|applies|leads|conducts|performs|provides|creates|supports|identifies)\s/gi,
+  /,\s+plus\s/gi,
   /\s+(?:using|by combining|by integrating|with the goal of)\s/gi,
 ];
 

@@ -5,6 +5,12 @@
  * reach card synthesis. A routine materialize reconsiders such a card with the
  * deterministic derivation only, so run this flag over the rows whose browse card is
  * cut to have their cards rewritten to fit (#4809).
+ *
+ * `--card-model=<model>` synthesizes those cards with another model for this run only.
+ * The description lane keys its content hash on its own card model, so a stronger model
+ * for a repair pass belongs here rather than in `CARD_SYNTHESIS_MODEL`: on the cards three
+ * passes left cut, the default model returned a line that shows whole for 5 of 10 and a
+ * stronger one for 8 of 10.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -13,6 +19,10 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  defaultCardSynthesisLLM,
+  synthesizeGroundedCardDescription,
+} from '../utils/groundedCardSynthesis';
 import { Observation } from '../models/observation';
 import { Signal } from '../models/signal';
 import {
@@ -93,6 +103,25 @@ function provenanceAfterPlan(
   return planned;
 }
 
+async function cardSynthesizerFor(
+  slug: string,
+  model: string,
+): Promise<(fullDescription: string) => Promise<string>> {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) return () => Promise.resolve('');
+  const row = (await ResearchEntity.findOne({ slug }, { name: 1, displayName: 1 }).lean()) as {
+    name?: string;
+    displayName?: string;
+  } | null;
+  const entityName = row?.displayName || row?.name || '';
+  return (fullDescription) =>
+    synthesizeGroundedCardDescription({
+      fullDescription,
+      entityName,
+      callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
+    });
+}
+
 async function processSlug(
   slug: string,
   apply: boolean,
@@ -101,6 +130,7 @@ async function processSlug(
   onlyReconcileFieldProvenance: boolean,
   foreignContact = false,
   resynthesizeCutCards = false,
+  cardModel?: string,
 ): Promise<RematerializeEntityReport> {
   const writeOnlyFields = foreignContact ? [...RESEARCH_ENTITY_CONTACT_FIELDS] : onlyFields;
   const comparedFields = rematerializeComparedFields(writeOnlyFields);
@@ -138,6 +168,9 @@ async function processSlug(
       ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
       ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
+      ...(cardModel
+        ? { synthesizeCardDescription: await cardSynthesizerFor(slug, cardModel) }
+        : {}),
     },
   );
 
@@ -419,6 +452,7 @@ async function main() {
           args.unbackedProvenance,
           args.foreignContact,
           args.resynthesizeCutCards,
+          args.cardModel,
         ),
   );
   const failed = entities.filter((entity) => entity.error);

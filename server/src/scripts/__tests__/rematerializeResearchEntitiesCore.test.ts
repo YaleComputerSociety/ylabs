@@ -59,6 +59,19 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     ).toBe(true);
   });
 
+  it('reads a card model for a repair pass and refuses an empty one (#4809)', () => {
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--card-model=gpt-5'])
+        .cardModel,
+    ).toBe('gpt-5');
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab']).cardModel,
+    ).toBeUndefined();
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--card-model=']),
+    ).toThrow();
+  });
+
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
       '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',

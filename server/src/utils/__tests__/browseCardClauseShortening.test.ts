@@ -43,6 +43,14 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     ).not.toContain('incomplete-sentence');
   });
 
+  it('cuts before a second coordinated clause, leaving the first whole', () => {
+    const card =
+      'Studies how germline cells undergo programmed incomplete cytokinesis to form interconnected cell clusters during gamete development, and how tissue-specific stop codon readthrough produces extended proteins.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(
+      'Studies how germline cells undergo programmed incomplete cytokinesis to form interconnected cell clusters during gamete development.',
+    );
+  });
+
   it('leaves a card that already fits untouched', () => {
     const card = 'Studies how cells divide during early development.';
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
