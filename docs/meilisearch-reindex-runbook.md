@@ -55,7 +55,7 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 
 Set all four in the shell that runs the command.
 `MONGODBURL`, `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` come from the Render dashboard for the target service.
-`MEILISEARCH_WRITE_API_KEY` does not live on the service: export it in the shell session for the run, so the web process never holds a write key.
+`MEILISEARCH_WRITE_API_KEY` lives on the Beta web service and on no Production service: for Production, export it in the shell session for the run (see [Meilisearch keys](#meilisearch-keys)).
 
 | Variable                   | Shape                                                  | Why                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
