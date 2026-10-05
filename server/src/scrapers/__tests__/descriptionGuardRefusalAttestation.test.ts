@@ -53,7 +53,7 @@ const refusalFor = (
 
 describe('a description guard refusal is recorded as refused, never empty (#3739)', () => {
   const guardCases: Record<
-    Exclude<DescriptionGuardRefusal, 'unopposed_crawled_prose'>,
+    Exclude<DescriptionGuardRefusal, 'unopposed_crawled_prose' | 'page_does_not_name_row'>,
     () => ReturnType<typeof refusalFor>
   > = {
     rejected_source_url: () => refusalFor(RESEARCH_PROSE, { sourceUrl: 'not a url' }),

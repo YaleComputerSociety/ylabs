@@ -343,6 +343,100 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     });
   });
 
+  describe('re-reads an unchanged page whose grounded stored description never names the lead (#4809)', () => {
+    const departmentUrl = 'https://medicine.example.edu/programs/signal-group/';
+    const departmentProse =
+      'The department investigates parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const departmentPage = {
+      url: departmentUrl,
+      html: `<main><h1>Signal Group</h1><p>${departmentProse}</p></main>`,
+    };
+    const realHash = contentHashGate.computeVersionedContentHash(
+      laneHashInput([departmentPage]),
+      DESCRIPTION_EXTRACTION_PROMPT_HASH,
+      DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_HASH,
+      LAB_NAME_EMISSION_CONTRACT,
+    );
+
+    async function runLane(storedHash: string, priorAttestedReads: number) {
+      vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(storedHash);
+      vi.spyOn(contentHashGate, 'loadStoredLaneDescriptionObservation').mockResolvedValue({
+        value: departmentProse,
+        sourceUrl: departmentUrl,
+      });
+      vi.spyOn(contentHashGate, 'countAttestedEmptyLaneReads').mockResolvedValue(
+        priorAttestedReads,
+      );
+      const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map([['entity-fixturely', 'Robin Fixturely']]),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'entity-fixturely',
+            slug: 'fixturely-lab',
+            name: 'Fixturely Lab',
+            kind: 'lab',
+            websiteUrl: 'https://fixturely.example.org/',
+            sourceUrls: [departmentUrl],
+            fullDescription: departmentProse,
+            manuallyLockedFields: [],
+          },
+        ],
+        fetchPage: vi.fn(async (url: string) => {
+          if (url !== departmentUrl) throw new Error('not found');
+          return departmentPage;
+        }),
+        callLLM: vi.fn<CallDescriptionLLMFn>().mockResolvedValue({
+          fullDescription: departmentProse,
+          shortDescription: '',
+          topics: [],
+          methods: [],
+        }),
+        callCardLLM: vi.fn<CardSynthesisLLMFn>().mockResolvedValue(''),
+      });
+      const { ctx, emitted, logs } = makeContext();
+      await scraper.run(ctx);
+      return {
+        skipped: logs.some((line) => /content unchanged/.test(line)),
+        descriptions: emitted.filter((o) => o.field === 'fullDescription'),
+        hashes: emitted.filter((o) => o.field === contentHashGate.SOURCE_CONTENT_HASH_FIELD),
+      };
+    }
+
+    it('re-reads, emits no description, and attests the cited slot empty on both reads before closing', async () => {
+      const first = await runLane(realHash, 0);
+      expect(first.skipped).toBe(false);
+      expect(first.descriptions).toEqual([]);
+      expect(first.hashes).toHaveLength(1);
+      expect(first.hashes[0]).toMatchObject({
+        sourceUrl: departmentUrl,
+        assertsNoValueFor: ['fullDescription', 'shortDescription'],
+      });
+      expect(first.hashes[0].value).not.toBe(realHash);
+
+      vi.restoreAllMocks();
+      const second = await runLane(first.hashes[0].value as string, 1);
+      expect(second.skipped).toBe(false);
+      expect(second.descriptions).toEqual([]);
+      expect(second.hashes).toEqual([
+        expect.objectContaining({
+          sourceUrl: departmentUrl,
+          value: groundingRereadContentHash(realHash),
+          assertsNoValueFor: ['fullDescription', 'shortDescription'],
+        }),
+      ]);
+
+      vi.restoreAllMocks();
+      const third = await runLane(groundingRereadContentHash(realHash), 2);
+      expect(third.skipped).toBe(true);
+    });
+  });
+
   describe('gate input across two real runs of the lane (#3840)', () => {
     const ashfordUrl = 'https://medicine.yale.edu/lab/ashford/';
     const visibleProse =

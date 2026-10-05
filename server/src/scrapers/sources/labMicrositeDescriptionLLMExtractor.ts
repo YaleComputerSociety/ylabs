@@ -119,6 +119,7 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
+  personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -988,21 +989,137 @@ export function groundingRereadContentHash(contentHash: string): string {
   return computeContentHash(`${contentHash} ${GROUNDING_REREAD}`);
 }
 
-/** Whether this lane's own stored description is the text of the fetched page it cites. */
-async function storedLaneDescriptionIsGroundedOnCitedPage(
+const fetchedDescriptionPageText = (
+  page: FetchedDescriptionPage,
+  kind: DescriptionEntityKind,
+): string =>
+  [
+    htmlToText(page.html, page.url),
+    extractDescriptionPageProse(page, kind)?.fullDescription ?? '',
+  ].join('\n');
+
+async function storedLaneDescriptionOnFetchedPage(
   sourceName: string,
   entityRef: ContentHashEntityRef,
   pages: FetchedDescriptionPage[],
-  kind: DescriptionEntityKind,
-): Promise<boolean> {
+): Promise<{ value: string; page: FetchedDescriptionPage } | undefined> {
   const stored = await loadStoredLaneDescriptionObservation(sourceName, entityRef);
   const page = stored
     ? pages.find((fetched) => comparableUrl(fetched.url) === comparableUrl(stored.sourceUrl))
     : undefined;
-  if (!stored || !page) return true;
-  const prose = extractDescriptionPageProse(page, kind);
-  const pageText = [htmlToText(page.html, page.url), prose?.fullDescription ?? ''].join('\n');
-  return isDescriptionGroundedInSource(stored.value, pageText);
+  return stored && page ? { value: stored.value, page } : undefined;
+}
+
+async function storedLaneDescriptionIsAdmissibleOnCitedPage(
+  sourceName: string,
+  entityRef: ContentHashEntityRef,
+  pages: FetchedDescriptionPage[],
+  kind: DescriptionEntityKind,
+  rowLead: RowLead,
+): Promise<boolean> {
+  const cited = await storedLaneDescriptionOnFetchedPage(sourceName, entityRef, pages);
+  if (!cited) return true;
+  const pageText = fetchedDescriptionPageText(cited.page, kind);
+  return (
+    isDescriptionGroundedInSource(cited.value, pageText) &&
+    descriptionPageNamesRowLead({ ...rowLead, pageUrl: cited.page.url, pageText })
+  );
+}
+
+async function storedLaneDescriptionPageNotNamingRowLead(
+  sourceName: string,
+  entityRef: ContentHashEntityRef,
+  pages: FetchedDescriptionPage[],
+  kind: DescriptionEntityKind,
+  rowLead: RowLead,
+): Promise<FetchedDescriptionPage | undefined> {
+  const cited = await storedLaneDescriptionOnFetchedPage(sourceName, entityRef, pages);
+  if (!cited) return undefined;
+  const pageText = fetchedDescriptionPageText(cited.page, kind);
+  return descriptionPageNamesRowLead({ ...rowLead, pageUrl: cited.page.url, pageText })
+    ? undefined
+    : cited.page;
+}
+
+const withoutDiacriticsOrApostrophes = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’`]/g, '');
+
+const comparableName = (value: string): string =>
+  withoutDiacriticsOrApostrophes(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const leadSurname = (personName: string | undefined): string =>
+  [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
+
+const urlHostAndPath = (pageUrl: string): string => {
+  try {
+    const url = new URL(pageUrl);
+    return `${url.host} ${url.pathname}`;
+  } catch {
+    return pageUrl;
+  }
+};
+
+const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
+
+const urlCarriesSurname = (pageUrl: string, surname: string): boolean =>
+  comparableName(urlHostAndPath(pageUrl))
+    .split(' ')
+    .some((token) =>
+      surname.length < MIN_AFFIX_MATCHED_SURNAME_LENGTH
+        ? token === surname
+        : token.startsWith(surname) || token.endsWith(surname),
+    );
+
+interface RowLead {
+  personName?: string;
+  websiteUrl?: unknown;
+  rowName?: unknown;
+  kind?: unknown;
+}
+
+const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
+  try {
+    const page = new URL(pageUrl);
+    const own = new URL(String(websiteUrl || ''));
+    if (page.host.replace(/^www\./, '') !== own.host.replace(/^www\./, '')) return false;
+    const ownPath = own.pathname.replace(/\/+$/, '');
+    return !ownPath || page.pathname === ownPath || page.pathname.startsWith(`${ownPath}/`);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether the page a description would be taken from names the person who leads the row.
+ * A department homepage, a section's research index or another group's page describes
+ * someone else's work, and a row led by a named person only takes its description from a
+ * page that names that person (#4809): on 454 person-named Development lab rows, the
+ * cited page of 10 never named the surname, and the ones not on the row's own website
+ * were a working group's page, a department research index and an art-school
+ * opportunities page. The row's own website is exempt, because a lab site may name its
+ * lead only in an image, a frame or a rendered script.
+ */
+export function descriptionPageNamesRowLead(
+  input: RowLead & { pageUrl: string; pageText: string },
+): boolean {
+  const surname = leadSurname(input.personName);
+  if (!surname) return true;
+  // Only a row named for its lead is the lead's to describe. A center, a program or a
+  // lab named for its work describes the unit, and its own page need not name the
+  // director: on the same 637 rows those were most of the pages this would refuse.
+  const personScoped =
+    input.kind === 'individual' ||
+    ` ${comparableName(String(input.rowName || ''))} `.includes(` ${surname} `);
+  if (!personScoped) return true;
+  if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
+  if (urlCarriesSurname(input.pageUrl, surname)) return true;
+  return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
 }
 
 /**
@@ -1396,7 +1513,8 @@ export type DescriptionGuardRefusal =
   | 'navigation_chrome'
   | 'profile_template_chrome'
   | 'another_organization_body'
-  | 'unopposed_crawled_prose';
+  | 'unopposed_crawled_prose'
+  | 'page_does_not_name_row';
 
 export interface DescriptionExtractionOutcome {
   observations: ObservationInput[];
@@ -2370,6 +2488,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const storedContentHash = ctx.options.forceLlm
           ? undefined
           : await loadStoredContentHash(this.name, entityRef);
+        const leadPersonName = identityCorpus.leadPersonNameByEntityId.get(
+          serializedDocumentId(lab._id) || '',
+        );
+        const rowLead: RowLead = {
+          personName: leadPersonName,
+          websiteUrl: lab.websiteUrl,
+          rowName: lab.name,
+          kind: lab.kind,
+        };
         const rereadHash = groundingRereadContentHash(contentHash);
         const alreadyRereadForGrounding = storedContentHash === rereadHash;
         const unchanged =
@@ -2378,7 +2505,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const rereadForGrounding =
           unchanged &&
           !alreadyRereadForGrounding &&
-          !(await storedLaneDescriptionIsGroundedOnCitedPage(this.name, entityRef, pages, kind));
+          !(await storedLaneDescriptionIsAdmissibleOnCitedPage(
+            this.name,
+            entityRef,
+            pages,
+            kind,
+            rowLead,
+          ));
         if (unchanged && !rereadForGrounding) {
           contentUnchangedSkipped += 1;
           ctx.log(
@@ -2451,15 +2584,24 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // (#2180). A crawled page the primary page cannot vouch for may only FILL
         // a description, never replace one worth keeping.
         const storedDescription = textValue(lab.fullDescription);
-        const storedLaneDescriptionIsTeaser = await storedDescriptionIsRelatedUnitTeaser(
+        const retractedDescriptionPage = (await storedDescriptionIsRelatedUnitTeaser(
           this.name,
           entityRef,
           primaryPage,
-        );
+        ))
+          ? primaryPage
+          : await storedLaneDescriptionPageNotNamingRowLead(
+              this.name,
+              entityRef,
+              pages,
+              kind,
+              rowLead,
+            );
+        const storedLaneDescriptionIsRetracted = retractedDescriptionPage !== undefined;
         const unopposedCrawledProseSuppressed =
           bestCrawledProse !== null &&
           primaryCandidate === null &&
-          !storedLaneDescriptionIsTeaser &&
+          !storedLaneDescriptionIsRetracted &&
           storedDescriptionIsWorthKeeping(storedDescription);
         if (unopposedCrawledProseSuppressed) {
           ctx.log(
@@ -2573,9 +2715,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               }
             : null;
 
-        const leadPersonName = identityCorpus.leadPersonNameByEntityId.get(
-          serializedDocumentId(lab._id) || '',
-        );
         const identity = {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
@@ -2623,6 +2762,17 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           observations = llmOutcome.observations;
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
+        if (
+          observations.length > 0 &&
+          !descriptionPageNamesRowLead({
+            ...rowLead,
+            pageUrl: page.url,
+            pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
+          })
+        ) {
+          observations = [];
+          guardRefusal = guardRefusal ?? 'page_does_not_name_row';
+        }
 
         const pageNameRefused =
           guardRefusal === 'another_persons_lab' || guardRefusal === 'another_organization_body';
@@ -2657,7 +2807,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
-          const slotAttestation = storedLaneDescriptionIsTeaser
+          const slotAttestation = storedLaneDescriptionIsRetracted
             ? 'empty'
             : descriptionSlotAttestation({
                 primaryPageTextLength: primaryPageText.length,
@@ -2678,15 +2828,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                   : undefined),
           );
           const attestedHashObservations = withDescriptionSlotAttestation(
-            storedLaneDescriptionIsTeaser
+            retractedDescriptionPage
               ? [
                   contentHashObservation(
                     entityRef,
-                    primaryPage.url,
+                    retractedDescriptionPage.url,
                     await teaserRetractionContentHash(
                       this.name,
                       entityRef,
-                      primaryPage.url,
+                      retractedDescriptionPage.url,
                       contentHash,
                     ),
                   ),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { NO_SURNAME_ROSTER } from '../../../utils/researchHomeNameIdentityAuthority';
 import {
+  descriptionPageNamesRowLead,
   htmlToText,
   isRejectedDescriptionSourceUrl,
   usefulLabName,
@@ -562,5 +563,153 @@ describe("htmlToText leaves out other units' teaser cards (#4823)", () => {
 
   it('keeps every card when the page URL is unknown', () => {
     expect(htmlToText(html)).toContain('metabolomics');
+  });
+});
+
+describe('descriptionPageNamesRowLead (#4809)', () => {
+  const base = {
+    personName: 'Robin Fixturely',
+    websiteUrl: 'https://medicine.example.edu/lab/fixturely/',
+    rowName: 'Fixturely Lab',
+    kind: 'lab',
+  };
+
+  it("refuses a department page that never names the row's lead", () => {
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        pageUrl: 'https://medicine.example.edu/psychiatry/',
+        pageText: 'The department offers clinical services across the lifespan.',
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts a page that names the lead, ignoring case, accents and apostrophes', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        personName: "Ana O'Fixtúre",
+        kind: 'individual',
+        pageUrl: 'https://example.edu/research',
+        pageText: 'Research led by Dr. Ana OFIXTURE on coral reefs.',
+      }),
+    ).toBe(true);
+  });
+
+  it("exempts the row's own website, which may name its lead only in an image", () => {
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        pageUrl: 'https://medicine.example.edu/lab/fixturely/research/',
+        pageText: 'We study cellular signaling with live imaging.',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves a unit named for its work to its own page', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        personName: 'Robin Fixturely',
+        rowName: 'Coastal Ecology Center',
+        kind: 'center',
+        pageUrl: 'https://example.edu/centers/coastal',
+        pageText: 'The center studies coastal ecosystems.',
+      }),
+    ).toBe(true);
+  });
+
+  it('counts a page whose address carries the surname as naming the row', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        websiteUrl: 'http://www.example.edu/fixturelylab/',
+        pageUrl: 'https://fixturelylab.example.edu/',
+        pageText: 'We study cellular signaling with live imaging.',
+      }),
+    ).toBe(true);
+  });
+
+  it('takes the surname from a display name that carries a credential suffix', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        personName: 'Robin Fixturely, MD',
+        pageUrl: 'https://medicine.example.edu/psychiatry/',
+        pageText: 'The department offers clinical services across the lifespan.',
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        personName: 'Robin Fixturely, MD',
+        pageUrl: 'https://medicine.example.edu/psychiatry/',
+        pageText: 'Dr. Fixturely leads work on cellular signaling.',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not read a two-letter surname inside an unrelated address word', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        personName: 'Robin Ma',
+        rowName: 'Ma Lab',
+        kind: 'lab',
+        pageUrl: 'https://medicine.example.edu/dermatology/clinical/',
+        pageText: 'The section offers clinical services across the lifespan.',
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        personName: 'Robin Ma',
+        rowName: 'Ma Lab',
+        kind: 'lab',
+        pageUrl: 'https://medicine.example.edu/lab/ma-lab/',
+        pageText: 'We study cellular signaling with live imaging.',
+      }),
+    ).toBe(true);
+  });
+
+  it('matches a surname shorter than four letters only as a whole address token', () => {
+    const shortLead = { personName: 'Robin Ma', rowName: 'Ma Lab', kind: 'lab' };
+    const neverNamed = 'The section offers clinical services across the lifespan.';
+    for (const path of ['health', 'life', 'mathematics']) {
+      expect(
+        descriptionPageNamesRowLead({
+          ...shortLead,
+          pageUrl: `https://medicine.example.edu/${path}/research/`,
+          pageText: neverNamed,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        personName: 'Robin He',
+        rowName: 'He Lab',
+        pageUrl: 'https://medicine.example.edu/health/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        personName: 'Robin Li',
+        rowName: 'Li Lab',
+        pageUrl: 'https://medicine.example.edu/life/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        pageUrl: 'https://medicine.example.edu/people/ma/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(true);
+  });
+
+  it('applies to no row without a known lead', () => {
+    expect(
+      descriptionPageNamesRowLead({ pageUrl: 'https://example.edu/', pageText: 'Anything.' }),
+    ).toBe(true);
   });
 });
