@@ -466,6 +466,8 @@ describe('decideShellMerge verified-profile arm', () => {
 
   it.each([
     ['Sam Alpha-Fixture', 'Sam Beta-Fixture'],
+    ['Sam Alpha Fixture', 'Sam Fixture Beta'],
+    ['Sam Fixture Beta', 'Sam Alpha Fixture'],
     ['Sam Fixture', 'Kim Fixture Sample'],
     ['Sam Fixture', 'Fixture Sample'],
     ['Sam Other', 'Sam Fixture Sample'],

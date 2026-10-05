@@ -421,8 +421,11 @@ function surnameContainedInOtherName(name: unknown, otherName: unknown): boolean
   const tokens = foldedNameTokens(name);
   const otherTokens = foldedNameTokens(otherName);
   if (surnameTokens.length === 0 || tokens.length < 2 || otherTokens.length < 2) return false;
+  const windowMayStopShortOfLastToken = tokens.length === 2;
   for (let start = 1; start + surnameTokens.length <= otherTokens.length; start += 1) {
-    const window = otherTokens.slice(start, start + surnameTokens.length);
+    const end = start + surnameTokens.length;
+    if (!windowMayStopShortOfLastToken && end !== otherTokens.length) continue;
+    const window = otherTokens.slice(start, end);
     if (window.every((token, offset) => token === surnameTokens[offset])) {
       return givenNameAgrees(tokens[0], otherTokens.slice(0, start));
     }
@@ -434,7 +437,8 @@ function surnameContainedInOtherName(name: unknown, otherName: unknown): boolean
  * The surname veto for two records a shared page already joins. A compound surname reads
  * as a different last token from its own part, so the veto also accepts one record's
  * whole surname appearing in the other's name, but only together with an agreeing given
- * name (#4920). Two different compound surnames that share one part still disagree.
+ * name (#4920). Only a two-token name may match a part before the other name's last
+ * token, so two different compound surnames that share one part still disagree.
  */
 export function profileHolderSurnamesAgree(left: unknown, right: unknown): boolean {
   return (
