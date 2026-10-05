@@ -61,7 +61,7 @@ import {
   isUrlIdentityDedupeStageEnabled,
   type UrlIdentityDedupeStageDelta,
 } from './dedupeResearchEntitiesByPi';
-import { isSweepStageEnabledByDefault, isSweepStageOptedIn } from './sweepStageFlags';
+import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import {
   SweepCheckpointStore,
   checkpointPathForMode,
@@ -117,6 +117,11 @@ export const FELLOWSHIP_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-reu-programs', phase: 'discovery' },
   { name: 'yale-health-sciences-summer-programs', phase: 'discovery' },
   { name: 'student-grants-database', phase: 'discovery' },
+  {
+    name: 'program-official-page',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['student-grants-database'],
+  },
 ];
 
 export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
@@ -434,7 +439,6 @@ export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDia
   name:
     | 'program-visibility-gate'
     | 'global-regions-backfill'
-    | 'official-sources-backfill'
     | 'link-labels-backfill'
     | 'accepting-applications-invariant'
     | 'source-link-health'
@@ -448,7 +452,6 @@ export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDia
 }
 
 export interface FellowshipPostRunStageOptions {
-  applyOfficialSourceChangeSet?: boolean;
   applyLimit?: number;
   pruneDeadObservations?: boolean;
 }
@@ -1982,21 +1985,13 @@ async function runDevelopmentPostRunStages(
   };
 }
 
-export const SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV =
-  'SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET';
-
 const DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT = 10000;
 
 export function resolveFellowshipPostRunOptions(
   mode: ScraperSweepMode,
-  env: NodeJS.ProcessEnv,
 ): FellowshipPostRunStageOptions | undefined {
   if (!isFellowshipSweepMode(mode)) return undefined;
-  return {
-    applyOfficialSourceChangeSet: isSweepStageOptedIn(
-      env[SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV],
-    ),
-  };
+  return {};
 }
 
 interface FellowshipPostRunStageDefinition {
@@ -2036,18 +2031,6 @@ export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefini
       `--limit=${fellowshipApplyLimit(options)}`,
     ],
     isEnabled: () => true,
-    appendsOutputArtifact: true,
-  },
-  {
-    name: 'official-sources-backfill',
-    command: 'programs:backfill-official-sources',
-    artifactName: 'fellowship-official-sources-backfill.json',
-    buildArgs: (options) => [
-      '--apply',
-      '--confirm-program-official-source-backfill',
-      `--limit=${fellowshipApplyLimit(options)}`,
-    ],
-    isEnabled: (options) => Boolean(options.applyOfficialSourceChangeSet),
     appendsOutputArtifact: true,
   },
   {
@@ -2562,7 +2545,7 @@ export async function runScraperSweep(
   if (developmentPostRunOptions && options.fullLinkHealthReprobe) {
     developmentPostRunOptions.fullLinkHealthReprobe = true;
   }
-  const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
+  const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode);
   if (fellowshipPostRunOptions && pruneDeadObservations) {
     fellowshipPostRunOptions.pruneDeadObservations = true;
   }

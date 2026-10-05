@@ -140,7 +140,6 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
 | `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` | No | Each sweep stage runs by default; a value such as `0` or `false` turns that stage off (`server/src/scripts/sweepStageFlags.ts`). | No |
-| `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET` | No | The `official-sources-backfill` stage is skipped; only a value such as `1` or `true` opts in. | No |
 
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.

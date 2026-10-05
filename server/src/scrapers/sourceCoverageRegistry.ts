@@ -401,6 +401,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Runs in the fellowship sweep as an official Yale source.",
   },
+  'program-official-page': {
+    priority: 4,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Fellowship', 'Observation'],
+    evidenceCategories: ['FELLOWSHIP_COMPATIBILITY'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Backs a Yale fellowship database program's official page as its sourceUrl with an observation, so the citation is evidence rather than a stored value no lane reads (#4601). The page is cited only when it names the fund; a page that does not records a withdrawal, a confirmed gone page withdraws it through lanePageHealth, and an official page no observation backs loses to the fund page on resolve.",
+  },
   'nih-reporter': {
     priority: 6,
     tier: 'THIRD_PARTY_ENRICHMENT',

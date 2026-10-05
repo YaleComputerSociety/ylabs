@@ -37,7 +37,7 @@ See [`docs/research-model.md`](./research-model.md) for the current collection s
 
 The pipeline is orchestrated by two sweep engines that share the same substrate (append-only observation log, materializer, and content-hash gate) but own separate source manifests and post-run stages, both driven by `yarn --cwd server scrape:sweep --mode=<mode>` (`server/src/scripts/runScraperSweep.ts`), rather than by running each source by hand.
 The research engine writes `ResearchEntity` records for `/research` and runs the sources in `RESEARCH_SWEEP_SOURCES` (identity and faculty directories, labs, centers, microsites, funding and grants, research-area extractors, and the undergraduate research access sources).
-The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
+The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, `student-grants-database`, and `program-official-page`.
 `validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
 The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
 The sweep manifests and `MANUAL_ONLY_SWEEP_SOURCES` are the only run switch.
@@ -73,8 +73,8 @@ A fellowship or salary award names the trainee rather than the lab head, so it a
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
 The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `discovery-readers`, `funding`, `relationships`, and `content-access`.
 A source that reads rows another sweep source writes declares that producer in `readsRowsWrittenBy`, and the sweep refuses to start unless every declared producer runs in an earlier phase, because sources within one phase run in parallel and a reader that finishes first reads the previous sweep's rows (#4609).
-`discovery-readers` exists for that reason: `bbs-research-track` reads the rows `ysm-faculty-directory` writes, and `department-research-areas` reads the rows `dept-faculty-roster` writes.
-The fellowship engine currently only spans the `discovery` phase.
+`discovery-readers` exists for that reason: `bbs-research-track` reads the rows `ysm-faculty-directory` writes, `department-research-areas` reads the rows `dept-faculty-roster` writes, and in the fellowship engine `program-official-page` reads the rows `student-grants-database` writes.
+The fellowship engine spans the `discovery` and `discovery-readers` phases.
 The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
 Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.
 The three exhaustive Development modes (`development-full`, `development-incremental`, and `fellowship-development-full`) default the network-bound discovery phase to cross-source concurrency 8.
@@ -276,19 +276,19 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 
 1. `program-visibility-gate` (`student-visibility:gate --collection=programs --apply`)
 2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
-3. `official-sources-backfill` (`programs:backfill-official-sources --apply`, opt-in and off by default)
-4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
-5. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
-6. `source-link-health` (`programs:backfill-source-link-health --apply`)
-7. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
-8. `freshness-audit` (`programs:audit-freshness`, report-only)
-9. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+3. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
+4. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
+5. `source-link-health` (`programs:backfill-source-link-health --apply`)
+6. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
+7. `freshness-audit` (`programs:audit-freshness`, report-only)
+8. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
 `source-link-health` probes every program link through the resolver breaker before it writes any verdict, so a local resolver outage exits the stage nonzero with no report and leaves stored program verdicts untouched rather than recording good links as unreachable (#4882).
 `program-visibility-gate` re-gates every program row after the lanes have written, because a fellowship's classification is derived during materialization (see "Program classification is a projection derivation" below) and the tier reads it.
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
-`official-sources-backfill` is opt-in via `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` because `programs:backfill-official-sources` is not a general recomputation: with no `--input` it replays the committed one-shot curated change-set at `server/src/scripts/data/programOfficialSourceBackfill.json`, so running it on every sweep would overwrite each listed record's freshly scraped `sourceUrl` with a frozen hand-researched value.
+The curated official-source replay (`programs:backfill-official-sources`) is retired (#4601): it wrote `sourceUrl` straight onto rows, so no observation backed what it wrote.
+The `program-official-page` lane replaces it, observing a Yale fellowship database program's official page as its `sourceUrl` only when the page names the fund, and its former change-set survives only as the lane's seed list, `server/src/scrapers/data/programOfficialPageSeeds.json`.
 The former `catalog-refresh` stage and its `fellowships:refresh` command wrote the fellowship catalog straight into Beta or Production, so both were removed with the Beta sweep modes; the catalog now reaches Beta and Production the same way the research corpus does, through promotion.
 No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is no programs search-index script; `researchEntity` is the only Meilisearch-syncable type.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.

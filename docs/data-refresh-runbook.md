@@ -658,7 +658,6 @@ yarn scrape:development:fellowships:full
 ```
 
 That command runs only the fellowship catalog sources and the fellowship post-run chain (the `programs:*` backfills plus the two report-only `programs:audit-*` stages), so it never touches `ResearchEntity` data.
-Its one opt-in stage stays off unless you set `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` to replay the curated official-source change-set.
 The fellowship catalog reaches Beta and Production through the same mirror and promotion as the research corpus.
 
 Use targeted single-source commands while repairing a failed source:

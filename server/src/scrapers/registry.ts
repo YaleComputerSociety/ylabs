@@ -26,6 +26,7 @@ import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellow
 import { YaleReuProgramsScraper } from './sources/yaleReuProgramsScraper';
 import { YaleHealthSciencesSummerProgramsScraper } from './sources/yaleHealthSciencesSummerProgramsScraper';
 import { StudentGrantsDatabaseScraper } from './sources/studentGrantsDatabaseScraper';
+import { ProgramOfficialPageScraper } from './sources/programOfficialPageScraper';
 import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
@@ -66,6 +67,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YaleReuProgramsScraper());
   o.register(new YaleHealthSciencesSummerProgramsScraper());
   o.register(new StudentGrantsDatabaseScraper());
+  o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
   o.register(new CenterAffiliationLLMExtractor());

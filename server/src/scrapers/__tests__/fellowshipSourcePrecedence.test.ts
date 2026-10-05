@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
+  isWithdrawnFellowshipCitation,
+  storedFellowshipSourceUrlIsUnbacked,
 } from '../fellowshipSourcePrecedence';
 
 const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
@@ -290,5 +292,66 @@ describe('a retired fund on another lane row (#4174)', () => {
         fundSpeaksForRow: false,
       }),
     ).toEqual(['archived']);
+  });
+});
+
+describe('a Yale fellowship database row’s official page with no observation behind it (#4601)', () => {
+  const databaseRow = {
+    sourceName: 'student-grants-database',
+    sourceKey: 'student-grants-database:funds-funddetails-aspx-funda',
+    sourceUrl: OFFICIAL_PAGE,
+  };
+
+  it('reads the stored page as unbacked only on a pass under the row’s own identity', () => {
+    expect(
+      storedFellowshipSourceUrlIsUnbacked({
+        stored: databaseRow,
+        liveObservations: [{ field: 'sourceUrl', value: FUND_PAGE }],
+        readRowUnderOwnIdentity: true,
+      }),
+    ).toBe(true);
+    expect(
+      storedFellowshipSourceUrlIsUnbacked({
+        stored: databaseRow,
+        liveObservations: [{ field: 'sourceUrl', value: `${OFFICIAL_PAGE}/` }],
+        readRowUnderOwnIdentity: true,
+      }),
+    ).toBe(false);
+    expect(
+      storedFellowshipSourceUrlIsUnbacked({
+        stored: databaseRow,
+        liveObservations: [],
+        readRowUnderOwnIdentity: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('lets the fund page replace an unbacked official page and keeps a backed one', () => {
+    const resolved = { sourceUrl: { contributingSources: ['student-grants-database'] } };
+    const staged = { sourceUrl: FUND_PAGE };
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: databaseRow,
+        staged,
+        resolved,
+        fundSpeaksForRow: true,
+        storedSourceUrlUnbacked: true,
+      }),
+    ).not.toContain('sourceUrl');
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: databaseRow,
+        staged,
+        resolved,
+        fundSpeaksForRow: true,
+        storedSourceUrlUnbacked: false,
+      }),
+    ).toContain('sourceUrl');
+  });
+
+  it('never resolves a withdrawn citation as a value', () => {
+    expect(isWithdrawnFellowshipCitation({ field: 'sourceUrl', value: '' })).toBe(true);
+    expect(isWithdrawnFellowshipCitation({ field: 'sourceUrl', value: OFFICIAL_PAGE })).toBe(false);
+    expect(isWithdrawnFellowshipCitation({ field: 'description', value: '' })).toBe(false);
   });
 });
