@@ -710,6 +710,7 @@ export interface AccountlessClusterMember {
   primaryDepartment?: unknown;
   profileLinks?: unknown;
   liveRoleEdges: number;
+  liveRowIds?: readonly string[];
 }
 
 export type AccountlessClusterRefusal =
@@ -740,10 +741,10 @@ function clusterKeys(
     .filter((key) => !heldElsewhere.pages.has(key))
     .map((key) => `page::${key}`);
   const name = normalizeResearcherName(member.displayName);
+  if (!name || heldElsewhere.names.has(name)) return pageKeys;
   const department = departmentKey(member.primaryDepartment);
-  return name && department && !heldElsewhere.names.has(name)
-    ? [...pageKeys, `name::${name}::${department}`]
-    : pageKeys;
+  const rowKeys = (member.liveRowIds ?? []).map((rowId) => `name-row::${name}::${rowId}`);
+  return [...pageKeys, ...(department ? [`name::${name}::${department}`] : []), ...rowKeys];
 }
 
 function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
@@ -805,8 +806,9 @@ export function accountlessClusterSurvivor(
 /**
  * Groups of accountless records with no account-backed member, which the outranking arms
  * cannot fold because nobody outranks anybody. A group is the records that share a
- * healthy verified primary profile, or the same normalized full name together with the
- * same stated primary department. A whole group is refused on any netid, ORCID, title
+ * healthy verified primary profile, the same normalized full name together with the same
+ * stated primary department, or the same normalized full name together with a
+ * non-historical role on the same live research row. A whole group is refused on any netid, ORCID, title
  * rank or surname disagreement, because one wrong join merges two people for good. A page
  * or name that any record outside the group also holds joins nobody: the outranking arms
  * already found it unable to tell those records apart.

@@ -436,10 +436,40 @@ export async function dedupeAccountlessResearcherShells(options: {
       ]).toArray()) as any[]
     ).map((row) => [idKey(row._id), Number(row.count) || 0]),
   );
+  const clusterRowEdges = (await RoleAssignment.find(
+    {
+      ...LIVE_ROSTER_EDGE_FILTER,
+      personId: { $in: clusterCandidates.map((entry) => new mongoose.Types.ObjectId(entry.id)) },
+    },
+    { projection: { personId: 1, 'target.id': 1 } },
+  ).toArray()) as any[];
+  const clusterRowIds = [...new Set(clusterRowEdges.map((edge) => idKey(edge.target?.id)))];
+  const liveClusterRows = new Set(
+    (
+      await mongoose.connection
+        .collection('research_entities')
+        .find(
+          {
+            _id: { $in: clusterRowIds.map((id) => new mongoose.Types.ObjectId(id)) },
+            archived: { $ne: true },
+          },
+          { projection: { _id: 1 } },
+        )
+        .toArray()
+    ).map((row: any) => idKey(row._id)),
+  );
+  const liveRowIdsByMember = new Map<string, string[]>();
+  for (const edge of clusterRowEdges) {
+    const rowId = idKey(edge.target?.id);
+    if (!liveClusterRows.has(rowId)) continue;
+    const memberId = idKey(edge.personId);
+    liveRowIdsByMember.set(memberId, [...(liveRowIdsByMember.get(memberId) ?? []), rowId]);
+  }
   const clusterPlan = planAccountlessClusterFolds(
     clusterCandidates.map((entry) => ({
       ...entry,
       liveRoleEdges: liveEdgeCounts.get(entry.id) ?? 0,
+      liveRowIds: liveRowIdsByMember.get(entry.id) ?? [],
     })),
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
   );

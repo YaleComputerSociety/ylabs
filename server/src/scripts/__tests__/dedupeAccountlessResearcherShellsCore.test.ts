@@ -810,3 +810,52 @@ describe('resolveFinalMergeTargets', () => {
     );
   });
 });
+
+describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
+  const member = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName: 'Avery Placeholder',
+    liveRoleEdges: 1,
+    ...extra,
+  });
+
+  it('groups two same-name records on the same live row even when one has no department', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', { primaryDepartment: 'Synthetic Studies', liveRowIds: ['row-1'] }),
+        member('b', { liveRowIds: ['row-1'] }),
+      ],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+  });
+
+  it('does not group same-name records that share no row and no department', () => {
+    const plan = planAccountlessClusterFolds(
+      [member('a', { liveRowIds: ['row-1'] }), member('b', { liveRowIds: ['row-2'] })],
+      [],
+    );
+    expect(plan.groups).toBe(0);
+  });
+
+  it('keys nothing on a name a stronger record already holds', () => {
+    const plan = planAccountlessClusterFolds(
+      [member('a', { liveRowIds: ['row-1'] }), member('b', { liveRowIds: ['row-1'] })],
+      [{ displayName: 'Avery Placeholder' }],
+    );
+    expect(plan.groups).toBe(0);
+  });
+
+  it('still refuses a shared-row group whose records carry two different ORCIDs', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0028' }),
+        member('b', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0036' }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.ORCID_CONFLICT).toBe(1);
+    expect(plan.foldTargetById.size).toBe(0);
+  });
+});
