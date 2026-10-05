@@ -223,4 +223,31 @@ describe('the page shell carries per-page share metadata (#4240)', () => {
     expect(titleOf(html)).toBe('Research | y/labs');
     expect(canonicalOf(html)).toEqual(['https://yalelabs.io/research']);
   });
+
+  it('meters shell lookups per IPv6 subnet and serves an over-budget client the unmodified shell', async () => {
+    const { PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW } = await import(
+      '../services/pageShellMetadataService'
+    );
+    const fromAddress = (address: string, slug: string) =>
+      fetch(`${baseUrl}/research/${slug}`, { headers: { 'x-forwarded-for': address } });
+
+    for (let lookup = 0; lookup < PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW; lookup += 1) {
+      const response = await fromAddress(
+        `2001:db8:1:1::${(lookup + 1).toString(16)}`,
+        `synthetic-budget-row-${lookup}`,
+      );
+      await response.text();
+      expect(response.status).toBe(404);
+    }
+
+    const overBudget = await fromAddress('2001:db8:1:1:ffff::1', 'synthetic-over-budget-row');
+    const overBudgetHtml = await overBudget.text();
+    const otherSubnet = await fromAddress('2001:db8:2::1', 'synthetic-other-subnet-row');
+    await otherSubnet.text();
+
+    expect(overBudget.status).toBe(200);
+    expect(canonicalOf(overBudgetHtml)).toEqual([]);
+    expect(overBudget.headers.getSetCookie()).toEqual([]);
+    expect(otherSubnet.status).toBe(404);
+  });
 });
