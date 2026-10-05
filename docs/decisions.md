@@ -30,6 +30,12 @@ A character limit alone did not hold: the model returned the same 206-character 
 The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
 `lab-microsite-description-llm` keys its content hash on that file's hash, so editing it would have invalidated every stored hash for the lane and re-run its LLM extraction over every row on the next sweep, about 2,500 calls, to change only the card.
 The stored cards change through a targeted rematerialize of the cut rows instead.
+
+Three resynthesis passes still left 611 of 3,613 cards cut: the model kept returning a long line, or a fitting one the serve chain's stricter grader surrenders.
+The served card is therefore also ended at its last clause boundary that fits (`shortenCardLineToFitBrowseCard`): before ", including", ", such as", "; ", ", which" or a method clause such as " using ".
+The head of a grounded sentence is grounded, so this adds no claim; a cut at a bare comma, ", and" or a parenthesis lands inside a list, so a card with no clause boundary inside the card stays long.
+" through " and " via " are not boundaries, because they are not reliable method markers: "from adolescence through early adulthood" cut before " through " changes what the card says.
+Measured on Development, cut cards went from 611 of 3,613 before this change to 326 of 3,609 after it (the served population moved by 4 rows between the two measurements), with no change to the four public-description invariant failures.
 A routine materialize reconsiders a cut card with the deterministic derivation only, because a synthesis that yields no fitting line writes nothing and would repeat its LLM calls on every later materialize of the row.
 Card synthesis for a cut card is opt-in through `--resynthesize-cut-cards`: `yarn --cwd server research-entity:rematerialize --slugs=<rows whose browse card is cut> --resynthesize-cut-cards --apply --confirm-rematerialize`.
 
