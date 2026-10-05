@@ -388,6 +388,32 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_sibling_field_moves']);
   });
 
+  it('marks a release that moves an accepted sibling as accepting the engine value, not inert', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'unrecorded-row',
+        fullDescription: 'A body a student reads.',
+        shortDescription: 'A card a student reads.',
+        manuallyLockedFields: ['fullDescription'],
+      },
+      {
+        plannedSet: {
+          fullDescription: 'A body a student reads.',
+          shortDescription: 'A different card.',
+        },
+      },
+      { releaseProvenInert: true, acceptEngineValueFields: ['shortDescription'] },
+    );
+
+    expect(decisions[0]).toMatchObject({
+      verdict: 'release',
+      acceptsEngineValue: true,
+      movedSiblingValues: { shortDescription: 'A different card.' },
+    });
+    expect(decisions[0].provenInert).toBeUndefined();
+    expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleasesProvenInert).toBe(0);
+  });
+
   it('still refuses a lock that holds a reconciler shut', () => {
     const decisions = decideFieldLockReleases(
       {
@@ -536,6 +562,7 @@ describe('a lock over provenance its lane never observed (#3788)', () => {
       { ...rules, acceptEngineValueFields: ['shortDescription'] },
     );
     expect(released.verdict).toBe('release');
+    expect(released.acceptsEngineValue).toBe(true);
     expect(released.movedSiblingValues).toEqual({
       shortDescription: 'The engine derives this card.',
     });

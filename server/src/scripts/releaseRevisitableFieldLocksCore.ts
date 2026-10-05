@@ -114,6 +114,12 @@ export interface FieldLockReleaseDecision {
  * fallback is why relaxing "revisitable" alone was refused, because a projection
  * silent about a field says nothing about it. And the caller must name the rows, so
  * this can only ever release locks an operator has read one at a time.
+ *
+ * `acceptEngineValueFields` widens both paths to a value the operator read and
+ * accepted: a named field the plan names with a different value, or a sibling the
+ * release moves. Such a release carries `acceptsEngineValue` rather than
+ * `provenInert`, because it changes what a student reads; a plan silent about the
+ * field still keeps the lock.
  */
 export interface FieldLockReleaseRules {
   releaseProvenInert?: boolean;
@@ -237,12 +243,13 @@ export function decideFieldLockReleases(
           ...siblingMoves(movedSiblings),
         };
       }
+      const siblingsMove = Object.keys(movedSiblings).length > 0;
       return {
         ...base,
         engineValue: plannedValue,
         verdict: 'release' as const,
-        ...(agrees ? { provenInert: true } : { acceptsEngineValue: true }),
-        ...(Object.keys(movedSiblings).length > 0 ? siblingMoves(movedSiblings) : {}),
+        ...(agrees && !siblingsMove ? { provenInert: true } : { acceptsEngineValue: true }),
+        ...(siblingsMove ? siblingMoves(movedSiblings) : {}),
       };
     }
     if (!projectionNamesField(answer, field) && lockSuppressesFieldCollection(field)) {
@@ -298,7 +305,8 @@ function decideNeverBackedFieldLockRelease(
     return { ...neverBacked, engineValue, verdict: 'keep_engine_disagrees' };
   }
   const movedSiblings = movedSiblingValuesFor(entity, answer, base.field);
-  const siblingReport = Object.keys(movedSiblings).length > 0 ? siblingMoves(movedSiblings) : {};
+  const siblingsMove = Object.keys(movedSiblings).length > 0;
+  const siblingReport = siblingsMove ? siblingMoves(movedSiblings) : {};
   const unacceptedSiblings = Object.keys(movedSiblings).filter(
     (sibling) => !rules.acceptEngineValueFields?.includes(sibling),
   );
@@ -310,7 +318,7 @@ function decideNeverBackedFieldLockRelease(
     engineValue,
     verdict: 'release',
     ...siblingReport,
-    ...(!agrees || silentOnSuppressedField ? { acceptsEngineValue: true } : {}),
+    ...(!agrees || silentOnSuppressedField || siblingsMove ? { acceptsEngineValue: true } : {}),
   };
 }
 

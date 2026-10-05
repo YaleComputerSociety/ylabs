@@ -857,6 +857,13 @@ The plan must NAME the field, so the stored-value fallback in `plannedFieldValue
 And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
 The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
+When the engine's value is better than the locked one (#4897), the operator can name the field with `--accept-engine-value=<slug>:<field>` alongside `--release-proven-inert`.
+The plan must still name the field, so a plan silent about it keeps the lock as `keep_not_revisitable` whatever the operator accepts.
+A named field the engine disagrees with is released with `acceptsEngineValue: true` instead of `provenInert: true`, after the operator has read the engine's value in the report.
+A sibling the release would move keeps the lock as `keep_sibling_field_moves` unless that sibling is named too, and a release that moves an accepted sibling also carries `acceptsEngineValue: true`, because it changes what a student reads.
+So `provenInert: true` and `plannedReleasesProvenInert` stay reserved for a release that moves nothing.
+An accepted value is written by the next resolve, so rematerialize the named rows and re-gate after the release.
+
 #### Releasing a lock over provenance its lane never observed: `--release-never-backed` (#3788)
 
 The #3769 retirement stage leaves a never-backed `fieldProvenance` entry alone when its field is locked, because a lock is an operator act and the lock release path owns it.
