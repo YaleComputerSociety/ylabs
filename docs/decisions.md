@@ -23,6 +23,13 @@ A deterministic check backs the first rule: a "using", "via", "through", "by mea
 The other four rules are prompt rules only, because no deterministic shape separates them from correct prose.
 Calibrated read-only over the 3,571 `student_ready` Development rows: of 1,636 cards with such a clause the check strips 532 and refuses 8, and of 867 bodies it strips 119 and refuses 1; a hand check of 20 hits found 18 correct, and of 20 non-hits found 18 correct.
 The writer contract version and the card prompt hash change, so the next writer run re-judges every row and the next microsite extraction run re-derives its cards.
+Follow-up (2026-10-05): the next graded sample still served five cards with an unsupported "using" clause.
+Two were copied lane cards, which never reached the check because it ran only where a card follows a written body; every copied or stored card is now checked at materialize.
+Three passed because the evidence vocabulary was broader than the page: an unbounded marker read "development" as "develop", a context ran past a new subject into a topic, and a method the page gave one listed aim was credited to another.
+Calibrated read-only over 3,576 `student_ready` Development rows, of 1,282 cards with such a clause the check now changes 181: 114 of 1,106 written-body cards, and 67 of 176 copied cards, 60 of which the old rule already failed but never saw.
+A hand check of 20 changed cards found 17 correct and every result well formed, and of 20 unchanged cards found 18 correct.
+The same sample served a written body built from a profile template's widget labels, which the lane's ingest check had verified because the labels are on the page verbatim, and which one lane read stored on its own as a publications timeline the predicate did not know.
+The writer now refuses every value `isProfileTemplateChrome` matches: on Development 87 live rows carried such a snippet, 17 of them `student_ready` rows serving a written body, 14 of which have no other evidence, so the next writer run retires those bodies without a model call and re-writes the other 3.
 
 ## 2026-10-04: A Description The Extractor Verified Against Its Fetched Page Is Page Text (#4867)
 

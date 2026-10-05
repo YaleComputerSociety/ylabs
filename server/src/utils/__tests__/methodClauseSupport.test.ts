@@ -93,6 +93,114 @@ describe('a method clause must be a method the evidence states (#4914)', () => {
   });
 });
 
+describe('the evidence states a method only where it names one (#4914 follow-up)', () => {
+  const strips = (text: string, evidence: string) =>
+    withoutUnsupportedMethodClauses(text, [evidence]);
+
+  it('does not read a marker inside a longer word', () => {
+    expect(
+      strips(
+        'Studies forest history using environmental law and environmental ethics.',
+        'Studies forest history, economic development, environmental law and environmental ethics.',
+      ).text,
+    ).toBe('Studies forest history.');
+    expect(
+      strips(
+        'Studies agrarian change using fixture history.',
+        'Works within fixture history on agrarian change.',
+      ).text,
+    ).toBe('Studies agrarian change.');
+  });
+
+  it('ends the evidence context at a new subject and at the topic of a research noun', () => {
+    const evidence =
+      'Collaborating with other colleagues, we have done research on the fixture fellowship match. The group conducts clinical research on fixture bleeding and research on the fellowship match.';
+    expect(
+      strips('Directs fixture care and research using fellowship training.', evidence).text,
+    ).toBe('Directs fixture care and research.');
+    expect(strips('Directs fixture care using clinical research.', evidence).stripped).toBe(0);
+  });
+
+  it('does not credit a method to an item listed beside the one it modifies', () => {
+    const evidence =
+      'The focus of the lab is fixture carcinogenesis, fixture biomarker discovery and novel therapies using small molecules and immunotherapy.';
+    expect(
+      strips(
+        'Investigates fixture carcinogenesis and fixture biomarker discovery using small-molecule therapies and immunotherapy.',
+        evidence,
+      ).text,
+    ).toBe('Investigates fixture carcinogenesis and fixture biomarker discovery.');
+    expect(
+      strips('Develops novel therapies using small molecules and immunotherapy.', evidence)
+        .stripped,
+    ).toBe(0);
+  });
+
+  it('keeps a method the evidence names before a generic method noun or after "application of"', () => {
+    expect(
+      strips(
+        'Studies fixture clearance using high-field MR and PET imaging.',
+        'Develops high-field MR and PET-based techniques for fixture imaging.',
+      ).stripped,
+    ).toBe(0);
+    expect(
+      strips(
+        'Studies fixture biology using PET radiotracer manufacturing.',
+        'Studies the application of PET radiotracer manufacturing to fixture biology.',
+      ).stripped,
+    ).toBe(0);
+    expect(
+      strips(
+        'Tests fixture samples using PCR and RT-PCR.',
+        'We test fixture samples by polymerase chain reaction (PCR) and reverse transcriptase-PCR (RT-PCR).',
+      ).stripped,
+    ).toBe(0);
+  });
+
+  it('does not let a generic method noun reach past its own list item', () => {
+    expect(
+      strips(
+        'Investigates fixture modulation using vaccine-induced immunity and nucleic acid delivery approaches.',
+        'Studies fixture biology, including fixture modulation, vaccine-induced immunity, and nucleic acid delivery approaches.',
+      ).text,
+    ).toBe('Investigates fixture modulation.');
+  });
+
+  it('leaves a well-formed sentence when it strips', () => {
+    const none = 'Studies fixture topics and fixture interests.';
+    expect(
+      strips(
+        'Develops fixture processes using plasma chemistry, electrochemistry, and heterogeneous catalysis for fixture conversion.',
+        none,
+      ).text,
+    ).toBe('Develops fixture processes for fixture conversion.');
+    expect(
+      strips(
+        'Studies fixture growth using firm dynamics and markups to assess fixture inequality.',
+        none,
+      ).text,
+    ).toBe('Studies fixture growth to assess fixture inequality.');
+    expect(
+      strips(
+        'Investigates fixture literature using manuscript study of text\u2013image relations.',
+        none,
+      ).text,
+    ).toBe('Investigates fixture literature.');
+    expect(
+      strips(
+        'Studies fixture obesity using human metabolic investigations (MRI/MRS, clamps, stable isotopes, modeling).',
+        none,
+      ).text,
+    ).toBe('Studies fixture obesity.');
+    expect(
+      strips('Studies fixture injury (using zebrafish models) and fixture repair.', none).text,
+    ).toBe('Studies fixture injury and fixture repair.');
+    expect(
+      strips('Studies fixture injury (modeled using zebrafish) and fixture repair.', none).text,
+    ).toBe('Studies fixture injury (modeled) and fixture repair.');
+  });
+});
+
 describe('the written body refuses an unsupported method clause (#4914)', () => {
   const snippets = [
     { text: INTERESTS, sourceUrl: 'https://ml.example.edu/', sourceName: 'synthetic-profile' },
