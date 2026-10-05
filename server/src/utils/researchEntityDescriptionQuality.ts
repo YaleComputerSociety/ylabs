@@ -1,3 +1,4 @@
+import { researchStatementSentences } from './careerBiographyDescription';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
@@ -2079,6 +2080,7 @@ function computeShortDescriptionQuality(
     full &&
     text.toLowerCase() === full.toLowerCase() &&
     !isConciseSpecificResearchDescription(text) &&
+    !isSoleResearchStatementSentence(text) &&
     (sentenceList(full).length > 1 ||
       wordCount(full) > 24 ||
       !/^(?:studies|investigates|examines|explores|supports|develops|advances|fosters|works towards|uses|employs|focuses|creative work)\b/i.test(
@@ -2104,6 +2106,19 @@ function computeShortDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+// A body that is one sentence stating what the person researches ("<Name> is a
+// sociologist whose scholarship focuses on ...") is the research statement a CV-shaped
+// profile narrows to, so a card repeating it is the same accurate line, not a lazy copy.
+const SOLE_RESEARCH_STATEMENT_MAX_WORDS = 40;
+
+function isSoleResearchStatementSentence(text: string): boolean {
+  return (
+    sentenceList(text).length === 1 &&
+    wordCount(text) <= SOLE_RESEARCH_STATEMENT_MAX_WORDS &&
+    researchStatementSentences(text).length === 1
+  );
 }
 
 export function shortDescriptionQuality(
