@@ -16,7 +16,7 @@ const ENVIRONMENT_READ_PATTERNS = [
   /process\.env\[\s*['"]([A-Z][A-Z0-9_]+)['"]\s*\]/g,
   /\benv\.([A-Z][A-Z0-9_]{2,})\b/g,
   /\benv\[\s*['"]([A-Z][A-Z0-9_]+)['"]\s*\]/g,
-  /_VARIABLES?\s*=\s*['"]([A-Z][A-Z0-9_]+)['"]/g,
+  /_(?:VARIABLES?|ENV|KEY)\s*=\s*['"]([A-Z][A-Z0-9_]+)['"]/g,
   /Env(?:Value)?\(\s*(?:env\s*,\s*)?['"]([A-Z][A-Z0-9_]+)['"]/g,
   /import\.meta\.env\.([A-Z][A-Z0-9_]+)/g,
   /['"]([A-Z][A-Z0-9_]*_(?:API_KEY|SERVICE_ID|MONGODBURL|SECRET|DSN))['"]/g,
@@ -79,6 +79,7 @@ test('the scan still finds the variables a deployed web service cannot start wit
     'MEILISEARCH_WRITE_API_KEY',
     'SENTRY_DSN',
     'RENDER_GIT_COMMIT',
+    'SCRAPER_SWEEP_DEDUPE_RESEARCHERS',
   ]) {
     assert.ok(
       readers.has(name),

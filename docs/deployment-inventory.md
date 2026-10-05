@@ -139,6 +139,8 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `SCRAPLING_RENDERER_ENABLED` | No | Defaults to `false`, so the rendered-fetch lanes fetch plainly. | No |
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
+| `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` | No | Each sweep stage runs by default; a value such as `0` or `false` turns that stage off (`server/src/scripts/sweepStageFlags.ts`). | No |
+| `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET` | No | The `official-sources-backfill` stage is skipped; only a value such as `1` or `true` opts in. | No |
 
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.
@@ -186,6 +188,8 @@ None of these is a secret, and none belongs on a web service.
 | `SCRAPER_FIELD_RETRACTION`, `SCRAPER_FACULTY_DEPARTURE_DETECTION`, `SCRAPER_YSM_LAB_DELISTING_DETECTION`, `C4_LOSSLESS_INGEST`, `C4_RESOLVE_AT_MINT_ENTITIES` | Scraper and materializer behaviour switches |
 | `SCRAPER_PER_HOST_CONCURRENCY`, `SCRAPER_ROSTER_LANE_CONCURRENCY` | Fetch pacing |
 | `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
+| `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
+| `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |
 | `SCRAPLING_RENDERER_ENABLED`, `SCRAPLING_FETCH_MODE`, `SCRAPLING_PYTHON_COMMAND`, `SCRAPLING_BRIDGE_PATH`, `SCRAPLING_TIMEOUT_MS` | The rendered-fetch bridge |
 | `SCRAPER_SWEEP_CANARY_LIMIT`, `SCRAPER_SWEEP_CANARY_CONCURRENCY`, `SCRAPER_SWEEP_CANARY_TIMEOUT_MS`, `SCRAPER_SWEEP_CLUSTER_QUOTA_MB`, `SCRAPER_SWEEP_MIN_HEADROOM_MB` | The sweep preflight |
 | `SWEEP_TARGET_SHA`, `SEARCH_INDEX_WRITES` | Set by the sweep entrypoint, as above |
