@@ -389,17 +389,37 @@ export function isComposedFullNameLabName(
   return !urls.some((url) => urlNamesALab(url, person));
 }
 
+/**
+ * A path segment naming a plural of labs under another word and none of the person's names
+ * ("/faculty-labs") is a listing of many labs, which proves no lab of this person's.
+ */
 function urlNamesALab(value: unknown, person: string): boolean {
   try {
     const url = new URL(textValue(value));
-    const nameLetters = personTokens(person).map(letters).filter(Boolean);
-    const endsInLab = new RegExp(`${LAB_TOKEN}$`);
-    return [...url.hostname.split('.'), ...url.pathname.split('/')]
+    const nameTokens = personTokens(person)
       .map(letters)
-      .filter(Boolean)
-      .some((part) =>
-        endsInLab.test(nameLetters.reduce((rest, token) => rest.replace(token, ''), part)),
-      );
+      .filter((token) => token.length >= 2);
+    const strippableNameTokens = nameTokens.filter((token) => token.length >= 3);
+    const endsInLab = new RegExp(`${LAB_TOKEN}$`);
+    const withoutName = (part: string) =>
+      strippableNameTokens.reduce((rest, token) => rest.replace(token, ''), part);
+    const hostParts = url.hostname.split('.').map(letters).filter(Boolean);
+    const pathParts = url.pathname.split('/').map(letters).filter(Boolean);
+    const labRightAfterName = nameTokens.map((token) => new RegExp(`${token}${LAB_TOKEN}`));
+    const isListingOfLabs = (part: string) => {
+      const before = /^(.+)labs$/.exec(part)?.[1];
+      return before !== undefined && !nameTokens.some((token) => before.includes(token));
+    };
+    if (
+      hostParts.some(
+        (part) =>
+          endsInLab.test(withoutName(part)) ||
+          labRightAfterName.some((pattern) => pattern.test(part)),
+      )
+    ) {
+      return true;
+    }
+    return pathParts.some((part) => endsInLab.test(withoutName(part)) && !isListingOfLabs(part));
   } catch {
     return false;
   }
