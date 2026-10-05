@@ -55,6 +55,13 @@ export interface CoverageObservationLike {
   sourceUrl?: string;
   sourceName?: string;
   confidence?: number;
+  scrapeRunId?: unknown;
+  /**
+   * The lane that wrote this value checked it against the page it fetched before storing
+   * it (owner decision on #4867). Derived by `markIngestVerifiedObservations`, never by
+   * the source name alone.
+   */
+  ingestVerifiedAgainstPage?: boolean;
 }
 
 const MANUAL_ADMIN_EDIT_SOURCE_NAME = 'manual-admin-edit';
@@ -80,6 +87,7 @@ export function isWriterEvidenceObservation(
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
   if (isModelTextSource(obs.sourceName)) {
+    if (obs.ingestVerifiedAgainstPage === true) return true;
     const page = storedPageText(obs.sourceUrl);
     return Boolean(page) && isDescriptionGroundedInSource(obs.value, page);
   }

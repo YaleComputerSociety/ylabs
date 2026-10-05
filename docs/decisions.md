@@ -5,18 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Description The Extractor Verified Against Its Fetched Page Is Page Text (#4867)
+
+The strict #4867 rule left 2,074 of the 3,908 rows that carry writer evidence with no page evidence, because almost no durable page copies exist.
+Decision (owner, 2026-10-04): admit the microsite extraction lane's `fullDescription` values that the lane verified against the fetched page at ingest, where every sentence of four or more words must be present in the page text (`groundDescriptionExtraction`, #528).
+The admission depends on a per-observation marker rather than the source name: the observation's `scrapeRunId` names a recorded `scrape_runs` row of that lane that started after #528 reached beta (`PAGE_GROUNDING_VERIFIED_SINCE`).
+The description backfill script writes rewrites and syntheses under the same source name with a fresh run id it never records, so its values match no recorded run and stay excluded; a lane run that predates the check is excluded too, and so is the lane's `shortDescription`, which can be a synthesized card.
+Every other model-text value still needs a durable stored copy of its page, and none exists yet.
+Measured read-only on Development before merge, 590 of the 4,193 live rows have no page evidence (270 of them `student_ready`) and 544 have no evidence even counting grants (229 `student_ready`); an all-rows writer run makes about 3,640 model calls.
+The 174 live values from lane runs before the check stay excluded; admitting them would recover roughly 90 rows, which is the cost of not admitting unverified text.
+
 ## 2026-10-04: A Written Description Is Grounded In Fetched Page Text, And Grants Help Only When They Must (#4867)
 
 A 120-row graded sample after #4788 found 7 of 100 written bodies wrong, above the goal of fewer than 5% wrong.
 Two of the seven re-asserted details an earlier model-written observation had invented, and three attributed another unit's content, a co-founder's personal agenda or a featured item to the row.
 Decision: the writer is grounded only in text that is on a fetched page.
-A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache, so today model text is never writer evidence.
+A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache; the one admitted exception is recorded in the entry above.
 Evidence is read in this order: the row's own research site, its official profile, other pages, and grant records last.
 Grant rule (owner direction, 2026-10-04): grants are read only when the row's own research prose is absent or thin, only grants the row's lead holds as principal investigator that are active or ended within five years, never a single grant as the whole evidence, so one eligible grant is not read at all, and the prompt states only the theme several grants share.
 The prompt forbids attributing navigation, carousel, related-unit or featured-item content, presenting training or past positions as current work, and turning a listed interest into a method or a study subject; a sentence naming a featured item, a related unit or training as current work is dropped deterministically.
 The writer contract version is bumped, so every row is judged again on the next run.
 Measured read-only on Development before the change, the strict rule leaves 2,074 of the 3,908 rows that carry evidence with no page evidence at all, 1,515 of them with no evidence even counting grants, because almost no stored page copies exist and most description evidence is model-extracted.
-The fallback for those rows is an open decision, recorded on #4867, and the all-rows writer run waits for it.
+The owner chose the fallback in the entry above.
 
 ## 2026-10-04: A Page's Own Research Paragraph In The Progressive Is Research (#4809)
 
