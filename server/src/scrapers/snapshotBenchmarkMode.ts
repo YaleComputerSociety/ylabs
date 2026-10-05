@@ -8,7 +8,9 @@
  * use, so a page the capture never saw is counted as a miss and the lane's own fetch of it
  * fails through the lane's normal error path rather than reaching the network. The SSRF
  * guard skips its DNS lookup during replay, because nothing can connect and a live lookup
- * would let the resolver, rather than lane code, decide which targets reach the cache.
+ * would let the resolver, rather than lane code, decide which targets reach the cache. A host
+ * the guard refused during capture is frozen as that refusal, so replay refuses it too rather
+ * than letting the lane ask for a page the capture never could.
  *
  * A model call is frozen the same way (#3587). Capture records each chat-completion response
  * keyed by a hash of the exact request body, and replay serves it, so a changed prompt or a
@@ -273,4 +275,19 @@ export function benchmarkCacheWrite(
     });
   }
   return true;
+}
+
+export const SSRF_HOST_REFUSAL_NAMESPACE = 'ssrf-host-refusal';
+
+const hostRefusalKey = (hostname: string): string => hostname.trim().toLowerCase();
+
+export function freezeHostRefusal(hostname: string, reason: string): void {
+  if (mode?.kind !== 'capture') return;
+  benchmarkCacheWrite(SSRF_HOST_REFUSAL_NAMESPACE, hostRefusalKey(hostname), { refusedAs: reason });
+}
+
+export function frozenHostRefusal(hostname: string): string | undefined {
+  const frozen = benchmarkFrozenMetadata(SSRF_HOST_REFUSAL_NAMESPACE, hostRefusalKey(hostname)) as
+    { refusedAs?: unknown } | undefined;
+  return typeof frozen?.refusedAs === 'string' ? frozen.refusedAs : undefined;
 }
