@@ -484,8 +484,7 @@ export function defaultMaterializerCardSynthesizer(
     synthesizeGroundedCardDescription({
       fullDescription,
       entityName,
-      callLLM: (llmInput) =>
-        defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
+      callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
     });
 }
 
