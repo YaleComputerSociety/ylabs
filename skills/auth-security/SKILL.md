@@ -242,6 +242,16 @@ Only content-hashed files directly under `/assets/` are served `public, max-age=
 The Passport `regenerate`/`save` shim defines its methods as non-enumerable, because cookie-session writes a new session that has any own enumerable key, and an enumerable shim issued an empty session cookie to every anonymous response.
 `server/src/__tests__/appStaticAssetCaching.test.ts` pins all of this through the mounted app.
 
+The SPA fallback writes per-page share metadata into the shell, because link preview fetchers never run the client (#4240).
+`resolvePageShell` in `server/src/services/pageShellMetadataService.ts` decides the head and `renderPageShell` in `server/src/utils/pageShellHead.ts` writes it, HTML-escaping every value.
+`/`, `/research`, `/programs` and `/about` get a page title and a query-free canonical URL on `https://yalelabs.io` whatever the request host.
+`/research/:slug` reads the row through `getResearchGroupDetail` with no operator authority, so it can only show what the anonymous detail endpoint serves, which is `student_ready` rows: the served title, the served short description, and the canonical page.
+A description carrying an email address or phone number is dropped rather than shared, and no member, roster or contact field is ever read.
+A slug the endpoint withholds or does not know answers `404` with the generic shell, a merged shell answers `301` to its canonical page, and a lookup that throws or outlasts `PAGE_SHELL_LOOKUP_TIMEOUT_MS` serves the unmodified shell with `200`.
+Program pages get only the page-level head, because `/api/programs` is sign-in only and a program's fields are not public.
+The site-wide share image, the `robots` meta and the CSP are untouched, and nothing inline is added to the head.
+`server/src/__tests__/pageShellMetadata.integration.test.ts` pins this through the mounted app, and `server/src/utils/__tests__/pageShellHead.test.ts` fails if `client/index.html` stops carrying a tag the renderer rewrites.
+
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
 Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate.
