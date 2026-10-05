@@ -225,9 +225,8 @@ describe('the page shell carries per-page share metadata (#4240)', () => {
   });
 
   it('meters shell lookups per IPv6 subnet and serves an over-budget client the unmodified shell', async () => {
-    const { PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW } = await import(
-      '../services/pageShellMetadataService'
-    );
+    const { PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW } =
+      await import('../services/pageShellMetadataService');
     const fromAddress = (address: string, slug: string) =>
       fetch(`${baseUrl}/research/${slug}`, { headers: { 'x-forwarded-for': address } });
 
