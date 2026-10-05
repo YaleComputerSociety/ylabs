@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NO_SURNAME_ROSTER,
+  isOffSitePageTitleForPersonScopedName,
   bodySubjectOrganizationName,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   claimsAnotherPersonsLab,
@@ -2141,5 +2142,52 @@ describe('a unit its own site credits to the lead as Principal Investigator', ()
         siteDeclaredOwnNames: ['Fixture Proteomics Core'],
       }),
     ).toBe(true);
+  });
+});
+
+describe('isOffSitePageTitleForPersonScopedName', () => {
+  const personName = 'Robin Fixture';
+
+  it('refuses an exhibition or squatter title read from a page outside Yale', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'Quillon Expo 2031',
+        sourceUrl: 'https://www.quillon-expo.example.org/2031',
+        personName,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a title that names the lead or an organization, or comes from a Yale page', () => {
+    for (const [candidateName, sourceUrl] of [
+      ['Robin Fixture Faculty Research', 'https://robinfixture.example.com/'],
+      ['Estuary Dynamics Lab', 'https://estuary.example.org/'],
+      ['Quillon Expo 2031', 'https://quillon.yale.edu/'],
+    ]) {
+      expect(isOffSitePageTitleForPersonScopedName({ candidateName, sourceUrl, personName })).toBe(
+        false,
+      );
+    }
+  });
+
+  it("keeps a brand-only name the row's own site declares for itself", () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'QUILLON',
+        sourceUrl: 'https://quillon.example.io/',
+        personName,
+        siteDeclaredOwnNames: ['QUILLON'],
+      }),
+    ).toBe(false);
+  });
+
+  it('cannot judge a title without the lead', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'Quillon Expo 2031',
+        sourceUrl: 'https://www.quillon-expo.example.org/2031',
+        personName: '',
+      }),
+    ).toBe(false);
   });
 });

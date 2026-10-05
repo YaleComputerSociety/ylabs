@@ -997,7 +997,10 @@ describe('projectFromLog name authority corroborates an eponym against a roster 
         entityDoc: { ...memberDoc, name: 'Vandermolen Lab' },
       }),
     );
-    expect(result.set.name).toBe('Tomasz Okonkwo Lab');
+    // The only lab the record cites is another person's, so it backs no lab of the lead's
+    // own and the substitute is the lead's faculty research heading (#4903).
+    expect(result.set.name).toBe('Tomasz Okonkwo Faculty Research');
+    expect(result.set.entityType).toBe('FACULTY_RESEARCH_AREA');
   });
 
   it('leaves a refused name alone when no lead resolves, rather than serving no heading', async () => {
