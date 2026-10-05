@@ -1,5 +1,7 @@
 // A name here must stay registered and seeded (#3547, #3553, #3636).
 const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
+  'roster-bio-research-evidence':
+    'mints new faculty-research rows from roster biographies, and an agent check of a sample is not a precision review: the owner reviewed a 20-row dry-run sample on 2026-10-05 and reviews a sample of the rows the first Development run produces; return it to the sweep only after that review is recorded by a person',
   'undergrad-fellowships-recipients':
     'backward-looking recipients source with no clean public feed; run from curated input',
   'undergrad-research-posting':

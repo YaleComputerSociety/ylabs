@@ -53,6 +53,8 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 - `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
   Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
   It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
+- `roster-bio-research-evidence` mints new faculty-research rows from roster biographies, and an agent check of a sample is not a precision review.
+  The owner reviewed a 20-row dry-run sample on 2026-10-05 and reviews a sample of the rows the first Development run produces; it joins the research sweep only after a person records that review.
 - `lab-microsite-undergrad-llm` is not precise enough to refresh automatically (#3636).
   #3569 measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50) and its grounding precision at 18/38 = 0.47.
   19 of those 50 quotes are an absence note the model wrote rather than text from a page, and that shape matches 299 of the 925 rows the lane serves, so the student-facing badge was withdrawn (#3607).
@@ -1247,6 +1249,16 @@ A written body is also no longer judged against the stored card before its own c
 `research-entity:coverage-synthesis --rederive-cards` re-projects only the live rows serving the written body and held on `missing_card_description` (`writtenBodyCardRepairFilter`), with no writer model call; with `--all` it re-projects every live row serving the written body, which is how a card rule change reaches them.
 The prompt is shared with the grant-corpus and faculty-research-area lanes, so they write in the same voice and pass the same arms.
 The first full Development run is about 3,900 model calls (3,936 of 4,230 live rows carried evidence when measured on 2026-10-04); later runs call the model only for rows whose evidence changed.
+
+### Roster biography research evidence (`roster-bio-research-evidence`)
+
+The roster lane mints a lab-less faculty-research row only from a dedicated research section on the person's official profile (#1933), so a person whose profile states their research only inside a biography had no row.
+`roster-bio-research-evidence` reads the roster lane's stored `user` observations, fetches nothing, and mints a `FACULTY_RESEARCH_AREA` row named `<lead> Faculty Research` for a person whose biography states research they do now (`deriveBioResearchStatement`), whose title can host a student's research (`rosterBioTitleVerdict`), and whom the corpus does not already cover by profile URL, person key, or first-and-last name, archived rows included.
+The biography's qualifying sentences are emitted as `researchInterestSummary`, a writer evidence field that is not a stored research-entity path, so they reach the writer as evidence and are never served as the description (owner decision, 2026-10-04: descriptions are written from evidence, never copied).
+Past research, CV records, clinical-service and clinical-specialty sentences, teaching-only sentences, and staff, trainee, and student ranks are refused.
+The row key is the one the owning lane would mint: the roster formula for a department roster, and `ysm-faculty-<profile slug>` for a medical school department, whose roster config is profile-only because the medical school directory lane mints its people.
+The lane is manual-only (see the list above).
+Run it with `ALLOW_NON_PROD_SCRAPER_WRITES=true yarn --cwd server scrape run --source roster-bio-research-evidence --auto-materialize`, then the writer scoped to the minted slugs (`research-entity:coverage-synthesis --apply --confirm-coverage-synthesis --slugs=<list>`), then the visibility gate on those rows.
 
 ### Grant-corpus research synthesis and PI-to-school inheritance
 

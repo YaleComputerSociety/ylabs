@@ -439,6 +439,11 @@ function researchEntityKeyOf(faculty: Pick<RawYsmFaculty, 'slug'>): string {
   return `ysm-faculty-${faculty.slug}`.slice(0, 100);
 }
 
+export function ysmFacultyResearchEntityKeyForProfileUrl(profileUrl: string): string {
+  const slug = profileSlugFromUrl(profileUrl.replace(/[?#].*$/, ''));
+  return slug ? researchEntityKeyOf({ slug }) : '';
+}
+
 export function skippedProfileRefusedWebsiteObservations(
   profile: YsmFacultyProfile,
 ): ObservationInput[] {

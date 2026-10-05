@@ -76,6 +76,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
+  'roster-bio-research-evidence': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads the roster lane's stored profile biographies, keeps the present-tense research sentences of people whose title can host a student's research, and mints a faculty-research row with those sentences as writer evidence. Refuses past research, CV records, clinical-service and teaching-only sentences, students, trainees, staff, and anyone the corpus already covers by profile URL, person key, or name.",
+  },
   'directory-alias-resolution': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',
