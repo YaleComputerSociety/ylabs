@@ -13,7 +13,7 @@ import { isDescriptionGroundedInSource } from '../utils/officialResearchDescript
 import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
-import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
+import { withoutProfileTemplateWidgets } from '../utils/profileTemplateChrome';
 import {
   statesPersonalPastFraming,
   restatesPastFramedEvidence,
@@ -87,15 +87,16 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * against its fetched page at ingest (`ingestVerifiedAgainstPage`). The writer's
  * own output is model text, so it is never its own input. A `manual-admin-edit`
  * description is ordinary evidence unless it narrates its sources (#4788). A profile
- * template's widget labels are on the page verbatim yet describe no one, so they are
- * never evidence, whichever lane stored them (`isProfileTemplateChrome`).
+ * template's widget labels are on the page verbatim yet describe no one, so a value that
+ * is only widgets is never evidence, whichever lane stored it; a MeSH topic run is
+ * (`withoutProfileTemplateWidgets`).
  */
 export function isWriterEvidenceObservation(
   obs: CoverageObservationLike,
   storedPageText: StoredPageTextLookup = () => undefined,
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
-  if (isProfileTemplateChrome(obs.value)) return false;
+  if (typeof obs.value === 'string' && !withoutProfileTemplateWidgets(obs.value)) return false;
   if (isModelTextSource(obs.sourceName)) {
     if (obs.ingestVerifiedAgainstPage === true) return true;
     const page = storedPageText(obs.sourceUrl);
@@ -130,7 +131,7 @@ export function gatherCoverageSnippets(
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = textValue(obs.value);
+    const raw = withoutProfileTemplateWidgets(textValue(obs.value));
     if (!raw) continue;
     const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (clean.length < 20) continue;

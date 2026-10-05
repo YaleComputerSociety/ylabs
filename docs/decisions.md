@@ -29,7 +29,10 @@ Three passed because the evidence vocabulary was broader than the page: an unbou
 Calibrated read-only over 3,576 `student_ready` Development rows, of 1,282 cards with such a clause the check now changes 181: 114 of 1,106 written-body cards, and 67 of 176 copied cards, 60 of which the old rule already failed but never saw.
 A hand check of 20 changed cards found 17 correct and every result well formed, and of 20 unchanged cards found 18 correct.
 The same sample served a written body built from a profile template's widget labels, which the lane's ingest check had verified because the labels are on the page verbatim, and which one lane read stored on its own as a publications timeline the predicate did not know.
-The writer now refuses every value `isProfileTemplateChrome` matches: on Development 87 live rows carried such a snippet, 17 of them `student_ready` rows serving a written body, 14 of which have no other evidence, so the next writer run retires those bodies without a model call and re-writes the other 3.
+The writer now removes the template's widget labels from its evidence (`withoutProfileTemplateWidgets`): the co-author panel, the publications timeline, an empty research-topics panel, a project card's link label and a bare ORCID iD.
+A MeSH topic run is not chrome for the writer: it lists the topics the profile's publications are indexed under, and a thin but accurate "Studies <topics>." body serves (owner decision), so it stays evidence with the widgets beside it removed, and only a value with nothing left is refused.
+The lane's own guard and the materializer still refuse every `isProfileTemplateChrome` shape as a copied description.
+On Development 87 live rows carried a chrome-shaped writer snippet: 42 are pure MeSH runs and are unchanged, 43 keep their topics with the widgets removed (9 of them `student_ready` rows serving a written body, which the next writer run re-writes), and 2 are widgets only and are refused; neither of those two serves a written body, and both read as template text on a hand check.
 
 ## 2026-10-04: A Description The Extractor Verified Against Its Fetched Page Is Page Text (#4867)
 
