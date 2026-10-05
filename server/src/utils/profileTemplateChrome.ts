@@ -22,9 +22,9 @@ export function isProfileTemplateChrome(value: unknown): boolean {
 /**
  * The template's interface widgets, as opposed to its MeSH chip run: the co-author panel,
  * the publications timeline chart, an empty research-topics panel, a project card's link
- * label and a bare ORCID iD. A
- * MeSH run lists the topics the profile's publications are indexed under, so it is thin
- * but real evidence of what the person studies; the widgets describe no one.
+ * label and a bare ORCID iD. A MeSH run lists the topics the profile's publications are
+ * indexed under, so it is thin but real evidence of what the person studies; the widgets
+ * describe no one.
  */
 const PROFILE_TEMPLATE_WIDGET_LABELS = [
   /\bresearch\s+at\s+a\s+glance\b/gi,
