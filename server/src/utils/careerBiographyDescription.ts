@@ -357,15 +357,16 @@ export function researchStatementSentences(
   const beforePublicationList = (index: number) => firstCitation < 0 || index < firstCitation;
   return sentences.filter(
     (sentence, index) =>
-      RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
-      RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
-      isPersonResearchStatementSentence(sentence) ||
-      RESEARCH_TOPICS_SENTENCE.test(sentence) ||
-      (!isCareerFactSentence(sentence) &&
-        (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
-          (index > firstStatement &&
-            beforePublicationList(index) &&
-            !isCurriculumVitaeRecordSentence(sentence)))),
+      !isTeachingOrPastTraineeSentence(sentence) &&
+      (RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
+        RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+        isPersonResearchStatementSentence(sentence) ||
+        RESEARCH_TOPICS_SENTENCE.test(sentence) ||
+        (!isCareerFactSentence(sentence) &&
+          (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
+            (index > firstStatement &&
+              beforePublicationList(index) &&
+              !isCurriculumVitaeRecordSentence(sentence))))),
   );
 }
 
@@ -423,4 +424,76 @@ const TEACHING_APPOINTMENT_OPENER =
 export function opensOnTeachingAppointment(value: unknown): boolean {
   const [opening] = splitDescriptionSentences(textValue(value));
   return Boolean(opening) && TEACHING_APPOINTMENT_OPENER.test(opening);
+}
+
+const TEACHING_PRACTICE_NOUN =
+  '(?:teaching|education|training|supervision|mentoring|mentorship|instruction|advising)';
+
+const TEACHING_PRACTICE_HEAD = `^(?:the\\s+)?(?:(?:clinical|medical|graduate|resident|residency|undergraduate)\\s+)?${TEACHING_PRACTICE_NOUN}`;
+
+const TEACHING_LEARNER =
+  '(?:students|residents|trainees|fellows|interns|learners|physicians|surgeons|nurses|clinicians|pharmacists|psychoanalysts|analysts|therapists|undergraduates|postdocs)';
+
+const TEACHING_PRACTICE_ITEM = new RegExp(
+  `${TEACHING_PRACTICE_HEAD}\\s+of\\s+(?:[\\p{L}-]+\\s+){0,3}${TEACHING_LEARNER}\\b|^(?:including\\s+)?roles?\\s+in\\s+${TEACHING_PRACTICE_NOUN}\\b|^participation\\s+on\\b`,
+  'iu',
+);
+
+const BARE_TEACHING_PRACTICE_ITEM = new RegExp(`${TEACHING_PRACTICE_HEAD}$`, 'i');
+
+const STUDIES_OBJECT_LIST =
+  /^(?:Studies|Investigates|Examines|Focuses\s+on|Research\s+(?:focuses|centers|centres)\s+on)\s+(.+?)\.?$/i;
+
+const COURSE_ACTIVITY_SENTENCE =
+  /\b(?:involved\s+in|teach(?:es|ing)?|leads?|runs?|organi[sz]es|co-?teach(?:es)?|through)\s+(?:a\s+collaboration\s+on\s+)?(?:an?\s+|the\s+)?(?:annual|yearly|semester(?:-long)?|summer)\s+(?:[\w-]+\s+){0,4}(?:studio|course|seminar|workshop|class)\b/i;
+
+/**
+ * A sentence that presents teaching as research: "Studies the teaching of medical
+ * students, the education of residents, and the training of psychoanalysts", where
+ * every object the sentence lists is a teaching practice, or a course the person runs
+ * ("is involved in an annual urban design studio ..."). Research on education keeps
+ * its reading because it states an inquiry ("studies how residents learn ...") or
+ * mixes the practice with other research objects.
+ */
+export function isTeachingPracticeStatement(sentence: unknown): boolean {
+  const text = textValue(sentence);
+  if (!text) return false;
+  if (COURSE_ACTIVITY_SENTENCE.test(text)) return true;
+  const list = STUDIES_OBJECT_LIST.exec(text);
+  if (!list) return false;
+  const items = list[1]
+    .split(/,\s*(?:and\s+|or\s+)?|;\s*|\s+and\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return (
+    items.some((item) => TEACHING_PRACTICE_ITEM.test(item)) &&
+    items.every(
+      (item) => TEACHING_PRACTICE_ITEM.test(item) || BARE_TEACHING_PRACTICE_ITEM.test(item),
+    )
+  );
+}
+
+const PAST_TRAINEE_RESEARCH_SENTENCE =
+  /\b(?:(?:master['’]?s|doctoral|senior|honou?rs|undergraduate)\s+(?:thesis|dissertation)|(?:his|her|their|my)\s+(?:dissertation|thesis)\s+(?:focused|examined|explored|investigated|was|studied)|as\s+an?\s+(?:graduate|doctoral|Ph\.?\s?D\.?|master['’]?s|undergraduate|nursing|medical)\s+student|assisted\s+(?:in|with)\s+(?:data\s+(?:entry|collection)|(?:the\s+)?(?:recruitment|enrollment))|(?:in\s+(?:his|her|their|my)\s+)?(?:other|previous|prior|past)\s+research\s+experience)\b/i;
+
+/**
+ * Research done as a trainee or in the past, presented as the person's work: a
+ * master's thesis, "as a graduate student", "assisted in data entry". A profile that
+ * offers only this says what someone once did, not what a student could join.
+ */
+export function isPastTraineeResearchSentence(sentence: unknown): boolean {
+  const text = textValue(sentence);
+  return Boolean(text) && PAST_TRAINEE_RESEARCH_SENTENCE.test(text);
+}
+
+export const isTeachingOrPastTraineeSentence = (sentence: unknown): boolean =>
+  isTeachingPracticeStatement(sentence) || isPastTraineeResearchSentence(sentence);
+
+/**
+ * A body every sentence of which is teaching practice or past trainee work, so it
+ * states no current research even though it reads like a research statement.
+ */
+export function isTeachingOrPastTraineeWorkBody(value: unknown): boolean {
+  const sentences = splitDescriptionSentences(textValue(value));
+  return sentences.length > 0 && sentences.every(isTeachingOrPastTraineeSentence);
 }

@@ -1,3 +1,8 @@
+import {
+  isBibliographicCitationSentence,
+  isTeachingOrPastTraineeSentence,
+} from './careerBiographyDescription';
+
 const HONOR_NOUN = String.raw`(?:Prize|Award|Medal|Lectureship)s?`;
 
 const honorNounPattern = new RegExp(String.raw`\b${HONOR_NOUN}\b`);
@@ -46,6 +51,8 @@ export function isNonResearchCardSentence(text: unknown): boolean {
   if (studiesHonorTemplatePattern.test(value)) return true;
   if (teachingAppointmentRecordPattern.test(value)) return true;
   if (studentDevelopmentFocusPattern.test(value)) return true;
+  if (isBibliographicCitationSentence(value)) return true;
+  if (isTeachingOrPastTraineeSentence(value)) return true;
   if (namesResearchActivity(value)) return false;
   if (honorNounPattern.test(value)) return true;
   return titleNumberTitlePattern.test(value);

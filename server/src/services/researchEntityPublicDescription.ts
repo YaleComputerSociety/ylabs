@@ -25,6 +25,8 @@ import {
   isCurriculumVitaeRecordSentence,
   isBibliographicCitationBody,
   isCurriculumVitaeShapedBody,
+  isTeachingOrPastTraineeSentence,
+  isTeachingOrPastTraineeWorkBody,
   opensOnTeachingAppointment,
   opensOnResearchHomeSubject,
   researchStatementSentences,
@@ -555,7 +557,8 @@ function cardStatesResearchItself(card: unknown): boolean {
     !isCurriculumVitaeRecordSentence(text) &&
     !CITATION_LIKE_CARD.test(text) &&
     !DEGREE_FRAGMENT_CARD.test(text) &&
-    !SITE_TAGLINE_CARD.test(text)
+    !SITE_TAGLINE_CARD.test(text) &&
+    !isTeachingOrPastTraineeSentence(text)
   );
 }
 
@@ -564,6 +567,7 @@ function cardStatesResearchItself(card: unknown): boolean {
 const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
   describesResearchFocus(sentence) &&
   !isCurriculumVitaeRecordSentence(sentence) &&
+  !isTeachingOrPastTraineeSentence(sentence) &&
   !CITATION_LIKE_CARD.test(sentence);
 
 function isResearchlessBiographyBody(entity: Record<string, any>, body: string): boolean {
@@ -575,7 +579,8 @@ function isResearchlessBiographyBody(entity: Record<string, any>, body: string):
     isCredentialOrAwardLeadBiography(body) ||
     isCredentialOrTitleLeadBiography(body) ||
     isPersonBiographyOrAdvisingDescription(body) ||
-    isBibliographicCitationBody(body);
+    isBibliographicCitationBody(body) ||
+    isTeachingOrPastTraineeWorkBody(body);
   if (!biography) return false;
   // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
   // served and labelled creative practice, never withheld for stating no research.
@@ -614,7 +619,11 @@ export function servedBodyIsBiographyWithoutResearch(
 ): boolean {
   const body = textValue(representation.entity.fullDescription);
   if (!isResearchlessBiographyBody(representation.entity, body)) return false;
-  if (splitDescriptionSentences(body).some((sentence) => describesResearchFocus(sentence))) {
+  if (
+    splitDescriptionSentences(body).some(
+      (sentence) => describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence),
+    )
+  ) {
     return false;
   }
   return !cardStatesResearchItself(representation.servedCard);
