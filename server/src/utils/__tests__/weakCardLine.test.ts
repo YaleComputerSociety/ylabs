@@ -118,4 +118,17 @@ describe('resolveMaterializedShortDescription with a weak-card test (#4809)', ()
     expect(synthesize).not.toHaveBeenCalled();
     expect(card).not.toBe(FULL_CARD);
   });
+
+  it('tries synthesis before settling for a weak line derived from the body', async () => {
+    const synthesize = vi.fn().mockResolvedValue(FULL_CARD);
+    const card = await resolveMaterializedShortDescription({
+      fullDescription: `${SHORT_CARD} ${BODY}`,
+      currentShortDescription: SHORT_CARD,
+      weakCard: (line) => line !== FULL_CARD,
+      synthesize,
+    });
+
+    expect(synthesize).toHaveBeenCalled();
+    expect(card).toBe(FULL_CARD);
+  });
 });

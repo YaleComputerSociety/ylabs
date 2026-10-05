@@ -833,6 +833,7 @@ export async function resolveMaterializedShortDescription(
         ? undefined
         : input.synthesize,
     refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
+    isWeak: input.weakCard,
   });
   if (
     !grounded ||

@@ -832,6 +832,7 @@ export interface ResolveGroundedCardInput {
    * the caller nothing when a later arm is acceptable.
    */
   refuseCandidate?: (candidate: string) => boolean;
+  isWeak?: (card: string) => boolean;
 }
 
 /**
@@ -875,7 +876,9 @@ export async function resolveGroundedCardDescription(
     shortDescriptionQuality(derived, input.fullDescription, input.researchAreas, {
       entityType: input.entityType,
     }).isUseful;
-  if (derivedPasses && cardLineFitsBrowseCard(derived)) return derived;
+  const preferred = (card: string): boolean =>
+    cardLineFitsBrowseCard(card) && !(input.isWeak?.(card) ?? false);
+  if (derivedPasses && preferred(derived)) return derived;
   // A passing line that the browse card would cut mid-sentence is held back while a
   // line that shows whole is sought, and is still preferred to the topic summary.
   const full = textValue(input.fullDescription);
@@ -895,6 +898,8 @@ export async function resolveGroundedCardDescription(
       synthesized = candidate;
     }
   }
+  if (synthesized && preferred(synthesized)) return synthesized;
+  if (derivedPasses && cardLineFitsBrowseCard(derived)) return derived;
   if (synthesized && cardLineFitsBrowseCard(synthesized)) return synthesized;
   if (derivedPasses) return derived;
   if (synthesized) return synthesized;
