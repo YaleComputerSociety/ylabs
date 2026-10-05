@@ -98,6 +98,7 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
     expect(result.foldsByMatchedIdentity).toEqual({
       netid: 1,
       'roster-identity': 0,
+      'shared-row': 0,
       'verified-profile': 0,
       name: 0,
     });
@@ -147,6 +148,7 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
     expect(result.foldsByMatchedIdentity).toEqual({
       netid: 0,
       'roster-identity': 0,
+      'shared-row': 0,
       'verified-profile': 0,
       name: 0,
     });
