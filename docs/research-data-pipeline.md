@@ -856,12 +856,13 @@ The reclassification route - establish `lockedBy` from outside the row and write
 That is stronger evidence than a record, because it proves the release changes nothing a student reads, which is the whole thing a record is consulted for.
 
 Two fences, and both are load bearing.
-The plan must NAME the field, so the stored-value fallback in `plannedFieldValue` can never be read as agreement; a projection silent about a field says nothing about it, and reading that silence as permission is why relaxing "revisitable" on its own was refused.
+The plan must NAME the field, so the stored-value fallback in `plannedFieldValue` can never be read as agreement; a projection silent about a field says nothing about it, and reading that silence as permission is why relaxing "revisitable" on its own was refused; the one exception is a field the operator names with `--accept-engine-value`, below.
 And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
 The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
 When the engine's value is better than the locked one (#4897), the operator can name the field with `--accept-engine-value=<slug>:<field>` alongside `--release-proven-inert`.
-The plan must still name the field, so a plan silent about it keeps the lock as `keep_not_revisitable` whatever the operator accepts.
+A plan silent about an accepted field releases the lock with `acceptsEngineSilence: true` when the release moves no sibling, and the stored value stays until evidence resolves the field.
+A silent plan that would move a sibling keeps the lock as `keep_sibling_field_moves`, and a silent field the operator did not name keeps it as `keep_not_revisitable`.
 A named field the engine disagrees with is released with `acceptsEngineValue: true` instead of `provenInert: true`, after the operator has read the engine's value in the report.
 A sibling the release would move keeps the lock as `keep_sibling_field_moves` unless that sibling is named too, and a release that moves an accepted sibling also carries `acceptsEngineValue: true`, because it changes what a student reads.
 So `provenInert: true` and `plannedReleasesProvenInert` stay reserved for a release that moves nothing.
