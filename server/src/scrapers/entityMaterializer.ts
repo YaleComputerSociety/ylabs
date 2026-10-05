@@ -679,13 +679,20 @@ export type WrittenBodyCardChoice =
   | { kind: 'none' };
 
 /**
- * The card a written body serves with: the stored card when it is grounded in the
- * written body and the serving bar accepts the pair, else a copied card observation
- * that is, else the body's own lead sentence when it is a card rather than the whole
- * body, else a card synthesized from the written body. Never a topic-chip echo and
- * never the body itself, so a row with none of those keeps no card rather than a wrong
- * one. Keeping an acceptable stored card first is what keeps a re-materialize stable
- * and spends no synthesis.
+ * The card a written body serves with. A candidate is acceptable when it is not a
+ * topic-chip echo or the body itself and the serving bar accepts it; stored and observed
+ * cards must also be grounded in the written body. The order is: the first acceptable
+ * candidate (stored, then each copied card observation, then the body's own lead
+ * sentence) that fits the browse card; else a synthesized line that fits; else the first
+ * acceptable candidate even though the browse card cuts it; else a synthesized line that
+ * does not fit; else no card rather than a wrong one.
+ *
+ * Synthesis is spent only when a candidate fitting the browse card is missing and the
+ * caller hands over `synthesize`, at most WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS calls. The
+ * materializer hands it over when the written body changed or the stored card is
+ * unacceptable, which bounds the spend to once per body version, and for a stored cut
+ * card only under --resynthesize-cut-cards, so a routine re-materialize of an unchanged
+ * body with an acceptable stored card stays stable and makes no call.
  */
 export async function resolveWrittenBodyCard(input: {
   body: string;
@@ -704,21 +711,32 @@ export async function resolveWrittenBodyCard(input: {
       requireGrounding,
     });
   const stored = textValue(input.storedCard);
-  if (stored && acceptable(stored, true)) return { kind: 'stored', card: stored };
+  const candidates: Exclude<WrittenBodyCardChoice, { kind: 'none' }>[] = [];
+  if (stored && acceptable(stored, true)) candidates.push({ kind: 'stored', card: stored });
   for (const [index, value] of input.observedCards.entries()) {
     const card = textValue(value);
     if (card && card !== stored && acceptable(card, true)) {
-      return { kind: 'observed', card, index };
+      candidates.push({ kind: 'observed', card, index });
     }
   }
   const derived = textValue(deriveShortDescriptionFromFullDescription(input.body));
-  if (derived && acceptable(derived, false)) return { kind: 'derived', card: derived };
-  if (!input.synthesize) return { kind: 'none' };
-  for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
-    const card = textValue(await input.synthesize(input.body));
-    if (card && acceptable(card, false)) return { kind: 'synthesized', card };
+  if (derived && acceptable(derived, false)) candidates.push({ kind: 'derived', card: derived });
+  // A card the browse card would cut mid-sentence is held back while a line that shows
+  // whole is sought, and is still the answer when none is found (#4809).
+  const fitting = candidates.find((choice) => cardLineFitsBrowseCard(choice.card));
+  if (fitting) return fitting;
+  if (input.synthesize) {
+    let longSynthesized = '';
+    for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
+      const card = textValue(await input.synthesize(input.body));
+      if (!card || !acceptable(card, false)) continue;
+      if (cardLineFitsBrowseCard(card)) return { kind: 'synthesized', card };
+      longSynthesized ||= card;
+    }
+    if (candidates[0]) return candidates[0];
+    if (longSynthesized) return { kind: 'synthesized', card: longSynthesized };
   }
-  return { kind: 'none' };
+  return candidates[0] ?? { kind: 'none' };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -8042,7 +8060,12 @@ export async function projectFromLog(
         observedCards: observedCards.map((candidate) => candidate.value),
         researchAreas: writtenBodyResearchAreas,
         servingBarAccepts,
-        synthesize: writtenBodyChanged || storedCardUnacceptable ? cardSynthesizer : undefined,
+        synthesize:
+          writtenBodyChanged ||
+          storedCardUnacceptable ||
+          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard))
+            ? cardSynthesizer
+            : undefined,
       });
       if (choice.kind === 'observed') {
         const candidate = observedCards[choice.index];
