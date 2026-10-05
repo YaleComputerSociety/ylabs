@@ -44,7 +44,10 @@ import {
   normalizeName,
   splitName,
 } from '../utils/scraperHelpers';
-import { ownsNoResearchEntityByTitle } from './yaleDirectoryScraper';
+import {
+  mintsNoResearchEntityAsTeachingAppointment,
+  ownsNoResearchEntityByTitle,
+} from './yaleDirectoryScraper';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
@@ -401,6 +404,13 @@ export function facultyToResearchEntityObservations(
   // person's lab link as their own (#3410). The person observations the caller emits
   // are unaffected: a support-staff profile still describes a real person.
   if (ownsNoResearchEntityByTitle(profile.title)) return [];
+  if (
+    mintsNoResearchEntityAsTeachingAppointment(profile.title, {
+      fullDescription: profile.description,
+    })
+  ) {
+    return [];
+  }
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;

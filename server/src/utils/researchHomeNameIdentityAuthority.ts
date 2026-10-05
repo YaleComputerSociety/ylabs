@@ -447,6 +447,40 @@ export function namesAServiceFacility(value: unknown): boolean {
   return SERVICE_FACILITY_NOUN_RE.test(name);
 }
 
+const SUPPORT_OR_CONSULTING_UNIT_RE =
+  /\bsupport\s+(?:hubs?|desks?|services?|cent(?:er|re)s?|teams?|units?|offices?)\b|\bconsult(?:ing|ancy|ants?)\b|\b(?:llc|l\.l\.c\.|pllc|inc\.?|ltd\.?)(?=\s|$|[,.;)])/i;
+
+/**
+ * A support or consulting service, or a company, rather than a research home a student could
+ * join: a library's bioinformatics support hub, a consulting firm (#4916). Wider than
+ * `namesAServiceFacility`, which it includes, and only ever read on a name a profile's lab
+ * slot links, where the person is affiliated with the service rather than leading a lab.
+ */
+export function namesASupportServiceUnit(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return namesAServiceFacility(name) || SUPPORT_OR_CONSULTING_UNIT_RE.test(name);
+}
+
+const CLINICAL_CARE_PATH_SEGMENT_RE =
+  /^(?:care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
+
+/**
+ * A page in a school's clinical-care or clinical-service section, which describes a service
+ * patients use rather than a lab (#4916). A path that also carries a research segment is
+ * a research page that happens to sit under a services section, so it never counts.
+ */
+export function isClinicalCareServicePageUrl(value: unknown): boolean {
+  let segments: string[];
+  try {
+    segments = new URL(textValue(value)).pathname.split('/').filter(Boolean);
+  } catch {
+    return false;
+  }
+  if (segments.some((segment) => /research/i.test(segment))) return false;
+  return segments.some((segment) => CLINICAL_CARE_PATH_SEGMENT_RE.test(segment));
+}
+
 // A blurb is prose, so an organizational word inside it can merely MENTION an
 // organization ("Research in the Department of Psychiatry on adolescent sleep")
 // instead of declaring what the slot links. Requiring the head noun to be the
@@ -833,7 +867,16 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   currentName?: unknown;
 }): string {
   if (!isPersonScopedResearchEntity(entity) && !entityKeyNamesOnlyThisPerson(entity)) return '';
-  if (nameCarriesIdentityToken(entity.currentName, entityKeyPersonTokens(entity.slug))) return '';
+  const currentNameIsABuilding = personScopedNameIsACampusBuilding({
+    candidateName: entity.currentName,
+    personName: entity.leadPersonName,
+  });
+  if (
+    !currentNameIsABuilding &&
+    nameCarriesIdentityToken(entity.currentName, entityKeyPersonTokens(entity.slug))
+  ) {
+    return '';
+  }
   const leadPersonName = normalizeName(textValue(entity.leadPersonName));
   if (!isBarePersonNameEntityName(leadPersonName)) return '';
   const tokens = personNameOrderedTokens(leadPersonName);
@@ -938,6 +981,33 @@ export function namesAScholarlyEventSeries(value: unknown): boolean {
   // "group" and so would spare "Comparative Politics Reading Group".
   if (LABORATORY_WORD_RE.test(name) || RESEARCH_HOME_LAB_HEAD_COMPOUND_RE.test(name)) return false;
   return SCHOLARLY_EVENT_SERIES_HEAD_RE.test(name);
+}
+
+// "Building" is also a gerund head ("Coalition Building"), so only a Yale-named one reads as a place.
+const CAMPUS_BUILDING_HEAD_RE =
+  /\s(?:hall|tower|pavilion|annex)$|^(?:the\s+)?yale\s+\S.*\sbuilding$/i;
+
+// Yale buildings named as laboratories, which no head-noun rule can tell from a lab: the
+// building and a research group read the same way as strings.
+const CAMPUS_LABORATORY_BUILDING_RE =
+  /^(?:the\s+)?(?:yale\s+)?(?:sterling\s+chemistry|kline\s+(?:chemistry|geology)|sloane\s+physics|osborn\s+memorial|greeley\s+memorial|brady\s+memorial|dunham|mason|gibbs|wright)\s+laborator(?:y|ies)$/i;
+
+/**
+ * Whether a candidate name for a person-scoped row names a campus building rather than the
+ * person's research: a news story about a building is the page shape a microsite read
+ * lands on, and its most prominent name is the building's (#4916). A name that carries the
+ * record's own person is that person's, so an eponymous lab never reads as a building.
+ */
+export function personScopedNameIsACampusBuilding(args: {
+  candidateName: unknown;
+  personName: unknown;
+}): boolean {
+  const name = textValue(args.candidateName).replace(/[\s.]+$/, '');
+  if (!name) return false;
+  if (!CAMPUS_BUILDING_HEAD_RE.test(name) && !CAMPUS_LABORATORY_BUILDING_RE.test(name)) {
+    return false;
+  }
+  return !nameCarriesPersonIdentity(name, args.personName);
 }
 
 function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boolean {
@@ -1446,6 +1516,9 @@ export function classifyHarvestedResearchHomeName(args: {
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
+  if (namesASupportServiceUnit(name) || isClinicalCareServicePageUrl(args.websiteUrl)) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
     return 'AFFILIATED_ORGANIZATION';

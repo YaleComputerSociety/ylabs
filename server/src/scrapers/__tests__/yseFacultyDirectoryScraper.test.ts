@@ -274,6 +274,23 @@ describe('facultyToResearchEntityObservations', () => {
     }
   });
 
+  it('mints no research entity for a lecturer whose own description is about a practice (#4916)', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const practice = 'Manages remediation of contaminated fixture sites for a state agency.';
+    expect(
+      facultyToResearchEntityObservations(
+        { ...profile, title: 'Lecturer', description: practice },
+        'yse:jordan-rivers',
+      ),
+    ).toEqual([]);
+    expect(
+      facultyToResearchEntityObservations(
+        { ...profile, title: 'Professor of Hydrology', description: practice },
+        'yse:jordan-rivers',
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('still mints for a faculty title and when no title is stated', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
     expect(

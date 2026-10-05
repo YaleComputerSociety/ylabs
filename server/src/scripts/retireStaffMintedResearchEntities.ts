@@ -15,14 +15,17 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
-import { researchStatementSentences } from '../utils/careerBiographyDescription';
+import {
+  descriptionAffirmsNoResearch,
+  descriptionStatesResearch,
+} from '../utils/descriptionStatesResearch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   STAFF_MINTED_ENTITY_ARCHIVE_REASON,
   STAFF_MINTED_ENTITY_REASON_PRECEDENCE,
   isPersonProfileIdentityUrl,
+  mintCitationDefersToSoleLead,
   officialProfileUrlSpellings,
   soleLeadIdentityFor,
   type SoleLeadRecord,
@@ -34,6 +37,8 @@ import {
 } from './retireStaffMintedResearchEntitiesCore';
 
 dotenv.config({ quiet: true });
+
+export { descriptionStatesResearch };
 
 const SCRIPT_NAME = 'research-entity:retire-staff-minted-entities';
 const DEFAULT_MAX_APPLY = 200;
@@ -115,28 +120,6 @@ const provenanceOf = (
       : {};
   return provenance[field];
 };
-
-// The verbs that state what a person researches, in any inflection. The card-lead verb list behind
-// `describesResearchFocus` also counts "supports" and "uses", which open an office's card
-// as readily as a lab's, so it cannot be the witness that a row states no research.
-const CARD_STATES_RESEARCH =
-  /\b(?:stud(?:y|ies|ying)|investigat(?:e|es|ing)|examin(?:e|es|ing)|explor(?:e|es|ing)|develop(?:s|ing)?|analy[sz](?:e|es|ing)|research(?:es|ers?|ing)?)\b/i;
-
-/**
- * Whether the row's own description states research, the second witness an
- * administrative title needs before the row can be archived: an explicit research
- * statement in either description, or a research verb or the word research on the card.
- */
-export function descriptionStatesResearch(entity: {
-  shortDescription?: unknown;
-  fullDescription?: unknown;
-}): boolean {
-  const card = typeof entity.shortDescription === 'string' ? entity.shortDescription : '';
-  if (CARD_STATES_RESEARCH.test(card)) return true;
-  return [entity.shortDescription, entity.fullDescription].some(
-    (value) => researchStatementSentences(value).length > 0,
-  );
-}
 
 /**
  * The citation that gave the row its identity, which is the only one whose person's
@@ -351,7 +334,7 @@ async function main(): Promise<void> {
   const soleLeadIds = new Set<string>();
   for (const [id, mintUrl] of mintUrlById) {
     const people = new Set(roleEdgePersonIdsById.get(id) || []);
-    if (people.size === 1 && typeof mintUrl === 'string' && isSharedPeopleRosterUrl(mintUrl)) {
+    if (people.size === 1 && mintCitationDefersToSoleLead(mintUrl)) {
       soleLeadIds.add([...people][0]);
     }
   }
@@ -424,6 +407,9 @@ async function main(): Promise<void> {
         // Development has 1,695 live rows populating `websiteUrl` against 454
         // populating `website`, and the mints being retired here write the former.
         descriptionStatesResearch: descriptionStatesResearch(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
+        descriptionAffirmsNoResearch: descriptionAffirmsNoResearch(
           row as { shortDescription?: unknown; fullDescription?: unknown },
         ),
         hasForeignWebsite: hasForeignWebsite(

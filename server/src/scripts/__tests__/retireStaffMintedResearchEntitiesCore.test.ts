@@ -402,6 +402,11 @@ describe('soleLeadIdentityFor', () => {
     ).toEqual([]);
   });
 
+  it('borrows the sole lead for a row that records no mint citation at all (#4916)', () => {
+    expect(borrow({ mintUrl: undefined })?.url).toBe(page);
+    expect(borrow({ mintUrl: null })?.url).toBe(page);
+  });
+
   it('borrows nothing for two people, an unverified page, or a mint citation that is not a shared listing', () => {
     expect(borrow({ rolePersonIds: ['p'.repeat(24), 'q'.repeat(24)] })).toBeUndefined();
     expect(
@@ -465,5 +470,45 @@ describe('administrative staff titles', () => {
     expect(office(undefined).refused).toEqual([
       { id: 'a'.repeat(24), reason: 'description-states-research' },
     ]);
+  });
+});
+
+describe('teaching appointment titles (#4916)', () => {
+  it('names a lecturer or lector title that states no other rank or role', () => {
+    expect(staffMintedEntityReasonFor('Lecturer in English')).toBe('teaching_appointment_title');
+    expect(staffMintedEntityReasonFor('Senior Lector I of Modern Fixture')).toBe(
+      'teaching_appointment_title',
+    );
+    expect(staffMintedEntityReasonFor('Senior Lecturer and Research Scholar')).toBeUndefined();
+  });
+
+  it('archives a teaching row only when its own description affirms no research', () => {
+    const lecturer = (descriptionAffirmsNoResearch?: boolean) =>
+      planStaffMintedEntityRetirement([
+        candidate({
+          storedTitles: ['Lecturer in English'],
+          descriptionStatesResearch: false,
+          descriptionAffirmsNoResearch,
+        }),
+      ]);
+    expect(lecturer(true).toArchive.map((entry) => entry.reason)).toEqual([
+      'teaching_appointment_title',
+    ]);
+    for (const witness of [false, undefined]) {
+      expect(lecturer(witness).refused).toEqual([
+        { id: 'a'.repeat(24), reason: 'description-does-not-affirm-teaching-only' },
+      ]);
+    }
+  });
+
+  it('keeps a teaching row when another lane states a research-owning title', () => {
+    expect(
+      planStaffMintedEntityRetirement([
+        candidate({
+          storedTitles: ['Lecturer in English', 'Professor of English'],
+          descriptionAffirmsNoResearch: true,
+        }),
+      ]).refused,
+    ).toEqual([{ id: 'a'.repeat(24), reason: 'title-evidence-disagrees' }]);
   });
 });

@@ -35,6 +35,7 @@ import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
+import { descriptionAffirmsNoResearch } from '../../utils/descriptionStatesResearch';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -269,6 +270,62 @@ export function isResearchSupportStaffTitle(title: string | undefined | null): b
   if (!clean) return false;
   if (!RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS.some((rx) => rx.test(clean))) return false;
   return !isFacultyTitle(clean);
+}
+
+const TEACHING_APPOINTMENT_RANK_RE = /\b(?:senior\s+)?lect(?:urer|or)s?\b/gi;
+
+const TEACHING_TITLE_NAMES_ANOTHER_ROLE_RE =
+  /\b(?:research\w*|scientists?|scholars?|investigators?|curators?|archivists?|fellows?|directors?|epidemiologists?)\b/i;
+
+/**
+ * Whether the only appointment a title states is a teaching one: a lecturer or a lector,
+ * which Yale appoints to teach rather than to run research of their own (#4916).
+ *
+ * Deliberately narrow, because `FACULTY_KEYWORDS` reads a lecturer as faculty and that stays
+ * right for the many lecturers who do run research. Any other rank or role the title names,
+ * through any screen in this module or a word naming research, spares the title. The title alone never refuses: a
+ * caller pairs it with a description that states no research, the same two-witness shape
+ * the administrative screen uses.
+ */
+export function statesOnlyATeachingAppointment(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean || !/\blect(?:urer|or)\b/i.test(clean)) return false;
+  const withoutTeachingRank = clean.replace(TEACHING_APPOINTMENT_RANK_RE, ' ');
+  return ![
+    statesAnyFacultyAppointment,
+    isSubordinateResearchRank,
+    looksLikeNonResearchTitle,
+    (rest: string) => RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS.some((rx) => rx.test(rest)),
+    (rest: string) => TEACHING_TITLE_NAMES_ANOTHER_ROLE_RE.test(rest),
+  ].some((namesAnotherRole) => namesAnotherRole(withoutTeachingRank));
+}
+
+/**
+ * The teaching-appointment mint screen: a title whose only appointment is teaching, on a
+ * profile whose own description is about something other than research. Both witnesses,
+ * because a lecturer who states research mints like any other faculty member (#4916).
+ */
+export function mintsNoResearchEntityAsTeachingAppointment(
+  title: string | undefined | null,
+  description: { shortDescription?: unknown; fullDescription?: unknown },
+): boolean {
+  return statesOnlyATeachingAppointment(title) && descriptionAffirmsNoResearch(description);
+}
+
+/**
+ * The description a lane's own research-entity observations assert, which is what the
+ * teaching-appointment screen reads at mint.
+ */
+export function mintedDescriptionOf(observations: readonly ObservationInput[]): {
+  shortDescription?: unknown;
+  fullDescription?: unknown;
+} {
+  const valueOf = (field: string) =>
+    observations.find((observation) => observation.field === field)?.value;
+  return {
+    shortDescription: valueOf('shortDescription'),
+    fullDescription: valueOf('fullDescription'),
+  };
 }
 
 /**

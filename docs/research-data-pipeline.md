@@ -2107,6 +2107,17 @@ The row's own description must also state no research: no explicit research stat
 The card-lead verb list behind `describesResearchFocus` is not the witness, because it also counts "supports" and "uses", which open an office's card as readily as a lab's.
 A row failing the second witness refuses as `description-states-research`.
 Measured on Development on 2026-10-04, before the second witness moved from the card-lead verb list to research verbs (#4735): 6 archives planned, 2 of them served, and 5 rows refused because their card describes research; those descriptions are a separate attribution question rather than a reason to retire.
+
+Teaching appointments are the next decided class (#4916), reported as `teaching_appointment_title`, and they also need two witnesses, because a lecturer title alone cannot say the person does no research.
+The title must state only a lecturer or lector rank (`statesOnlyATeachingAppointment`): any other faculty rank, any rank or role another screen in `yaleDirectoryScraper.ts` names, and any word naming research, scholarship or another role (scientist, investigator, curator, archivist, fellow, director, epidemiologist) spares it.
+It is decided before the faculty-keyword yield, because `FACULTY_KEYWORDS` holds `lecturer`, and every other title in the yield list still yields.
+The row's description is the stricter second witness, `descriptionAffirmsNoResearch`: a description must exist, and neither the card nor the full text may carry a research verb, a research statement, or stated scholarship (works on, academic, scholar, monograph, dissertation), so an empty row never stands in for a practitioner's biography.
+A row failing it refuses as `description-does-not-affirm-teaching-only`.
+The pass also borrows the sole lead's identity for a row that records no mint citation at all, the shape of a row that predates slug provenance; on Development that moved no verdict in any other class.
+Measured on Development on 2026-10-05: 217 live rows are led only by people whose title states only a lecturer or lector rank, 189 of them served.
+The pass plans 3 archives, all served, and every one of them hand-checked as a practitioner's or award biography rather than research; 157 refuse on the description witness.
+An earlier draft that let an empty description or a research verb in the full text pass archived 26 rows, of which 6 hand-checked as stating research, which is why the witness is the stricter one.
+The three mints that cite a person's profile (`dept-faculty-roster`, `ysm-faculty-directory`, `yse-faculty-directory`) refuse the same class at mint through `mintsNoResearchEntityAsTeachingAppointment`, reading the description the lane itself asserts.
 The research-verb witness has not been re-measured on Development, so these counts may now differ.
 
 A row minted from a shared roster listing (`isSharedPeopleRosterUrl`) has no page about one person, so it used to refuse as `no-identity-profile-url` whatever its lead's rank.

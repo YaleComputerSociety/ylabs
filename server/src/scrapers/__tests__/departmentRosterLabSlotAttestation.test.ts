@@ -397,6 +397,51 @@ describe('the roster research-entity mint and a stated title (#3410)', () => {
   });
 });
 
+describe('the roster research-entity mint and a teaching appointment (#4916)', () => {
+  const dept = {
+    deptKey: 'law',
+    deptName: 'Law',
+    schoolName: 'Yale Law School',
+    rosterUrl: 'https://law.example.edu/people/faculty',
+  } as never;
+
+  const mint = (title: string, description: string) =>
+    rosterResearchEntityMint(
+      {
+        name: 'Ada Fixture',
+        profileUrl: PROFILE_URL,
+        title,
+        researchHomeDescription: description,
+        researchHomeShortDescription: description,
+      } as never,
+      dept,
+      'https://law.example.edu/people/faculty',
+      'dept-law-ada-fixture',
+    );
+
+  const practice =
+    'Practises commercial litigation and argues appeals in state and federal courts for fixture clients.';
+
+  it('mints nothing for a lecturer whose own description is about a practice', () => {
+    const refused = mint('Lecturer in Legal Practice', practice);
+    expect(refused.observations).toEqual([]);
+    expect(refused.refusedByTitle).toBe(true);
+  });
+
+  it('still mints a lecturer whose description states research', () => {
+    expect(
+      mint(
+        'Lecturer in Legal Practice',
+        'Studies how appellate courts weigh expert fixture evidence in commercial disputes, drawing on a hand-coded archive of state and federal opinions.',
+      ).observations.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('still mints any other faculty rank with the same description', () => {
+    expect(mint('Professor of Law', practice).observations.length).toBeGreaterThan(0);
+  });
+});
+
 /**
  * A title screen refusing a research row is not the roster dropping the person, and an entry
  * that would have minted nothing anyway is neither. Both have to be told apart,
