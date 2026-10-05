@@ -8187,7 +8187,6 @@ export async function projectFromLog(
           : (set.shortDescription ?? entityDoc?.shortDescription),
         reconsiderCurrentShortDescription: fullRestatesCurrentCard,
         resynthesizeCutCards: input.resynthesizeCutCards,
-        weakCard: weakCardTest,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,
         manuallyLocked: manuallyLockedFields.includes('shortDescription'),

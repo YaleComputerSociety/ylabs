@@ -8,6 +8,8 @@
  *
  * `--resynthesize-weak-cards` does the same for a card that shows whole but does not say
  * what is studied (`isWeakCardLine`); a replacement must show whole and not be weak.
+ * It repairs only rows whose card follows the written body, because elsewhere a copied
+ * card observation re-asserts the weak card on the next materialize.
  *
  * `--card-model=<model>` synthesizes those cards with another model for this run only.
  * The description lane keys its content hash on its own card model, so a stronger model
