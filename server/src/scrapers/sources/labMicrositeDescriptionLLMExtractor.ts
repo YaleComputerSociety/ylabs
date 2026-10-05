@@ -1245,8 +1245,6 @@ export function opensOnNavigationChrome(value: unknown): boolean {
   return match.index < boundary;
 }
 
-export { isProfileTemplateChrome };
-
 const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
   /^selected\s+(?:presentations?|publications?|articles?|media|press|talks?)\b/i,
   /^(?:in\s+the\s+)?news$/i,

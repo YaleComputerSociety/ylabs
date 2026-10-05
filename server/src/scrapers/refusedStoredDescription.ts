@@ -41,6 +41,7 @@
  * such a row stays inert and needs a row-driven pass, which is the one thing a repair
  * script has that a derivation does not.
  */
+import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
 import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import { isLlmDescriptionFromDepartmentCollectivePage } from './descriptionSourceOwnership';
 
@@ -127,6 +128,47 @@ export function planCollectivePageStoredDescriptionClears(input: {
     if (field === 'shortDescription' && bodyFromSamePageIsKept(input.stored, credited.sourceUrl)) {
       continue;
     }
+    clears.push({
+      field,
+      skipped: input.lockedFields.includes(field) ? 'field-is-locked' : null,
+    });
+  }
+  return clears;
+}
+
+/**
+ * Plan clears for a description the pass would leave standing that is a profile
+ * template's own widgets (`isProfileTemplateChrome`). The materializer ignores such an
+ * observation, but a description that loses every candidate is kept rather than unset, so
+ * without this stage a row whose only evidence was chrome keeps serving it (#4942). A card
+ * credited to the same page as a chrome body was derived from that body and goes with it.
+ */
+export function planProfileTemplateChromeStoredDescriptionClears(input: {
+  stored: Record<string, unknown> | null | undefined;
+  staged?: Record<string, unknown>;
+  lockedFields: readonly string[];
+}): RefusedStoredDescriptionClear[] {
+  const staged = input.staged ?? {};
+  const standing = (field: RefusedStoredDescriptionField) =>
+    field in staged ? staged[field] : input.stored?.[field];
+  const creditedUrl = (field: RefusedStoredDescriptionField) => {
+    const provenance = (staged[`fieldProvenance.${field}`] ??
+      (input.stored?.fieldProvenance as Record<string, any> | undefined)?.[field]) as
+      { sourceUrl?: unknown } | undefined;
+    return provenance?.sourceUrl;
+  };
+  const bodyIsChrome = isProfileTemplateChrome(standing('fullDescription'));
+  const bodyUrl = creditedUrl('fullDescription');
+  const clears: RefusedStoredDescriptionClear[] = [];
+  for (const field of REFUSABLE_STORED_DESCRIPTION_FIELDS) {
+    const current = standing(field);
+    if (typeof current !== 'string' || current.trim().length === 0) continue;
+    const cardFollowsChromeBody =
+      field === 'shortDescription' &&
+      bodyIsChrome &&
+      typeof bodyUrl === 'string' &&
+      creditedUrl(field) === bodyUrl;
+    if (!isProfileTemplateChrome(current) && !cardFollowsChromeBody) continue;
     clears.push({
       field,
       skipped: input.lockedFields.includes(field) ? 'field-is-locked' : null,

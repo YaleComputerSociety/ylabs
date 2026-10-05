@@ -16,10 +16,10 @@ import { describe, expect, it } from 'vitest';
 import {
   descriptionExtractionToObservations,
   isInterestChipListText,
-  isProfileTemplateChrome,
   opensOnNavigationChrome,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import { DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS } from '../descriptionSourceOwnership';
 

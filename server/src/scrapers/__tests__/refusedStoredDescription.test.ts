@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { planRefusedStoredDescriptionClears } from '../refusedStoredDescription';
+import {
+  planProfileTemplateChromeStoredDescriptionClears,
+  planRefusedStoredDescriptionClears,
+} from '../refusedStoredDescription';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const BODY = 'The Fixture Lab studies how metabolic pathways are regulated in disease.';
@@ -142,5 +145,60 @@ describe('planRefusedStoredDescriptionClears', () => {
     });
 
     expect(fields(result)).toEqual(['fullDescription']);
+  });
+});
+
+describe('planProfileTemplateChromeStoredDescriptionClears (#4942)', () => {
+  const CHROME =
+    'Medical Research Interests Fixture Imaging; Fixture Synapses ORCID 0000-0000-0000-0000';
+  const page = { sourceName: 'lab-microsite-description-llm', sourceUrl: 'https://example.edu/p' };
+  const other = { sourceName: 'dept-faculty-roster', sourceUrl: 'https://example.edu/roster' };
+  const plan = (input: Parameters<typeof planProfileTemplateChromeStoredDescriptionClears>[0]) =>
+    planProfileTemplateChromeStoredDescriptionClears(input).map((clear) => clear.field);
+
+  it('clears a chrome body and the card derived from the same page', () => {
+    expect(
+      plan({
+        stored: {
+          fullDescription: CHROME,
+          shortDescription: 'Studies fixture imaging.',
+          fieldProvenance: { fullDescription: page, shortDescription: page },
+        },
+        lockedFields: [],
+      }),
+    ).toEqual(['fullDescription', 'shortDescription']);
+  });
+
+  it('keeps a card credited to another page under a chrome body', () => {
+    expect(
+      plan({
+        stored: {
+          fullDescription: CHROME,
+          shortDescription: 'Studies fixture imaging.',
+          fieldProvenance: { fullDescription: page, shortDescription: other },
+        },
+        lockedFields: [],
+      }),
+    ).toEqual(['fullDescription']);
+  });
+
+  it('leaves prose alone and leaves a field this pass staged with prose', () => {
+    expect(plan({ stored: { fullDescription: BODY }, lockedFields: [] })).toEqual([]);
+    expect(
+      plan({
+        stored: { fullDescription: CHROME },
+        staged: { fullDescription: BODY },
+        lockedFields: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it('reports rather than clears a locked field', () => {
+    expect(
+      planProfileTemplateChromeStoredDescriptionClears({
+        stored: { fullDescription: CHROME },
+        lockedFields: ['fullDescription'],
+      }),
+    ).toEqual([{ field: 'fullDescription', skipped: 'field-is-locked' }]);
   });
 });

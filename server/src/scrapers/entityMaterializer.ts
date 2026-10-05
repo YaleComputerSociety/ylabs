@@ -232,6 +232,7 @@ import {
 import { planRetiredEvidenceFieldClears } from './retiredEvidenceFieldClear';
 import {
   planCollectivePageStoredDescriptionClears,
+  planProfileTemplateChromeStoredDescriptionClears,
   planRefusedStoredDescriptionClears,
 } from './refusedStoredDescription';
 import {
@@ -8644,18 +8645,33 @@ export async function projectFromLog(
       set[clear.field] = '';
       fieldsWritten++;
     }
-    for (const clear of planCollectivePageStoredDescriptionClears({
-      stored: entityDoc,
-      staged: set,
-      lockedFields: manuallyLockedFields,
-    })) {
+    const storedDescriptionClears = [
+      ...planCollectivePageStoredDescriptionClears({
+        stored: entityDoc,
+        staged: set,
+        lockedFields: manuallyLockedFields,
+      }).map((clear) => ({
+        clear,
+        tag: 'collective-page-description',
+        reason: 'narrated from a department page',
+      })),
+      ...planProfileTemplateChromeStoredDescriptionClears({
+        stored: entityDoc,
+        staged: set,
+        lockedFields: manuallyLockedFields,
+      }).map((clear) => ({
+        clear,
+        tag: 'profile-template-chrome-description',
+        reason: 'that is profile template chrome',
+      })),
+    ];
+    for (const { clear, tag, reason } of storedDescriptionClears) {
       if (clear.skipped) {
-        console.log(`[collective-page-description] kept ${clear.field}: ${clear.skipped}`);
+        console.log(`[${tag}] kept ${clear.field}: ${clear.skipped}`);
         continue;
       }
-      console.log(
-        `[collective-page-description] cleared ${clear.field} narrated from a department page`,
-      );
+      if (set[clear.field] === '') continue;
+      console.log(`[${tag}] cleared ${clear.field} ${reason}`);
       set[clear.field] = '';
       fieldsWritten++;
       if (clear.field === 'shortDescription') {
