@@ -4618,7 +4618,7 @@ test('the resolver circuit breaker counts distinct hosts and trips open', () => 
   assert.match(wiring, /await deps\.resolverBreaker\?\.settle\(\);/);
   assert.match(
     source,
-    /async settle\(\): Promise<void> \{[\s\S]*?\n    this\.assertHealthy\(\);\n  \}/,
+    /async settle\(\): Promise<void> \{[\s\S]*?\n {4}this\.assertHealthy\(\);\n {2}\}/,
   );
   // A failing control is what trips a breaker that has one; it must never be read
   // as a reason to keep going.
