@@ -741,15 +741,25 @@ export type WrittenBodyCardChoice =
   | { kind: 'none' };
 
 /**
+ * A card the browse card shows as written: it fits, and the serve chain will not surrender
+ * it as ungrounded for the body's longer lead. A card synthesized from page evidence can
+ * name what the body does not, and 89 of 120 cut served cards on Development on
+ * 2026-10-05 were fitting stored cards surrendered that way (#4809).
+ */
+export function writtenBodyCardShowsWhole(card: string, body: unknown): boolean {
+  return cardLineFitsBrowseCard(card) && !isUngroundedSynthesizedCard({ card, body });
+}
+
+/**
  * The card a written body serves with. A candidate is acceptable when it is not a
  * topic-chip echo or the body itself and the serving bar accepts it; stored and observed
  * cards must also be grounded in the written body. The order is: the first acceptable
  * candidate (stored, then each copied card observation, then the body's own lead
- * sentence) that fits the browse card; else a synthesized line that fits; else the first
- * acceptable candidate even though the browse card cuts it; else a synthesized line that
- * does not fit; else no card rather than a wrong one.
+ * sentence) that shows whole on the browse card; else a synthesized line that shows whole;
+ * else the first acceptable candidate even though the browse card cuts it; else a
+ * synthesized line that does not show whole; else no card rather than a wrong one.
  *
- * Synthesis is spent only when a candidate fitting the browse card is missing and the
+ * Synthesis is spent only when a candidate showing whole on the browse card is missing and the
  * caller hands over `synthesize`, at most WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS calls. The
  * materializer hands it over when the written body changed or the stored card is
  * unacceptable, which bounds the spend to once per body version, and for a stored cut
@@ -767,7 +777,7 @@ export async function resolveWrittenBodyCard(input: {
   isWeak?: (card: string) => boolean;
 }): Promise<WrittenBodyCardChoice> {
   const preferred = (card: string): boolean =>
-    cardLineFitsBrowseCard(card) && !(input.isWeak?.(card) ?? false);
+    writtenBodyCardShowsWhole(card, input.body) && !(input.isWeak?.(card) ?? false);
   const acceptable = (card: string, requireGrounding: boolean): boolean =>
     isAcceptableWrittenBodyCard({
       card,
@@ -822,13 +832,9 @@ export async function resolveMaterializedShortDescription(
     !isBareResearchAreasFallback &&
     Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  // Shown whole: it fits the browse card and the serve chain will not surrender it as an
-  // ungrounded synthesized card in favour of a longer line derived from the body (#4809).
-  const shownWholeOnBrowseCard = (card: string): boolean =>
-    cardLineFitsBrowseCard(card) &&
-    !isUngroundedSynthesizedCard({ card, body: input.fullDescription });
   const currentFitsBrowseCard =
-    shownWholeOnBrowseCard(current) && !(input.weakCard?.(current) ?? false);
+    writtenBodyCardShowsWhole(current, input.fullDescription) &&
+    !(input.weakCard?.(current) ?? false);
   if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
     return null;
   }
@@ -863,7 +869,8 @@ export async function resolveMaterializedShortDescription(
   // only by a line that shows whole; trading one cut line for another is churn.
   if (
     reconsideredOnlyBecauseCut &&
-    (!shownWholeOnBrowseCard(grounded) || (input.weakCard?.(grounded) ?? false))
+    (!writtenBodyCardShowsWhole(grounded, input.fullDescription) ||
+      (input.weakCard?.(grounded) ?? false))
   ) {
     return null;
   }
@@ -8171,7 +8178,9 @@ export async function projectFromLog(
         synthesize:
           writtenBodyChanged ||
           storedCardUnacceptable ||
-          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard)) ||
+          (input.resynthesizeCutCards &&
+            !!storedCard &&
+            !writtenBodyCardShowsWhole(storedCard, fullDescription)) ||
           (!!weakCardTest && !!storedCard && weakCardTest(storedCard))
             ? cardSynthesizer
             : undefined,

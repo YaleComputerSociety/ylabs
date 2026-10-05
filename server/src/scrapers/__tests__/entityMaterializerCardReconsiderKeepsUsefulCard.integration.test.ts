@@ -28,6 +28,7 @@ import {
   isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../confidenceResolver';
 import { materializeEntity } from '../entityMaterializer';
 
 const STORED_USEFUL_CARD =
@@ -90,20 +91,23 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
       shortDescription,
     });
 
-  const seedObservation = async (field: 'fullDescription' | 'shortDescription', value: string) => {
-    await Observation.create({
+  const seedObservation = async (
+    field: 'fullDescription' | 'shortDescription',
+    value: string,
+    sourceName = 'lab-microsite-description-llm',
+  ) =>
+    Observation.create({
       entityType: 'researchEntity',
       entityKey: LAB_KEY,
       field,
       value,
       sourceId: new mongoose.Types.ObjectId(),
-      sourceName: 'lab-microsite-description-llm',
-      sourceUrl: 'https://example.edu/lab-microsite-description-llm/',
+      sourceName,
+      sourceUrl: `https://example.edu/${sourceName}/`,
       confidence: 0.82,
       observedAt: new Date('2026-08-01T00:00:00Z'),
       superseded: false,
     });
-  };
 
   const materializeWith = (synthesized: string) =>
     materializeEntity(
@@ -218,6 +222,106 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
       const stored = (await persisted())?.shortDescription;
       expect(stored).toBe(FITTING_SYNTHESIZED_CARD);
       expect(cardLineFitsBrowseCard(stored)).toBe(true);
+    });
+  });
+
+  describe('a written body whose stored card fits but names what the body does not (#4809)', () => {
+    const storedUngroundedCard =
+      'Investigates how regulatory T cells and tolerogenic antigen-presenting cells shape immune responses in pediatric melanoma and lupus.';
+    const servedCard = async () =>
+      buildResearchEntityPublicDescriptionRepresentation({ entity: (await persisted()) ?? {} })
+        .servedCard;
+
+    beforeEach(async () => {
+      expect(cardLineFitsBrowseCard(storedUngroundedCard)).toBe(true);
+      const body = await seedObservation(
+        'fullDescription',
+        LONG_LEAD_BODY,
+        WRITTEN_DESCRIPTION_SOURCE_NAME,
+      );
+      await ResearchEntity.create({
+        slug: LAB_KEY,
+        name: 'Synthetic Plasticity Lab',
+        kind: 'lab',
+        studentVisibilityTier: 'operator_review',
+        archived: false,
+        shortDescription: storedUngroundedCard,
+        fullDescription: LONG_LEAD_BODY,
+        fieldProvenance: {
+          fullDescription: {
+            observationId: body._id,
+            sourceName: WRITTEN_DESCRIPTION_SOURCE_NAME,
+          },
+        },
+      });
+    });
+
+    it('is left alone by a routine materialize, which makes no card synthesis call, though the serve chain surrenders it', async () => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription },
+      );
+
+      recordEvidence('fitting ungrounded card after a routine materialize', await persisted());
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(storedUngroundedCard);
+      expect(await servedCard()).not.toBe(storedUngroundedCard);
+    });
+
+    it('is replaced by a synthesized line the browse card shows whole when resynthesis is asked for', async () => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription, resynthesizeCutCards: true },
+      );
+
+      recordEvidence('fitting ungrounded card resynthesized', await persisted());
+      expect(synthesizeCardDescription).toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      expect(await servedCard()).toBe(FITTING_SYNTHESIZED_CARD);
+    });
+  });
+
+  describe('a written body whose stored card shows whole (#4809)', () => {
+    beforeEach(async () => {
+      const body = await seedObservation(
+        'fullDescription',
+        LONG_LEAD_BODY,
+        WRITTEN_DESCRIPTION_SOURCE_NAME,
+      );
+      await ResearchEntity.create({
+        slug: LAB_KEY,
+        name: 'Synthetic Plasticity Lab',
+        kind: 'lab',
+        studentVisibilityTier: 'operator_review',
+        archived: false,
+        shortDescription: FITTING_SYNTHESIZED_CARD,
+        fullDescription: LONG_LEAD_BODY,
+        fieldProvenance: {
+          fullDescription: {
+            observationId: body._id,
+            sourceName: WRITTEN_DESCRIPTION_SOURCE_NAME,
+          },
+        },
+      });
+    });
+
+    it('is kept without a card synthesis call even when resynthesis is asked for', async () => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue('Studies immune tolerance.');
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription, resynthesizeCutCards: true },
+      );
+
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
     });
   });
 
