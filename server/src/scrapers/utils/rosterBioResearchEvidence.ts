@@ -64,9 +64,10 @@ export type RosterBioDepartmentResolver = (
 
 // The owner's hosting rule (2026-10-04/05) names ranks `ownsNoResearchEntityByTitle` does not read.
 const NON_HOSTING_RANK =
-  /\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bresident\b|\bpostgraduate associate\b|\bpostdoc|\bpost-doctoral\b|\bresearch (?:associate|assistant)\b|\bvisiting\b|\bstudent\b|\bcandidate\b/i;
+  /\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bresident\b|\bpostgraduate associate\b|\bpostdoc|\bpost-doctoral\b|\bresearch (?:associate|assistant)\b(?!\s+professor)|\bvisiting\b|\bstudent\b|\bcandidate\b/i;
 
-const RESEARCH_TRACK_RANK = /\bresearch\s+(?:scholar|scientist)\b/i;
+const RESEARCH_TRACK_RANK =
+  /\bresearch\s+(?:scholar|scientist)\b|\bresearch\s+(?:(?:assistant|associate)\s+)?professor\b/i;
 
 export type RosterBioTitleVerdict = 'eligible' | 'no_title' | 'non_hosting' | 'no_research_rank';
 
@@ -103,27 +104,42 @@ const TRAILING_CREDENTIAL_WORD =
 
 const bareToken = (token: string): string => token.replace(/[.,]/g, '');
 
-function withoutCredentials(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const tokens = stripPersonNameCredentialList(value.split(',')[0]).split(/\s+/).filter(Boolean);
-  let end = tokens.length;
-  while (end > 1 && TRAILING_CREDENTIAL_WORD.test(bareToken(tokens[end - 1]))) end -= 1;
-  return tokens
-    .slice(0, end)
-    .filter((token) => !CREDENTIAL_TOKEN.test(token.replace(/,$/, '')))
-    .join(' ')
-    .replace(/,\s*$/, '')
-    .trim();
+const isTitleCase = (token: string): boolean =>
+  token === token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+
+const isTrailingCredential = (token: string): boolean =>
+  !isTitleCase(bareToken(token)) && TRAILING_CREDENTIAL_WORD.test(bareToken(token));
+
+function credentialFreeTokens(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return stripPersonNameCredentialList(value.split(',')[0])
+    .split(/\s+/)
+    .map((token) => token.replace(/,$/, ''))
+    .filter((token) => token && !CREDENTIAL_TOKEN.test(token));
 }
 
-// A roster that puts a credential where the given name belongs ("Ph.D." as the first
-// name) leaves the given name to the profile URL, trusted only when it ends in the surname.
+// A roster name without a comma leaves a trailing credential as the whole surname field
+// ("Jane Doe DVM" gives the surname "DVM"), so the trailing credential is read across both
+// fields, keeping two tokens so a short surname that spells a credential survives.
 export function rosterBioPersonName(person: RosterBioPerson): string {
-  let given = withoutCredentials(person.fname);
-  const family = withoutCredentials(person.lname);
+  const givenTokens = credentialFreeTokens(person.fname);
+  const familyTokens = credentialFreeTokens(person.lname);
+  while (givenTokens.length + familyTokens.length > 2) {
+    const tokens = familyTokens.length ? familyTokens : givenTokens;
+    if (!isTrailingCredential(tokens[tokens.length - 1])) break;
+    tokens.pop();
+  }
+  let given = givenTokens.join(' ');
+  const family = familyTokens.join(' ');
+  // A roster that puts a credential where the given name belongs ("Ph.D." as the first
+  // name) leaves the given name to the profile URL, trusted only when it ends in the surname.
   if (!given && family) {
     const segment =
-      rosterBioProfileUrl(person).replace(/[?#].*$/, '').replace(/\/+$/, '').split('/').pop() || '';
+      rosterBioProfileUrl(person)
+        .replace(/[?#].*$/, '')
+        .replace(/\/+$/, '')
+        .split('/')
+        .pop() || '';
     const parts = segment.toLowerCase().split('-').filter(Boolean);
     const familyTail = family.toLowerCase().replace(/[^a-z]+/g, '');
     if (parts.length >= 2 && parts.slice(1).join('') === familyTail) {

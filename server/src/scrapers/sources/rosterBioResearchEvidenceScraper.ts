@@ -6,6 +6,7 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import {
   DEFAULT_DEPT_CONFIGS,
   rosterResearchEntitySlug,
+  rosterResearchEntitySlugForUserKey,
   type DeptConfig,
   type FacultyEntry,
 } from './departmentRosterScraper';
@@ -159,7 +160,8 @@ export function rosterBioDepartmentResolver(
     if (config.officialProfileOnly && urlHost(profileUrl) !== MEDICAL_SCHOOL_HOST) return null;
     const slug = config.officialProfileOnly
       ? ysmFacultyResearchEntityKeyForProfileUrl(profileUrl)
-      : rosterResearchEntitySlug({ name } as FacultyEntry, config);
+      : rosterResearchEntitySlugForUserKey(person.key, config) ||
+        rosterResearchEntitySlug({ name } as FacultyEntry, config);
     if (!slug) return null;
     return { deptName: config.deptName, schoolName: config.schoolName, slug };
   };

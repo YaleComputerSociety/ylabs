@@ -9,6 +9,8 @@ import {
   type RosterBioPerson,
 } from '../rosterBioResearchEvidence';
 import { deriveBioResearchStatement } from '../../../utils/bioResearchStatement';
+import { rosterBioDepartmentResolver } from '../../sources/rosterBioResearchEvidenceScraper';
+import type { DeptConfig } from '../../sources/departmentRosterScraper';
 
 const emptyCovered = (): RosterBioCoveredIdentities => ({
   urls: new Set(),
@@ -79,6 +81,10 @@ describe('roster biography research evidence', () => {
     expect(rosterBioTitleVerdict('Associate Research Scientist')).toBe('eligible');
     expect(rosterBioTitleVerdict('Associate Research Scholar')).toBe('eligible');
     expect(rosterBioTitleVerdict('Professor of Synthetic Studies')).toBe('eligible');
+    expect(rosterBioTitleVerdict('Research Assistant Professor')).toBe('eligible');
+    expect(rosterBioTitleVerdict('Research Associate Professor of Synthetic Studies')).toBe(
+      'eligible',
+    );
   });
 
   it('refuses clinical service written as a research focus and past research', () => {
@@ -120,5 +126,32 @@ describe('roster biography research evidence', () => {
       ),
     ).toBe('Alex Example');
     expect(rosterBioPersonName(person({ lname: 'Example, DVM' }))).toBe('Alex Example');
+  });
+
+  it('drops a trailing credential the roster split into the surname field', () => {
+    expect(rosterBioPersonName(person({ fname: 'Alex Example', lname: 'DVM' }))).toBe(
+      'Alex Example',
+    );
+    expect(rosterBioPersonName(person({ fname: 'Alex', lname: 'Ma' }))).toBe('Alex Ma');
+    expect(rosterBioPersonName(person({ fname: 'Alex Example', lname: 'Ma' }))).toBe(
+      'Alex Example Ma',
+    );
+  });
+
+  it('keys a roster person on the slug the roster lane keyed them under, not the display name', () => {
+    const config = {
+      deptKey: 'synthetic',
+      deptName: 'Synthetic Studies',
+      schoolName: 'Synthetic School',
+      url: 'https://synthetic.yale.edu/people',
+    } as DeptConfig;
+    const resolve = rosterBioDepartmentResolver([config]);
+    const keyed = person({
+      key: 'dept:synthetic:alex-q-example',
+      departments: ['Synthetic Studies'],
+    });
+    expect(resolve(keyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-q-example');
+    const netidKeyed = person({ key: 'netid:abc123', departments: ['Synthetic Studies'] });
+    expect(resolve(netidKeyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-example');
   });
 });
