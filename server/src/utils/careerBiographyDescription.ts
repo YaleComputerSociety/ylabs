@@ -359,14 +359,14 @@ export function researchStatementSentences(
     (sentence, index) =>
       !isTeachingOrPastTraineeSentence(sentence) &&
       (RESEARCH_STATEMENT_SENTENCE.test(sentence) ||
-      RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
-      isPersonResearchStatementSentence(sentence) ||
-      RESEARCH_TOPICS_SENTENCE.test(sentence) ||
-      (!isCareerFactSentence(sentence) &&
-        (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
-          (index > firstStatement &&
-            beforePublicationList(index) &&
-            !isCurriculumVitaeRecordSentence(sentence))))),
+        RESEARCHER_WHOSE_FOCUS_SENTENCE.test(sentence) ||
+        isPersonResearchStatementSentence(sentence) ||
+        RESEARCH_TOPICS_SENTENCE.test(sentence) ||
+        (!isCareerFactSentence(sentence) &&
+          (RESEARCH_ACTIVITY_SENTENCE.test(sentence) ||
+            (index > firstStatement &&
+              beforePublicationList(index) &&
+              !isCurriculumVitaeRecordSentence(sentence))))),
   );
 }
 
@@ -429,12 +429,20 @@ export function opensOnTeachingAppointment(value: unknown): boolean {
 const TEACHING_PRACTICE_NOUN =
   '(?:teaching|education|training|supervision|mentoring|mentorship|instruction|advising)';
 
+const TEACHING_PRACTICE_HEAD = `^(?:the\\s+)?(?:(?:clinical|medical|graduate|resident|residency|undergraduate)\\s+)?${TEACHING_PRACTICE_NOUN}`;
+
+const TEACHING_LEARNER =
+  '(?:students|residents|trainees|fellows|interns|learners|physicians|surgeons|nurses|clinicians|pharmacists|psychoanalysts|analysts|therapists|undergraduates|postdocs)';
+
 const TEACHING_PRACTICE_ITEM = new RegExp(
-  `^(?:the\\s+)?(?:(?:clinical|medical|graduate|resident|residency|undergraduate)\\s+)?${TEACHING_PRACTICE_NOUN}(?:\\s+of\\b|$)|^(?:including\\s+)?roles?\\s+in\\s+${TEACHING_PRACTICE_NOUN}\\b|^participation\\s+on\\b`,
-  'i',
+  `${TEACHING_PRACTICE_HEAD}\\s+of\\s+(?:[\\p{L}-]+\\s+){0,3}${TEACHING_LEARNER}\\b|^(?:including\\s+)?roles?\\s+in\\s+${TEACHING_PRACTICE_NOUN}\\b|^participation\\s+on\\b`,
+  'iu',
 );
 
-const STUDIES_OBJECT_LIST = /^(?:Studies|Investigates|Examines|Focuses\s+on|Research\s+(?:focuses|centers|centres)\s+on)\s+(.+?)\.?$/i;
+const BARE_TEACHING_PRACTICE_ITEM = new RegExp(`${TEACHING_PRACTICE_HEAD}$`, 'i');
+
+const STUDIES_OBJECT_LIST =
+  /^(?:Studies|Investigates|Examines|Focuses\s+on|Research\s+(?:focuses|centers|centres)\s+on)\s+(.+?)\.?$/i;
 
 const COURSE_ACTIVITY_SENTENCE =
   /\b(?:involved\s+in|teach(?:es|ing)?|leads?|runs?|organi[sz]es|co-?teach(?:es)?|through)\s+(?:a\s+collaboration\s+on\s+)?(?:an?\s+|the\s+)?(?:annual|yearly|semester(?:-long)?|summer)\s+(?:[\w-]+\s+){0,4}(?:studio|course|seminar|workshop|class)\b/i;
@@ -457,7 +465,12 @@ export function isTeachingPracticeStatement(sentence: unknown): boolean {
     .split(/,\s*(?:and\s+|or\s+)?|;\s*|\s+and\s+/)
     .map((item) => item.trim())
     .filter(Boolean);
-  return items.length > 0 && items.every((item) => TEACHING_PRACTICE_ITEM.test(item));
+  return (
+    items.some((item) => TEACHING_PRACTICE_ITEM.test(item)) &&
+    items.every(
+      (item) => TEACHING_PRACTICE_ITEM.test(item) || BARE_TEACHING_PRACTICE_ITEM.test(item),
+    )
+  );
 }
 
 const PAST_TRAINEE_RESEARCH_SENTENCE =

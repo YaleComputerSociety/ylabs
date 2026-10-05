@@ -489,9 +489,10 @@ const RELATED_CONTENT_LABEL_TO_END = /\s*\bRelated (?:Content|News|Stories|Artic
 // punctuation between them: "... many-body physics. With NSF grant, Yale leads effort
 // to develop quantum computers A new vision for quantum computing ...". Only an
 // unterminated tail that glues two headlines together (a lowercase word running into a
-// capitalised headline opener) is removed, and only after a finished sentence.
+// capitalised headline opener) is removed, only after a finished sentence, and only
+// when the tail itself opens on a headline opener.
 const TRAILING_GLUED_HEADLINE_RUN =
-  /(?<=[.!?]["”’)]?)\s+(?=[^.!?]*\b[a-z]{3,}\s+(?:A|An|The|How|Why|New|With|Yale)\s+[a-z])[^.!?]+$/u;
+  /(?<=[.!?]["”’)]?)\s+(?=(?:A|An|The|How|Why|New|With)\s[^.!?]*\b[a-z]{3,}\s+(?:A|An|The|How|Why|New|With)\s+[a-z])[^.!?]+$/u;
 
 export function stripTrailingRelatedContentBlock(text: string): string {
   return String(text || '')

@@ -51,6 +51,16 @@ describe('teaching practice presented as research', () => {
     ).toBe(false);
   });
 
+  it('keeps research whose teaching noun governs something other than learners', () => {
+    expect(isTeachingPracticeStatement('Studies the training of deep neural networks.')).toBe(
+      false,
+    );
+    expect(
+      isTeachingPracticeStatement('Research focuses on the education of immigrant children.'),
+    ).toBe(false);
+    expect(isTeachingPracticeStatement('Studies education.')).toBe(false);
+  });
+
   it('refuses the teaching list as a card and holds a row that states nothing else', () => {
     expect(isNonResearchCardSentence(teachingList)).toBe(true);
     const representation = represent(
@@ -117,6 +127,12 @@ describe('related news headlines after the prose', () => {
 
   it('keeps a body whose last sentence simply lacks a period', () => {
     const body = 'Studies reef ecology. Current projects examine coral settlement in warming seas';
+    expect(stripTrailingRelatedContentBlock(body)).toBe(body);
+  });
+
+  it('keeps an unterminated last sentence that names an institution or a capitalised word', () => {
+    const body =
+      'Studies coral reefs. Current projects bring together researchers from Example University and The Reef Trust and partner institutions';
     expect(stripTrailingRelatedContentBlock(body)).toBe(body);
   });
 });
