@@ -2009,6 +2009,50 @@ describe('officialProfilePiBackfillScraper', () => {
     });
   });
 
+  describe('a lab-website card whose name and link carry no type word', () => {
+    const cardHtml = (cardTitle: string, cardUrl: string) => `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <section class="profile-body"><p>Quinn Marlowfixture leads ${cardTitle}.</p></section>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">${cardTitle}</h3>
+          <a href="${cardUrl}"><span>View Lab Website</span></a>
+        </article>
+      </main></body></html>
+    `;
+    const cardProfileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+
+    it('reads a program-shaped name as an initiative, not a lab', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml(
+          'Fixture Arts and Health Practice at Yale',
+          'https://ysph.yale.edu/fixturehealth/',
+        ),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ kind: 'initiative', entityType: 'INITIATIVE' });
+    });
+
+    it('still adopts the untyped home onto a shell keyed only to that person', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ entityType: 'INITIATIVE' });
+      for (const slug of ['ysm-faculty-quinn-marlowfixture', 'nih-pi-quinn-marlowfixture']) {
+        expect(profileLinkedHomeRefusal({ slug }, home, 'Quinn Marlowfixture')).toBeNull();
+      }
+    });
+
+    it('keeps a research team named as a group a lab', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Marlowfixture Research Group', 'https://marlowfixture.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ kind: 'lab', entityType: 'LAB' });
+    });
+  });
+
   describe('a lab-website card that links an affiliated organization', () => {
     const cardProfileHtml = (cardTitle: string, cardUrl: string, bio: string) => `
       <html><body><main>
@@ -4811,8 +4855,8 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(homes[0]).toMatchObject({
       name: 'BioImage Suite Project',
       url: 'https://bioimagesuiteweb.github.io/webapp/',
-      kind: 'lab',
-      entityType: 'LAB',
+      kind: 'initiative',
+      entityType: 'INITIATIVE',
     });
   });
 
