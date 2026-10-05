@@ -5626,12 +5626,17 @@ export async function mergedSurvivorEvidence(
   const namesADepartment = await departmentValueNamesADepartment(survivor.school);
   const holdsNoDepartment = (observation: any): boolean =>
     observation.field === 'departments' && !namesADepartment(observation.value);
+  // A refused value is not evidence for the survivor, so it cannot hold a field against a
+  // loser's admissible fill: the row would serve nothing while the loser's statement waited.
+  const isRefusedForSurvivor = (observation: any): boolean =>
+    valueIsRefused(survivor.fieldValueRefusals, String(observation.field || ''), observation.value);
   const survivorHeldFields = new Set(
     entryPointIndependentOrder
       .filter(
         (observation: any) =>
           !loserOrigin(observation) &&
           !holdsNoDepartment(observation) &&
+          !isRefusedForSurvivor(observation) &&
           !sourceRanksOnlyAsFieldFallback(String(observation.field || ''), observation.sourceName),
       )
       .map((observation: any) => String(observation.field || '')),
