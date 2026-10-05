@@ -146,6 +146,18 @@ export function parsePiName(
   return { firstName, lastName };
 }
 
+export function hasUnreadableDateColumns(records: DoeAwardRecord[]): boolean {
+  const datedYaleRecords = records.filter(
+    (record) => isYaleAwardee(record) && (record.startdate || record.enddate),
+  );
+  return (
+    datedYaleRecords.length > 0 &&
+    !datedYaleRecords.some(
+      (record) => parsePamsDate(record.startdate) || parsePamsDate(record.enddate),
+    )
+  );
+}
+
 export function isYaleAwardee(record: DoeAwardRecord): boolean {
   return (
     /^yale university\b/i.test(record.institution || '') &&
@@ -429,6 +441,12 @@ export class DoeScienceAwardScraper implements IScraper {
       return failClosed(
         ctx,
         `DOE Office of Science award export served ${records.length} of the ${awardExport.reportedCount} awards the search reports; failed closed with no writes rather than undercount grants`,
+      );
+    }
+    if (hasUnreadableDateColumns(records)) {
+      return failClosed(
+        ctx,
+        'DOE Office of Science award export carries award dates in an unrecognised format; failed closed with no writes',
       );
     }
 

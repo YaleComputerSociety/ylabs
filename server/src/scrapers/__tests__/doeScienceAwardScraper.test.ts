@@ -293,6 +293,31 @@ describe('DoeScienceAwardScraper.run', () => {
     expect(emitted).toEqual([]);
   });
 
+  it('fails closed with no writes when no award date in the export is readable', async () => {
+    for (const dates of [
+      { 'Start Date': '45839', 'End Date': '46934' },
+      { 'Start Date': '2025-07-01', 'End Date': '2028-06-30' },
+    ]) {
+      const { ctx, emitted } = buildContext();
+      const result = await scraperFor(awardExport([awardRow(dates)])).run(ctx);
+      expect(result.failedClosed).toBe(true);
+      expect(result.observationCount).toBe(0);
+      expect(emitted).toEqual([]);
+    }
+  });
+
+  it('still runs when an undated award sits beside a readable one', async () => {
+    const { ctx } = buildContext();
+    const result = await scraperFor(
+      awardExport([
+        awardRow(),
+        awardRow({ 'Award Number': 'DE-SC0000002', 'Start Date': '', 'End Date': '' }),
+      ]),
+    ).run(ctx);
+    expect(result.failedClosed).toBeUndefined();
+    expect(result.entitiesObserved).toBe(1);
+  });
+
   it('fails closed with no writes when the search is unreachable or unrecognised', async () => {
     for (const outcome of [
       new Error('connect ETIMEDOUT'),
