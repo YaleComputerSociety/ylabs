@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { shortenCardLineToFitBrowseCard } from '../browseCardClauseShortening';
+import { assessResearchEntityDescriptionQuality } from '../researchEntityDescriptionQuality';
 
 describe('shortenCardLineToFitBrowseCard (#4809)', () => {
   it('ends a card the browse card would cut at the last clause boundary that fits', () => {
@@ -31,12 +32,15 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
-  it('does not double the period when the head ends in an abbreviation', () => {
+  it('does not cut where the head would end in an abbreviation', () => {
     const card =
       'Investigates social and economic determinants of cardiovascular health outcomes among older adults in the U.S., including neighborhood deprivation, insurance coverage, food access, and long-term exposure to air pollution.';
-    expect(shortenCardLineToFitBrowseCard(card)).toBe(
-      'Investigates social and economic determinants of cardiovascular health outcomes among older adults in the U.S.',
-    );
+    const served = shortenCardLineToFitBrowseCard(card);
+    expect(served).toBe(card);
+    expect(served).not.toContain('U.S..');
+    expect(
+      assessResearchEntityDescriptionQuality({ shortDescription: served }).short.flags,
+    ).not.toContain('incomplete-sentence');
   });
 
   it('leaves a card that already fits untouched', () => {

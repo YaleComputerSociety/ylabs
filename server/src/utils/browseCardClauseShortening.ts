@@ -42,9 +42,12 @@ export function shortenCardLineToFitBrowseCard(card: string): string {
     for (const at of cuts.reverse()) {
       const head = text.slice(0, at).replace(/[\s,;:–—-]+$/, '');
       if (TRAILING_FUNCTION_WORD.test(head)) continue;
+      // A head already ending in a period ends in an abbreviation ("the U.S."), which
+      // the card quality check reads as an unfinished sentence and the gate would hold.
+      if (/[.!?]$/.test(head)) continue;
       if (!balancedParentheses(head)) continue;
       if (head.split(/\s+/).length < MIN_SHORTENED_WORDS) continue;
-      return /[.!?]$/.test(head) ? head : `${head}.`;
+      return `${head}.`;
     }
   }
   return text;
