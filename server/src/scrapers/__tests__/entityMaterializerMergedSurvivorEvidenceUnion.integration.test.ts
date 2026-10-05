@@ -33,6 +33,7 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
 import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 type ProjectedSurvivor = {
   name?: string;
@@ -176,6 +177,48 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
 
     expect(result.fieldsWritten).toBeGreaterThan(0);
     expect((await projectSurvivor(survivor._id)).websiteUrl).toBe('https://examplelead.yale.edu/');
+  });
+
+  it("fills a survivor's description from a loser when the survivor's only own body is refused", async () => {
+    const refusedBody =
+      'The lab studies how coastal salt marshes store carbon across tidal cycles, combining sediment coring and stable-isotope tracing to measure burial rates along the Atlantic coast.';
+    const loserBody =
+      'Studies statistical decision theory, including shrinkage estimation, wavelet regression and the estimation of large covariance matrices.';
+    const survivor = await ResearchEntity.create({
+      slug: 'example-lead-lab',
+      name: 'Example Lead Lab',
+      kind: 'lab',
+      archived: false,
+      fieldValueRefusals: {
+        fullDescription: [
+          {
+            valueKey: fieldValueRefusalKey('fullDescription', refusedBody),
+            rule: 'superseded_by_better_source',
+            refusedBy: 'research-entity:refuse-unasserted-descriptions',
+            refusedAt: new Date('2026-10-01T00:00:00Z'),
+          },
+        ],
+      },
+    });
+    await ResearchEntity.create({
+      slug: 'dept-example-lead',
+      name: 'Example Lead Research',
+      kind: 'individual',
+      archived: true,
+      canonicalGroupId: survivor._id,
+    });
+    await seedObservation(
+      'example-lead-lab',
+      'fullDescription',
+      refusedBody,
+      'lab-microsite-description-llm',
+    );
+    await seedObservation('dept-example-lead', 'fullDescription', loserBody, 'dept-faculty-roster');
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+    const doc = await ResearchEntity.findById(survivor._id).lean<{ fullDescription?: string }>();
+    expect(doc?.fullDescription).toBe(loserBody);
   });
 
   it.each(['nih-pi-example-lead', 'faculty-research-area-example-lead'])(
