@@ -339,6 +339,35 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_disagrees']);
   });
 
+  it('releases a moved value only for a field the operator accepted after reading it', () => {
+    const plan = { plannedSet: { name: 'Robin Roster Lab' } };
+    const accepted = decideFieldLockReleases(unrecordedLock, plan, {
+      releaseProvenInert: true,
+      acceptEngineValueFields: ['name'],
+    });
+    expect(accepted[0]).toMatchObject({
+      verdict: 'release',
+      acceptsEngineValue: true,
+      engineValue: 'Robin Roster Lab',
+    });
+    expect(accepted[0].provenInert).toBeUndefined();
+
+    const otherField = decideFieldLockReleases(unrecordedLock, plan, {
+      releaseProvenInert: true,
+      acceptEngineValueFields: ['displayName'],
+    });
+    expect(otherField[0].verdict).toBe('keep_engine_disagrees');
+  });
+
+  it('still keeps an accepted field the plan is silent about', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { departments: ['Fictional Studies'] } },
+      { releaseProvenInert: true, acceptEngineValueFields: ['name'] },
+    );
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
+  });
+
   it('keeps a lock whose release would move a sibling field', () => {
     const decisions = decideFieldLockReleases(
       {
@@ -357,6 +386,32 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     );
 
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_sibling_field_moves']);
+  });
+
+  it('marks a release that moves an accepted sibling as accepting the engine value, not inert', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'unrecorded-row',
+        fullDescription: 'A body a student reads.',
+        shortDescription: 'A card a student reads.',
+        manuallyLockedFields: ['fullDescription'],
+      },
+      {
+        plannedSet: {
+          fullDescription: 'A body a student reads.',
+          shortDescription: 'A different card.',
+        },
+      },
+      { releaseProvenInert: true, acceptEngineValueFields: ['shortDescription'] },
+    );
+
+    expect(decisions[0]).toMatchObject({
+      verdict: 'release',
+      acceptsEngineValue: true,
+      movedSiblingValues: { shortDescription: 'A different card.' },
+    });
+    expect(decisions[0].provenInert).toBeUndefined();
+    expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleasesProvenInert).toBe(0);
   });
 
   it('still refuses a lock that holds a reconciler shut', () => {
@@ -507,6 +562,7 @@ describe('a lock over provenance its lane never observed (#3788)', () => {
       { ...rules, acceptEngineValueFields: ['shortDescription'] },
     );
     expect(released.verdict).toBe('release');
+    expect(released.acceptsEngineValue).toBe(true);
     expect(released.movedSiblingValues).toEqual({
       shortDescription: 'The engine derives this card.',
     });
