@@ -480,7 +480,23 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
 export function stripCatalogChrome(text: string): string {
   let out = stripLeadingProfileHeaderChrome(String(text || ''));
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
-  return normalizeHygieneWhitespace(out);
+  return normalizeHygieneWhitespace(stripTrailingRelatedContentBlock(out));
+}
+
+const RELATED_CONTENT_LABEL_TO_END = /\s*\bRelated (?:Content|News|Stories|Articles)\b[\s\S]*$/;
+
+// News headlines a page lists after its own prose, scraped as a run with no sentence
+// punctuation between them: "... many-body physics. With NSF grant, Yale leads effort
+// to develop quantum computers A new vision for quantum computing ...". Only an
+// unterminated tail that glues two headlines together (a lowercase word running into a
+// capitalised headline opener) is removed, and only after a finished sentence.
+const TRAILING_GLUED_HEADLINE_RUN =
+  /(?<=[.!?]["”’)]?)\s+(?=[^.!?]*\b[a-z]{3,}\s+(?:A|An|The|How|Why|New|With|Yale)\s+[a-z])[^.!?]+$/u;
+
+export function stripTrailingRelatedContentBlock(text: string): string {
+  return String(text || '')
+    .replace(RELATED_CONTENT_LABEL_TO_END, '')
+    .replace(TRAILING_GLUED_HEADLINE_RUN, '');
 }
 
 const LEADING_BREADCRUMB_TRAIL = /^\s*Home\s*[/›»>]\s*(?:[^/›»>.]{1,40}[/›»>]\s*){1,5}/;
