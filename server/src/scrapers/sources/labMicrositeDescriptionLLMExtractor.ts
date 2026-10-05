@@ -961,6 +961,15 @@ const comparableUrl = (value: string): string => value.trim().replace(/\/+$/, ''
  * stored blurb would keep serving. Asserting the slot empty is the page as read today:
  * the text the lane asserted was never this page's own.
  */
+async function storedLaneDescriptionCitesPage(
+  sourceName: string,
+  entityRef: ContentHashEntityRef,
+  page: FetchedDescriptionPage,
+): Promise<boolean> {
+  const stored = await loadStoredLaneDescriptionObservation(sourceName, entityRef);
+  return Boolean(stored) && comparableUrl(stored!.sourceUrl) === comparableUrl(page.url);
+}
+
 async function storedDescriptionIsRelatedUnitTeaser(
   sourceName: string,
   entityRef: ContentHashEntityRef,
@@ -1003,6 +1012,68 @@ async function storedLaneDescriptionIsGroundedOnCitedPage(
   const prose = extractDescriptionPageProse(page, kind);
   const pageText = [htmlToText(page.html, page.url), prose?.fullDescription ?? ''].join('\n');
   return isDescriptionGroundedInSource(stored.value, pageText);
+}
+
+const comparableName = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['’`]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const leadSurname = (personName: string | undefined): string => {
+  const words = comparableName(personName || '')
+    .split(' ')
+    .filter((word) => word.length > 1);
+  return words[words.length - 1] || '';
+};
+
+const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
+  try {
+    const page = new URL(pageUrl);
+    const own = new URL(String(websiteUrl || ''));
+    if (page.host.replace(/^www\./, '') !== own.host.replace(/^www\./, '')) return false;
+    const ownPath = own.pathname.replace(/\/+$/, '');
+    return !ownPath || page.pathname === ownPath || page.pathname.startsWith(`${ownPath}/`);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether the page a description would be taken from names the person who leads the row.
+ * A department homepage, a section's research index or another group's page describes
+ * someone else's work, and a row led by a named person only takes its description from a
+ * page that names that person (#4809): on 454 person-named Development lab rows, the
+ * cited page of 10 never named the surname, and the ones not on the row's own website
+ * were a working group's page, a department research index and an art-school
+ * opportunities page. The row's own website is exempt, because a lab site may name its
+ * lead only in an image, a frame or a rendered script.
+ */
+export function descriptionPageNamesRowLead(input: {
+  pageUrl: string;
+  pageText: string;
+  personName?: string;
+  websiteUrl?: unknown;
+  rowName?: unknown;
+  kind?: unknown;
+}): boolean {
+  const surname = leadSurname(input.personName);
+  if (!surname) return true;
+  // Only a row named for its lead is the lead's to describe. A center, a program or a
+  // lab named for its work describes the unit, and its own page need not name the
+  // director: on the same 637 rows those were most of the pages this would refuse.
+  const personScoped =
+    input.kind === 'individual' ||
+    ` ${comparableName(String(input.rowName || ''))} `.includes(` ${surname} `);
+  if (!personScoped) return true;
+  if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
+  if (comparableName(input.pageUrl).replace(/ /g, '').includes(surname.replace(/ /g, ''))) {
+    return true;
+  }
+  return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
 }
 
 /**
@@ -1396,7 +1467,8 @@ export type DescriptionGuardRefusal =
   | 'navigation_chrome'
   | 'profile_template_chrome'
   | 'another_organization_body'
-  | 'unopposed_crawled_prose';
+  | 'unopposed_crawled_prose'
+  | 'page_does_not_name_row';
 
 export interface DescriptionExtractionOutcome {
   observations: ObservationInput[];
@@ -2451,11 +2523,20 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // (#2180). A crawled page the primary page cannot vouch for may only FILL
         // a description, never replace one worth keeping.
         const storedDescription = textValue(lab.fullDescription);
-        const storedLaneDescriptionIsTeaser = await storedDescriptionIsRelatedUnitTeaser(
-          this.name,
-          entityRef,
-          primaryPage,
-        );
+        const descriptionPageNamesLead = descriptionPageNamesRowLead({
+          pageUrl: primaryPage.url,
+          pageText: [primaryPageText, primaryProse?.fullDescription ?? ''].join('\n'),
+          personName: identityCorpus.leadPersonNameByEntityId.get(
+            serializedDocumentId(lab._id) || '',
+          ),
+          websiteUrl: lab.websiteUrl,
+          rowName: lab.name,
+          kind: lab.kind,
+        });
+        const storedLaneDescriptionIsTeaser =
+          (await storedDescriptionIsRelatedUnitTeaser(this.name, entityRef, primaryPage)) ||
+          (!descriptionPageNamesLead &&
+            (await storedLaneDescriptionCitesPage(this.name, entityRef, primaryPage)));
         const unopposedCrawledProseSuppressed =
           bestCrawledProse !== null &&
           primaryCandidate === null &&
@@ -2622,6 +2703,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
           observations = llmOutcome.observations;
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
+        }
+        if (!descriptionPageNamesLead && observations.length > 0) {
+          observations = [];
+          guardRefusal = guardRefusal ?? 'page_does_not_name_row';
         }
 
         const pageNameRefused =
