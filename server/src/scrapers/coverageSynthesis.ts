@@ -77,7 +77,8 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * A written body is grounded only in text that is on a fetched page (#4867). A value a
  * language-model lane wrote is not page text, and reading it as evidence re-asserted an
  * earlier lane's invention as grounded, so such a value is evidence only when it is found
- * near-verbatim in a stored copy of the page it cites, and never without one. The writer's
+ * near-verbatim in a stored copy of the page it cites, or when the lane itself verified it
+ * against its fetched page at ingest (`ingestVerifiedAgainstPage`). The writer's
  * own output is model text, so it is never its own input. A `manual-admin-edit`
  * description is ordinary evidence unless it narrates its sources (#4788).
  */
