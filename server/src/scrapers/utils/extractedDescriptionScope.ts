@@ -28,7 +28,11 @@ const TRAINING_STAGE = String.raw`(?:${POSTDOC}|graduate|doctoral|ph\.?\s?d\.?|d
 
 const POSTDOC_PHASE = String.raw`${POSTDOC}\s+(?:training|fellowship|work|research|studies|stint|position|appointment)\b`;
 
-const pastContextMarkers = (possessive: string, postdocPhase: string): RegExp[] => [
+const pastContextMarkers = (
+  possessive: string,
+  postdocPhase: string,
+  formerPosition: readonly RegExp[],
+): RegExp[] => [
   new RegExp(postdocPhase),
   new RegExp(
     String.raw`\b(?:during|throughout|while\s+completing)\s+${possessive}\s+${TRAINING_STAGE}\b`,
@@ -42,8 +46,7 @@ const pastContextMarkers = (possessive: string, postdocPhase: string): RegExp[] 
   new RegExp(
     String.raw`\bas\s+an?\s+(?:${POSTDOC}(?:\s+(?:fellow|scholar|researcher|associate))?|(?:graduate|doctoral|ph\.?\s?d\.?)\s+student)\b`,
   ),
-  /\b(?:previously|formerly)\s+(?:an?|the|at|with|in|served|worked|held)\b/,
-  /\b(?:was|were|had\s+been)\s+(?:previously|formerly)\b/,
+  ...formerPosition,
   /\b(?:prior\s+to\s+joining|before\s+(?:joining|coming\s+to|moving\s+to))\b/,
   new RegExp(String.raw`\bearlier\s+in\s+${possessive}\s+career\b`),
   new RegExp(
@@ -51,17 +54,28 @@ const pastContextMarkers = (possessive: string, postdocPhase: string): RegExp[] 
   ),
 ];
 
-const PAST_CONTEXT_MARKERS = pastContextMarkers(POSSESSIVE, String.raw`\b${POSTDOC_PHASE}`);
+const PAST_CONTEXT_MARKERS = pastContextMarkers(POSSESSIVE, String.raw`\b${POSTDOC_PHASE}`, [
+  /\b(?:previously|formerly)\s+(?:an?|the|at|with|in|served|worked|held)\b/,
+  /\b(?:was|were|had\s+been)\s+(?:previously|formerly)\b/,
+]);
 
 /**
  * Written prose has no page sentence around it, so a program's "supports postdoctoral
  * research" and "mentors students through their graduate research" are current work:
- * there a training phase reads as past only when it is one person's.
+ * there a training phase reads as past only when it is one person's. So is a former
+ * position: "genes that were previously unknown" and "the center, formerly the X
+ * Program" are research prose and a unit's old name.
  */
 const PERSONAL_POSSESSIVE = String.raw`(?:his|her|my)`;
+const PERSONAL_SUBJECT = String.raw`(?:he|she|i)`;
 const PERSONAL_PAST_CONTEXT_MARKERS = pastContextMarkers(
   PERSONAL_POSSESSIVE,
   String.raw`\b(?:${PERSONAL_POSSESSIVE}|did|completed|pursued|undertook|conducted)\s+${POSTDOC_PHASE}`,
+  [
+    /\b(?:previously|formerly)\s+(?:served|worked|held)\b/,
+    new RegExp(String.raw`(?:^|\b${PERSONAL_SUBJECT}\s+)(?:previously|formerly)\s+(?:at|with)\b`),
+    new RegExp(String.raw`\b${PERSONAL_SUBJECT}\s+(?:was|had\s+been)\s+(?:previously|formerly)\b`),
+  ],
 );
 
 const STATES_CURRENT_WORK = /\b(?:currently|now|presently|today|current)\b/;

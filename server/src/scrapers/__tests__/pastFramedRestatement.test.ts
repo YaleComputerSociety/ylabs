@@ -103,6 +103,29 @@ describe('the writer never serves past-framed evidence as current work (#4915)',
     expect(decision.result?.description).toBe(body);
   });
 
+  it('keeps research prose about what was previously unknown and a unit’s former name', async () => {
+    for (const body of [
+      'Discovers signaling pathways that were previously unknown in plant immunity and how leaf cells sense fungal pathogens.',
+      'The center, formerly the Coastal Science Program, studies how coastal salt marshes store carbon and how tidal flooding shapes plant roots.',
+    ]) {
+      expect(isPastCareerClauseSentence(body), body).toBe(false);
+      const decision = await coverageSynthesisDecision({
+        snippets: [
+          { text: body, sourceUrl: 'https://example.edu/unit', sourceName: 'lab-page' },
+          {
+            text: POSTDOC_TRAINING,
+            sourceUrl: 'https://example.edu/bio',
+            sourceName: 'profile-page',
+          },
+        ],
+        entityName: 'Synthetic Unit',
+        callLLM: async () => ({ fullDescription: body, usedSnippetIndexes: [0] }),
+      });
+      expect(decision.refusal, body).toBeNull();
+      expect(decision.result?.description, body).toBe(body);
+    }
+  });
+
   it("keeps a program's current postdoctoral research and training", () => {
     for (const sentence of [
       'Supports cross-disciplinary postdoctoral research in partnership with faculty.',
@@ -166,6 +189,14 @@ describe('restatesPastFramedEvidence', () => {
     ).toBe(false);
   });
 
+  it('does not frame a clause that only describes earlier findings', () => {
+    expect(
+      restatesPastFramedEvidence('Shows receptors signal through astrocytes in the hippocampus.', [
+        'The lab found that these receptors, which were previously thought to act only in neurons, also signal through astrocytes in the hippocampus.',
+      ]),
+    ).toBe(false);
+  });
+
   it('keeps content the evidence also states as current work', () => {
     expect(
       restatesPastFramedEvidence('Maps synaptic vesicle recycling in hippocampal neurons.', [
@@ -207,5 +238,9 @@ describe('the written body card never serves past-framed evidence as current (#4
 
   it('keeps a card grounded in current work', () => {
     expect(accepts('Studies how salt marshes store carbon.')).toBe(true);
+  });
+
+  it('keeps a card about genes that were previously uncharacterized', () => {
+    expect(accepts('Identifies salt marsh genes that were previously uncharacterized.')).toBe(true);
   });
 });
