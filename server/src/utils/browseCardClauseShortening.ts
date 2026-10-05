@@ -1,9 +1,6 @@
 import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
 import { isTooShortCardLine } from './researchEntityDescriptionQuality';
 
-const EM_DASH_ASIDE_BOUNDARY =
-  /\s*[—–]\s*(?:including|such as|primarily|particularly|especially|notably|with)\s/gi;
-
 const BARE_EXAMPLES_BOUNDARY = /\s+(?:such as|including)\s/gi;
 
 // Clause-level boundaries only. A cut at a bare comma, before a parenthesis, or at an
@@ -12,7 +9,7 @@ const BARE_EXAMPLES_BOUNDARY = /\s+(?:such as|including)\s/gi;
 // card that runs long.
 const CLAUSE_BOUNDARIES: readonly RegExp[] = [
   /,\s+(?:including|such as|particularly|especially|notably|with (?:a|an) (?:focus|emphasis) on|with emphasis on|emphasizing|focusing on|with attention to|ranging from)\s/gi,
-  EM_DASH_ASIDE_BOUNDARY,
+  /\s*[—–]\s*(?:including|such as|primarily|particularly|especially|notably|with)\s/gi,
   /,\s+with\s+(?:a\s+|an\s+)?(?:[a-z-]+\s+){0,2}(?:focus|emphasis|interest|work|research|attention)s?\b/gi,
   BARE_EXAMPLES_BOUNDARY,
   /;\s+/g,
@@ -49,11 +46,11 @@ const MAX_SHORTENED_LENGTH = 190;
 const MIN_SHORTENED_LENGTH = 35;
 const MIN_SHORTENED_WORDS = 6;
 
-// An aside opened by an em dash and closed by another ("signaling in the uterus —
-// especially ... — influences") holds the sentence's verb after it, so the head before
-// it has no verb.
-const cutsBeforeAClosedAside = (pattern: RegExp, tail: string): boolean =>
-  pattern === EM_DASH_ASIDE_BOUNDARY && /[—–]/.test(tail);
+// An aside opened by a dash and closed by another ("signaling in the uterus, dash,
+// especially ..., dash, influences") holds the sentence's verb after it, so the head
+// before it has no verb.
+const cutsBeforeAClosedAside = (boundary: string, tail: string): boolean =>
+  /^\s*[—–]/.test(boundary) && /[—–]/.test(tail);
 
 const opensWithPunctuation = (boundary: string): boolean => /^\s*[,;:—–]/.test(boundary);
 
@@ -87,7 +84,7 @@ export function shortenCardLineToFitBrowseCard(card: string): string {
     }
     for (const { at, boundary } of cuts.reverse()) {
       const head = text.slice(0, at).replace(/[\s,;:–—-]+$/, '');
-      if (cutsBeforeAClosedAside(pattern, text.slice(at + boundary.length))) continue;
+      if (cutsBeforeAClosedAside(boundary, text.slice(at + boundary.length))) continue;
       if (!opensWithPunctuation(boundary) && TRAILING_DEPENDENT_WORD.test(head)) continue;
       if (cutsInsideARelativeClause(pattern, head)) continue;
       if (TRAILING_FUNCTION_WORD.test(head) || TRAILING_PLACEHOLDER_NOUN.test(head)) continue;

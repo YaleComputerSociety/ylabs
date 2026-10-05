@@ -92,6 +92,12 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
+  it('does not cut before a dash-and aside that the sentence closes', () => {
+    const card =
+      'Studies how steroid hormone signaling in the uterus — and its crosstalk with other nuclear receptors — influences early pregnancy events, implantation, and the growth of uterine fibroids in women.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
   it('cuts before a spaced em-dash aside the sentence leaves open', () => {
     const card =
       'Studies how steroid hormone signaling shapes the uterus and placenta — especially glucocorticoid receptor activity, crosstalk with other steroid receptors, implantation, pregnancy loss, and uterine fibroids.';
