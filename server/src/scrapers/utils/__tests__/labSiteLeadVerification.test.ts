@@ -660,6 +660,20 @@ describe('slugContradictionShape (#4916)', () => {
     }
   });
 
+  it('still reads a different given name that differs only in its vowels as a namesake', () => {
+    for (const [slug, lead] of [
+      ['tim-quill', 'Tom Quill'],
+      ['don-quill', 'Dan Quill'],
+      ['dean-quill', 'Dan Quill'],
+      ['mira-quill', 'Mary Quill'],
+      ['bonnie-quill', 'Ben Quill'],
+      ['ali-quill', 'Eli Quill'],
+      ['ian-quill', 'Ann Quill'],
+    ]) {
+      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('NAMESAKE');
+    }
+  });
+
   it('spares a possible alias even when the page names it beside a lead role', () => {
     expect(
       slugContradictionShape(

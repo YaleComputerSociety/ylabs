@@ -458,15 +458,30 @@ export function slugNamesAnotherLead(
   return slugContradictionShape(slug, leadDisplayName, visibleText) !== '';
 }
 
-const givenNameSkeleton = (token: string): string =>
-  token.replace(/[aeiouyhw]/g, '').replace(/(.)\1+/g, '$1');
+const MIN_TRANSLITERATION_LETTERS = 4;
+
+const transliterationKey = (token: string): string =>
+  token
+    .replace(/h/g, '')
+    .replace(/y/g, 'i')
+    .replace(/o/g, 'u')
+    .replace(/e/g, 'a')
+    .replace(/([^aiu])\1+/g, '$1');
+
+function couldBeOneTransliteration(left: string, right: string): boolean {
+  return (
+    Math.min(left.length, right.length) >= MIN_TRANSLITERATION_LETTERS &&
+    left[0] === right[0] &&
+    transliterationKey(left) === transliterationKey(right)
+  );
+}
 
 /**
  * Whether a namesake's given name could still be this lead's, which is what keeps a
  * nickname, an initial, a transliteration or a former name from reading as a different
  * person (#4916). Read on every name the lead's display name gives, so a former-name
- * annotation counts, and wider than `givenNamesCouldNameOnePerson` by a consonant
- * skeleton, so `muhammad` and `mohammed` stay one name.
+ * annotation counts, and wider than `givenNamesCouldNameOnePerson` by a transliteration
+ * fold, so `muhammad` and `mohammed` stay one name while `tom` and `tim` stay two.
  */
 function namesakeGivenNameCouldBeTheLead(
   slugTokens: readonly string[],
@@ -482,13 +497,7 @@ function namesakeGivenNameCouldBeTheLead(
     const leadGiven = tokens.slice(0, -1);
     if (givenNamesCouldNameOnePerson(leadGiven.join(' '), slugGiven.join(' '))) return true;
     return leadGiven.some((left) =>
-      slugGiven.some(
-        (right) =>
-          left.length > 1 &&
-          right.length > 1 &&
-          givenNameSkeleton(left) !== '' &&
-          givenNameSkeleton(left) === givenNameSkeleton(right),
-      ),
+      slugGiven.some((right) => couldBeOneTransliteration(left, right)),
     );
   });
 }
