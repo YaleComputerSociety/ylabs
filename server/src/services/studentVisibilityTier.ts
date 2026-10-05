@@ -6,6 +6,10 @@ import {
   leadTitlesAreRuledNonHostingRanks,
 } from '../utils/leadTitleRuledNonHostingRank';
 import {
+  LEAD_CONTRADICTED_BY_NAMESAKE_REASON,
+  servedLeadIsContradictedByNamesake,
+} from '../utils/leadContradictedByNamesake';
+import {
   isStudiesResearchAreaEchoDescription,
   isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeCatalogDescription,
@@ -896,6 +900,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
   LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
+  LEAD_CONTRADICTED_BY_NAMESAKE_REASON,
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
@@ -1177,6 +1182,9 @@ export function computeResearchEntityStudentVisibility({
   const leadTitleRuledNonHostingRank =
     !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
   if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
+  const leadContradictedByNamesake =
+    !missingLead && servedLeadIsContradictedByNamesake(entity, leadMembers);
+  if (leadContradictedByNamesake) reasons.push(LEAD_CONTRADICTED_BY_NAMESAKE_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
@@ -1202,7 +1210,8 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') &&
       !profileIdentityRisk &&
-      !leadTitleRuledNonHostingRank,
+      !leadTitleRuledNonHostingRank &&
+      !leadContradictedByNamesake,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
     // same correctness question: does a real source stand behind this card (#2635).
@@ -1237,6 +1246,7 @@ export function computeResearchEntityStudentVisibility({
     !unbackedLabName &&
     !biographyWithoutResearch &&
     !leadTitleRuledNonHostingRank &&
+    !leadContradictedByNamesake &&
     !duplicateRisk &&
     hasUsableName
   ) {

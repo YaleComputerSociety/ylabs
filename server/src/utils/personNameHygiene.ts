@@ -263,6 +263,23 @@ export function stripPersonNameCredentialList(value: string): string {
   return current;
 }
 
+const FORMER_NAME_TAIL_RE = new RegExp(
+  FORMER_NAME_ANNOTATION_RE.source.replace(/\\S\.\*\$$/, '(\\S.*)$'),
+  'i',
+);
+
+/**
+ * The names a display name gives one person: the current name and, when it carries a
+ * former-name annotation ("<name> f.k.a. <name>"), the former name too.
+ */
+export function personNameAliases(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  const former = trimmed.match(FORMER_NAME_TAIL_RE)?.[1]?.trim();
+  const current = stripPersonNameFormerNameAnnotation(trimmed);
+  return former && former !== current ? [current, former] : [current];
+}
+
 export function stripPersonNameFormerNameAnnotation(value: string): string {
   const trimmed = value.trim();
   const stripped = trimmed.replace(FORMER_NAME_ANNOTATION_RE, '').trim();

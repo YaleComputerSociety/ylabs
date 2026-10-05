@@ -13,6 +13,7 @@ import {
   siteHaystack,
   siteNamesInitialAndSurname,
   siteNamesPerson,
+  slugContradictionShape,
   slugNamesAnotherLead,
   surnameCore,
   visiblePageText,
@@ -635,5 +636,61 @@ describe('unreachableLabSiteVerification', () => {
       unstatedCount: 0,
       leads: [],
     });
+  });
+});
+
+describe('slugContradictionShape (#4916)', () => {
+  const members = visiblePageText('<p>Members</p>');
+
+  it('reads a same-surname person whose given name cannot be the lead as a namesake', () => {
+    expect(slugContradictionShape('dale-quill', 'Robin Quill', members)).toBe('NAMESAKE');
+  });
+
+  it('never reads a nickname, an initial, a transliteration or a former name as a namesake', () => {
+    for (const [slug, lead] of [
+      ['bob-quill', 'Robert Quill'],
+      ['rob-quill', 'Robert J. Quill'],
+      ['robin-quill', 'R. Quill'],
+      ['dana-quill', 'D. Chui-Ying Quill'],
+      ['mohammed-quill', 'Muhammad Quill'],
+      ['yury-quill', 'Yuri Quill'],
+      ['dale-quill', 'Robin Quill f.k.a. Dale Quill'],
+    ]) {
+      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('');
+    }
+  });
+
+  it('spares a possible alias even when the page names it beside a lead role', () => {
+    expect(
+      slugContradictionShape(
+        'dana-quill',
+        'D. Chui-Ying Quill',
+        visiblePageText('<p>Principal Investigator: Dana Quill</p>'),
+      ),
+    ).toBe('');
+  });
+
+  it('reads a different person named beside a lead role as named as lead', () => {
+    expect(
+      slugContradictionShape(
+        'ada-brook',
+        'Robin Quill',
+        visiblePageText('<h2>Principal Investigator</h2><p>Ada E. Brook, PhD</p>'),
+      ),
+    ).toBe('NAMED_AS_LEAD');
+  });
+
+  it('records which shape contradicted a lead', () => {
+    const namesake = judge(
+      lead({ displayName: 'Robin Quill' }),
+      '<p>Welcome to the lab of Dale Quill.</p><a href="/lab/quill/profile/dale-quill/">Dale</a>',
+    );
+    expect(namesake).toMatchObject({ verdict: 'CONTRADICTED', contradictedBy: 'NAMESAKE' });
+    const alias = judge(
+      lead({ displayName: 'D. Chui-Ying Quill' }),
+      '<p>Welcome.</p><a href="/lab/quill/profile/dana-quill/">Dana</a>',
+    );
+    expect(alias.verdict).not.toBe('CONTRADICTED');
+    expect(alias.contradictedBy).toBeUndefined();
   });
 });

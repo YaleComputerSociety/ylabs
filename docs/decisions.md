@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-05: A Lab Whose Own Site Names A Namesake As Its Lead Is Held For Review (#4916)
+
+This is the first reader of `leadVerification`, and it reads one narrow shape rather than the contradicted verdict the 2026-10-01 entry declined to act on.
+A graded sample served a lab whose lead's given name differs from the lead its own cited page names: a profile's lab slot linked a same-surname colleague's lab, so the row carried the colleague's lab name, website and prose under the wrong person.
+The verifier now records which shape contradicted a lead (`contradictedBy`): `NAMESAKE`, a same-surname person whose given name cannot be the lead's, or `NAMED_AS_LEAD`, a person named beside a lead-role phrase.
+A namesake no longer contradicts when its given name could be the lead's through any existing alias rule: `givenNamesCouldNameOnePerson` (initials, short forms, the nickname index), a consonant skeleton for transliterations, and every name a former-name annotation gives (`personNameAliases`).
+The gate holds a row at `operator_review` with `lead_contradicted_by_namesake` only when a `NAMESAKE` judgement is about an attached lead and about the website the row still serves; `NAMED_AS_LEAD` stays unread, because #3750 measured that shape mostly wrong.
+Measured on Development on 2026-10-05: 7 live rows carry a `contradicted` verification, and a hand-check of their cited sites found 2 namesake collisions (both right: a lab attached to a same-surname colleague, and a profile lab slot linking a namesake's lab), 1 namesake that is the lead under a nickname and initials (spared by the alias rules), and 4 that are lead-role mentions or verdicts on faculty research profiles, which the reader ignores.
+No stored judgement carries `contradictedBy` yet, so the hold reaches no row until `lab-site-lead-verification` runs again and the gate is re-applied.
+
 ## 2026-10-05: A Card Or Body Names A Method Only When Its Evidence States It (#4914)
 
 The graded sample after #4867 found overreach on 27 of 116 graded rows, mostly in the card line: listed interests, publication topics, emphases or a unit's name restated as "using X and Y", clinical or teaching interests served as research, a mission or vision sentence turned into an activity, separately listed topics joined into one claim, and past or one-off work stated as current research.

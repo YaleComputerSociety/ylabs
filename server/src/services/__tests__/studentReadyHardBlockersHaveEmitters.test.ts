@@ -254,6 +254,22 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
       leadMembers: [],
       relatedEntityAccessPathCount: 1,
     }),
+  lead_contradicted_by_namesake: () =>
+    researchReasons({
+      entity: {
+        leadVerification: {
+          checkedUrl: 'https://example.yale.edu/labs/example/',
+          leads: [
+            {
+              personId: 'user-example-lead',
+              verdict: 'CONTRADICTED',
+              matchedBy: 'NONE',
+              contradictedBy: 'NAMESAKE',
+            },
+          ],
+        },
+      },
+    }),
   lead_title_ruled_non_hosting_rank: () =>
     researchReasons({
       leadMembers: [{ userId: 'user-example-lead', role: 'pi', title: 'Clinical Fellow' }],

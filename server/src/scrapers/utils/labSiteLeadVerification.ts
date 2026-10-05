@@ -13,10 +13,13 @@ import {
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
+  type LabSiteLeadContradictionShape,
   type LabSiteLeadMatchReason,
   type LabSiteLeadVerdict,
   type LabSiteVerificationState,
 } from '../../models/storedVocabularies';
+import { personNameAliases } from '../../utils/personNameHygiene';
+import { givenNamesCouldNameOnePerson } from './piNameMatch';
 
 export const LAB_SITE_LEAD_VERIFICATION_SOURCE = 'lab-site-lead-verification';
 
@@ -377,6 +380,7 @@ export interface LabSiteLeadJudgement {
   verdict: LabSiteLeadVerdict;
   matchedBy: LabSiteLeadMatchReason;
   evidenceUrl: string;
+  contradictedBy?: LabSiteLeadContradictionShape;
 }
 
 export interface LabSiteReading {
@@ -451,19 +455,69 @@ export function slugNamesAnotherLead(
   leadDisplayName: unknown,
   visibleText: string,
 ): boolean {
+  return slugContradictionShape(slug, leadDisplayName, visibleText) !== '';
+}
+
+const givenNameSkeleton = (token: string): string =>
+  token.replace(/[aeiouyhw]/g, '').replace(/(.)\1+/g, '$1');
+
+/**
+ * Whether a namesake's given name could still be this lead's, which is what keeps a
+ * nickname, an initial, a transliteration or a former name from reading as a different
+ * person (#4916). Read on every name the lead's display name gives, so a former-name
+ * annotation counts, and wider than `givenNamesCouldNameOnePerson` by a consonant
+ * skeleton, so `muhammad` and `mohammed` stay one name.
+ */
+function namesakeGivenNameCouldBeTheLead(
+  slugTokens: readonly string[],
+  surname: string,
+  leadDisplayName: unknown,
+): boolean {
+  const slugGiven = slugTokens.filter((token) => token !== surname);
+  return personNameAliases(String(leadDisplayName ?? '')).some((alias) => {
+    const tokens = flattenForNameMatch(alias)
+      .trim()
+      .split(' ')
+      .filter((token) => token && !CREDENTIAL_TOKENS.has(token));
+    const leadGiven = tokens.slice(0, -1);
+    if (givenNamesCouldNameOnePerson(leadGiven.join(' '), slugGiven.join(' '))) return true;
+    return leadGiven.some((left) =>
+      slugGiven.some(
+        (right) =>
+          left.length > 1 &&
+          right.length > 1 &&
+          givenNameSkeleton(left) !== '' &&
+          givenNameSkeleton(left) === givenNameSkeleton(right),
+      ),
+    );
+  });
+}
+
+/**
+ * Which way a person the site links contradicts this lead, or `''` when it does not.
+ * `NAMESAKE` is a same-surname person whose given name cannot be the lead's;
+ * `NAMED_AS_LEAD` is a person the page names next to a lead-role phrase.
+ */
+export function slugContradictionShape(
+  slug: string,
+  leadDisplayName: unknown,
+  visibleText: string,
+): LabSiteLeadContradictionShape | '' {
   const tokens = personNameTokensFromSlug(slug);
-  if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return false;
-  const surname = surnameCore(leadDisplayName);
-  if (surname.length >= MIN_NAMESAKE_SURNAME_LETTERS && tokens.includes(surname)) return true;
+  if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return '';
+  const surname = surnameCore(personNameAliases(String(leadDisplayName ?? ''))[0] ?? '');
+  if (surname.length >= MIN_NAMESAKE_SURNAME_LETTERS && tokens.includes(surname)) {
+    return namesakeGivenNameCouldBeTheLead(tokens, surname, leadDisplayName) ? '' : 'NAMESAKE';
+  }
   const first = escapeForRegExp(tokens[0]);
   const last = escapeForRegExp(tokens[tokens.length - 1]);
   const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
   for (const match of visibleText.matchAll(named)) {
     const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
     const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
-    if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return true;
+    if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return 'NAMED_AS_LEAD';
   }
-  return false;
+  return '';
 }
 
 /**
@@ -525,17 +579,21 @@ export function judgeLeadAgainstSite(
     };
   }
   const visibleText = leadIsTheRecordSubject ? '' : visiblePageText(reading.html);
-  const namesSomebodyElse =
-    !leadIsTheRecordSubject &&
-    [...siteSlugs].some(
-      (slug) =>
-        !leadSlugs.includes(slug) && slugNamesAnotherLead(slug, lead.displayName, visibleText),
-    );
+  const shapes = leadIsTheRecordSubject
+    ? []
+    : [...siteSlugs]
+        .filter((slug) => !leadSlugs.includes(slug))
+        .map((slug) => slugContradictionShape(slug, lead.displayName, visibleText))
+        .filter((shape): shape is LabSiteLeadContradictionShape => shape !== '');
+  if (shapes.length === 0) {
+    return { ...base, verdict: 'UNSTATED', matchedBy: 'NONE', evidenceUrl: '' };
+  }
   return {
     ...base,
-    verdict: namesSomebodyElse ? 'CONTRADICTED' : 'UNSTATED',
+    verdict: 'CONTRADICTED',
     matchedBy: 'NONE',
-    evidenceUrl: namesSomebodyElse ? reading.visitedUrls[0] || reading.website : '',
+    evidenceUrl: reading.visitedUrls[0] || reading.website,
+    contradictedBy: shapes.includes('NAMESAKE') ? 'NAMESAKE' : 'NAMED_AS_LEAD',
   };
 }
 
