@@ -22,9 +22,10 @@ Measured on Development on 2026-10-04, after #4788's written bodies landed, 1,64
 
 Resolution: every card producer prefers a line that shows whole, and a long line is the last resort rather than the first answer.
 `resolveGroundedCardDescription` returns a derived line only when it fits, then a synthesized line that fits, and only then the long derived or synthesized line, which still outranks the topic summary.
-Card synthesis asks for at most 20 words and 170 characters, naming only the main subject and method, and retries once with its own long answer to shorten it, keeping the long grounded line when the retry does not fit.
+Card synthesis asks for at most 20 words and 170 characters, naming only the main subject and method, and retries once with its own answer when that answer runs long or the serve chain would surrender it as an ungrounded synthesized card, asking for the description's own terms.
+It prefers a retried line the serving bar keeps, and otherwise keeps the first grounded line, so a card accepted only on the stem-aware grader is still stored when nothing better comes back (#4834).
 A character limit alone did not hold: the model returned the same 206-character line on both attempts, and the word budget with what to leave out fit 12 of 12 cut cards.
-`resolveMaterializedShortDescription` reconsiders a stored card the browse card cuts and replaces it only with a line that fits, so one long line is never traded for another.
+`resolveMaterializedShortDescription` reconsiders a stored card the browse card cuts, or one the serve chain would surrender for a longer line from the body, and replaces it only with a line that fits and the serve chain keeps, so one unshown line is never traded for another.
 
 The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
 `lab-microsite-description-llm` keys its content hash on that file's hash, so editing it would have invalidated every stored hash for the lane and re-run its LLM extraction over every row on the next sweep, about 2,500 calls, to change only the card.

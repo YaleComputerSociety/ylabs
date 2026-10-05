@@ -110,3 +110,51 @@ describe('card lines that show whole on the browse card (#4809)', () => {
     expect(synthesize).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('card lines the serve chain keeps (#4809)', () => {
+  const BODY =
+    'Our laboratory studies the mechanism by which a single history of chronic stress alters one physical property of the hippocampus. We uphold a preregistered protocol and we analyze each interaction between cortisol and neuronal structure across the dataset.';
+  const INFLECTED =
+    'Studies mechanisms, histories of chronic stress, physical properties, and interactions between cortisol and neuronal structure in the hippocampus.';
+  const VERBATIM =
+    'Studies how chronic stress alters one physical property of the hippocampus and the interaction between cortisol and neuronal structure.';
+
+  it('retries a fitting card the serve chain would surrender and takes a line it keeps', async () => {
+    const callLLM = vi.fn().mockResolvedValueOnce(INFLECTED).mockResolvedValueOnce(VERBATIM);
+
+    expect(await synthesizeGroundedCardDescription({ fullDescription: BODY, callLLM })).toBe(
+      VERBATIM,
+    );
+    expect(callLLM).toHaveBeenCalledTimes(2);
+  });
+
+  it('still accepts the inflected card when the retry yields nothing better', async () => {
+    const callLLM = vi.fn().mockResolvedValue(INFLECTED);
+
+    expect(await synthesizeGroundedCardDescription({ fullDescription: BODY, callLLM })).toBe(
+      INFLECTED,
+    );
+  });
+
+  it('reconsiders a stored card the serve chain would surrender only when resynthesis is asked for', async () => {
+    const synthesize = vi.fn().mockResolvedValue(VERBATIM);
+
+    const routine = await resolveMaterializedShortDescription({
+      fullDescription: BODY,
+      currentShortDescription: INFLECTED,
+      synthesize,
+    });
+    expect(synthesize).not.toHaveBeenCalled();
+
+    const resynthesized = await resolveMaterializedShortDescription({
+      fullDescription: BODY,
+      currentShortDescription: INFLECTED,
+      synthesize,
+      resynthesizeCutCards: true,
+    });
+    expect(routine === null || cardLineFitsBrowseCard(routine)).toBe(true);
+    expect(resynthesized).not.toBeNull();
+    expect(resynthesized).not.toBe(INFLECTED);
+    expect(cardLineFitsBrowseCard(resynthesized ?? '')).toBe(true);
+  });
+});
