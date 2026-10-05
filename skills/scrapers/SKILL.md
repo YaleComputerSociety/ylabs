@@ -1326,6 +1326,7 @@ Four rules to keep when touching it:
 Only `manual-pi-edit` is not outranked.
 - `manual-admin-edit` is ordinary evidence on description fields (`ADMIN_EDIT_ORDINARY_FIELDS`) and keeps its curated precedence everywhere else; do not re-add it to description precedence.
 - The writer never reads its own output and skips an admin description only when it narrates its sources (`isWriterEvidenceObservation`), so a re-run cannot launder its last body into the next one.
+- The writer cites only fetched page text (#4867): mark a new model-calling lane `producesModelText: true` in `sourceCoverageRegistry.ts`, or its values become writer evidence; `coverageSynthesisEvidenceGrounding.test.ts` fails on an unflagged `-llm` or synthesis lane. Grants follow the owner's grant rule in `eligibleWriterGrants` and `buildWriterEvidenceSnippets`.
 - The card follows the written body through `resolveWrittenBodyCard`, which reuses the stored card, a copied card, the body's lead sentence or the existing card synthesizer, and never writes a topic-chip echo or the body itself; do not add a second card writer, and never fall back to the chip summary for a written body.
 
 A new refusal arm goes after the older arms so their counts keep their meaning, with one exception that is deliberate: `source-narration` runs before `quality-bar`, because the quality bar blanks the same shape through the serve sanitizer and would report it as a generic quality verdict.

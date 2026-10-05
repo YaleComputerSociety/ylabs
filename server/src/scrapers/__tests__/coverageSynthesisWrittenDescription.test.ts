@@ -150,7 +150,7 @@ describe('writer evidence (#4788)', () => {
       {
         field: 'fullDescription',
         value: research,
-        sourceName: 'lab-microsite-description-llm',
+        sourceName: 'ysm-atoz-index',
         sourceUrl: 'https://example.edu/reef',
       },
     ]);

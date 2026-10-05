@@ -9,6 +9,8 @@ import {
 } from '../utils/groundedCardSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
+import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
+import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
@@ -58,13 +60,29 @@ export interface CoverageObservationLike {
 const MANUAL_ADMIN_EDIT_SOURCE_NAME = 'manual-admin-edit';
 
 /**
- * Whether one observation is evidence the writer may read. The writer's own output is
- * never its input, so a re-run cannot launder its last body into the next one. A
- * `manual-admin-edit` description is ordinary evidence unless it narrates its sources,
- * which is the shape the owner ruled is not a description (#4788).
+ * The text of a stored copy of the page an observation cites, when one exists.
  */
-export function isWriterEvidenceObservation(obs: CoverageObservationLike): boolean {
+export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | undefined;
+
+/**
+ * Whether one observation is evidence the writer may read.
+ *
+ * A written body is grounded only in text that is on a fetched page (#4867). A value a
+ * language-model lane wrote is not page text, and reading it as evidence re-asserted an
+ * earlier lane's invention as grounded, so such a value is evidence only when it is found
+ * near-verbatim in a stored copy of the page it cites, and never without one. The writer's
+ * own output is model text, so it is never its own input. A `manual-admin-edit`
+ * description is ordinary evidence unless it narrates its sources (#4788).
+ */
+export function isWriterEvidenceObservation(
+  obs: CoverageObservationLike,
+  storedPageText: StoredPageTextLookup = () => undefined,
+): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
+  if (isModelTextSource(obs.sourceName)) {
+    const page = storedPageText(obs.sourceUrl);
+    return Boolean(page) && isDescriptionGroundedInSource(obs.value, page);
+  }
   if (
     obs.sourceName === MANUAL_ADMIN_EDIT_SOURCE_NAME &&
     isSourcePageNarrationDescription(obs.value)
@@ -84,12 +102,15 @@ export type CoverageSynthesisLLMFn = (input: {
   entityName: string;
 }) => Promise<CoverageSynthesisLLMResult>;
 
-export function gatherCoverageSnippets(observations: CoverageObservationLike[]): CoverageSnippet[] {
+export function gatherCoverageSnippets(
+  observations: CoverageObservationLike[],
+  storedPageText?: StoredPageTextLookup,
+): CoverageSnippet[] {
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
   for (const obs of observations) {
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
-    if (!isWriterEvidenceObservation(obs)) continue;
+    if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
     const raw = textValue(obs.value);
     if (!raw) continue;
@@ -138,6 +159,7 @@ export type CoverageSynthesisRefusal =
   | 'quality-bar'
   | 'internal-vocabulary'
   | 'past-career-clause'
+  | 'teaser-attribution'
   | 'source-narration'
   | 'over-length';
 
@@ -187,6 +209,9 @@ const INTERNAL_RECORD_NOUN_SUBJECT = new RegExp(
  */
 const DEPRECATED_PRODUCT_VOCABULARY = /research\s+(?:home|area)s?\b/i;
 
+const TRAINING_STAGE =
+  '(?:postdoctoral|post-doctoral|doctoral|dissertation|graduate|ph\\.?\\s?d\\.?)';
+
 const PAST_CAREER_VERB =
   '(?:led|developed|served|worked|directed|held|founded|co-founded|headed|chaired|ran|managed|was|were|built|taught|trained|launched)';
 
@@ -203,6 +228,9 @@ const PAST_CAREER_CLAUSE = new RegExp(
     `[;,]\\s*(?:and\\s+)?(?:previously|formerly)\\s+${PAST_CAREER_VERB}\\b`,
     '\\b(?:before|prior\\s+to)\\s+(?:joining|coming\\s+to|arriving\\s+at|moving\\s+to)\\b',
     '\\bearlier\\s+in\\s+(?:his|her|their)\\s+career\\b',
+    `\\b(?:as|while)\\s+an?\\s+${TRAINING_STAGE}\\s+(?:fellow|researcher|student|scholar|trainee|resident)\\b`,
+    `\\bduring\\s+(?:his|her|their)\\s+(?:${TRAINING_STAGE}|residency|fellowship)\\b`,
+    `\\b(?:his|her|their)\\s+${TRAINING_STAGE}\\s+(?:work|research|training|studies|project)\\b`,
   ].join('|'),
   'i',
 );
@@ -218,11 +246,51 @@ export function isPastCareerClauseSentence(sentence: string): boolean {
  * a fragment.
  */
 export function withoutPastCareerSentences(description: string): string | null {
+  return withoutUnsupportedSentences(description).description;
+}
+
+/**
+ * Content a page shows about something else: a featured item, a journal issue on a home
+ * page, a related unit's teaser card or a carousel slide (#4867). Attributing it to the
+ * row is the cross-unit defect, so a sentence that names that framing is dropped whole.
+ */
+const TEASER_ATTRIBUTION = new RegExp(
+  [
+    '\\bfeatured\\s+(?:in|on|issue|article|story|stories|project|projects|item|items)\\b',
+    '\\b(?:current|latest|recent|featured)\\s+issue\\s+of\\b',
+    '\\brelated\\s+(?:centers?|centres?|institutes?|programs?|programmes?|labs?|laboratories|units?|groups?)\\b',
+    '\\b(?:carousel|slideshow)\\b',
+  ].join('|'),
+  'i',
+);
+
+export function isTeaserAttributionSentence(sentence: string): boolean {
+  return TEASER_ATTRIBUTION.test(sentence);
+}
+
+export interface UnsupportedSentenceStrip {
+  description: string | null;
+  refusal?: Extract<CoverageSynthesisRefusal, 'past-career-clause' | 'teaser-attribution'>;
+}
+
+/**
+ * The body with every past-post and teaser-attribution sentence removed. When nothing
+ * is left the refusal names the shape that the last dropped sentence carried, past
+ * career first, so each arm keeps the attribution it had.
+ */
+export function withoutUnsupportedSentences(description: string): UnsupportedSentenceStrip {
   const sentences = splitDescriptionSentences(description);
-  const kept = sentences.filter((sentence) => !isPastCareerClauseSentence(sentence));
-  if (kept.length === sentences.length) return description;
+  const pastCareer = sentences.some(isPastCareerClauseSentence);
+  const kept = sentences.filter(
+    (sentence) => !isPastCareerClauseSentence(sentence) && !isTeaserAttributionSentence(sentence),
+  );
+  if (kept.length === sentences.length) return { description };
   const joined = kept.join(' ').trim();
-  return joined || null;
+  if (joined) return { description: joined };
+  return {
+    description: null,
+    refusal: pastCareer ? 'past-career-clause' : 'teaser-attribution',
+  };
 }
 
 const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).length;
@@ -278,8 +346,9 @@ export async function coverageSynthesisDecision(
 
   const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
   if (!drafted) return refuse('empty-description');
-  const description = withoutPastCareerSentences(drafted);
-  if (!description) return refuse('past-career-clause');
+  const stripped = withoutUnsupportedSentences(drafted);
+  const description = stripped.description;
+  if (!description) return refuse(stripped.refusal ?? 'past-career-clause');
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(

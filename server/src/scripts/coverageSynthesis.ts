@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
+import { ScrapeSnapshot } from '../models/scrapeSnapshot';
+import { isModelTextSource } from '../scrapers/sourceCoverageRegistry';
 import {
   appendObservations,
   getSourceByName,
@@ -45,6 +47,8 @@ import {
   writerWritesAfterBodyAttempt,
   writerWritesFor,
   writtenBodyCardRepairFilter,
+  storedPageRequestKeys,
+  storedPayloadPageText,
   type WriterStep,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
@@ -99,9 +103,39 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 
 type EntityRow = Record<string, any>;
 
+/**
+ * Stored copies of the pages model-text observations cite, which is the only way such
+ * an observation becomes writer evidence (#4867).
+ */
+async function loadStoredPageText(
+  observations: ReadonlyArray<CoverageObservationLike>,
+): Promise<Map<string, string>> {
+  const urls = [
+    ...new Set(
+      observations
+        .filter((obs) => isModelTextSource(obs.sourceName) && obs.sourceUrl)
+        .map((obs) => String(obs.sourceUrl)),
+    ),
+  ];
+  const texts = new Map<string, string>();
+  if (urls.length === 0) return texts;
+  const keyToUrl = new Map(
+    urls.flatMap((url) => storedPageRequestKeys(url).map((key) => [key, url])),
+  );
+  const rows = (await ScrapeSnapshot.find({ requestKey: { $in: [...keyToUrl.keys()] } })
+    .select('requestKey payload')
+    .lean()) as Array<{ requestKey: string; payload: unknown }>;
+  for (const row of rows) {
+    const url = keyToUrl.get(row.requestKey);
+    const text = storedPayloadPageText(row.payload);
+    if (url && text) texts.set(url, `${texts.get(url) ?? ''} ${text}`.trim());
+  }
+  return texts;
+}
+
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
   const projection =
-    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription';
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME),
@@ -317,7 +351,11 @@ async function main() {
       .select('field value sourceUrl sourceName confidence observedAt')
       .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
 
-    const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants);
+    const storedPageText = await loadStoredPageText(observations);
+    const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants, {
+      websiteUrl: entity.websiteUrl,
+      storedPageText: (url) => (url ? storedPageText.get(url) : undefined),
+    });
     report.snippets = snippets.length;
     const freshHash = writerEvidenceHash(snippets);
     const step = planWriterStep({

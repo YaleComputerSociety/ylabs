@@ -33,7 +33,7 @@ describe('the writer lane runs over every live row (#4788)', () => {
   });
 
   it('orders evidence so the hash does not depend on read order', () => {
-    const a = observation(LAB, 'lab-microsite-description-llm', 0.82);
+    const a = observation(LAB, 'ysm-atoz-index', 0.82);
     const b = observation(PROFILE, 'ysm-faculty-directory', 0.55);
     const forward = buildWriterEvidenceSnippets([a, b], undefined);
     const reversed = buildWriterEvidenceSnippets([b, a], undefined);
@@ -43,12 +43,12 @@ describe('the writer lane runs over every live row (#4788)', () => {
 
   it('changes the hash when the evidence changes', () => {
     const before = buildWriterEvidenceSnippets(
-      [observation(LAB, 'lab-microsite-description-llm', 0.82)],
+      [observation(LAB, 'ysm-atoz-index', 0.82)],
       undefined,
     );
     const after = buildWriterEvidenceSnippets(
       [
-        observation(LAB, 'lab-microsite-description-llm', 0.82),
+        observation(LAB, 'ysm-atoz-index', 0.82),
         observation(PROFILE, 'ysm-faculty-directory', 0.55),
       ],
       undefined,
@@ -57,7 +57,7 @@ describe('the writer lane runs over every live row (#4788)', () => {
   });
 
   it("ignores the writer's own body when hashing, so writing it never re-triggers a call", () => {
-    const evidence = [observation(LAB, 'lab-microsite-description-llm', 0.82)];
+    const evidence = [observation(LAB, 'ysm-atoz-index', 0.82)];
     const withOwnBody = [
       ...evidence,
       observation('Develops single-cell sequencing methods.', 'coverage-synthesis-llm', 0.5),
@@ -67,24 +67,9 @@ describe('the writer lane runs over every live row (#4788)', () => {
     );
   });
 
-  it('fills remaining room with grant titles and abstracts', () => {
-    const snippets = buildWriterEvidenceSnippets(
-      [observation(LAB, 'lab-microsite-description-llm', 0.82)],
-      [
-        {
-          title: 'Immune cell fate mapping',
-          abstract: 'Maps T cell fate decisions in lymph nodes.',
-          agency: 'NIH',
-        },
-      ],
-    );
-    expect(snippets).toHaveLength(2);
-    expect(snippets[1].sourceName).toBe('NIH grant');
-  });
-
   it('calls the model only when the evidence or the prompt changed', () => {
     const snippets = buildWriterEvidenceSnippets(
-      [observation(LAB, 'lab-microsite-description-llm', 0.82)],
+      [observation(LAB, 'ysm-atoz-index', 0.82)],
       undefined,
     );
     const freshHash = writerEvidenceHash(snippets);
