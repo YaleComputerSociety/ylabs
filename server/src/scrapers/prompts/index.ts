@@ -57,7 +57,9 @@ export function withSynthesisFidelityRules(prompt: string): string {
 export const CARD_SYNTHESIS_PROMPT = withSynthesisFidelityRules(loadPrompt('cardSynthesis.md'));
 export const DESCRIPTION_EXTRACTION_PROMPT = loadPrompt('micrositeDescriptionExtraction.md');
 export const UNDERGRAD_EXTRACTION_PROMPT = loadPrompt('undergradExtraction.md');
-export const COVERAGE_SYNTHESIS_PROMPT = withSynthesisFidelityRules(loadPrompt('coverageSynthesis.md'));
+export const COVERAGE_SYNTHESIS_PROMPT = withSynthesisFidelityRules(
+  loadPrompt('coverageSynthesis.md'),
+);
 export const LAB_SITE_DECLARED_LEAD_PROMPT = loadPrompt('labSiteDeclaredLead.md');
 
 export const CARD_SYNTHESIS_PROMPT_HASH = hashPrompt(CARD_SYNTHESIS_PROMPT);
