@@ -5,6 +5,19 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Written Description Is Grounded In Fetched Page Text, And Grants Help Only When They Must (#4867)
+
+A 120-row graded sample after #4788 found 7 of 100 written bodies wrong, above the goal of fewer than 5% wrong.
+Two of the seven re-asserted details an earlier model-written observation had invented, and three attributed another unit's content, a co-founder's personal agenda or a featured item to the row.
+Decision: the writer is grounded only in text that is on a fetched page.
+A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache, so today model text is never writer evidence.
+Evidence is read in this order: the row's own research site, its official profile, other pages, and grant records last.
+Grant rule (owner direction, 2026-10-04): grants are read only when the row's own research prose is absent or thin, only grants the row's lead holds as principal investigator that are active or ended within five years, never a single grant as the whole evidence, so one eligible grant is not read at all, and the prompt states only the theme several grants share.
+The prompt forbids attributing navigation, carousel, related-unit or featured-item content, presenting training or past positions as current work, and turning a listed interest into a method or a study subject; a sentence naming a featured item, a related unit or training as current work is dropped deterministically.
+The writer contract version is bumped, so every row is judged again on the next run.
+Measured read-only on Development before the change, the strict rule leaves 2,074 of the 3,908 rows that carry evidence with no page evidence at all, 1,515 of them with no evidence even counting grants, because almost no stored page copies exist and most description evidence is model-extracted.
+The fallback for those rows is an open decision, recorded on #4867, and the all-rows writer run waits for it.
+
 ## 2026-10-04: A Page's Own Research Paragraph In The Progressive Is Research (#4809)
 
 `describesResearchFocus` reads research from a closed list of phrasings, and it had the simple present ("we develop") without the progressive ("we are developing").

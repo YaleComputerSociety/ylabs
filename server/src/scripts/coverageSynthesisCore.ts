@@ -11,9 +11,13 @@ import {
   type CoverageObservationLike,
   type CoverageSnippet,
   type CoverageSynthesisDecision,
+  type StoredPageTextLookup,
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
+import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
+import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { buildGrantCorpusSnippets } from './grantCorpusSynthesisCore';
+import { isOfficialYalePersonPageUrl } from './fraProfileSynthesisCore';
 
 export interface CoverageSynthesisArgs {
   apply: boolean;
@@ -34,7 +38,7 @@ const MAX_COVERAGE_SYNTHESIS_CONCURRENCY = 8;
  * Folded into the evidence hash beside the prompt hash, so a change to the code-side
  * refusal arms re-judges every row once, the way a prompt edit already does.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-4788-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-4867-v1';
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
   const args: CoverageSynthesisArgs = {
@@ -92,16 +96,72 @@ export function assertCoverageSynthesisApplyAllowed(
 const observationText = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+export type WriterEvidenceRank = 0 | 1 | 2 | 3;
+
+const urlHostAndPath = (value: unknown): { host: string; path: string } | undefined => {
+  try {
+    const url = new URL(String(value ?? ''));
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    return host ? { host, path: url.pathname.replace(/\/+$/, '') } : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Whether a page sits under the row's own site: same host, and under its path. */
+export function isOnOwnResearchSite(sourceUrl: unknown, websiteUrl: unknown): boolean {
+  const site = urlHostAndPath(websiteUrl);
+  const page = urlHostAndPath(sourceUrl);
+  if (!site || !page || page.host !== site.host) return false;
+  return !site.path || page.path === site.path || page.path.startsWith(`${site.path}/`);
+}
+
+const hasCategory = (sourceName: unknown, category: string): boolean =>
+  Boolean(
+    getSourceCoverage(String(sourceName ?? ''))?.evidenceCategories.some(
+      (entry) => entry === category,
+    ),
+  );
+
+export function isGrantEvidenceSource(sourceName: unknown): boolean {
+  return (
+    hasCategory(sourceName, 'FUNDING_ACTIVITY') &&
+    !hasCategory(sourceName, 'LAB_WEBSITE') &&
+    !hasCategory(sourceName, 'OFFICIAL_PROFILE')
+  );
+}
+
 /**
- * Strongest evidence first, then a total order on the remaining keys, so the same
- * evidence always yields the same snippet list and therefore the same hash whatever
- * order the database returned it in.
+ * Which kind of page a piece of evidence is (#4867): 0 the row's own research site, 1 an
+ * official profile, 2 any other page, 3 a grant record. The row's own site is decided by
+ * the cited URL rather than the lane, because a lane that reads many kinds of page
+ * cannot say which one a value came from, and many Yale sites are paths on a shared
+ * host, so a person page on that host is a profile before it is the site.
+ */
+export function writerEvidenceRank(
+  obs: Pick<CoverageObservationLike, 'sourceName' | 'sourceUrl'>,
+  websiteUrl?: unknown,
+): WriterEvidenceRank {
+  if (isGrantEvidenceSource(obs.sourceName)) return 3;
+  if (isOfficialYalePersonPageUrl(obs.sourceUrl)) return 1;
+  if (isOnOwnResearchSite(obs.sourceUrl, websiteUrl)) return 0;
+  if (hasCategory(obs.sourceName, 'OFFICIAL_PROFILE')) return 1;
+  return 2;
+}
+
+/**
+ * The row's own site, then its official profile, then other pages, grants last; within
+ * a rank strongest first, then a total order on the remaining keys, so the same evidence
+ * always yields the same snippet list and therefore the same hash whatever order the
+ * database returned it in.
  */
 export function orderWriterEvidence(
   observations: readonly CoverageObservationLike[],
+  websiteUrl?: unknown,
 ): CoverageObservationLike[] {
   return [...observations].sort(
     (a, b) =>
+      writerEvidenceRank(a, websiteUrl) - writerEvidenceRank(b, websiteUrl) ||
       (b.confidence ?? 0) - (a.confidence ?? 0) ||
       String(a.sourceName ?? '').localeCompare(String(b.sourceName ?? '')) ||
       a.field.localeCompare(b.field) ||
@@ -109,22 +169,78 @@ export function orderWriterEvidence(
   );
 }
 
+export const WRITER_GRANT_RECENCY_YEARS = 5;
+/** Without research prose of the row's own, one funded project would become the whole focus. */
+export const MIN_GRANTS_WITHOUT_OWN_PROSE = 2;
+
+interface WriterGrantLike {
+  role?: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+}
+
+const grantTime = (value: unknown): number | undefined => {
+  if (value === null || value === undefined || value === '') return undefined;
+  const time = new Date(value as string).getTime();
+  return Number.isFinite(time) ? time : undefined;
+};
+
 /**
- * Every live description-shaped observation the row carries, then its grant titles and
- * abstracts in whatever room is left, bounded by the synthesizer's own snippet cap.
+ * The grants the writer may read (#4867, owner direction): the row's lead is the
+ * principal investigator, and the grant is active or ended within five years. A grant
+ * with no end date counts from its start date, and one with neither is not dated, so it
+ * is not read.
+ */
+export function eligibleWriterGrants(recentGrants: unknown, now: Date): unknown[] {
+  if (!Array.isArray(recentGrants)) return [];
+  const floor = new Date(now);
+  floor.setFullYear(floor.getFullYear() - WRITER_GRANT_RECENCY_YEARS);
+  return recentGrants.filter((grant: WriterGrantLike) => {
+    if (!grant || grant.role !== 'pi') return false;
+    const last = grantTime(grant.endDate) ?? grantTime(grant.startDate);
+    return last !== undefined && last >= floor.getTime();
+  });
+}
+
+/** Whether the row states its own research in at least one snippet that reads as a body. */
+export function hasOwnResearchProse(snippets: readonly CoverageSnippet[]): boolean {
+  return snippets.some((snippet) => fullDescriptionQuality(snippet.text).isUseful);
+}
+
+export interface WriterEvidenceOptions {
+  websiteUrl?: unknown;
+  storedPageText?: StoredPageTextLookup;
+  now?: Date;
+}
+
+/**
+ * The writer's evidence: page text the row carries, ordered by `orderWriterEvidence`,
+ * and grant records only when that page text is absent or thin. A grant read comes from
+ * the row's recorded grants, which carry the role and dates the grant rule needs; a
+ * grant lane's own observation carries neither, so it is not read.
  */
 export function buildWriterEvidenceSnippets(
   observations: readonly CoverageObservationLike[],
   recentGrants: unknown,
+  options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
-  const fromObservations = gatherCoverageSnippets(orderWriterEvidence(observations));
-  const room = MAX_COVERAGE_SNIPPETS - fromObservations.length;
-  if (room <= 0) return fromObservations;
-  const seen = new Set(fromObservations.map((snippet) => snippet.text.toLowerCase()));
-  const fromGrants = buildGrantCorpusSnippets(recentGrants).filter(
-    (snippet) => !seen.has(snippet.text.toLowerCase()),
-  );
-  return [...fromObservations, ...fromGrants.slice(0, room)];
+  const ordered = orderWriterEvidence(observations, options.websiteUrl);
+  const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
+  const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
+  if (hasOwnResearchProse(fromPages)) return fromPages;
+  const room = MAX_COVERAGE_SNIPPETS - fromPages.length;
+  if (room <= 0) return fromPages;
+  const seen = new Set(fromPages.map((snippet) => snippet.text.toLowerCase()));
+  const grants = buildGrantCorpusSnippets(
+    eligibleWriterGrants(recentGrants, options.now ?? new Date()),
+  ).filter((snippet) => {
+    const key = snippet.text.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (grants.length < MIN_GRANTS_WITHOUT_OWN_PROSE) return fromPages;
+  return [...fromPages, ...grants.slice(0, room)];
 }
 
 export function writerEvidenceHash(snippets: readonly CoverageSnippet[]): string {

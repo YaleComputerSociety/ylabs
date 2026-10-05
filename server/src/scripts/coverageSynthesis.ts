@@ -101,7 +101,7 @@ type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
   const projection =
-    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription';
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME),
@@ -317,7 +317,9 @@ async function main() {
       .select('field value sourceUrl sourceName confidence observedAt')
       .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
 
-    const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants);
+    const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants, {
+      websiteUrl: entity.websiteUrl,
+    });
     report.snippets = snippets.length;
     const freshHash = writerEvidenceHash(snippets);
     const step = planWriterStep({
