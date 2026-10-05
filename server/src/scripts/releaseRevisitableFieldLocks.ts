@@ -16,9 +16,11 @@
  * `summary` is therefore the plan; `appliedReleases` and `releasedRows` are what a
  * run actually wrote.
  *
- * No re-gate and no re-index: a release only ever happens when the engine agrees
- * with the stored value, so no served field moves. Verification is a re-read of the
- * served surface, not this script's counters.
+ * No re-gate and no re-index: without `--accept-engine-value` a release only ever
+ * happens when the engine agrees with the stored value, so no served field moves. A
+ * release carrying `acceptsEngineValue` does move one, so rematerialize and re-gate
+ * the named rows after it. Verification is a re-read of the served surface, not this
+ * script's counters.
  *
  * Usage:
  *   yarn --cwd server research-entity:release-field-locks
