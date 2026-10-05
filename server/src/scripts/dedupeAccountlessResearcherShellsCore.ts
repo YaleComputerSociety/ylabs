@@ -409,7 +409,8 @@ function givenNameAgrees(given: string, otherGivenTokens: ReadonlyArray<string>)
   const [otherFirst] = otherGivenTokens;
   if (!otherFirst) return false;
   if (given === otherFirst) return true;
-  const [shorter, longer] = given.length <= otherFirst.length ? [given, otherFirst] : [otherFirst, given];
+  const [shorter, longer] =
+    given.length <= otherFirst.length ? [given, otherFirst] : [otherFirst, given];
   if (shorter.length >= 3 && longer.startsWith(shorter)) return true;
   return otherGivenTokens.includes(given);
 }
@@ -815,7 +816,9 @@ export function planAccountlessClusterFolds(
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
 ): AccountlessClusterPlan {
   const healthyKeys = new Set(
-    [...members, ...nonMembers].flatMap((record) => verifiedPrimaryProfileKeys(record.profileLinks)),
+    [...members, ...nonMembers].flatMap((record) =>
+      verifiedPrimaryProfileKeys(record.profileLinks),
+    ),
   );
   const heldElsewhere = {
     pages: new Set(
