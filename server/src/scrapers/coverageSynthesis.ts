@@ -12,6 +12,7 @@ import { isSourcePageNarrationDescription } from '../utils/researchEntityDescrip
 import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
+import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
@@ -169,6 +170,7 @@ export type CoverageSynthesisRefusal =
   | 'internal-vocabulary'
   | 'past-career-clause'
   | 'teaser-attribution'
+  | 'unsupported-method-clause'
   | 'source-narration'
   | 'over-length';
 
@@ -356,8 +358,12 @@ export async function coverageSynthesisDecision(
   const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
-  const description = stripped.description;
-  if (!description) return refuse(stripped.refusal ?? 'past-career-clause');
+  if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
+  const methodChecked = withoutUnsupportedMethodClauses(
+    stripped.description,
+    snippets.map((snippet) => snippet.text),
+  ).text;
+  const description = methodChecked ?? stripped.description;
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
@@ -382,6 +388,7 @@ export async function coverageSynthesisDecision(
   // itself, which is the #2440 shape of a counter that misreports its own outcome.
   if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  if (!methodChecked) return refuse('unsupported-method-clause');
 
   const sourceUrls = Array.from(
     new Set(

@@ -44,10 +44,22 @@ function hashPrompt(...values: string[]): string {
   return crypto.createHash('sha256').update(values.join('\0')).digest('hex');
 }
 
-export const CARD_SYNTHESIS_PROMPT = loadPrompt('cardSynthesis.md');
+/**
+ * The rules every prompt that writes a card or a body shares (#4914), composed into each
+ * rather than copied, so the card and the body cannot drift apart.
+ */
+export const SYNTHESIS_FIDELITY_RULES = loadPrompt('synthesisFidelityRules.md').trim();
+
+export function withSynthesisFidelityRules(prompt: string): string {
+  return `${prompt.trim()}\n\n${SYNTHESIS_FIDELITY_RULES}\n`;
+}
+
+export const CARD_SYNTHESIS_PROMPT = withSynthesisFidelityRules(loadPrompt('cardSynthesis.md'));
 export const DESCRIPTION_EXTRACTION_PROMPT = loadPrompt('micrositeDescriptionExtraction.md');
 export const UNDERGRAD_EXTRACTION_PROMPT = loadPrompt('undergradExtraction.md');
-export const COVERAGE_SYNTHESIS_PROMPT = loadPrompt('coverageSynthesis.md');
+export const COVERAGE_SYNTHESIS_PROMPT = withSynthesisFidelityRules(
+  loadPrompt('coverageSynthesis.md'),
+);
 export const LAB_SITE_DECLARED_LEAD_PROMPT = loadPrompt('labSiteDeclaredLead.md');
 
 export const CARD_SYNTHESIS_PROMPT_HASH = hashPrompt(CARD_SYNTHESIS_PROMPT);

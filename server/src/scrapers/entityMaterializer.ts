@@ -244,6 +244,8 @@ import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacte
 import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
+import { isModelTextSource } from './sourceCoverageRegistry';
 import {
   isResearchAreaEchoDescription,
   isStudiesResearchAreaEchoDescription,
@@ -412,7 +414,7 @@ interface MaterializeOptions {
   dryRun?: boolean;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
-  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
@@ -478,15 +480,21 @@ interface MaterializeOptions {
   nameIdentityAuthority?: ResearchEntityNameIdentityAuthority;
 }
 
+export type CardSynthesizer = (
+  fullDescription: string,
+  evidenceTexts?: readonly string[],
+) => Promise<string>;
+
 export function defaultMaterializerCardSynthesizer(
   entityName: string,
   model: string = CARD_SYNTHESIS_MODEL,
-): (fullDescription: string) => Promise<string> {
+): CardSynthesizer {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) return () => Promise.resolve('');
-  return (fullDescription) =>
+  return (fullDescription, evidenceTexts) =>
     synthesizeGroundedCardDescription({
       fullDescription,
+      evidenceTexts,
       entityName,
       callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
     });
@@ -663,13 +671,48 @@ export function isAcceptableWrittenBodyCard(input: {
   researchAreas: unknown;
   servingBarAccepts: (card: string) => boolean;
   requireGrounding: boolean;
+  evidenceTexts?: readonly string[];
 }): boolean {
   return (
     !isRefusedWrittenBodyCard(input.card, input.body, input.researchAreas) &&
+    withoutUnsupportedMethodClauses(input.card, [input.body, ...(input.evidenceTexts ?? [])])
+      .stripped === 0 &&
     (!input.requireGrounding ||
       cardGroundingScore(input.card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
     input.servingBarAccepts(input.card)
   );
+}
+
+const WRITTEN_BODY_CARD_EVIDENCE_FIELDS = new Set([
+  'fullDescription',
+  'shortDescription',
+  'description',
+  'summary',
+  'bio',
+  'researchInterestSummary',
+  'researchSummary',
+]);
+
+const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
+
+/**
+ * The page text a written body was built from, as the row's other description evidence,
+ * so a method a card names is checked against what the pages say rather than against the
+ * body alone (#4914). The written body itself is passed separately. Model-written values
+ * are left out as the writer leaves them out, except the extraction lane's body, which
+ * that lane checks against its fetched page.
+ */
+export function writtenBodyCardEvidence(observations: readonly ResolverObservation[]): string[] {
+  return observations
+    .filter(
+      (obs) =>
+        WRITTEN_BODY_CARD_EVIDENCE_FIELDS.has(obs.field) &&
+        (!isModelTextSource(obs.sourceName) ||
+          (obs.sourceName === INGEST_CHECKED_DESCRIPTION_SOURCE &&
+            obs.field === 'fullDescription')) &&
+        typeof obs.value === 'string',
+    )
+    .map((obs) => obs.value as string);
 }
 
 export type WrittenBodyCardChoice =
@@ -701,7 +744,8 @@ export async function resolveWrittenBodyCard(input: {
   observedCards: readonly unknown[];
   researchAreas: unknown;
   servingBarAccepts: (card: string) => boolean;
-  synthesize?: (fullDescription: string) => Promise<string>;
+  evidenceTexts?: readonly string[];
+  synthesize?: CardSynthesizer;
 }): Promise<WrittenBodyCardChoice> {
   const acceptable = (card: string, requireGrounding: boolean): boolean =>
     isAcceptableWrittenBodyCard({
@@ -710,6 +754,7 @@ export async function resolveWrittenBodyCard(input: {
       researchAreas: input.researchAreas,
       servingBarAccepts: input.servingBarAccepts,
       requireGrounding,
+      evidenceTexts: input.evidenceTexts,
     });
   const stored = textValue(input.storedCard);
   const candidates: Exclude<WrittenBodyCardChoice, { kind: 'none' }>[] = [];
@@ -729,7 +774,7 @@ export async function resolveWrittenBodyCard(input: {
   if (input.synthesize) {
     let longSynthesized = '';
     for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
-      const card = textValue(await input.synthesize(input.body));
+      const card = textValue(await input.synthesize(input.body, input.evidenceTexts));
       if (!card || !acceptable(card, false)) continue;
       if (cardLineFitsBrowseCard(card)) return { kind: 'synthesized', card };
       longSynthesized ||= card;
@@ -6621,7 +6666,7 @@ export interface ProjectFromLogInput {
   chunkPrefetch?: MaterializationReadSource;
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
-  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
@@ -8048,6 +8093,7 @@ export async function projectFromLog(
           card,
           input.nameIdentityAuthority.leadPersonName,
         );
+      const cardEvidenceTexts = writtenBodyCardEvidence(resolverObs);
       const storedCardUnacceptable =
         !!storedCard &&
         !isAcceptableWrittenBodyCard({
@@ -8056,6 +8102,7 @@ export async function projectFromLog(
           researchAreas: writtenBodyResearchAreas,
           servingBarAccepts,
           requireGrounding: true,
+          evidenceTexts: cardEvidenceTexts,
         });
       const writtenBodyChanged =
         fullDescription !==
@@ -8066,6 +8113,7 @@ export async function projectFromLog(
         observedCards: observedCards.map((candidate) => candidate.value),
         researchAreas: writtenBodyResearchAreas,
         servingBarAccepts,
+        evidenceTexts: cardEvidenceTexts,
         synthesize:
           writtenBodyChanged ||
           storedCardUnacceptable ||

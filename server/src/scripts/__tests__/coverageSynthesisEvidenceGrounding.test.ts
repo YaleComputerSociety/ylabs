@@ -81,7 +81,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   });
 
   it('re-judges every row under the new contract', () => {
-    expect(WRITER_CONTRACT_VERSION).toBe('written-description-4867-v1');
+    expect(WRITER_CONTRACT_VERSION).toBe('written-description-4914-v1');
   });
 });
 

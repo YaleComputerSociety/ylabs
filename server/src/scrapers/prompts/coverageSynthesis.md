@@ -8,8 +8,6 @@ Describe the research itself, never the evidence. Do not mention or characterize
 
 Omit biography: titles, appointments, degrees, career history, awards, honors, funding, publications and talks as items, clinical services, and contact information (email, phone, address). Never write a past-tense career clause such as "Previously led ...", "Formerly directed ..." or "Before joining Yale, ...", and never present training or past positions (doctoral, postdoctoral, residency or earlier work) as current research: describe only the research as it stands now.
 
-Keep each fact in the role the snippets give it. A listed interest or topic stays an interest: do not turn it into a method the entity uses, a population it studies, or the subject of a trial unless a snippet says so.
-
 Grant records describe individual funded projects. When grant snippets are present, state only the theme they share; never present one funded project as the whole research focus.
 
 Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 70 words in total. If the snippets state no research focus, return an empty string.
