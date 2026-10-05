@@ -149,8 +149,16 @@ function namesUnit(sentence: string, unitName: string): boolean {
   return words.includes(` ${distinctive.join(' ')} `);
 }
 
+const NOUN_LABELLED_BY_A_NUMERAL = String.raw`type|subtype|phase|class|stage|grade|title|part|chapter|section|volume|level|figure|table|appendix|group|war|step|trial|study|cohort|arm|tier|category|complex|factor|act|book|series|round`;
+const ROMAN_NUMERAL_ONE = new RegExp(
+  String.raw`\b(?:${NOUN_LABELLED_BY_A_NUMERAL})\s+I(?=$|[^\p{L}'])`,
+  'giu',
+);
+
 export function isFirstPersonSingularSentence(sentence: string): boolean {
-  return FIRST_PERSON_SINGULAR.test(sentence.replace(/[\u2018\u2019]/g, "'"));
+  return FIRST_PERSON_SINGULAR.test(
+    sentence.replace(/[\u2018\u2019]/g, "'").replace(ROMAN_NUMERAL_ONE, ' '),
+  );
 }
 
 const SHARED_LEADERSHIP =

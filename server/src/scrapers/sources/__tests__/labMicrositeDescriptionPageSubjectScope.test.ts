@@ -189,6 +189,27 @@ describe("a co-founder's personal page cited by a shared lab (#4915)", () => {
   });
 });
 
+describe('a roman numeral on a co-directed unit’s page (#4915)', () => {
+  const CO_DIRECTED =
+    'The Fixture Metabolism Center, co-directed by two faculty members, studies type I diabetes.';
+  const NUMBERED_TRIALS =
+    'Phase I trials of an immune therapy run alongside laboratory studies of beta-cell loss.';
+
+  it('keeps sentences whose only uppercase I is a numeral, not a member’s voice', () => {
+    const copy = `${CO_DIRECTED} ${NUMBERED_TRIALS}`;
+
+    expect(
+      fullDescriptionOf(copy, {
+        entityName: 'Fixture Metabolism Center',
+        entityType: 'CENTER',
+        kind: 'organization',
+        entityKey: 'fixture-metabolism-center',
+        citedPageText: `About\n${copy}`,
+      }),
+    ).toBe(copy);
+  });
+});
+
 describe('a sentence lifted out of a training passage (#4915)', () => {
   const profile = {
     entityName: 'Example Scientist Research',
