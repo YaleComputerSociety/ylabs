@@ -272,9 +272,15 @@ async function main() {
     (await ScrapeRun.find({
       sourceName: INGEST_VERIFIED_EXTRACTION_SOURCE,
       startedAt: { $gte: PAGE_GROUNDING_VERIFIED_SINCE },
+      invalidated: { $ne: true },
     })
-      .select('_id sourceName startedAt')
-      .lean()) as Array<{ _id: unknown; sourceName?: unknown; startedAt?: unknown }>,
+      .select('_id sourceName startedAt invalidated')
+      .lean()) as Array<{
+      _id: unknown;
+      sourceName?: unknown;
+      startedAt?: unknown;
+      invalidated?: unknown;
+    }>,
   );
   if (args.rederiveCards) {
     await rederiveWrittenBodyCards(entities, args, guard.dbLabel);

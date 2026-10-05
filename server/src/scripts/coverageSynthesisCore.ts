@@ -364,6 +364,7 @@ interface RecordedRunLike {
   _id: unknown;
   sourceName?: unknown;
   startedAt?: unknown;
+  invalidated?: unknown;
 }
 
 /**
@@ -377,6 +378,7 @@ export function ingestVerifiedRunIds(runs: readonly RecordedRunLike[]): Set<stri
     runs
       .filter((run) => {
         if (run.sourceName !== INGEST_VERIFIED_EXTRACTION_SOURCE) return false;
+        if (run.invalidated === true) return false;
         const started = grantTime(run.startedAt);
         return started !== undefined && started >= PAGE_GROUNDING_VERIFIED_SINCE.getTime();
       })

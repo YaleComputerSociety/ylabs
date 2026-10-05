@@ -66,6 +66,26 @@ describe('ingest-verified extraction is writer evidence (#4867, owner decision)'
     ).toEqual([]);
   });
 
+  it('refuses a value from a lane run an operator invalidated', () => {
+    const quarantinedRun = 'f'.repeat(24);
+    const quarantined = {
+      _id: quarantinedRun,
+      sourceName: LANE,
+      startedAt: new Date('2026-09-20T00:00:00Z'),
+      invalidated: true,
+    };
+    expect(
+      buildWriterEvidenceSnippets(
+        markIngestVerifiedObservations(
+          [laneObservation(quarantinedRun)],
+          ingestVerifiedRunIds([...runs, quarantined]),
+        ),
+        [],
+        { now: NOW },
+      ),
+    ).toEqual([]);
+  });
+
   it('counts only runs started once the check reached the lane', () => {
     const atFloor = {
       _id: 'd'.repeat(24),
