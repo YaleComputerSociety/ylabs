@@ -1235,12 +1235,16 @@ function dedupeRepeatedProfileCardLabel(value: string): string {
   return left.toLowerCase() === right.toLowerCase() ? left : textValue(value);
 }
 
+// A surname such as McCormick or DiMaio carries its own case boundary, and splitting it
+// forks one person into two researchers downstream (#4879).
+const RUN_TOGETHER_WORD_BOUNDARY = /(?<=[a-z])(?<!(?:\b|[a-z])(?:Mc|Mac|Di|De|La|Le|Du))(?=[A-Z])/g;
+
 function cleanProfileCardLabWebsiteLabel(value: string): string {
   return dedupeRepeatedProfileCardLabel(
     textValue(value)
       .replace(/\bLab\s+Whisk\s+Cup\s+Streamline\s+Icon:\s*https?:\/\/streamlinehq\.com/gi, ' ')
       .replace(/\)([A-Z])/g, ') $1')
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(RUN_TOGETHER_WORD_BOUNDARY, ' ')
       .replace(/\bBio\s+Image\s+Suite\b/g, 'BioImage Suite')
       .replace(/\bCar\s+DS\b/g, 'CarDS')
       .replace(/\bNOu\s+RISH\b/g, 'NOURISH')

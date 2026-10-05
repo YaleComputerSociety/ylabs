@@ -1353,6 +1353,35 @@ const profileLinkedBioImageProjectWebsiteHtml = `
   </html>
 `;
 
+const profileLinkedSurnamePrefixLabWebsiteHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/quinn-mcfixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Quinn McFixture",
+            "email": "quinn.fixture@yale.edu",
+            "jobTitle": "Professor",
+            "description": "Quinn McFixture studies synthetic circuits."
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <h1>Quinn McFixture</h1>
+        <div>
+          <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>McFixture and DiSample LabsSynthetic Circuits GroupMcSample Unit
+          <a href="https://mcfixturelab.example.org/">View Lab Website</a>
+        </div>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedSquirrelLabWebsiteHtml = `
   <html>
     <head>
@@ -4785,6 +4814,17 @@ describe('officialProfilePiBackfillScraper', () => {
       kind: 'lab',
       entityType: 'LAB',
     });
+  });
+
+  it('keeps a surname prefix joined while splitting run-together label words', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedSurnamePrefixLabWebsiteHtml,
+      'https://medicine.yale.edu/profile/quinn-mcfixture/',
+    );
+
+    expect(homes[0]?.name).toContain('McFixture and DiSample Labs Synthetic');
+    expect(homes[0]?.name).toContain('Group McSample Unit');
+    expect(homes.map((home) => home.name).join(' ')).not.toMatch(/\b(?:Mc|Di) [A-Z]/);
   });
 
   it('extracts a synthetic squirrel-lab profile-card label', () => {
