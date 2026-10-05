@@ -983,7 +983,9 @@ export function namesAScholarlyEventSeries(value: unknown): boolean {
   return SCHOLARLY_EVENT_SERIES_HEAD_RE.test(name);
 }
 
-const CAMPUS_BUILDING_HEAD_RE = /\s(?:hall|building|tower|pavilion|annex)$/i;
+// "Building" is also a gerund head ("Coalition Building"), so only a Yale-named one reads as a place.
+const CAMPUS_BUILDING_HEAD_RE =
+  /\s(?:hall|tower|pavilion|annex)$|^(?:the\s+)?yale\s+\S.*\sbuilding$/i;
 
 // Yale buildings named as laboratories, which no head-noun rule can tell from a lab: the
 // building and a research group read the same way as strings.

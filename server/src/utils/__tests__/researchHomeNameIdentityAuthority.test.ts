@@ -2267,6 +2267,7 @@ describe('a campus building is not a person-scoped name (#4916)', () => {
       'Osborn Memorial Laboratories',
       'Widget Science Hall',
       'Widget Biology Tower',
+      'Yale Widget Science Building',
     ]) {
       expect(
         personScopedNameIsACampusBuilding({ candidateName, personName: 'Ada Fixture' }),
@@ -2281,6 +2282,8 @@ describe('a campus building is not a person-scoped name (#4916)', () => {
       ['Computational Fixture Lab', 'Ada Fixture'],
       ['Gibbs Laboratory', 'Ada Gibbs'],
       ['Fixture Hall', 'Ada Hall'],
+      ['Community Capacity Building', 'Ada Fixture'],
+      ['Coalition Building', 'Ada Fixture'],
     ]) {
       expect(personScopedNameIsACampusBuilding({ candidateName, personName }), candidateName).toBe(
         false,
