@@ -704,21 +704,32 @@ export async function resolveWrittenBodyCard(input: {
       requireGrounding,
     });
   const stored = textValue(input.storedCard);
-  if (stored && acceptable(stored, true)) return { kind: 'stored', card: stored };
+  const candidates: Exclude<WrittenBodyCardChoice, { kind: 'none' }>[] = [];
+  if (stored && acceptable(stored, true)) candidates.push({ kind: 'stored', card: stored });
   for (const [index, value] of input.observedCards.entries()) {
     const card = textValue(value);
     if (card && card !== stored && acceptable(card, true)) {
-      return { kind: 'observed', card, index };
+      candidates.push({ kind: 'observed', card, index });
     }
   }
   const derived = textValue(deriveShortDescriptionFromFullDescription(input.body));
-  if (derived && acceptable(derived, false)) return { kind: 'derived', card: derived };
-  if (!input.synthesize) return { kind: 'none' };
-  for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
-    const card = textValue(await input.synthesize(input.body));
-    if (card && acceptable(card, false)) return { kind: 'synthesized', card };
+  if (derived && acceptable(derived, false)) candidates.push({ kind: 'derived', card: derived });
+  // A card the browse card would cut mid-sentence is held back while a line that shows
+  // whole is sought, and is still the answer when none is found (#4809).
+  const fitting = candidates.find((choice) => cardLineFitsBrowseCard(choice.card));
+  if (fitting) return fitting;
+  if (input.synthesize) {
+    let longSynthesized = '';
+    for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
+      const card = textValue(await input.synthesize(input.body));
+      if (!card || !acceptable(card, false)) continue;
+      if (cardLineFitsBrowseCard(card)) return { kind: 'synthesized', card };
+      longSynthesized ||= card;
+    }
+    if (candidates[0]) return candidates[0];
+    if (longSynthesized) return { kind: 'synthesized', card: longSynthesized };
   }
-  return { kind: 'none' };
+  return candidates[0] ?? { kind: 'none' };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -8042,7 +8053,12 @@ export async function projectFromLog(
         observedCards: observedCards.map((candidate) => candidate.value),
         researchAreas: writtenBodyResearchAreas,
         servingBarAccepts,
-        synthesize: writtenBodyChanged || storedCardUnacceptable ? cardSynthesizer : undefined,
+        synthesize:
+          writtenBodyChanged ||
+          storedCardUnacceptable ||
+          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard))
+            ? cardSynthesizer
+            : undefined,
       });
       if (choice.kind === 'observed') {
         const candidate = observedCards[choice.index];
