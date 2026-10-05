@@ -28,6 +28,7 @@
  * the detail card. So the gate cleared a row on one line while browse showed a second
  * and the related, similar and compare cards showed a third.
  */
+import { shortenCardLineToFitBrowseCard } from '../utils/browseCardClauseShortening';
 import {
   asResearchEntityType,
   mapResearchGroupKindToEntityType,
@@ -366,14 +367,16 @@ export function servedResearchEntityCardWithoutLastResort(
 ): string {
   const resolvedEntityType = servedResearchEntityType(served, entityType);
   return withBalancedLeadingQuotation(
-    groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
-      resolveServedShortDescriptionOutcome({
-        shortDescription: '',
-        fullDescription: served.fullDescription,
-        researchAreas: served.researchAreas,
-        entityType: resolvedEntityType,
-        kind: served.kind,
-      }).card,
+    shortenCardLineToFitBrowseCard(
+      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+        resolveServedShortDescriptionOutcome({
+          shortDescription: '',
+          fullDescription: served.fullDescription,
+          researchAreas: served.researchAreas,
+          entityType: resolvedEntityType,
+          kind: served.kind,
+        }).card,
+    ),
   );
 }
 
@@ -392,7 +395,9 @@ export function servedResearchEntityCardDescription(
 ): string {
   const resolvedEntityType = servedResearchEntityType(served, entityType);
   return withBalancedLeadingQuotation(
-    groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
-      servedShortDescriptionFallback(served, resolvedEntityType),
+    shortenCardLineToFitBrowseCard(
+      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+        servedShortDescriptionFallback(served, resolvedEntityType),
+    ),
   );
 }
