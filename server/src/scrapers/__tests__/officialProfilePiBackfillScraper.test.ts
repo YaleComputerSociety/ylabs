@@ -1363,7 +1363,7 @@ const profileLinkedSurnamePrefixLabWebsiteHtml = `
           "mainEntity": {
             "@type": "Person",
             "name": "Quinn McFixture",
-            "email": "quinn.mcfixture@yale.edu",
+            "email": "quinn.fixture@yale.edu",
             "jobTitle": "Professor",
             "description": "Quinn McFixture studies synthetic circuits."
           }
