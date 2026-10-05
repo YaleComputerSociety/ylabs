@@ -57,6 +57,8 @@ Before relying on this runbook, the team must have:
 - Production credentials kept out of local scraper profiles and available only to approved promotion operators.
 - A shared record of the source list, expected observation ranges, artifact location, Beta backup, Production restore point, and final gate results for each refresh.
 
+Record the administrator count for each platform, by role, in the [ownership record](./deployment-inventory.md#ownership-record).
+
 Before an operator leaves the team:
 
 1. Transfer ownership of organization resources and confirm that two remaining administrators can access them.
@@ -964,5 +966,5 @@ The refresh is incomplete if any required artifact, restore point, or independen
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
 Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
-Production recovery restores the recorded pre-promotion Atlas restore point and then rebuilds Meilisearch.
+No Production restore point exists today, because the free Atlas cluster provides no backups and a successful promotion drops its own (#4148), so Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
 Never use a Development database copy as a Production rollback.

@@ -399,6 +399,9 @@ The posture, including why every `dataCollection` category is set off explicitly
 
 ## Environment variables
 
+`docs/deployment-inventory.md` is the per-service inventory: which service reads each name, whether it is required, what breaks without it, and whether it is a secret; `scripts/deployment-inventory.test.mjs` fails when code reads a name it does not list.
+Rotating a leaked secret is owned by `docs/incident-runbook.md`.
+
 ### Server
 
 | Variable | Required | Purpose |
@@ -417,7 +420,7 @@ The posture, including why every `dataCollection` category is set off explicitly
 | `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |
 | `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
 | `MEILISEARCH_SEARCH_API_KEY` | Deployed web service | Search-only Meilisearch key used by the request path (#4014). |
-| `MEILISEARCH_WRITE_API_KEY` | Reindex shell | Meilisearch write key for the reindex and scripts; never stored on the web service. |
+| `MEILISEARCH_WRITE_API_KEY` | Reindex shell and operator services | Meilisearch write key for the reindex and scripts; stored on the Beta web service only, never on the Production one. |
 | `MEILISEARCH_API_KEY` | No | Legacy single key, the fallback for either role; a deployed fallback logs a warning. Remove from the web service once the search key is set. |
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
