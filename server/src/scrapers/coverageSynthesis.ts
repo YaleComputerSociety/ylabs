@@ -359,11 +359,11 @@ export async function coverageSynthesisDecision(
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
   if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
-  const description = withoutUnsupportedMethodClauses(
+  const methodChecked = withoutUnsupportedMethodClauses(
     stripped.description,
     snippets.map((snippet) => snippet.text),
   ).text;
-  if (!description) return refuse('unsupported-method-clause');
+  const description = methodChecked ?? stripped.description;
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
@@ -388,6 +388,7 @@ export async function coverageSynthesisDecision(
   // itself, which is the #2440 shape of a counter that misreports its own outcome.
   if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  if (!methodChecked) return refuse('unsupported-method-clause');
 
   const sourceUrls = Array.from(
     new Set(

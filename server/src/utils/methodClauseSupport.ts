@@ -195,6 +195,19 @@ function withoutDanglingFragment(sentence: string): string {
   return `${sentence.slice(0, match.index)}${match[2]}`;
 }
 
+const CLAUSE_ELABORATION = /^,\s*(?:and\s+)?(?:including|such\s+as)\b/i;
+
+/**
+ * Only the method clause goes, so the claim it modifies ("..., and examines Y", "to
+ * understand Z") stays. An "including" or "such as" tail lists more of the same methods
+ * and goes with them.
+ */
+function withItsElaboration(sentence: string, bodyEnd: number): number {
+  if (!CLAUSE_ELABORATION.test(sentence.slice(bodyEnd))) return bodyEnd;
+  const elaborationEnd = sentence.slice(bodyEnd).search(/;|[.!?](?=\s|$)/);
+  return elaborationEnd === -1 ? sentence.length : bodyEnd + elaborationEnd;
+}
+
 export interface MethodClauseOutcome {
   text: string | null;
   stripped: number;
@@ -202,7 +215,8 @@ export interface MethodClauseOutcome {
 
 /**
  * The text with every "using/via/through <phrase>" clause the evidence does not state as
- * a method removed. A sentence the strip leaves shorter than four words goes with it, and
+ * a method removed, leaving the claim it modifies. A sentence the strip leaves shorter than
+ * three words goes with it, and
  * `text` is null when nothing is left, which a caller refuses under its own name.
  */
 export function withoutUnsupportedMethodClauses(
@@ -233,9 +247,8 @@ export function withoutUnsupportedMethodClauses(
       const end = rest.search(CLAUSE_END);
       const bodyEnd = end === -1 ? sentence.length : bodyStart + end;
       if (!clauseIsSupported(sentence.slice(bodyStart, bodyEnd), vocabulary)) {
-        const sentenceRest = sentence.slice(start).search(/;|[.!?](?=\s|$)/);
-        removals.push([start, sentenceRest === -1 ? sentence.length : start + sentenceRest]);
-        break;
+        removals.push([start, withItsElaboration(sentence, bodyEnd)]);
+        OUTPUT_METHOD_MARKER.lastIndex = bodyEnd;
       }
     }
     for (const [start, end] of removals.reverse()) {

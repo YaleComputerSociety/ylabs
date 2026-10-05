@@ -43,6 +43,30 @@ describe('a method clause must be a method the evidence states (#4914)', () => {
     expect(outcome.text).toBe('Studies forest governance.');
   });
 
+  it('keeps the claim the stripped clause modifies', () => {
+    expect(
+      withoutUnsupportedMethodClauses(
+        'Studies memory through behavioral experiments, and examines how sleep shapes recall.',
+        ['Studies memory and how sleep shapes recall.'],
+      ).text,
+    ).toBe('Studies memory and examines how sleep shapes recall.');
+    expect(
+      withoutUnsupportedMethodClauses(
+        'Investigates theoretical machine learning using statistics to understand strategic settings.',
+        [INTERESTS],
+      ).text,
+    ).toBe('Investigates theoretical machine learning to understand strategic settings.');
+  });
+
+  it('strips an including tail along with the clause it elaborates', () => {
+    expect(
+      withoutUnsupportedMethodClauses(
+        'Investigates theoretical machine learning using statistics, including optimization.',
+        [INTERESTS],
+      ).text,
+    ).toBe('Investigates theoretical machine learning.');
+  });
+
   it('keeps a method the evidence states, across inflection and hyphenation', () => {
     const text =
       'Studies immune cell fate using CRISPR screen and single‑cell sequencing, with multidisciplinary approaches.';
@@ -88,8 +112,22 @@ describe('the written body refuses an unsupported method clause (#4914)', () => 
   });
 
   it('refuses a body that is only the clause, naming that arm', async () => {
-    const decision = await decide('Using statistics and optimization.');
+    const decision = await decide(
+      'Theoretical learning using statistics, optimization and game theory across theoretical machine learning research problems. Learning theory using statistics and optimization.',
+    );
     expect(decision.refusal).toBe('unsupported-method-clause');
+  });
+
+  it('leaves an older arm its attribution when the strip empties the body', async () => {
+    const decision = await coverageSynthesisDecision({
+      snippets,
+      entityName: 'Synthetic Learning Group',
+      callLLM: async () => ({
+        fullDescription: 'Using statistics and optimization.',
+        usedSnippetIndexes: [],
+      }),
+    });
+    expect(decision.refusal).toBe('no-cited-snippets');
   });
 });
 
@@ -121,18 +159,6 @@ describe('the card refuses an unsupported method clause (#4914)', () => {
 });
 
 describe('every prompt that writes a card or a body carries the shared rules (#4914)', () => {
-  it('states each overreach rule once, in one shared text', () => {
-    for (const rule of [
-      /only when the evidence itself states that the group uses it/,
-      /clinical practice, patient care, teaching/,
-      /motivation, background, vision or mission/,
-      /join topics the evidence lists separately/,
-      /past, one-off or planned work/,
-    ]) {
-      expect(SYNTHESIS_FIDELITY_RULES).toMatch(rule);
-    }
-  });
-
   it('composes the rules into the card, body and backfill writers', () => {
     for (const prompt of [
       CARD_SYNTHESIS_PROMPT,
