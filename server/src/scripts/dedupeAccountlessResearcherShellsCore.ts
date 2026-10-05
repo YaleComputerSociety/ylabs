@@ -339,7 +339,27 @@ function surnameReadPastRosterNoise(displayName: unknown): string {
     .map((token) => token.replace(/\.+$/, ''))
     .filter(Boolean);
   while (tokens.length > 1 && GENERATIONAL_SUFFIX.test(tokens[tokens.length - 1])) tokens.pop();
-  return splitName(tokens.join(' ')).last;
+  const joined = joinDetachedSurnamePrefixes(tokens);
+  if (joined.length === 1 && joined.length < tokens.length) return joined[0];
+  return splitName(joined.join(' ')).last;
+}
+
+const DETACHED_SURNAME_PREFIX = /^(?:Mc|Mac)$/;
+
+// A label cleaner that split every case boundary stored "Mc Cormick" for McCormick, and
+// that copy then reads as a different surname from the record it duplicates (#4879).
+function joinDetachedSurnamePrefixes(tokens: ReadonlyArray<string>): string[] {
+  const joined: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const next = tokens[index + 1];
+    if (DETACHED_SURNAME_PREFIX.test(tokens[index]) && next && /^[A-Z]/.test(next)) {
+      joined.push(`${tokens[index]}${next}`);
+      index += 1;
+    } else {
+      joined.push(tokens[index]);
+    }
+  }
+  return joined;
 }
 
 function displayNameSurname(displayName: unknown): string {
@@ -618,8 +638,8 @@ const objectIdSeconds = (id: string): number =>
 
 /**
  * The survivor is the record the corpus already leans on: the most live role edges, then
- * the most healthy verified primary links, then the oldest record, so the choice is
- * reproducible and never alphabetical.
+ * the most healthy verified primary links, then the record an ORCID identifies, then the
+ * oldest record, so the choice is reproducible and never alphabetical.
  */
 export function accountlessClusterSurvivor(
   members: ReadonlyArray<AccountlessClusterMember>,
@@ -629,6 +649,7 @@ export function accountlessClusterSurvivor(
       right.liveRoleEdges - left.liveRoleEdges ||
       verifiedPrimaryProfileKeys(right.profileLinks).length -
         verifiedPrimaryProfileKeys(left.profileLinks).length ||
+      Number(Boolean(cleanOrcid(right.orcid))) - Number(Boolean(cleanOrcid(left.orcid))) ||
       objectIdSeconds(left.id) - objectIdSeconds(right.id) ||
       left.id.localeCompare(right.id),
   )[0];

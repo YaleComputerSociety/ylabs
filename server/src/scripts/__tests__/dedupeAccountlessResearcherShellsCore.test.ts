@@ -549,6 +549,36 @@ describe('planAccountlessClusterFolds', () => {
     expect(plan.foldTargetById.size).toBe(2);
   });
 
+  it('reads a detached Mc prefix as part of the surname and keeps the ORCID record (#4879)', () => {
+    const splitCopy = '00000001' + '0'.repeat(16);
+    const orcidCopy = '00000002' + '0'.repeat(16);
+    const plan = planAccountlessClusterFolds(
+      [
+        member(splitCopy, { profileLinks: page(11), displayName: 'Mc Fixture' }),
+        member(orcidCopy, {
+          profileLinks: page(11),
+          displayName: 'Sam McFixture',
+          orcid: '0000-0000-0000-0003',
+        }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.SURNAME_CONFLICT).toBe(0);
+    expect(plan.foldTargetById.get(splitCopy)).toBe(orcidCopy);
+  });
+
+  it('still refuses a detached Mc prefix in front of a different surname', () => {
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('27', { profileLinks: page(12), displayName: 'Mc Fixture' }),
+          member('28', { profileLinks: page(12), displayName: 'Sam McOther' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
+    ).toBe(1);
+  });
+
   it('refuses a whole group on any identifier, rank or surname disagreement', () => {
     expect(
       planAccountlessClusterFolds(
