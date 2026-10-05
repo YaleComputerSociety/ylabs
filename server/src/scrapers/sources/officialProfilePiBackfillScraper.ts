@@ -1063,7 +1063,7 @@ function classifyResearchHome(
 function untypedResearchHome(
   name: string,
 ): Pick<OfficialProfileResearchHome, 'kind' | 'entityType'> {
-  if (/\b(?:labs|laboratories|group|team|unit)\b/i.test(name))
+  if (/\b(?:labs|group|team|unit)\b/i.test(name))
     return { kind: 'lab', entityType: 'LAB' };
   return { kind: 'initiative', entityType: 'INITIATIVE' };
 }
