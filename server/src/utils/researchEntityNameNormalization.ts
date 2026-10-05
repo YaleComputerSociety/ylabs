@@ -132,3 +132,63 @@ export function stripResearchHomeNameCaptionWrapper(value: string): string {
   if (person === match[1].trim()) return value;
   return `${person}${match[2] ?? ''}`;
 }
+
+const LOWERCASE_HEADING_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'in',
+  'of',
+  'on',
+  'the',
+  'to',
+  'da',
+  'de',
+  'del',
+  'della',
+  'den',
+  'der',
+  'di',
+  'du',
+  'la',
+  'le',
+  'van',
+  'von',
+]);
+
+const MIXED_CASE_HEADING_SUFFIX_RE = /\s+(?:Faculty Research|Research|Lab|Laboratory|Group)$/;
+
+function titleCaseHeadingWord(word: string, isFirst: boolean): string {
+  const letters = word.replace(/[^\p{L}]/gu, '');
+  if (!letters) return word;
+  const lower = word.toLowerCase();
+  if (!isFirst && LOWERCASE_HEADING_WORDS.has(lower)) return lower;
+  if (letters.length <= 4 && !/[AEIOUY]/.test(letters)) return word;
+  return lower
+    .replace(
+      /(^|[-'’])(\p{L})/gu,
+      (_match, boundary: string, letter: string) => boundary + letter.toUpperCase(),
+    )
+    .replace(/^Mc(\p{L})/u, (_match, letter: string) => `Mc${letter.toUpperCase()}`);
+}
+
+/**
+ * A heading read off a site that sets its banner in capitals ("ROBIN Q. FIXTURE Faculty
+ * Research", "FIXTURE LAB") is recased word by word, keeping initials, short consonant-only
+ * acronyms and lowercase name particles. A heading with any lowercase letter before its
+ * suffix is the source's own casing and is left alone, as is a single all-caps word, which is
+ * as likely an acronym as a shout.
+ */
+export function recaseAllCapsResearchEntityName(value: string): string {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  const suffix = trimmed.match(MIXED_CASE_HEADING_SUFFIX_RE)?.[0] ?? '';
+  const head = suffix ? trimmed.slice(0, -suffix.length) : trimmed;
+  const letters = head.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 4 || letters !== letters.toUpperCase()) return value;
+  const words = head.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return value;
+  return `${words.map((word, index) => titleCaseHeadingWord(word, index === 0)).join(' ')}${suffix}`;
+}

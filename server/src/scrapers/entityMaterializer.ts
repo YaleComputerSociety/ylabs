@@ -71,6 +71,7 @@ import {
   collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  recaseAllCapsResearchEntityName,
   stripResearchHomeNameCaptionWrapper,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
@@ -1748,11 +1749,13 @@ export function materializedFieldValue(
     (field === 'name' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizeResearchEntityNameSmartQuotes(
-      normalizeResearchEntityNameDashes(
-        collapseDuplicateResearchHomeSuffix(
-          stripResearchHomeNamePersonCredentials(
-            stripResearchHomeNameCaptionWrapper(stripTrailingResearchHomeDescription(value)),
+    return recaseAllCapsResearchEntityName(
+      normalizeResearchEntityNameSmartQuotes(
+        normalizeResearchEntityNameDashes(
+          collapseDuplicateResearchHomeSuffix(
+            stripResearchHomeNamePersonCredentials(
+              stripResearchHomeNameCaptionWrapper(stripTrailingResearchHomeDescription(value)),
+            ),
           ),
         ),
       ),

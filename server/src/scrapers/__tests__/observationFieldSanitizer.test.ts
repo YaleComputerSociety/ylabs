@@ -620,3 +620,11 @@ describe('the size bound on observed fellowship prose (#4572)', () => {
     });
   });
 });
+
+describe('a research heading set in capitals by its source', () => {
+  it('is recased when a lane records it', () => {
+    expect(
+      sanitizeObservationField('researchEntity', 'name', 'ROBIN Q. FIXTURE Faculty Research').value,
+    ).toBe('Robin Q. Fixture Faculty Research');
+  });
+});
