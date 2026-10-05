@@ -20,7 +20,6 @@ import {
   descriptionStatesCreativePracticeEvidence,
   descriptionStatesResearch,
 } from '../utils/descriptionStatesResearch';
-import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -268,7 +267,7 @@ async function main(): Promise<void> {
 
   const rows = await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select(
-      '_id archived entityType kind departments school studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
+      '_id archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
     )
     .lean();
 
@@ -414,12 +413,9 @@ async function main(): Promise<void> {
         descriptionAffirmsNoResearch: descriptionAffirmsNoResearch(
           row as { shortDescription?: unknown; fullDescription?: unknown },
         ),
-        descriptionStatesCreativePractice:
-          decideCreativePractice(row as Parameters<typeof decideCreativePractice>[0])
-            .creativePractice ||
-          descriptionStatesCreativePracticeEvidence(
-            row as { shortDescription?: unknown; fullDescription?: unknown },
-          ),
+        descriptionStatesCreativePractice: descriptionStatesCreativePracticeEvidence(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
         hasForeignWebsite: hasForeignWebsite(
           row as { fieldProvenance?: unknown; websiteUrl?: unknown; website?: unknown },
           identityProfileUrl,
