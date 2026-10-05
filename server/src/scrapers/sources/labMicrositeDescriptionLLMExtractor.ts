@@ -1065,10 +1065,16 @@ const urlHostAndPath = (pageUrl: string): string => {
   }
 };
 
+const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
+
 const urlCarriesSurname = (pageUrl: string, surname: string): boolean =>
   comparableName(urlHostAndPath(pageUrl))
     .split(' ')
-    .some((token) => token.startsWith(surname) || token.endsWith(surname));
+    .some((token) =>
+      surname.length < MIN_AFFIX_MATCHED_SURNAME_LENGTH
+        ? token === surname
+        : token.startsWith(surname) || token.endsWith(surname),
+    );
 
 interface RowLead {
   personName?: string;

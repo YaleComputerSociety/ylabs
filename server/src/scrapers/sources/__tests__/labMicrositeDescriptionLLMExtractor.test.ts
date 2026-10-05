@@ -668,6 +668,45 @@ describe('descriptionPageNamesRowLead (#4809)', () => {
     ).toBe(true);
   });
 
+  it('matches a surname shorter than four letters only as a whole address token', () => {
+    const shortLead = { personName: 'Robin Ma', rowName: 'Ma Lab', kind: 'lab' };
+    const neverNamed = 'The section offers clinical services across the lifespan.';
+    for (const path of ['health', 'life', 'mathematics']) {
+      expect(
+        descriptionPageNamesRowLead({
+          ...shortLead,
+          pageUrl: `https://medicine.example.edu/${path}/research/`,
+          pageText: neverNamed,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        personName: 'Robin He',
+        rowName: 'He Lab',
+        pageUrl: 'https://medicine.example.edu/health/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        personName: 'Robin Li',
+        rowName: 'Li Lab',
+        pageUrl: 'https://medicine.example.edu/life/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...shortLead,
+        pageUrl: 'https://medicine.example.edu/people/ma/research/',
+        pageText: neverNamed,
+      }),
+    ).toBe(true);
+  });
+
   it('applies to no row without a known lead', () => {
     expect(
       descriptionPageNamesRowLead({ pageUrl: 'https://example.edu/', pageText: 'Anything.' }),
