@@ -637,3 +637,64 @@ describe('planAccountlessClusterFolds', () => {
     ).toBe(0);
   });
 });
+
+describe('decideShellMerge shared-row fold (#4911)', () => {
+  const account = (id: string, displayName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    tier: 'ACCOUNT' as const,
+    ...extra,
+  });
+  const decide = (shell: Record<string, unknown>, candidates: ReturnType<typeof account>[]) =>
+    decideShellMerge({ id: 'shell', ...shell }, new Map(), new Map(), [], new Map(), candidates);
+
+  it('folds a shell spelled with a middle initial into the account on the same row', () => {
+    expect(
+      decide({ displayName: 'Avery Q. Placeholder' }, [account('acct', 'Avery Placeholder')]),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'acct',
+      reason: 'MERGEABLE',
+      matchedOn: 'shared-row',
+    });
+  });
+
+  it('does not fold a different given name on the same row', () => {
+    expect(
+      decide({ displayName: 'Morgan Placeholder' }, [account('acct', 'Avery Placeholder')]),
+    ).toEqual({
+      merge: false,
+      reason: 'NO_CANONICAL',
+    });
+  });
+
+  it('refuses two agreeing records on the row', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder' }, [
+        account('acct-1', 'Avery Placeholder'),
+        account('acct-2', 'Avery Q. Placeholder'),
+      ]),
+    ).toEqual({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' });
+  });
+
+  it('refuses a conflicting ORCID and a professor folded onto a trainee', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder', orcid: '0000-0000-0000-0028' }, [
+        account('acct', 'Avery Placeholder', { orcid: '0000-0000-0000-0036' }),
+      ]),
+    ).toEqual({ merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' });
+    expect(
+      decide({ displayName: 'Avery Placeholder', title: 'Postdoctoral Associate' }, [
+        account('acct', 'Avery Placeholder', { title: 'Professor of Synthetic Studies' }),
+      ]).merge,
+    ).toBe(false);
+  });
+
+  it('never folds a record into one that does not outrank it', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder', accountId: 'a' }, [
+        account('acct', 'Avery Placeholder'),
+      ]),
+    ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
+  });
+});
