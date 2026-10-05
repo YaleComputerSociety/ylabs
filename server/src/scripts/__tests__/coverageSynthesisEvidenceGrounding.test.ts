@@ -4,8 +4,6 @@ import {
   buildWriterEvidenceSnippets,
   eligibleWriterGrants,
   orderWriterEvidence,
-  storedPageRequestKeys,
-  storedPayloadPageText,
   writerEvidenceRank,
 } from '../coverageSynthesisCore';
 import {
@@ -54,21 +52,21 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   });
 
   it('cites a model-text value found near-verbatim in the stored copy of its page', () => {
-    const page = `<html><body><nav>Home People</nav><p>${MODEL_TEXT}</p></body></html>`;
+    const page = `Home People ${MODEL_TEXT} Contact`;
     const snippets = buildWriterEvidenceSnippets(
       [observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/')],
       [],
-      { now: NOW, storedPageText: () => storedPayloadPageText({ html: page }) },
+      { now: NOW, storedPageText: () => page },
     );
     expect(snippets.map((snippet) => snippet.text)).toEqual([MODEL_TEXT]);
   });
 
   it('refuses a model-text value its stored page does not carry', () => {
-    const page = '<html><body><p>The lab studies coral reefs.</p></body></html>';
+    const page = 'The lab studies coral reefs.';
     const snippets = buildWriterEvidenceSnippets(
       [observation(MODEL_TEXT, 'fra-profile-research-synthesis', 'https://marsh.example.edu/')],
       [],
-      { now: NOW, storedPageText: () => storedPayloadPageText(page) },
+      { now: NOW, storedPageText: () => page },
     );
     expect(snippets).toEqual([]);
   });
@@ -131,15 +129,6 @@ describe('writer evidence order (#4867)', () => {
         'https://marsh.example.edu/',
       ),
     ).toBe(2);
-  });
-});
-
-describe('stored page copies (#4867)', () => {
-  it('looks a page up under the URL a lane normalizes before fetching', () => {
-    expect(storedPageRequestKeys('https://Marsh.example.edu')).toContain(
-      'page:https://marsh.example.edu/',
-    );
-    expect(storedPageRequestKeys('not a url')).toEqual([]);
   });
 });
 
@@ -242,5 +231,10 @@ describe('the writer refuses wrong attribution and past work (#4867)', () => {
       false,
     );
     expect(isPastCareerClauseSentence('As a postdoctoral fellow she studied T cells.')).toBe(true);
+    expect(
+      isPastCareerClauseSentence(
+        'Mentors students through their graduate research on immune cell fate.',
+      ),
+    ).toBe(false);
   });
 });

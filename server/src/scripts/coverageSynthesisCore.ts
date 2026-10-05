@@ -16,7 +16,6 @@ import {
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
-import { flattenHtmlToText } from '../scrapers/utils/htmlText';
 import { buildGrantCorpusSnippets } from './grantCorpusSynthesisCore';
 import { isOfficialYalePersonPageUrl } from './fraProfileSynthesisCore';
 
@@ -348,33 +347,4 @@ export function writtenBodyCardRepairFilter(sourceName: string): Record<string, 
     'fieldProvenance.fullDescription.sourceName': sourceName,
     studentVisibilityReasons: 'missing_card_description',
   };
-}
-
-/**
- * The fetch-cache keys a stored copy of one page can sit under, for the URL as cited and
- * as a lane normalizes it before fetching.
- */
-export function storedPageRequestKeys(url: string): string[] {
-  const forms = new Set([url]);
-  try {
-    forms.add(new URL(url).toString());
-  } catch {
-    return [];
-  }
-  return [...forms].flatMap((form) => [form, `page:${form}`, `rendered-page:v1:${form}`]);
-}
-
-/**
- * The text of a stored fetch payload, which lanes store as raw HTML or as an object
- * carrying it. Anything else is not a page copy.
- */
-export function storedPayloadPageText(payload: unknown): string {
-  if (typeof payload === 'string') return flattenHtmlToText(payload);
-  if (!payload || typeof payload !== 'object') return '';
-  const record = payload as Record<string, unknown>;
-  for (const key of ['html', 'body', 'content']) {
-    if (typeof record[key] === 'string' && record[key])
-      return flattenHtmlToText(record[key] as string);
-  }
-  return typeof record.text === 'string' ? record.text : '';
 }

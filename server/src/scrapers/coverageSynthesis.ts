@@ -230,7 +230,7 @@ const PAST_CAREER_CLAUSE = new RegExp(
     '\\bearlier\\s+in\\s+(?:his|her|their)\\s+career\\b',
     `\\b(?:as|while)\\s+an?\\s+${TRAINING_STAGE}\\s+(?:fellow|researcher|student|scholar|trainee|resident)\\b`,
     `\\bduring\\s+(?:his|her|their)\\s+(?:${TRAINING_STAGE}|residency|fellowship)\\b`,
-    `\\b(?:his|her|their)\\s+${TRAINING_STAGE}\\s+(?:work|research|training|studies|project)\\b`,
+    `\\b(?:his|her)\\s+${TRAINING_STAGE}\\s+(?:work|research|training|studies|project)\\b`,
   ].join('|'),
   'i',
 );

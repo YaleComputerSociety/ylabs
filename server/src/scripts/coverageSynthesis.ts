@@ -6,8 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { ScrapeSnapshot } from '../models/scrapeSnapshot';
-import { isModelTextSource } from '../scrapers/sourceCoverageRegistry';
 import {
   appendObservations,
   getSourceByName,
@@ -47,8 +45,6 @@ import {
   writerWritesAfterBodyAttempt,
   writerWritesFor,
   writtenBodyCardRepairFilter,
-  storedPageRequestKeys,
-  storedPayloadPageText,
   type WriterStep,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
@@ -102,43 +98,6 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
   countCoverageSynthesisRefusals(reports.map((report) => report.synthesisRefusal));
 
 type EntityRow = Record<string, any>;
-
-/**
- * Stored copies of the pages model-text observations cite, which is the only way such
- * an observation becomes writer evidence (#4867).
- */
-async function loadStoredPageText(
-  observations: ReadonlyArray<CoverageObservationLike>,
-): Promise<Map<string, string>> {
-  const keysBySource = new Map<string, Set<string>>();
-  const urlsByKey = new Map<string, Set<string>>();
-  for (const obs of observations) {
-    if (!isModelTextSource(obs.sourceName) || !obs.sourceUrl) continue;
-    const url = String(obs.sourceUrl);
-    const sourceKeys = keysBySource.get(String(obs.sourceName)) ?? new Set<string>();
-    keysBySource.set(String(obs.sourceName), sourceKeys);
-    for (const key of storedPageRequestKeys(url)) {
-      sourceKeys.add(key);
-      urlsByKey.set(key, (urlsByKey.get(key) ?? new Set<string>()).add(url));
-    }
-  }
-  const texts = new Map<string, string>();
-  const filters = [...keysBySource].flatMap(([sourceName, keys]) =>
-    keys.size > 0 ? [{ sourceName, requestKey: { $in: [...keys] } }] : [],
-  );
-  if (filters.length === 0) return texts;
-  const rows = (await ScrapeSnapshot.find({ $or: filters })
-    .select('requestKey payload')
-    .lean()) as Array<{ requestKey: string; payload: unknown }>;
-  for (const row of rows) {
-    const text = storedPayloadPageText(row.payload);
-    if (!text) continue;
-    for (const url of urlsByKey.get(row.requestKey) ?? []) {
-      texts.set(url, `${texts.get(url) ?? ''} ${text}`.trim());
-    }
-  }
-  return texts;
-}
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
   const projection =
@@ -358,10 +317,8 @@ async function main() {
       .select('field value sourceUrl sourceName confidence observedAt')
       .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
 
-    const storedPageText = await loadStoredPageText(observations);
     const snippets = buildWriterEvidenceSnippets(observations, entity.recentGrants, {
       websiteUrl: entity.websiteUrl,
-      storedPageText: (url) => (url ? storedPageText.get(url) : undefined),
     });
     report.snippets = snippets.length;
     const freshHash = writerEvidenceHash(snippets);
