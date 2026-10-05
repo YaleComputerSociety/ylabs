@@ -15,6 +15,7 @@ import {
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
+import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { buildGrantCorpusSnippets } from './grantCorpusSynthesisCore';
 import { isOfficialYalePersonPageUrl } from './fraProfileSynthesisCore';
@@ -211,6 +212,8 @@ export interface WriterEvidenceOptions {
   websiteUrl?: unknown;
   storedPageText?: StoredPageTextLookup;
   now?: Date;
+  /** The row's own refusals, so a value an operator refused never becomes evidence again. */
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -224,7 +227,8 @@ export function buildWriterEvidenceSnippets(
   recentGrants: unknown,
   options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
-  const ordered = orderWriterEvidence(observations, options.websiteUrl);
+  const admissible = refusedResolverObservations(observations, options.fieldValueRefusals).kept;
+  const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
   if (hasOwnResearchProse(fromPages)) return fromPages;

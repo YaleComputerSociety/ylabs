@@ -95,4 +95,17 @@ describe('ingest-verified extraction is writer evidence (#4867, owner decision)'
     const otherLane = { _id: 'e'.repeat(24), sourceName: 'dept-faculty-roster', startedAt: NOW };
     expect([...ingestVerifiedRunIds([atFloor, otherLane])]).toEqual(['d'.repeat(24)]);
   });
+
+  it('never reads a value the row refuses, even when the lane verified it', () => {
+    const refusals = {
+      fullDescription: [{ valueKey: PAGE_TEXT.toLowerCase(), rule: 'operator-refused' }],
+    };
+    expect(
+      buildWriterEvidenceSnippets(
+        markIngestVerifiedObservations([laneObservation(VERIFIED_RUN)], ingestVerifiedRunIds(runs)),
+        [],
+        { now: NOW, fieldValueRefusals: refusals },
+      ),
+    ).toEqual([]);
+  });
 });

@@ -12,7 +12,7 @@ Decision (owner, 2026-10-04): admit the microsite extraction lane's `fullDescrip
 The admission depends on a per-observation marker rather than the source name: the observation's `scrapeRunId` names a recorded `scrape_runs` row of that lane that started after #528 reached beta (`PAGE_GROUNDING_VERIFIED_SINCE`).
 The description backfill script writes rewrites and syntheses under the same source name with a fresh run id it never records, so its values match no recorded run and stay excluded; a lane run that predates the check is excluded too, and so is the lane's `shortDescription`, which can be a synthesized card.
 Every other model-text value still needs a durable stored copy of its page, and none exists yet.
-Measured read-only on Development before merge, 590 of the 4,193 live rows have no page evidence (270 of them `student_ready`) and 544 have no evidence even counting grants (229 `student_ready`); an all-rows writer run makes about 3,640 model calls.
+Measured read-only on Development before merge, 598 of the 4,193 live rows have no page evidence (272 of them `student_ready`) and 553 have no evidence even counting grants (232 `student_ready`), counting the row's own value refusals and excluding invalidated lane runs; an all-rows writer run makes about 3,635 model calls.
 The 174 live values from lane runs before the check stay excluded; admitting them would recover roughly 90 rows, which is the cost of not admitting unverified text.
 
 ## 2026-10-04: A Written Description Is Grounded In Fetched Page Text, And Grants Help Only When They Must (#4867)

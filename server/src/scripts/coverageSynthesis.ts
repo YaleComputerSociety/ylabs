@@ -106,7 +106,7 @@ type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
   const projection =
-    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl';
+    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl fieldValueRefusals';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME),
@@ -341,6 +341,7 @@ async function main() {
       entity.recentGrants,
       {
         websiteUrl: entity.websiteUrl,
+        fieldValueRefusals: entity.fieldValueRefusals,
       },
     );
     report.snippets = snippets.length;
