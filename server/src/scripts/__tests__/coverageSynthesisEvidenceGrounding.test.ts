@@ -244,30 +244,41 @@ describe('a merge survivor reads its merged-in rows only to fill empty evidence'
   const ROSTER_PROSE =
     'Studies asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
 
-  it('writes from a merged-in row when the survivor carries no evidence of its own', () => {
-    const snippets = buildWriterEvidenceSnippetsWithMergedInFill(
+  it('writes from a merged-in row when the survivor carries no evidence of its own', async () => {
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       [],
-      [observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh')],
+      async () => [
+        observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh'),
+      ],
       [],
       { now: NOW },
     );
     expect(snippets.map((snippet) => snippet.text)).toEqual([ROSTER_PROSE]);
   });
 
-  it('keeps the survivor\'s own evidence and never mixes in a merged-in row', () => {
-    const snippets = buildWriterEvidenceSnippetsWithMergedInFill(
+  it("keeps the survivor's own evidence without reading a merged-in row", async () => {
+    let mergedInRead = false;
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       [observation(OWN_PROSE, 'yale-research-official', 'https://marsh.example.edu/')],
-      [observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh')],
+      async () => {
+        mergedInRead = true;
+        return [
+          observation(ROSTER_PROSE, 'dept-faculty-roster', 'https://math.example.edu/people/marsh'),
+        ];
+      },
       [],
       { now: NOW },
     );
     expect(snippets.map((snippet) => snippet.text)).toEqual([OWN_PROSE]);
+    expect(mergedInRead).toBe(false);
   });
 
-  it('holds a merged-in row to the same evidence rule as the survivor', () => {
-    const snippets = buildWriterEvidenceSnippetsWithMergedInFill(
+  it('holds a merged-in row to the same evidence rule as the survivor', async () => {
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       [],
-      [observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/')],
+      async () => [
+        observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/'),
+      ],
       [],
       { now: NOW },
     );

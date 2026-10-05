@@ -343,20 +343,23 @@ async function main() {
     const mergedInAnchors = (mergedInBySurvivor.get(String(entity._id)) ?? []).flatMap((row) =>
       writerObservationAnchors({ entityKey: row.slug, entityId: row._id }),
     );
-    const mergedInObservations =
+    const loadMergedInObservations = async () =>
       mergedInAnchors.length > 0
-        ? ((await Observation.find({
-            entityType: 'researchEntity',
-            ...materializationReadScopeFilter(),
-            field: { $in: WRITER_EVIDENCE_FIELDS },
-            $or: mergedInAnchors,
-          })
-            .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
-            .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>)
+        ? markIngestVerifiedObservations(
+            (await Observation.find({
+              entityType: 'researchEntity',
+              ...materializationReadScopeFilter(),
+              field: { $in: WRITER_EVIDENCE_FIELDS },
+              $or: mergedInAnchors,
+            })
+              .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
+              .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>,
+            verifiedRunIds,
+          )
         : [];
-    const snippets = buildWriterEvidenceSnippetsWithMergedInFill(
+    const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       markIngestVerifiedObservations(observations, verifiedRunIds),
-      markIngestVerifiedObservations(mergedInObservations, verifiedRunIds),
+      loadMergedInObservations,
       entity.recentGrants,
       {
         websiteUrl: entity.websiteUrl,
