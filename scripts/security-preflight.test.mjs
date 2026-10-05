@@ -4614,7 +4614,15 @@ test('the resolver circuit breaker counts distinct hosts and trips open', () => 
     'utf8',
   );
   // Checked BEFORE the next probe, so a tripped breaker records nothing further.
-  assert.match(wiring, /deps\.resolverBreaker\?\.assertHealthy\(\);/);
+  // `settle` waits out a pending control check and then asserts health (#4865).
+  assert.match(wiring, /await deps\.resolverBreaker\?\.settle\(\);/);
+  assert.match(
+    source,
+    /async settle\(\): Promise<void> \{[\s\S]*?\n    this\.assertHealthy\(\);\n  \}/,
+  );
+  // A failing control is what trips a breaker that has one; it must never be read
+  // as a reason to keep going.
+  assert.match(source, /if \(!outcome\.healthy\) \{\s*this\.trip\(\);\s*return;/);
   assert.match(wiring, /if \(error instanceof ResolverUnhealthyError\) throw error;/);
   assert.match(wiring, /deps\.resolverBreaker\?\.recordFailure\(hostOf\(url\)\);/);
   assert.match(wiring, /deps\.resolverBreaker\?\.recordSuccess\(hostOf\(url\)\);/);

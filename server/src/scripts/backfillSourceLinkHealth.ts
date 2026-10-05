@@ -14,7 +14,10 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   ResolverCircuitBreaker,
   ResolverUnhealthyError,
+  type ResolverBreakerStats,
+  type ResolverControlProbe,
 } from '../scrapers/utils/resolverCircuitBreaker';
+import { probeResolverControl } from '../scrapers/utils/resolverControlProbe';
 import {
   HOST_THROTTLE_OVERRIDES,
   HostConcurrencyLimiter,
@@ -28,6 +31,7 @@ import {
   resolveSourceLinkHealthEntry,
   tlsFallbackCandidates,
   storedSourceLinkHealthByUrl,
+  isStoredUnresolvableVerdict,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
@@ -183,6 +187,8 @@ export interface SourceLinkHealthBackfillResult {
   preservedDecisiveVerdicts: number;
   indexSyncFailures: number;
   indexSyncDeferred: number;
+  /** What the resolver breaker did: control checks run, trips it avoided, trips. */
+  resolver: ResolverBreakerStats;
   byStatus: Record<string, number>;
   samples: Array<{
     slug: string;
@@ -273,6 +279,7 @@ export async function probeUncachedUrlsByHost(
       } else {
         deps.resolverBreaker?.recordSuccess(hostOf(url));
       }
+      await deps.resolverBreaker?.settle();
     } catch (error) {
       if (error instanceof ResolverUnhealthyError) throw error;
       deps.result.errors += 1;
@@ -284,7 +291,7 @@ export async function probeUncachedUrlsByHost(
     for (const [index, url] of bucket.entries()) {
       // Stop before the next probe rather than after it, so a tripped breaker
       // cannot record one more death on its way out.
-      deps.resolverBreaker?.assertHealthy();
+      await deps.resolverBreaker?.settle();
       if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
       await probe(url);
     }
@@ -300,7 +307,7 @@ export async function probeUncachedUrlsByHost(
       while (next < bucket.length) {
         const url = bucket[next];
         next += 1;
-        deps.resolverBreaker?.assertHealthy();
+        await deps.resolverBreaker?.settle();
         await probe(url, requestGate);
       }
     };
@@ -346,14 +353,20 @@ export async function runSourceLinkHealthBackfill(options: {
   paceDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
   resolverBreaker?: ResolverCircuitBreaker;
+  resolverControlProbe?: ResolverControlProbe;
   hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
-  const resolverBreaker = options.resolverBreaker ?? new ResolverCircuitBreaker();
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const resolverBreaker =
+    options.resolverBreaker ??
+    new ResolverCircuitBreaker({
+      controlProbe: options.resolverControlProbe ?? (() => probeResolverControl()),
+      sleep,
+    });
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -368,6 +381,7 @@ export async function runSourceLinkHealthBackfill(options: {
     preservedDecisiveVerdicts: 0,
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
+    resolver: resolverBreaker.stats,
     byStatus: {},
     samples: [],
   };
@@ -478,6 +492,9 @@ export async function runSourceLinkHealthBackfill(options: {
                 options.reprobeHealthyAfterDays,
                 planNow,
               );
+        for (const [url, stored] of storedSourceLinkHealthByUrl(entity.sourceLinkHealth)) {
+          resolverBreaker.noteStoredHostVerdict(hostOf(url), isStoredUnresolvableVerdict(stored));
+        }
         plans.push({ entity, candidates, toProbe, carried, tlsFallbacks: [] });
       } catch (error) {
         result.errors += 1;
@@ -585,6 +602,7 @@ export async function runSourceLinkHealthBackfill(options: {
     if (options.limit && result.scanned >= options.limit) break;
     if (page.length < PAGE_SIZE) break;
   }
+  result.resolver = resolverBreaker.stats;
   return result;
 }
 
@@ -620,6 +638,9 @@ async function main(): Promise<void> {
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    console.log(
+      `Resolver breaker: ${result.resolver.controlChecks} control check(s), ${result.resolver.tripsAvoided} trip(s) avoided, ${result.resolver.trips} trip(s), ${result.resolver.knownUnresolvableFailuresIgnored} failure(s) on hosts already stored as unresolvable not counted.`,
+    );
     if (result.indexSyncDeferred > 0) {
       console.log(
         `${result.indexSyncDeferred} updated row(s) were not resynced: index writes are deferred by SEARCH_INDEX_WRITES=deferred; re-sync the index from a checkout that reaches it (docs/data-refresh-runbook.md)`,
