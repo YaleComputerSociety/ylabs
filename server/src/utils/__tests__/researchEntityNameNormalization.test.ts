@@ -332,6 +332,8 @@ describe('recaseAllCapsResearchEntityName', () => {
     'YALE MRI CENTER',
     'AIDS RESEARCH PROGRAM',
     'FIXTURE LAB AT YALE',
+    'FIXT Lab',
+    'FIXTURE Lab',
   ])('leaves a heading that is not an all-caps run alone: %s', (input) => {
     expect(recaseAllCapsResearchEntityName(input)).toBe(input);
   });

@@ -197,6 +197,9 @@ export function recaseAllCapsResearchEntityName(value: string): string {
   const letters = head.replace(/[^\p{L}]/gu, '');
   if (letters.length < 3 || letters !== letters.toUpperCase()) return value;
   const words = head.split(/\s+/).filter(Boolean);
+  // One capitalised word before a suffix the source wrote in normal case is an acronym the
+  // source chose ("<ACRONYM> Lab"), not a shouted heading.
+  if (words.length === 1 && suffix !== suffix.toUpperCase()) return value;
   const recasedHead = words.map((word, index) =>
     titleCaseHeadingWord(word, index > 0 && index < words.length - 1),
   );
