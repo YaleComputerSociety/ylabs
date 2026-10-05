@@ -75,7 +75,9 @@ function profileUrlSpellsPerson(url: string, surnameTokens: string[], nihGiven: 
  * of the display name: the candidate's own official Yale profile URL must spell the
  * source's surname and one of its given names. A candidate whose display name uses a
  * different given name than any the source records, or whose profile leaf is opaque,
- * is never chosen, and more than one passing candidate refuses (#4893).
+ * is never chosen. More than one candidate agreeing on the name refuses even when only
+ * one carries a spelling URL, since a profile shows which record has a page, not which
+ * same-name person holds the grant (#4893).
  */
 export function selectCorroboratedCandidate(
   name: StructuredPersonName,
@@ -84,17 +86,19 @@ export function selectCorroboratedCandidate(
   const surnameTokens = nameTokens(name.last);
   const nihGiven = [...nameTokens(name.first), ...nameTokens(name.middle)];
   if (surnameTokens.length === 0 || nihGiven.length === 0) return undefined;
-  const passing = candidates.filter((candidate) => {
+  const nameAgreeing = candidates.filter((candidate) => {
     const tokens = nameTokens(candidate.displayName);
     const tail = surnameTail(tokens, surnameTokens);
-    if (tail < 1) return false;
-    if (!givenNameAgrees(tokens.slice(0, tail), nihGiven)) return false;
-    return candidate.officialProfileUrls.some((url) =>
-      profileUrlSpellsPerson(url, surnameTokens, nihGiven),
-    );
+    return tail >= 1 && givenNameAgrees(tokens.slice(0, tail), nihGiven);
   });
-  if (passing.length > 1) return 'ambiguous';
-  return passing[0];
+  if (nameAgreeing.length > 1) return 'ambiguous';
+  const [only] = nameAgreeing;
+  if (!only) return undefined;
+  return only.officialProfileUrls.some((url) =>
+    profileUrlSpellsPerson(url, surnameTokens, nihGiven),
+  )
+    ? only
+    : undefined;
 }
 
 async function defaultFindCandidates(surname: string): Promise<CorroborationCandidate[]> {
@@ -126,7 +130,9 @@ export async function resolveResearcherIdByCorroboratedName(
 ): Promise<ResearcherPersonNameResolution> {
   const surname = (name.last ?? '').trim();
   if (!surname) return { status: 'absent' };
-  const chosen = selectCorroboratedCandidate(name, await findCandidates(surname));
+  const candidates = await findCandidates(surname);
+  if (candidates.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+  const chosen = selectCorroboratedCandidate(name, candidates);
   if (chosen === 'ambiguous') return { status: 'ambiguous' };
   if (!chosen) return { status: 'absent' };
   const id = chosen._id;

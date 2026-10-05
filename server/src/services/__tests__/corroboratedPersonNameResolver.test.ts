@@ -4,6 +4,7 @@ import {
   selectCorroboratedCandidate,
   type CorroborationCandidate,
 } from '../corroboratedPersonNameResolver';
+import { SURNAME_FETCH_LIMIT } from '../../scrapers/utils/piNameMatch';
 
 const candidate = (displayName: string, ...urls: string[]): CorroborationCandidate => ({
   _id: '64b000000000000000000001',
@@ -65,6 +66,15 @@ describe('selectCorroboratedCandidate', () => {
       selectCorroboratedCandidate({ first: 'AVERY', last: 'PLACEHOLDER' }, [
         candidate('Avery Placeholder', profile('avery-placeholder')),
         candidate('Avery Placeholder', 'https://example.yale.edu/people/avery-placeholder'),
+      ]),
+    ).toBe('ambiguous');
+  });
+
+  it('refuses a same-name collision even when only one record carries a spelling URL', () => {
+    expect(
+      selectCorroboratedCandidate({ first: 'AVERY', last: 'PLACEHOLDER' }, [
+        candidate('Avery Placeholder', profile('avery-placeholder')),
+        candidate('Avery Placeholder'),
       ]),
     ).toBe('ambiguous');
   });
