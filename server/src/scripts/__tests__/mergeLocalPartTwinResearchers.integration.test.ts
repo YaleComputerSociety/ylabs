@@ -236,20 +236,16 @@ describe('the account residue left after the local-part twin merge (#4917)', () 
       .collection('accounts')
       .insertMany([empty, linked, loggedIn, planner, reviewer, admin, wellShaped]);
     await db.collection('researchers').insertOne(researcherRow(linked._id, 'Dana Fixture'));
-    await db
-      .collection('research_plans')
-      .insertOne({
-        _id: oid(),
-        accountId: planner._id,
-        target: { kind: 'RESEARCH_ENTITY', id: oid() },
-      });
-    await db
-      .collection('research_entities')
-      .insertOne({
-        _id: oid(),
-        slug: 'synthetic-row',
-        studentVisibilityReviewedByAccountId: reviewer._id,
-      });
+    await db.collection('research_plans').insertOne({
+      _id: oid(),
+      accountId: planner._id,
+      target: { kind: 'RESEARCH_ENTITY', id: oid() },
+    });
+    await db.collection('research_entities').insertOne({
+      _id: oid(),
+      slug: 'synthetic-row',
+      studentVisibilityReviewedByAccountId: reviewer._id,
+    });
     await db.collection('admin_grants').insertOne({ netid: admin.netid, status: 'ACTIVE' });
 
     const plan = await planLoneLocalPartArchives(db);
