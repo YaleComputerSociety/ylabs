@@ -13,6 +13,10 @@ import { isDescriptionGroundedInSource } from '../utils/officialResearchDescript
 import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
+import {
+  statesPersonalPastFraming,
+  restatesPastFramedEvidence,
+} from './utils/extractedDescriptionScope';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
@@ -171,6 +175,7 @@ export type CoverageSynthesisRefusal =
   | 'past-career-clause'
   | 'teaser-attribution'
   | 'unsupported-method-clause'
+  | 'past-framed-restatement'
   | 'source-narration'
   | 'over-length';
 
@@ -230,7 +235,9 @@ const PAST_CAREER_VERB =
  * Anchored on the clause's subject position rather than on the adverb, because
  * "previously" is ordinary research prose: "combines new and previously developed
  * methods" and "previously uncharacterized genes" must survive. The clause counts at a
- * sentence start, after a subject pronoun, or after a clause break.
+ * sentence start, after a subject pronoun, or after a clause break. The extractor's
+ * markers are read as well (`statesPersonalPastFraming`, #4932); neither list covers the
+ * other, so removing either loses cases.
  */
 const PAST_CAREER_CLAUSE = new RegExp(
   [
@@ -247,7 +254,7 @@ const PAST_CAREER_CLAUSE = new RegExp(
 );
 
 export function isPastCareerClauseSentence(sentence: string): boolean {
-  return PAST_CAREER_CLAUSE.test(sentence);
+  return PAST_CAREER_CLAUSE.test(sentence) || statesPersonalPastFraming(sentence);
 }
 
 /**
@@ -302,6 +309,20 @@ export function withoutUnsupportedSentences(description: string): UnsupportedSen
     description: null,
     refusal: pastCareer ? 'past-career-clause' : 'teaser-attribution',
   };
+}
+
+/**
+ * The body without a sentence that serves, as current work, what its snippets state only
+ * as training or a previous position (#4915). Null when nothing else is left.
+ */
+export function withoutPastFramedRestatements(
+  description: string,
+  snippetTexts: readonly string[],
+): string | null {
+  const sentences = splitDescriptionSentences(description);
+  const kept = sentences.filter((sentence) => !restatesPastFramedEvidence(sentence, snippetTexts));
+  if (kept.length === sentences.length) return description;
+  return kept.join(' ').trim() || null;
 }
 
 const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).length;
@@ -359,11 +380,13 @@ export async function coverageSynthesisDecision(
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
   if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
+  const snippetTexts = snippets.map((snippet) => snippet.text);
+  const currentOnly = withoutPastFramedRestatements(stripped.description, snippetTexts);
   const methodChecked = withoutUnsupportedMethodClauses(
-    stripped.description,
-    snippets.map((snippet) => snippet.text),
+    currentOnly ?? stripped.description,
+    snippetTexts,
   ).text;
-  const description = methodChecked ?? stripped.description;
+  const description = methodChecked ?? currentOnly ?? stripped.description;
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
@@ -388,6 +411,7 @@ export async function coverageSynthesisDecision(
   // itself, which is the #2440 shape of a counter that misreports its own outcome.
   if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  if (!currentOnly) return refuse('past-framed-restatement');
   if (!methodChecked) return refuse('unsupported-method-clause');
 
   const sourceUrls = Array.from(

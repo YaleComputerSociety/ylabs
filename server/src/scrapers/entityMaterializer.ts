@@ -249,6 +249,10 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import {
+  statesPersonalPastFraming,
+  restatesPastFramedEvidence,
+} from './utils/extractedDescriptionScope';
+import {
   isResearchAreaEchoDescription,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
@@ -679,6 +683,8 @@ export function isAcceptableWrittenBodyCard(input: {
     !isRefusedWrittenBodyCard(input.card, input.body, input.researchAreas) &&
     withoutUnsupportedMethodClauses(input.card, [input.body, ...(input.evidenceTexts ?? [])])
       .stripped === 0 &&
+    !statesPersonalPastFraming(input.card) &&
+    !restatesPastFramedEvidence(input.card, [input.body, ...(input.evidenceTexts ?? [])]) &&
     (!input.requireGrounding ||
       cardGroundingScore(input.card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
     input.servingBarAccepts(input.card)

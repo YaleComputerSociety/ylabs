@@ -39,7 +39,7 @@ const MAX_COVERAGE_SYNTHESIS_CONCURRENCY = 8;
  * Folded into the evidence hash beside the prompt hash, so a change to the code-side
  * refusal arms re-judges every row once, the way a prompt edit already does.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-4914-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-4915-v2';
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
   const args: CoverageSynthesisArgs = {

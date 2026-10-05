@@ -5,6 +5,7 @@
  */
 import { protectedSentenceList } from '../../utils/researchEntityBiographyDescriptionRepair';
 import { splitDescriptionSentences } from '../../utils/careerBiographyDescription';
+import { sharesAnInflectionalStem } from '../../utils/groundedCardSynthesis';
 
 const foldedCharacters = (value: string): string =>
   value
@@ -25,36 +26,71 @@ const POSSESSIVE = String.raw`(?:his|her|their|my)`;
 const POSTDOC = String.raw`post-?\s?doc(?:toral)?`;
 const TRAINING_STAGE = String.raw`(?:${POSTDOC}|graduate|doctoral|ph\.?\s?d\.?|dissertation|thesis|residency)`;
 
-const PAST_CONTEXT_MARKERS: RegExp[] = [
+const POSTDOC_PHASE = String.raw`${POSTDOC}\s+(?:training|fellowship|work|research|studies|stint|position|appointment)\b`;
+
+const pastContextMarkers = (
+  possessive: string,
+  postdocPhase: string,
+  formerPosition: readonly RegExp[],
+): RegExp[] => [
+  new RegExp(postdocPhase),
   new RegExp(
-    String.raw`\b${POSTDOC}\s+(?:training|fellowship|work|research|studies|stint|position|appointment)\b`,
+    String.raw`\b(?:during|throughout|while\s+completing)\s+${possessive}\s+${TRAINING_STAGE}\b`,
   ),
   new RegExp(
-    String.raw`\b(?:during|throughout|while\s+completing)\s+${POSSESSIVE}\s+${TRAINING_STAGE}\b`,
+    String.raw`\b(?:did|completed|pursued|undertook)\s+${possessive}\s+${TRAINING_STAGE}\b`,
   ),
   new RegExp(
-    String.raw`\b(?:did|completed|pursued|undertook)\s+${POSSESSIVE}\s+${TRAINING_STAGE}\b`,
-  ),
-  new RegExp(
-    String.raw`\b${POSSESSIVE}\s+(?:doctoral|dissertation|thesis|graduate)\s+(?:work|research|studies)\b`,
+    String.raw`\b${possessive}\s+(?:doctoral|dissertation|thesis|graduate)\s+(?:work|research|studies)\b`,
   ),
   new RegExp(
     String.raw`\bas\s+an?\s+(?:${POSTDOC}(?:\s+(?:fellow|scholar|researcher|associate))?|(?:graduate|doctoral|ph\.?\s?d\.?)\s+student)\b`,
   ),
+  ...formerPosition,
+  /\b(?:prior\s+to\s+joining|before\s+(?:joining|coming\s+to|moving\s+to))\b/,
+  new RegExp(String.raw`\bearlier\s+in\s+${possessive}\s+career\b`),
+  new RegExp(
+    String.raw`\bafter\s+(?:finishing|completing)\s+${possessive}\s+(?:scientific\s+)?training\b`,
+  ),
+];
+
+const PAST_CONTEXT_MARKERS = pastContextMarkers(POSSESSIVE, String.raw`\b${POSTDOC_PHASE}`, [
   /\b(?:previously|formerly)\s+(?:an?|the|at|with|in|served|worked|held)\b/,
   /\b(?:was|were|had\s+been)\s+(?:previously|formerly)\b/,
-  /\b(?:prior\s+to\s+joining|before\s+(?:joining|coming\s+to|moving\s+to))\b/,
-  new RegExp(String.raw`\bearlier\s+in\s+${POSSESSIVE}\s+career\b`),
-  /\bafter\s+(?:finishing|completing)\s+(?:his|her|their|my)\s+(?:scientific\s+)?training\b/,
-];
+]);
+
+/**
+ * Written prose has no page sentence around it, so a program's "supports postdoctoral
+ * research" and "mentors students through their graduate research" are current work:
+ * there a training phase reads as past only when it is one person's. So is a former
+ * position: "genes that were previously unknown" and "the center, formerly the X
+ * Program" are research prose and a unit's old name.
+ */
+const PERSONAL_POSSESSIVE = String.raw`(?:his|her|my)`;
+const PERSONAL_SUBJECT = String.raw`(?:he|she|i)`;
+const PERSONAL_PAST_CONTEXT_MARKERS = pastContextMarkers(
+  PERSONAL_POSSESSIVE,
+  String.raw`\b(?:${PERSONAL_POSSESSIVE}|did|completed|pursued|undertook|conducted)\s+${POSTDOC_PHASE}`,
+  [
+    /\b(?:previously|formerly)\s+(?:served|worked|held)\b/,
+    new RegExp(String.raw`(?:^|\b${PERSONAL_SUBJECT}\s+)(?:previously|formerly)\s+(?:at|with)\b`),
+    new RegExp(String.raw`\b${PERSONAL_SUBJECT}\s+(?:was|had\s+been)\s+(?:previously|formerly)\b`),
+  ],
+);
 
 const STATES_CURRENT_WORK = /\b(?:currently|now|presently|today|current)\b/;
 
-export function carriesPastContextMarker(text: string): boolean {
+const carriesAnyMarker = (markers: readonly RegExp[], text: string): boolean => {
   const value = comparable(text);
-  return (
-    !STATES_CURRENT_WORK.test(value) && PAST_CONTEXT_MARKERS.some((marker) => marker.test(value))
-  );
+  return !STATES_CURRENT_WORK.test(value) && markers.some((marker) => marker.test(value));
+};
+
+export function carriesPastContextMarker(text: string): boolean {
+  return carriesAnyMarker(PAST_CONTEXT_MARKERS, text);
+}
+
+export function statesPersonalPastFraming(text: string): boolean {
+  return carriesAnyMarker(PERSONAL_PAST_CONTEXT_MARKERS, text);
 }
 
 const SENTENCE_END = /[.!?]["')\]]?\s|\n/g;
@@ -104,6 +140,103 @@ export function withoutSentencesLiftedFromPastContext(value: string, pageText: s
     value,
     (sentence) => !carriesPastContextMarker(pageFramingOfSentence(sentence, pageText)),
   );
+}
+
+const RESTATEMENT_STOPWORDS = new Set([
+  'studies',
+  'study',
+  'studied',
+  'research',
+  'investigates',
+  'examines',
+  'develops',
+  'their',
+  'which',
+  'these',
+  'there',
+  'about',
+  'between',
+  'through',
+  'using',
+  'within',
+]);
+const MIN_RESTATEMENT_TOKENS = 3;
+const PAST_ONLY_SHARE = 0.5;
+
+const restatementTokens = (value: string): string[] => [
+  ...new Set(
+    (comparable(value).match(/[a-z][a-z-]{3,}/g) ?? []).filter(
+      (token) => token.length >= 5 && !RESTATEMENT_STOPWORDS.has(token),
+    ),
+  ),
+];
+
+const sharesStemWithAny = (token: string, words: readonly string[]): boolean =>
+  words.some((word) => sharesAnInflectionalStem(token, word));
+
+/**
+ * The sentence splitter keeps "Washington, D.C. Over the last 20 years, ..." whole, so a
+ * full stop before a capital also ends a piece unless it follows an honorific, which
+ * would cut a framing such as "Before joining Yale, Dr. X ..." off its subject.
+ */
+const PIECE_BREAK = /(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jr|Sr|al|vs))\.\s+(?=[A-Z])/;
+const CLAUSE_BREAK = /(?<=[;,:–—])\s*|\s+(?=\()/;
+/** "cloned X as a post-doc and subsequently identified Y": Y is what came after. */
+const FRAMING_ENDS =
+  /\s+(?=(?:and\s+)?(?:subsequently|since\s+then|went\s+on\s+to|has\s+since)\b)/i;
+
+interface FramedClause {
+  text: string;
+  past: boolean;
+}
+
+/**
+ * Each clause is judged by the start of its sentence up to and including itself, the way
+ * the extractor judges a copied clause by its page framing: "Her interests include X, and
+ * she previously served as Y" frames only Y as past, while "Before joining Yale she
+ * founded X, supporting Z" frames Z as past too.
+ */
+function framedClauses(text: string): FramedClause[] {
+  return sentencesOf(text)
+    .flatMap((sentence) => sentence.split(PIECE_BREAK))
+    .flatMap((piece) => piece.split(FRAMING_ENDS))
+    .flatMap((piece) => {
+      let prefix = '';
+      return piece
+        .split(CLAUSE_BREAK)
+        .filter(Boolean)
+        .map((clause) => {
+          prefix = `${prefix} ${clause}`;
+          return { text: clause, past: statesPersonalPastFraming(prefix) };
+        });
+    });
+}
+
+/**
+ * Whether a written sentence carries content its evidence states only as training or a
+ * previous position, without that framing (#4932): the writer turned "During her
+ * postdoctoral training she mapped X" into "Maps X". Judged by share, so a sentence that
+ * merely repeats one word of a past clause is not refused.
+ */
+export function restatesPastFramedEvidence(
+  sentence: string,
+  evidenceTexts: readonly string[],
+): boolean {
+  if (statesPersonalPastFraming(sentence)) return false;
+  const clauses = evidenceTexts.flatMap((text) => framedClauses(String(text ?? '')));
+  if (!clauses.some((clause) => clause.past)) return false;
+  const tokens = restatementTokens(sentence);
+  if (tokens.length < MIN_RESTATEMENT_TOKENS) return false;
+  const pastWords = clauses
+    .filter((clause) => clause.past)
+    .flatMap((c) => restatementTokens(c.text));
+  const currentWords = clauses
+    .filter((clause) => !clause.past)
+    .flatMap((clause) => restatementTokens(clause.text));
+  const pastOnly = tokens.filter(
+    (token) => sharesStemWithAny(token, pastWords) && !sharesStemWithAny(token, currentWords),
+  );
+  return pastOnly.length / tokens.length >= PAST_ONLY_SHARE;
 }
 
 const FIRST_PERSON_SINGULAR =
