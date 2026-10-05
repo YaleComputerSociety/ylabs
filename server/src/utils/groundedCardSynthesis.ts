@@ -22,6 +22,7 @@ import {
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
+import { withoutUnsupportedMethodClauses } from './methodClauseSupport';
 import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
@@ -713,6 +714,8 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
 
 export interface SynthesizeGroundedCardInput {
   fullDescription: unknown;
+  /** The evidence the body was written from, so a method the card names is checked against it (#4914). */
+  evidenceTexts?: readonly string[];
   entityName?: string;
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
@@ -748,9 +751,10 @@ export async function synthesizeGroundedCardDescription(
     acceptable(card) &&
     !isUngroundedSynthesizedCard({ card, body: full }) &&
     cardLineFitsBrowseCard(card);
+  const methodEvidence = [full, ...(input.evidenceTexts ?? [])];
   const attempt = async (previousAttempt?: string): Promise<string> => {
     try {
-      return normalizeCardText(
+      const card = normalizeCardText(
         await input.callLLM({
           fullDescription: full,
           entityName: input.entityName || '',
@@ -758,6 +762,7 @@ export async function synthesizeGroundedCardDescription(
           previousAttempt,
         }),
       );
+      return card ? (withoutUnsupportedMethodClauses(card, methodEvidence).text ?? '') : '';
     } catch {
       return '';
     }

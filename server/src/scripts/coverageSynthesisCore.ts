@@ -39,7 +39,7 @@ const MAX_COVERAGE_SYNTHESIS_CONCURRENCY = 8;
  * Folded into the evidence hash beside the prompt hash, so a change to the code-side
  * refusal arms re-judges every row once, the way a prompt edit already does.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-4867-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-4914-v1';
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
   const args: CoverageSynthesisArgs = {
@@ -364,13 +364,17 @@ export function storedWriterEvidenceHash(
 /**
  * The rows whose card the written-body card defect left unservable: live, serving the
  * written body, and held on `missing_card_description`. `--rederive-cards` re-projects
- * only these, and calls the writer model for none of them.
+ * only these, and calls the writer model for none of them; with `--all` it re-projects
+ * every live row serving the written body, which is how a card rule change reaches them.
  */
-export function writtenBodyCardRepairFilter(sourceName: string): Record<string, unknown> {
+export function writtenBodyCardRepairFilter(
+  sourceName: string,
+  options: { allWrittenRows?: boolean } = {},
+): Record<string, unknown> {
   return {
     archived: { $ne: true },
     'fieldProvenance.fullDescription.sourceName': sourceName,
-    studentVisibilityReasons: 'missing_card_description',
+    ...(options.allWrittenRows ? {} : { studentVisibilityReasons: 'missing_card_description' }),
   };
 }
 

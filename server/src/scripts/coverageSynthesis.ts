@@ -110,7 +110,7 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
     'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl fieldValueRefusals';
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
-      ...writtenBodyCardRepairFilter(SOURCE_NAME),
+      ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
       ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
     })
       .select(projection)

@@ -12,6 +12,7 @@ import { isSourcePageNarrationDescription } from '../utils/researchEntityDescrip
 import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
+import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
@@ -169,6 +170,7 @@ export type CoverageSynthesisRefusal =
   | 'internal-vocabulary'
   | 'past-career-clause'
   | 'teaser-attribution'
+  | 'unsupported-method-clause'
   | 'source-narration'
   | 'over-length';
 
@@ -356,8 +358,12 @@ export async function coverageSynthesisDecision(
   const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
-  const description = stripped.description;
-  if (!description) return refuse(stripped.refusal ?? 'past-career-clause');
+  if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
+  const description = withoutUnsupportedMethodClauses(
+    stripped.description,
+    snippets.map((snippet) => snippet.text),
+  ).text;
+  if (!description) return refuse('unsupported-method-clause');
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(

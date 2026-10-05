@@ -6,6 +6,7 @@ import {
 import { asResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
+import { withSynthesisFidelityRules } from '../scrapers/prompts';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { stripFacultyResearchAreaNameTemplateSuffix } from '../utils/researchEntityDescriptionText';
 
@@ -54,9 +55,11 @@ const PERSON_SYNTHESIS_SYSTEM_PROMPT = [
 ].join(' ');
 
 export function synthesisSystemPromptFor(entityType?: string): string {
-  return isNonLabPersonScopedEntityType(entityType)
-    ? PERSON_SYNTHESIS_SYSTEM_PROMPT
-    : LAB_SYNTHESIS_SYSTEM_PROMPT;
+  return withSynthesisFidelityRules(
+    isNonLabPersonScopedEntityType(entityType)
+      ? PERSON_SYNTHESIS_SYSTEM_PROMPT
+      : LAB_SYNTHESIS_SYSTEM_PROMPT,
+  );
 }
 
 const STOPWORDS = new Set([

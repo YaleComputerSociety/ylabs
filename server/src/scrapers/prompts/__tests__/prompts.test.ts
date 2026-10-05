@@ -4,6 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
+  COVERAGE_SYNTHESIS_PROMPT,
+  SYNTHESIS_FIDELITY_RULES,
+  withSynthesisFidelityRules,
   CARD_SYNTHESIS_PROMPT,
   DESCRIPTION_EXTRACTION_PROMPT,
   UNDERGRAD_EXTRACTION_PROMPT,
@@ -20,7 +23,9 @@ const readPromptFile = (fileName: string): string =>
 
 describe('prompt loader', () => {
   it('maps each export to the content of its named .md file', () => {
-    expect(CARD_SYNTHESIS_PROMPT).toBe(readPromptFile('cardSynthesis.md'));
+    expect(CARD_SYNTHESIS_PROMPT).toBe(
+      withSynthesisFidelityRules(readPromptFile('cardSynthesis.md')),
+    );
     expect(DESCRIPTION_EXTRACTION_PROMPT).toBe(readPromptFile('micrositeDescriptionExtraction.md'));
     expect(UNDERGRAD_EXTRACTION_PROMPT).toBe(readPromptFile('undergradExtraction.md'));
   });
@@ -41,5 +46,17 @@ describe('prompt loader', () => {
 
   it('keeps the retired legacy undergrad prompt file out of the tree', () => {
     expect(fs.existsSync(path.join(promptsDir, 'undergradExtractionLegacy.md'))).toBe(false);
+  });
+});
+
+describe('the shared synthesis rules (#4914)', () => {
+  it('compose into every prompt that writes a card or a body', () => {
+    expect(SYNTHESIS_FIDELITY_RULES).toBe(readPromptFile('synthesisFidelityRules.md').trim());
+    expect(CARD_SYNTHESIS_PROMPT).toContain(SYNTHESIS_FIDELITY_RULES);
+    expect(COVERAGE_SYNTHESIS_PROMPT).toContain(SYNTHESIS_FIDELITY_RULES);
+  });
+
+  it('change the card prompt hash when the rules change', () => {
+    expect(CARD_SYNTHESIS_PROMPT_HASH).not.toBe(sha256(readPromptFile('cardSynthesis.md')));
   });
 });

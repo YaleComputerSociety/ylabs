@@ -1350,6 +1350,9 @@ Only `manual-pi-edit` is not outranked.
 A new refusal arm goes after the older arms so their counts keep their meaning, with one exception that is deliberate: `source-narration` runs before `quality-bar`, because the quality bar blanks the same shape through the serve sanitizer and would report it as a generic quality verdict.
 `isSourcePageNarrationDescription` also covers possessive and next-source narration ("Her Yale profile lists ...", "The site presents ...", "the official next source for students to review"); its qualifier words are a closed list, because an open slot reads "the tumor's expression profile identifies" as narration.
 
+A new prompt that writes a card or a body composes `withSynthesisFidelityRules` rather than restating the rules (#4914), and any new card or body writer runs `withoutUnsupportedMethodClauses` against the evidence the text was written from, never against the text itself.
+That check normalizes before matching: Unicode hyphens are folded, a compound is read whole and in parts, words compare through `sharesAnInflectionalStem` or a seven-letter shared prefix, and a bare "include", "including" or "with interests in" is not a method context, because those introduce the interest lists the check exists to stop.
+
 #### FACULTY_RESEARCH_AREA descriptions are a synthesis problem, not an extraction problem
 
 An FRA usually has no lab site, so its only source is the professor's official Yale profile page, and the main prose block there is a biography.

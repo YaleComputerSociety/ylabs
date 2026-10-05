@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-05: A Card Or Body Names A Method Only When Its Evidence States It (#4914)
+
+The graded sample after #4867 found overreach on 27 of 116 graded rows, mostly in the card line: listed interests, publication topics, emphases or a unit's name restated as "using X and Y", clinical or teaching interests served as research, a mission or vision sentence turned into an activity, separately listed topics joined into one claim, and past or one-off work stated as current research.
+Decision: every prompt that writes a card or a body carries one shared rule text (`server/src/scrapers/prompts/synthesisFidelityRules.md`), composed into the card synthesis prompt, the written-description prompt and the backfill writers rather than copied.
+A deterministic check backs the first rule: a "using", "via", "through", "by means of", "employing" or "leveraging" clause in a written body or a synthesized card is kept only when each listed item shares a word with a method-introducing context in the evidence the text was written from, and is otherwise stripped, or refused as `unsupported-method-clause` when nothing is left.
+The other four rules are prompt rules only, because no deterministic shape separates them from correct prose.
+Calibrated read-only over the 3,571 `student_ready` Development rows: of 1,636 cards with such a clause the check strips 532 and refuses 8, and of 867 bodies it strips 119 and refuses 1; a hand check of 20 hits found 18 correct, and of 20 non-hits found 18 correct.
+The writer contract version and the card prompt hash change, so the next writer run re-judges every row and the next microsite extraction run re-derives its cards.
+
 ## 2026-10-04: A Description The Extractor Verified Against Its Fetched Page Is Page Text (#4867)
 
 The strict #4867 rule left 2,074 of the 3,908 rows that carry writer evidence with no page evidence, because almost no durable page copies exist.
