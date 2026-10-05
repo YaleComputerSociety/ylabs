@@ -303,7 +303,9 @@ Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link
 The verified-profile arm exists because a programme roster mints under a go-by name and the directory account under the legal one, so the two records never share a name; the same live official profile page held as primary identity by both is the evidence that joins them.
 The arm requires `healthStatus: HEALTHY` rather than `verifiedAt`, because every writer and every probe stamps `verifiedAt`, dead or unprobed links included.
 A healthy probe proves only that the page is live, not who it is about, so the vetoes below carry the identity check.
+Health is a verdict about the URL, so a shell's copy nobody has probed yet (`UNKNOWN`) counts when another record holds the same page key as `HEALTHY`; a copy probed as anything else does not (#4920).
 It folds only into an account-backed record and applies two vetoes to each holder of the page before counting them: an incompatible surname, read past credentials after a comma, generational suffixes and trailing periods, and one title owning research while the other states a trainee rank, because the one measured counterexample was a trainee whose official link pointed at a professor's page.
+The surname veto also accepts a compound surname: one record's whole surname appearing in the other's name after its given name, together with an agreeing given name (equal, a short form, or one of the other's given-name tokens), so a hyphenated, two-part or married surname matches its own part while two different compound surnames sharing one part still refuse (#4920).
 It resolves to nobody when two accounts survive those vetoes, so a wrong-person holder drops out rather than making the page ambiguous.
 Measured on Development on 2026-10-04, before the arm required a `HEALTHY` link, it folded 9 shells and refused that one pair; the healthy gate cannot fold more, and the count needs re-measuring.
 The shared-row arm exists because two lanes can mint one row's lead under two spellings, a middle initial, a middle or short given name, or a dropped accent, and the exact-name arm never joins those (#4911).
@@ -318,6 +320,8 @@ A page or name that any record outside the group also holds joins nobody, becaus
 The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with every pair of surnames compared, and with credentials after a comma, generational suffixes and trailing periods read past.
 A standalone `Mc` or `Mac` token is read as part of the surname that follows it, because a label cleaner that split every case boundary stored such a surname as two words (#4879).
 Measured on Development on 2026-10-04 with that change: 3 groups, 2 folded, 1 refused on two different ORCIDs.
+The cluster fold applies the same borrowed health verdict and the same compound-surname rule.
+Measured on Development on 2026-10-05 (dry run) with both: of 24 official primary profiles held by more than one live record, 16 fold; the 8 left are 3 pairs of two account-backed records where one account is keyed on an email local part, 4 holders that are different people (a trainee holding a professor's page, or two bare netids), and 1 pair carrying two different ORCIDs.
 Measured on Development on 2026-10-04, before pages and names held outside the group were excluded: 17 groups, 15 folded (66 records), 2 refused, one on two different ORCIDs and one on a record with no given name; the exclusion cannot fold more, and the count needs re-measuring.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 

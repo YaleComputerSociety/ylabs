@@ -173,14 +173,34 @@ export interface VerifiedProfileEntry extends CanonicalNetidEntry {
  * is why the fold still applies the surname, rank, ORCID, and netid vetoes.
  */
 export function verifiedPrimaryProfileKeys(profileLinks: unknown): string[] {
+  return primaryProfileKeysWithHealth(profileLinks, ['HEALTHY']);
+}
+
+/**
+ * Health is a verdict about a URL, not about the record holding it, so a copy nobody has
+ * probed yet is confirmed by another record's HEALTHY copy of the same page key. Only an
+ * UNKNOWN copy borrows that verdict: a copy probed as anything else disagrees with it.
+ */
+export function confirmedPrimaryProfileKeys(
+  profileLinks: unknown,
+  healthyKeys: ReadonlySet<string>,
+): string[] {
+  return primaryProfileKeysWithHealth(profileLinks, ['HEALTHY', 'UNKNOWN']).filter((key) =>
+    healthyKeys.has(key),
+  );
+}
+
+function primaryProfileKeysWithHealth(
+  profileLinks: unknown,
+  acceptedHealth: ReadonlyArray<string>,
+): string[] {
   if (!Array.isArray(profileLinks)) return [];
   const keys = new Set<string>();
   for (const link of profileLinks) {
     if (!link || typeof link !== 'object') continue;
     const { kind, purpose, healthStatus, url } = link as Record<string, unknown>;
-    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || healthStatus !== 'HEALTHY') {
-      continue;
-    }
+    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY') continue;
+    if (typeof healthStatus !== 'string' || !acceptedHealth.includes(healthStatus)) continue;
     const key = officialProfileIdentityUrlKey(url);
     if (key) keys.add(key);
   }
@@ -298,17 +318,19 @@ function decideVerifiedProfileFold(
   shell: ShellIdentity,
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]>,
 ): ShellMergeDecision | undefined {
-  const keys = verifiedPrimaryProfileKeys(shell.profileLinks);
+  const keys = confirmedPrimaryProfileKeys(
+    shell.profileLinks,
+    new Set(verifiedProfileIndex.keys()),
+  );
   if (keys.length === 0) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
-  const shellSurname = displayNameSurname(shell.displayName);
   const holders = new Map<string, VerifiedProfileCandidate>();
   for (const key of keys) {
     for (const candidate of verifiedProfileIndex.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
       if (candidate.tier !== 'ACCOUNT') continue;
       if (identityTierStrength(candidate.tier) <= shellStrength) continue;
-      if (!surnamesCompatible(shellSurname, displayNameSurname(candidate.displayName))) continue;
+      if (!profileHolderSurnamesAgree(shell.displayName, candidate.displayName)) continue;
       if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
       holders.set(candidate.id, candidate);
     }
@@ -368,8 +390,58 @@ function joinDetachedSurnamePrefixes(tokens: ReadonlyArray<string>): string[] {
   return joined;
 }
 
-function displayNameSurname(displayName: unknown): string {
-  return surnameReadPastRosterNoise(displayName);
+const foldNameToken = (token: string): string =>
+  token
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z']/g, '');
+
+function foldedNameTokens(displayName: unknown): string[] {
+  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  return beforeCredentials
+    .split(/[\s-]+/)
+    .map(foldNameToken)
+    .filter((token) => token.length > 1 && !GENERATIONAL_SUFFIX.test(token));
+}
+
+function givenNameAgrees(given: string, otherGivenTokens: ReadonlyArray<string>): boolean {
+  const [otherFirst] = otherGivenTokens;
+  if (!otherFirst) return false;
+  if (given === otherFirst) return true;
+  const [shorter, longer] = given.length <= otherFirst.length ? [given, otherFirst] : [otherFirst, given];
+  if (shorter.length >= 3 && longer.startsWith(shorter)) return true;
+  return otherGivenTokens.includes(given);
+}
+
+// One record carries the whole surname and the other carries part of it: a hyphenated or
+// two-part surname, or a married name added to the birth name.
+function surnameContainedInOtherName(name: unknown, otherName: unknown): boolean {
+  const surnameTokens = foldedNameTokens(surnameReadPastRosterNoise(name));
+  const tokens = foldedNameTokens(name);
+  const otherTokens = foldedNameTokens(otherName);
+  if (surnameTokens.length === 0 || tokens.length < 2 || otherTokens.length < 2) return false;
+  for (let start = 1; start + surnameTokens.length <= otherTokens.length; start += 1) {
+    const window = otherTokens.slice(start, start + surnameTokens.length);
+    if (window.every((token, offset) => token === surnameTokens[offset])) {
+      return givenNameAgrees(tokens[0], otherTokens.slice(0, start));
+    }
+  }
+  return false;
+}
+
+/**
+ * The surname veto for two records a shared page already joins. A compound surname reads
+ * as a different last token from its own part, so the veto also accepts one record's
+ * whole surname appearing in the other's name, but only together with an agreeing given
+ * name (#4920). Two different compound surnames that share one part still disagree.
+ */
+export function profileHolderSurnamesAgree(left: unknown, right: unknown): boolean {
+  return (
+    surnamesCompatible(surnameReadPastRosterNoise(left), surnameReadPastRosterNoise(right)) ||
+    surnameContainedInOtherName(left, right) ||
+    surnameContainedInOtherName(right, left)
+  );
 }
 
 // A healthy link can still point at the wrong person, and the one measured case was a
@@ -657,8 +729,9 @@ const departmentKey = (value: unknown): string =>
 function clusterKeys(
   member: AccountlessClusterMember,
   heldElsewhere: { pages: ReadonlySet<string>; names: ReadonlySet<string> },
+  healthyKeys: ReadonlySet<string>,
 ): string[] {
-  const pageKeys = verifiedPrimaryProfileKeys(member.profileLinks)
+  const pageKeys = confirmedPrimaryProfileKeys(member.profileLinks, healthyKeys)
     .filter((key) => !heldElsewhere.pages.has(key))
     .map((key) => `page::${key}`);
   const name = normalizeResearcherName(member.displayName);
@@ -689,12 +762,12 @@ function clusterRefusal(
       .filter((verdict) => verdict !== 'states_no_rank'),
   );
   if (verdicts.size > 1) return 'TITLE_CONFLICT';
-  const surnames = members
-    .map((member) => surnameReadPastRosterNoise(member.displayName))
-    .filter(Boolean);
+  const named = members
+    .map((member) => member.displayName)
+    .filter((displayName) => Boolean(surnameReadPastRosterNoise(displayName)));
   if (
-    surnames.some((surname, index) =>
-      surnames.slice(index + 1).some((other) => !surnamesCompatible(surname, other)),
+    named.some((name, index) =>
+      named.slice(index + 1).some((other) => !profileHolderSurnamesAgree(name, other)),
     )
   ) {
     return 'SURNAME_CONFLICT';
@@ -737,8 +810,13 @@ export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
 ): AccountlessClusterPlan {
+  const healthyKeys = new Set(
+    [...members, ...nonMembers].flatMap((record) => verifiedPrimaryProfileKeys(record.profileLinks)),
+  );
   const heldElsewhere = {
-    pages: new Set(nonMembers.flatMap((record) => verifiedPrimaryProfileKeys(record.profileLinks))),
+    pages: new Set(
+      nonMembers.flatMap((record) => confirmedPrimaryProfileKeys(record.profileLinks, healthyKeys)),
+    ),
     names: new Set(
       nonMembers
         .map((record) => normalizeResearcherName(record.displayName))
@@ -754,7 +832,7 @@ export function planAccountlessClusterFolds(
   };
   const firstByKey = new Map<string, string>();
   for (const member of members) {
-    for (const key of clusterKeys(member, heldElsewhere)) {
+    for (const key of clusterKeys(member, heldElsewhere, healthyKeys)) {
       const first = firstByKey.get(key);
       if (first) parent.set(find(member.id), find(first));
       else firstByKey.set(key, member.id);

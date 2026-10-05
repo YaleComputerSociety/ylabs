@@ -430,10 +430,49 @@ describe('decideShellMerge verified-profile arm', () => {
     });
   });
 
-  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])('ignores a link whose health is %s', (status) => {
+  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])(
+    'ignores an account link whose health is %s',
+    (status) => {
+      const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
+      expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+    },
+  );
+
+  it.each(['UNAVAILABLE', undefined])('ignores a shell link whose health is %s', (status) => {
     const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
     expect(decide(shell({ profileLinks: unhealthy }), [account()]).reason).toBe('NO_CANONICAL');
-    expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('lets an unprobed shell link borrow the account copy of the same page (#4920)', () => {
+    const unprobed = verified(page).map((link) => ({ ...link, healthStatus: 'UNKNOWN' }));
+    expect(decide(shell({ profileLinks: unprobed }), [account()])).toMatchObject({
+      merge: true,
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it.each([
+    ['Sam Fixture', 'Sam Fixture-Sample'],
+    ['Sam Fixture-Sample', 'Sam Fixture'],
+    ['Sam Fixture', 'Sam Fixture Sample'],
+    ['Sam Fixture', 'Samuel Fixture Sample'],
+    ['Lee Fixture', 'Ana-Lee Fixture Sample'],
+    ['Sam Fíxture', 'Sam Fixture Sample'],
+  ])('accepts a compound surname that contains the other (%s, %s)', (shellName, accountName) => {
+    expect(
+      decide(shell({ displayName: shellName }), [account({ displayName: accountName })]),
+    ).toMatchObject({ merge: true, matchedOn: 'verified-profile' });
+  });
+
+  it.each([
+    ['Sam Alpha-Fixture', 'Sam Beta-Fixture'],
+    ['Sam Fixture', 'Kim Fixture Sample'],
+    ['Sam Fixture', 'Fixture Sample'],
+    ['Sam Other', 'Sam Fixture Sample'],
+  ])('still refuses surnames that do not agree (%s, %s)', (shellName, accountName) => {
+    expect(
+      decide(shell({ displayName: shellName }), [account({ displayName: accountName })]).reason,
+    ).toBe('NO_CANONICAL');
   });
 
   it('ignores a non-primary link', () => {
@@ -618,6 +657,35 @@ describe('planAccountlessClusterFolds', () => {
         [],
       ).refusedGroups.SURNAME_CONFLICT,
     ).toBe(1);
+  });
+
+  it('groups an unprobed copy of a page another record holds healthy (#4920)', () => {
+    const unprobed = page(13).map((link) => ({ ...link, healthStatus: 'UNKNOWN' }));
+    const grouped = planAccountlessClusterFolds(
+      [
+        member('29', { profileLinks: page(13), liveRoleEdges: 1 }),
+        member('30', { profileLinks: unprobed, displayName: 'Sam Fixture Jr.' }),
+      ],
+      [],
+    );
+    expect(grouped.foldTargetById.get('30'.padStart(24, '0'))).toBe('29'.padStart(24, '0'));
+    const nobodyProbed = planAccountlessClusterFolds(
+      [member('31', { profileLinks: unprobed }), member('32', { profileLinks: unprobed })],
+      [],
+    );
+    expect(nobodyProbed.groups).toBe(0);
+  });
+
+  it('folds a group whose surnames differ only by a compound part (#4920)', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('33', { profileLinks: page(14), displayName: 'Sam Fixture' }),
+        member('34', { profileLinks: page(14), displayName: 'Sam Fixture-Sample' }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.SURNAME_CONFLICT).toBe(0);
+    expect(plan.foldedGroups).toBe(1);
   });
 
   it('joins nobody on a page or name a record outside the group also holds', () => {
