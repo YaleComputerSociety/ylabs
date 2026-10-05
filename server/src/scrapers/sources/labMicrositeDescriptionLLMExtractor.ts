@@ -67,7 +67,16 @@ import {
 } from '../utils/mapWithConcurrency';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
-import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
+import {
+  extractElementTextWithBlockSeparators,
+  extractElementTextWithLineBreaks,
+  plainTextContent,
+} from '../utils/htmlText';
+import {
+  withoutMemberFirstPersonSentences,
+  withoutSentencesLiftedFromPastContext,
+} from '../utils/extractedDescriptionScope';
+import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import {
   evidenceUrlCiters,
   institutionalEvidenceHosts,
@@ -1016,13 +1025,16 @@ async function storedLaneDescriptionIsAdmissibleOnCitedPage(
   pages: FetchedDescriptionPage[],
   kind: DescriptionEntityKind,
   rowLead: RowLead,
+  copyScope: ExtractedCopyScope,
 ): Promise<boolean> {
   const cited = await storedLaneDescriptionOnFetchedPage(sourceName, entityRef, pages);
   if (!cited) return true;
   const pageText = fetchedDescriptionPageText(cited.page, kind);
+  const citedPageText = htmlToTextLines(cited.page.html, cited.page.url);
   return (
     isDescriptionGroundedInSource(cited.value, pageText) &&
-    descriptionPageNamesRowLead({ ...rowLead, pageUrl: cited.page.url, pageText })
+    descriptionPageNamesRowLead({ ...rowLead, pageUrl: cited.page.url, pageText }) &&
+    copyWithinPageSubjectAndTense(cited.value, { ...copyScope, citedPageText }) === cited.value
   );
 }
 
@@ -1420,16 +1432,46 @@ function usefulShortDescription(value: unknown, fullDescription: string): string
   return isServableCardLine(derived, fullDescription) ? derived : '';
 }
 
-export function htmlToText(html: string, pageUrl?: string): string {
-  if (!html) return '';
+function pageBodyWithoutOtherSubjects(html: string, pageUrl?: string) {
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
   // Another unit's teaser cards are not this page's text: left in, the model reads a
   // listing page as about several units and refuses its own prose, and the grounding
   // check accepts a sibling's blurb (#4823).
   removeRelatedEntityTeaserCards($, pageUrl);
-  const body = $('body')[0] || $.root()[0];
-  return extractElementTextWithBlockSeparators(body).slice(0, MAX_PROMPT_CHARS);
+  return $('body')[0] || $.root()[0];
+}
+
+export function htmlToText(html: string, pageUrl?: string): string {
+  if (!html) return '';
+  return extractElementTextWithBlockSeparators(pageBodyWithoutOtherSubjects(html, pageUrl)).slice(
+    0,
+    MAX_PROMPT_CHARS,
+  );
+}
+
+/** The same text as `htmlToText`, with a line break at every block boundary. */
+export function htmlToTextLines(html: string, pageUrl?: string): string {
+  if (!html) return '';
+  return extractElementTextWithLineBreaks(pageBodyWithoutOtherSubjects(html, pageUrl));
+}
+
+export interface ExtractedCopyScope {
+  entityName?: unknown;
+  entityType?: string;
+  kind?: string;
+  citedPageText?: string;
+}
+
+/**
+ * The copied description without sentences the page frames as someone else's or as
+ * past (#4915). A row that is one person's own research keeps that person's voice.
+ */
+export function copyWithinPageSubjectAndTense(value: string, scope: ExtractedCopyScope): string {
+  const pageText = scope.citedPageText ?? '';
+  const current = withoutSentencesLiftedFromPastContext(value, pageText);
+  if (isFacultyResearchTextEntity(scope)) return current;
+  return withoutMemberFirstPersonSentences(current, textValue(scope.entityName), pageText);
 }
 
 const GOVERNANCE_ORG_NAME_RE =
@@ -1545,9 +1587,8 @@ function extractedFullDescription(
   extraction: Pick<DescriptionExtraction, 'fullDescription'>,
   context: ExtractedPageIdentityContext,
 ): string {
-  return normalizeKnownDescriptionAcronyms(
-    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
-  );
+  const copy = copyWithinPageSubjectAndTense(textValue(extraction.fullDescription), context);
+  return normalizeKnownDescriptionAcronyms(usefulDescription(bodyForBiography(copy, context)));
 }
 
 /**
@@ -1891,6 +1932,11 @@ export interface ExtractedPageIdentityContext {
    * name the record.
    */
   pageStatesLeadAsPrincipalInvestigator?: boolean;
+  /**
+   * The cited page's text with a line break at every block boundary
+   * (`htmlToTextLines`), which shows the page sentence a copied sentence was cut from.
+   */
+  citedPageText?: string;
 }
 
 /**
@@ -2511,6 +2557,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             pages,
             kind,
             rowLead,
+            { entityName: lab.name, entityType: lab.entityType, kind: lab.kind },
           ));
         if (unchanged && !rereadForGrounding) {
           contentUnchangedSkipped += 1;
@@ -2739,6 +2786,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             primaryPageText,
             leadPersonName,
           ),
+          citedPageText: htmlToTextLines(page.html, page.url),
         };
 
         const officialOutcome = officialProse?.fullDescription
