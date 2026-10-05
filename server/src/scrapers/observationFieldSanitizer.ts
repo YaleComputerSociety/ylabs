@@ -69,6 +69,7 @@ import {
 import {
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  recaseAllCapsResearchEntityName,
   stripTrailingResearchHomeDescription,
   collapseDuplicateResearchHomeSuffix,
 } from '../utils/researchEntityNameNormalization';
@@ -215,11 +216,13 @@ function sanitizeRosterMemberNameField(value: string): SanitizedObservationField
 }
 
 function normalizeEntityName(value: string): string {
-  return normalizeResearchEntityNameSmartQuotes(
-    normalizeResearchEntityNameDashes(
-      collapseDuplicateResearchHomeSuffix(
-        stripTrailingResearchHomeDescription(
-          stripResearchHomeNameLinkChrome(stripResearchHomeNameLinkWrapper(value)),
+  return recaseAllCapsResearchEntityName(
+    normalizeResearchEntityNameSmartQuotes(
+      normalizeResearchEntityNameDashes(
+        collapseDuplicateResearchHomeSuffix(
+          stripTrailingResearchHomeDescription(
+            stripResearchHomeNameLinkChrome(stripResearchHomeNameLinkWrapper(value)),
+          ),
         ),
       ),
     ),

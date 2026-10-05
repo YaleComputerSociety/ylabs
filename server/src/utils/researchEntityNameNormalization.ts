@@ -132,3 +132,77 @@ export function stripResearchHomeNameCaptionWrapper(value: string): string {
   if (person === match[1].trim()) return value;
   return `${person}${match[2] ?? ''}`;
 }
+
+const LOWERCASE_HEADING_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'in',
+  'of',
+  'on',
+  'the',
+  'to',
+  'da',
+  'de',
+  'del',
+  'della',
+  'den',
+  'der',
+  'di',
+  'du',
+  'la',
+  'le',
+  'van',
+  'von',
+]);
+
+const RESEARCH_HEADING_SUFFIX_RE = /\s+(?:faculty\s+research|research|lab|laboratory|group)$/i;
+
+const VOWELLESS_NAME_WORDS = new Set(['ng']);
+
+function titleCaseHeadingWord(word: string, isParticleSlot: boolean): string {
+  const letters = word.replace(/[^\p{L}]/gu, '');
+  if (!letters) return word;
+  const lower = word.toLowerCase();
+  if (isParticleSlot && LOWERCASE_HEADING_WORDS.has(lower)) return lower;
+  if (letters.length <= 4 && !/[AEIOUY]/.test(letters) && !VOWELLESS_NAME_WORDS.has(lower)) {
+    return word;
+  }
+  return lower
+    .replace(
+      /(^|[-'’])(\p{L})/gu,
+      (_match, boundary: string, letter: string) => boundary + letter.toUpperCase(),
+    )
+    .replace(/^Mc(\p{L})/u, (_match, letter: string) => `Mc${letter.toUpperCase()}`);
+}
+
+/**
+ * A heading read off a site that sets its banner in capitals ("ROBIN Q. FIXTURE Faculty
+ * Research", "FIXTURE LAB") is recased word by word, keeping initials, short consonant-only
+ * acronyms and lowercase name particles. Only a person-or-surname heading ending in a research
+ * suffix is recased, because a center or program name in capitals ("YALE MRI CENTER") carries
+ * acronyms a word rule cannot tell from names. A heading with any lowercase letter before its
+ * suffix is the source's own casing and is left alone, as is a single all-caps word, which is
+ * as likely an acronym as a shout. A particle is lowercased only before another name word, so
+ * a surname such as Le or Du in last place keeps its capital.
+ */
+export function recaseAllCapsResearchEntityName(value: string): string {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  const suffix = trimmed.match(RESEARCH_HEADING_SUFFIX_RE)?.[0];
+  if (!suffix) return value;
+  const head = trimmed.slice(0, -suffix.length);
+  const letters = head.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 3 || letters !== letters.toUpperCase()) return value;
+  const words = head.split(/\s+/).filter(Boolean);
+  const recasedHead = words.map((word, index) =>
+    titleCaseHeadingWord(word, index > 0 && index < words.length - 1),
+  );
+  const recasedSuffix = suffix
+    .trim()
+    .split(/\s+/)
+    .map((word) => titleCaseHeadingWord(word, false));
+  return [...recasedHead, ...recasedSuffix].join(' ');
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  recaseAllCapsResearchEntityName,
   collapseDuplicateResearchHomeSuffix,
   hasDuplicateResearchHomeSuffix,
   hasResearchHomeNamePersonCredentials,
@@ -303,5 +304,35 @@ describe('stripResearchHomeNameCaptionWrapper', () => {
     expect(stripResearchHomeNameCaptionWrapper('Photonics of Matter Lab')).toBe(
       'Photonics of Matter Lab',
     );
+  });
+});
+
+describe('recaseAllCapsResearchEntityName', () => {
+  it.each([
+    ['ROBIN Q. FIXTURE Faculty Research', 'Robin Q. Fixture Faculty Research'],
+    ['THE FIXTURE LABORATORY', 'The Fixture Laboratory'],
+    ['FIXTURE LAB', 'Fixture Lab'],
+    ['ROBIN FIXTURE FACULTY RESEARCH', 'Robin Fixture Faculty Research'],
+    ['ANA DE LA FIXTURE Lab', 'Ana de la Fixture Lab'],
+    ["ROBIN MCFIXTURE-O'TEST Lab", "Robin McFixture-O'Test Lab"],
+    ['MUÑOZ FIXTURE LAB', 'Muñoz Fixture Lab'],
+    ['ROBIN LE LAB', 'Robin Le Lab'],
+    ['ROBIN DU Lab', 'Robin Du Lab'],
+    ['ROBIN NG LAB', 'Robin Ng Lab'],
+  ])('recases an all-caps heading: %s', (input, expected) => {
+    expect(recaseAllCapsResearchEntityName(input)).toBe(expected);
+  });
+
+  it.each([
+    'Robin Fixture Faculty Research',
+    'CCMI Electron Microscopy Lab',
+    'HAPPY Initiative',
+    'FIXTURE',
+    'AI LAB',
+    'YALE MRI CENTER',
+    'AIDS RESEARCH PROGRAM',
+    'FIXTURE LAB AT YALE',
+  ])('leaves a heading that is not an all-caps run alone: %s', (input) => {
+    expect(recaseAllCapsResearchEntityName(input)).toBe(input);
   });
 });
