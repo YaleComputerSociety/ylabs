@@ -109,6 +109,7 @@ import {
   synthesizeGroundedCardDescription,
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
+import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
 import { groundMethods, isMethodGroundedInText } from '../utils/methodGrounding';
 import {
@@ -1244,18 +1245,7 @@ export function opensOnNavigationChrome(value: unknown): boolean {
   return match.index < boundary;
 }
 
-/**
- * A medical school profile template's own widgets, which a title-only profile flattens
- * into its only text: a MeSH chip run under "Medical Research Interests", an ORCID, and
- * the "Research at a Glance" co-author panel. Never a description of anyone (#4048).
- */
-const PROFILE_TEMPLATE_CHROME =
-  /^(?:(?:research\s+)?overview\s+)?medical\s+research\s+interests\b|\b(?:research\s+at\s+a\s+glance|yale\s+co-authors|frequent\s+collaborators\s+of)\b/i;
-
-export function isProfileTemplateChrome(value: unknown): boolean {
-  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-  return Boolean(text) && PROFILE_TEMPLATE_CHROME.test(text);
-}
+export { isProfileTemplateChrome };
 
 const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
   /^selected\s+(?:presentations?|publications?|articles?|media|press|talks?)\b/i,

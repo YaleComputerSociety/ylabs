@@ -6,6 +6,7 @@
  * entityKey, e.g. netid).
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
+import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -1708,6 +1709,14 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     isResearchEntityObservationType(entityType) &&
     isGrantLaneObservationOutsideEnrichment(observation)
+  ) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    !!observation.field &&
+    MATERIALIZED_DESCRIPTION_FIELDS.has(observation.field) &&
+    isProfileTemplateChrome(observation.value)
   ) {
     return true;
   }
