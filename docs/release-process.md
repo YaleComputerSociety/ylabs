@@ -17,6 +17,7 @@ The immutable form is the security-relevant part: a plain install resolves depen
 The command this page used to give, `corepack enable && yarn install:all:immutable`, fails on a clean build for two independent reasons: Node 25 and later ship no Corepack, so `corepack enable` alone exits non-zero, and Yarn cannot run a `package.json` script such as `install:all:immutable` before an install has created its state file (#4035).
 A service still configured with that command builds only while Render's build cache happens to hold an earlier install, so read each service's Build Command in the dashboard and replace it, then run a clear-cache deploy on Beta first.
 This repository declares no Render blueprint, so nothing here can enforce that build command; set it in the dashboard and check it when a service is created or its build settings change.
+Every service, its branch, and the environment variables it needs are recorded by name in [the deployment inventory](./deployment-inventory.md), which also holds the service rebuild checklist.
 
 The Node major is declared once, in `.node-version` at the repository root.
 CI's `setup-node` reads it with `node-version-file`, and Render reads the same file, so the tested runtime and the deployed runtime cannot drift apart (#3915).
@@ -309,3 +310,6 @@ Record the monitor's provider here when it is created.
 
 To roll back, prefer the Render dashboard rollback to the previous deploy.
 Otherwise revert the promotion merge on `main` with `git revert -m 1 <merge-commit>` through a pull request, and Render redeploys automatically.
+A revert removes everything that promotion carried, so a hotfix on `main` is usually the better fix forward.
+Neither moves a document: a code rollback is not a data rollback, and no Production restore point exists (#4148).
+[The incident runbook](./incident-runbook.md) owns the full procedure for a site outage, bad data that reached students, and a leaked credential.
