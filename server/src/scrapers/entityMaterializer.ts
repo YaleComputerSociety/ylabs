@@ -91,6 +91,7 @@ import {
   personScopedResearchEntityNameNamesSomethingElse,
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
+  isOffSitePageTitleForPersonScopedName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -7175,6 +7176,12 @@ function enforceResearchEntityNameAuthority(input: {
     // prominent title on the page is a monthly speaker series that several faculty
     // co-lead rather than this person's research record.
     (isPersonScopedResearchEntity(recordIdentity) && namesAScholarlyEventSeries(candidateName)) ||
+    (isPersonScopedResearchEntity(recordIdentity) &&
+      isOffSitePageTitleForPersonScopedName({
+        candidateName,
+        sourceUrl: websiteUrl,
+        personName: recordIdentity.personName,
+      })) ||
     // Roster-corroborated rather than path-only, because this is a write
     // chokepoint: a lab name whose eponym appears nowhere in the URL path
     // ("The Mougous Lab" on `mougouslab.org`) is refused at harvest and was still

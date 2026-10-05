@@ -3516,6 +3516,30 @@ describe("a lab heading composed from the lead's full name", () => {
     expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
   });
 
+  it('is unbacked by a site named for another word, such as another lab the lead belongs to', () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Robin Fixture Lab', 'https://www.example.org/estuary-lab'),
+        'Robin Fixture',
+      ),
+    ).toBe(true);
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Robin Fixture Lab', 'https://quillonlab.example.net/'),
+        'Robin Fixture',
+      ),
+    ).toBe(true);
+  });
+
+  it('is backed by a lab host that abbreviates the surname', () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Robin Fixture Lab', 'https://fixlab.example.edu/'),
+        'Robin Fixture',
+      ),
+    ).toBe(false);
+  });
+
   it('needs the lead to tell the composed form apart', () => {
     expect(
       isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),

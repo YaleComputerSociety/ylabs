@@ -367,8 +367,10 @@ export function ownLabEvidence(
  * whatever the slot links, and the description lanes repeat the row's own heading, so a
  * live observation carrying this form is not evidence that the lab exists. The same
  * reasoning that keeps the full-name form out of descriptions (#4707) applies to the
- * heading. A cited site whose host or path is lab-named still backs the row, whoever's
- * name the site carries, because the lab then exists under some name.
+ * heading. A cited site backs the row only when its lab token stands alone or beside this
+ * person's name or an abbreviation of it: a site named for another word ("ganges-lab",
+ * "hugheslab") is a lab under another name, often another person's lab the lead belongs
+ * to, so it proves no "<full name> Lab" (#4903).
  */
 export function isComposedFullNameLabName(
   entity: Record<string, any> | null | undefined,
@@ -400,7 +402,13 @@ function urlNamesALab(value: unknown, person: string): boolean {
       .map(letters)
       .filter((token) => token.length >= 2);
     const strippableNameTokens = nameTokens.filter((token) => token.length >= 3);
-    const endsInLab = new RegExp(`${LAB_TOKEN}$`);
+    const abbreviatesAName = (prefix: string) =>
+      nameTokens.includes(prefix) ||
+      (prefix.length >= 3 && nameTokens.some((token) => token.startsWith(prefix)));
+    const namesThisPersonsLab = (rest: string) => {
+      const match = new RegExp(`^(.*?)${LAB_TOKEN}$`).exec(rest);
+      return match !== null && (match[1] === '' || abbreviatesAName(match[1]));
+    };
     const withoutName = (part: string) =>
       strippableNameTokens.reduce((rest, token) => rest.replace(token, ''), part);
     const hostParts = url.hostname.split('.').map(letters).filter(Boolean);
@@ -413,13 +421,15 @@ function urlNamesALab(value: unknown, person: string): boolean {
     if (
       hostParts.some(
         (part) =>
-          endsInLab.test(withoutName(part)) ||
+          namesThisPersonsLab(withoutName(part)) ||
           labRightAfterName.some((pattern) => pattern.test(part)),
       )
     ) {
       return true;
     }
-    return pathParts.some((part) => endsInLab.test(withoutName(part)) && !isListingOfLabs(part));
+    return pathParts.some(
+      (part) => namesThisPersonsLab(withoutName(part)) && !isListingOfLabs(part),
+    );
   } catch {
     return false;
   }
