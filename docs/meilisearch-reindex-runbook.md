@@ -55,13 +55,13 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 
 Set all four in the shell that runs the command.
 `MONGODBURL`, `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` come from the Render dashboard for the target service.
-`MEILISEARCH_WRITE_API_KEY` lives on the Beta web service and on no Production service: for Production, export it in the shell session for the run (see [Meilisearch keys](#meilisearch-keys)).
+`MEILISEARCH_WRITE_API_KEY` lives on the Beta web service and the Production operator service, and never on the Production web service: for a Production run from the web service's shell, export it in that shell session (see [Meilisearch keys](#meilisearch-keys)).
 
 | Variable                   | Shape                                                  | Why                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
 | `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
-| `MEILISEARCH_WRITE_API_KEY` | the environment's reindex key from [Meilisearch keys](#meilisearch-keys): on the Beta service, or exported in the Production shell | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged. The legacy `MEILISEARCH_API_KEY` is still accepted in its place until the scoped key exists. |
+| `MEILISEARCH_WRITE_API_KEY` | the environment's reindex key from [Meilisearch keys](#meilisearch-keys): on the Beta web service or the Production operator service, or exported in the Production shell | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged. The legacy `MEILISEARCH_API_KEY` is still accepted in its place until the scoped key exists. |
 | `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
 
 The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
@@ -122,7 +122,8 @@ An unconfirmed swap exits non-zero.
 Measured on the local Meilisearch on 2026-10-04: with a key scoped to one prefix, a full rebuild of 4,193 documents created, filled, swapped and deleted its staging index, and the same key answered 403 on another prefix's index for a read, a document read and a delete; the code before this change failed the same run with `Task ... not found`.
 The write key can delete and swap its environment's indexes, so where it lives is a per-environment decision.
 Beta stores its `beta_*` write key on the Beta web service, because the worst a compromised staging process can do with it is wipe Beta's index, which a rebuild restores, and storing it lets a Render one-off job run the rebuild.
-Production keeps its write key out of every service and exports it only in the shell session that runs the rebuild, because a compromised Production process holding it could take student search down.
+Production keeps its write key off the Production web service, because a compromised student-facing process holding it could take student search down.
+Its only stored copy is on the Production operator service, which serves no requests and exists so `promote:remote-phase` can reindex (`docs/data-refresh-runbook.md`, "What to set up once"); a manual rebuild from the web service's shell exports it for that session only.
 A sync or repair script that only adds or deletes documents works with a key scoped to `["<prefix>_*"]`, if one is ever stored for an automated job.
 
 ### Which Render service gets which variable
@@ -131,6 +132,7 @@ A sync or repair script that only adds or deletes documents works with a key sco
 | -------------- | --- | ------------------------------------ |
 | Beta web service | `MEILISEARCH_SEARCH_API_KEY` = the `beta` search key, and `MEILISEARCH_WRITE_API_KEY` = the `beta` reindex key | `MEILISEARCH_API_KEY` |
 | Production web service | `MEILISEARCH_SEARCH_API_KEY` = the `prod` search key | `MEILISEARCH_API_KEY` |
+| Production operator service | `MEILISEARCH_WRITE_API_KEY` = the `prod` reindex key | |
 | Meilisearch private service | nothing new; `MEILI_MASTER_KEY` stays there | |
 
 Order: create the keys, set the variables, redeploy, confirm the fallback warning is gone from the logs and search works, then delete `MEILISEARCH_API_KEY` from the web service.
@@ -147,7 +149,7 @@ The proof keys were deleted afterwards.
 
 A one-off job runs a command on a copy of a service's **latest successful deploy** with that service's **current** environment variables, inside Render's network, so it reaches the private Meilisearch the same way the shell does.
 It needs no open shell, survives a dropped connection, and leaves its log on the service's **One-off Jobs** page.
-Beta can rebuild this way because its web service holds the `beta` write key; Production cannot, because its write key lives in no service, so run Production's rebuild from its shell.
+Beta can rebuild this way because its web service holds the `beta` write key; the Production web service holds none, so run a Production one-off rebuild on the Production operator service, or run it from the web service's shell.
 
 Find the service id, then confirm the deploy you are about to run is the code you expect, because a job runs the deployed build and not the branch head:
 

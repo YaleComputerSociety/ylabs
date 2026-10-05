@@ -551,7 +551,7 @@ On the laptop, as environment variables or in `server/.env`, never committed:
 - An authenticated `gh` for the release-hold read.
 
 On Render, one operator service per environment, which is what the one-off job runs on.
-A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the web process must never hold.
+A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the Production web process must never hold.
 Create each as a Cron Job in the same region as that environment's private Meilisearch, from this repository with the root directory left empty, branch `beta` for Beta and `main` for Production, a Node runtime with the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), and a schedule that never matters, such as `0 0 1 1 *` with start command `true`.
 Give it `SCRAPER_ENV` (`beta` or `production`), `MONGODBURL` for that environment, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX` (`beta` or `prod`), `MEILISEARCH_WRITE_API_KEY`, and `OPENAI_API_KEY`, all as secrets, plus `PFR3_MEILI_RESTORE_POINT` on the Production one before each promotion.
 Its outbound ranges need the same Atlas access-list entry as any Render shell.
