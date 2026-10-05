@@ -411,6 +411,7 @@ interface MaterializeOptions {
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   resynthesizeCutCards?: boolean;
+  cardModel?: string;
   writeOnlyFields?: string[];
   /**
    * Keep the field-less post-projection steps (inferred lead edges, access-signal
@@ -476,6 +477,7 @@ interface MaterializeOptions {
 
 export function defaultMaterializerCardSynthesizer(
   entityName: string,
+  model: string = CARD_SYNTHESIS_MODEL,
 ): (fullDescription: string) => Promise<string> {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) return () => Promise.resolve('');
@@ -483,8 +485,7 @@ export function defaultMaterializerCardSynthesizer(
     synthesizeGroundedCardDescription({
       fullDescription,
       entityName,
-      callLLM: (llmInput) =>
-        defaultCardSynthesisLLM({ ...llmInput, apiKey, model: CARD_SYNTHESIS_MODEL }),
+      callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
     });
 }
 
@@ -6609,6 +6610,7 @@ export interface ProjectFromLogInput {
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   resynthesizeCutCards?: boolean;
+  cardModel?: string;
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
   readRowUnderOwnIdentity?: boolean;
@@ -7997,7 +7999,8 @@ export async function projectFromLog(
       cardLocked: manuallyLockedFields.includes('shortDescription'),
     });
     const cardSynthesizer =
-      input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName);
+      input.synthesizeCardDescription ??
+      defaultMaterializerCardSynthesizer(entityName, input.cardModel);
     let groundedShortDescription: string | null = null;
     if (writtenCard.followsWrittenBody) {
       delete set.shortDescription;
@@ -9715,6 +9718,7 @@ export async function materializeEntity(
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
     resynthesizeCutCards: options.resynthesizeCutCards,
+    cardModel: options.cardModel,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
     readRowUnderOwnIdentity,

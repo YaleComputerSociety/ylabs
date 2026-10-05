@@ -43,6 +43,20 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     ).not.toContain('incomplete-sentence');
   });
 
+  it('cuts before a second coordinated clause, leaving the first whole', () => {
+    const card =
+      'Studies how germline cells undergo programmed incomplete cytokinesis to form interconnected cell clusters during gamete development, and how tissue-specific stop codon readthrough produces extended proteins.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(
+      'Studies how germline cells undergo programmed incomplete cytokinesis to form interconnected cell clusters during gamete development.',
+    );
+  });
+
+  it('does not cut before an and that continues a noun list', () => {
+    const card =
+      'Characterizes membrane transporters in bacterial cell envelopes, examining the structure, function and uses of these proteins in antibiotic resistance and drug delivery across many clinically relevant pathogen species.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
   it('leaves a card that already fits untouched', () => {
     const card = 'Studies how cells divide during early development.';
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
